@@ -39,6 +39,7 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   validateDeviceType: (definition: DeviceType) => Promise<{ valid: boolean; errors?: string[]; warnings?: string[]; message: string }>
   generateMDL: (req: { device_name: string; description?: string; uplink_example: string; downlink_example?: string }) => Promise<DeviceType>
 
+  clearDeviceDetails: () => void
   fetchDeviceDetails: (id: string) => Promise<Device | null>
   fetchDeviceTypeDetails: (deviceType: string) => Promise<DeviceType | null>
 
@@ -327,6 +328,16 @@ export const createDeviceSlice: StateCreator<
       logError(error, { operation: 'Generate MDL' })
       throw error
     }
+  },
+
+  // Clear device detail data (before loading new device to avoid stale data flash)
+  clearDeviceDetails: () => {
+    set({
+      deviceDetails: null,
+      deviceTypeDetails: null,
+      deviceCurrentState: null,
+      telemetryData: null,
+    })
   },
 
   // Device Details

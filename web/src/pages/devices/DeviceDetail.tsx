@@ -373,10 +373,10 @@ export function DeviceDetail({
   const handleMetricCardClick = async (key: string) => {
     // Reset pagination when opening a new metric
     setCurrentPage(1)
-    // Fetch the latest data first, then open the dialog
-    // This ensures the dialog shows fresh data, not stale cached data
-    await onMetricClick(key, 0, PAGE_SIZE)
+    // Open dialog immediately for instant visual feedback
     setMetricHistoryOpen(true)
+    // Fetch data in background — dialog shows loading skeleton via telemetryLoading
+    await onMetricClick(key, 0, PAGE_SIZE)
   }
 
   const getMetricDisplayName = (metricName: string): string => {

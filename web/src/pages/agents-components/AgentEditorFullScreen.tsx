@@ -335,6 +335,7 @@ export function AgentEditorFullScreen({
   const [executionMode, setExecutionMode] = useState<'focused' | 'free'>('focused')
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(10)
+  const [maxChainDepth, setMaxChainDepth] = useState(5)
 
   // LLM validation state
   const [llmValidating, setLlmValidating] = useState(false)
@@ -474,6 +475,7 @@ export function AgentEditorFullScreen({
         setExecutionMode(agent.execution_mode === 'free' ? 'free' : 'focused')
         setPriority(agent.priority ?? 5)
         setContextWindowSize(agent.context_window_size ?? 10)
+        setMaxChainDepth(agent.max_chain_depth ?? 5)
         parseSchedule(agent.schedule)
         loadAgentResources(agent)
       } else {
@@ -486,6 +488,7 @@ export function AgentEditorFullScreen({
         setExecutionMode('focused')
         setPriority(5)
         setContextWindowSize(10)
+        setMaxChainDepth(5)
         setScheduleType('timer')
         setTimerSubType('interval')
         setIntervalValue(5)
@@ -1227,6 +1230,7 @@ export function AgentEditorFullScreen({
         // Advanced configuration
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 10 ? contextWindowSize : undefined,
+        max_chain_depth: maxChainDepth !== 5 ? maxChainDepth : undefined,
         execution_mode: isFocusedMode ? 'focused' : 'free',
       }
 
@@ -1526,6 +1530,21 @@ export function AgentEditorFullScreen({
               />
               <p className="text-xs text-muted-foreground">
                 {tAgent('creator.advanced.priorityHint', 'Execution priority (1=lowest, 10=highest)')}
+              </p>
+            </div>
+
+            {/* Max Chain Depth */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{tAgent('creator.advanced.chainDepth', 'Max Chain Depth')}</Label>
+              <Slider
+                min={1}
+                max={20}
+                step={1}
+                value={[maxChainDepth]}
+                onValueChange={([v]) => setMaxChainDepth(v)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {tAgent('creator.advanced.chainDepthHint', 'Maximum tool-calling rounds per execution (1=single-pass, higher=more capable)')}
               </p>
             </div>
 

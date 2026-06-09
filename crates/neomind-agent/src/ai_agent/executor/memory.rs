@@ -19,7 +19,7 @@ impl AgentExecutor {
         let action_taken = decisions
             .iter()
             .take(5)
-            .map(|d| truncate_to(&d.action, 50))
+            .map(|d| truncate_to(&d.action, 150))
             .collect::<Vec<_>>()
             .join("; ");
         let action_taken = if action_taken.is_empty() {
@@ -168,5 +168,46 @@ impl AgentExecutor {
             agent_id = %agent.id,
             "Auto-initialized knowledge file: task-understanding"
         );
+    }
+
+    /// Pre-fetch knowledge file contents from disk for inline injection into
+    /// the system prompt. Avoids wasting a tool-call round reading files the
+    /// agent already knows about — especially valuable in Focused+ mode with
+    /// only 3 rounds (33% of budget saved).
+    pub(crate) fn prefetch_knowledge_files(
+        &self,
+        agent_id: &str,
+        knowledge_files: &[neomind_storage::KnowledgeFileRef],
+    ) -> Option<std::collections::HashMap<String, String>> {
+        if knowledge_files.is_empty() {
+            return None;
+        }
+
+        let store = self.memory_store.as_ref()?;
+
+        let mut content_map = std::collections::HashMap::new();
+        for f in knowledge_files {
+            match store.read_agent_custom_file(agent_id, &f.name) {
+                Ok(content) => {
+                    // Truncate individual files to 6000 chars — generous for 128K
+                    // context models while still preventing extreme bloat.
+                    content_map.insert(f.name.clone(), truncate_to(&content, 6000));
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        agent_id = %agent_id,
+                        file = %f.name,
+                        error = %e,
+                        "Failed to pre-fetch knowledge file, will rely on index"
+                    );
+                }
+            }
+        }
+
+        if content_map.is_empty() {
+            None
+        } else {
+            Some(content_map)
+        }
     }
 }

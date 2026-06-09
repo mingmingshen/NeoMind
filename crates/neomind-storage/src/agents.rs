@@ -119,7 +119,7 @@ fn default_context_window() -> usize {
 
 /// Default value for max chain depth.
 fn default_max_chain_depth() -> usize {
-    3 // Allow up to 3 chain steps by default
+    5 // Allow up to 5 chain steps by default (enough for multi-step Focused analysis)
 }
 
 /// Default value for agent priority.
@@ -1315,7 +1315,7 @@ mod tests {
             conversation_summary: None,
             context_window_size: 10,
             enable_tool_chaining: false,
-            max_chain_depth: 3,
+            max_chain_depth: 5,
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
@@ -1361,7 +1361,7 @@ mod tests {
             conversation_summary: None,
             context_window_size: 10,
             enable_tool_chaining: false,
-            max_chain_depth: 3,
+            max_chain_depth: 5,
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
@@ -1440,7 +1440,7 @@ mod tests {
             conversation_summary: None,
             context_window_size: 10,
             enable_tool_chaining: false,
-            max_chain_depth: 3,
+            max_chain_depth: 5,
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
@@ -1503,7 +1503,7 @@ mod tests {
             conversation_summary: None,
             context_window_size: 10,
             enable_tool_chaining: false,
-            max_chain_depth: 3,
+            max_chain_depth: 5,
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,

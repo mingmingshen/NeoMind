@@ -11,7 +11,7 @@ use std::sync::Arc;
 use neomind_agent::llm_backends::get_instance_manager;
 use neomind_storage::{
     AgentExecutionRecord, AgentFilter, AgentMemory, AgentSchedule, AgentStats, AgentStatus,
-    AiAgent, ResourceType, ScheduleType, UserMessage,
+    AiAgent, ExecutionMode, ExecutionStatus, ResourceType, ScheduleType, UserMessage,
 };
 
 use super::{
@@ -26,6 +26,35 @@ use neomind_core::datasource::DataSourceId;
 // ============================================================================
 // Helper functions for enum serialization
 // ============================================================================
+
+/// Convert AgentStatus to lowercase string.
+fn status_to_string(status: &AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::Active => "active",
+        AgentStatus::Paused => "paused",
+        AgentStatus::Stopped => "stopped",
+        AgentStatus::Error => "error",
+        AgentStatus::Executing => "executing",
+    }
+}
+
+/// Convert ExecutionMode to lowercase string.
+fn execution_mode_to_string(mode: &ExecutionMode) -> &'static str {
+    match mode {
+        ExecutionMode::Focused => "focused",
+        ExecutionMode::Free => "free",
+    }
+}
+
+/// Convert ExecutionStatus to lowercase string.
+fn execution_status_to_string(status: &ExecutionStatus) -> &'static str {
+    match status {
+        ExecutionStatus::Running => "running",
+        ExecutionStatus::Completed => "completed",
+        ExecutionStatus::Failed => "failed",
+        ExecutionStatus::Partial => "partial",
+    }
+}
 
 /// Convert ScheduleType to lowercase string (matching serde snake_case)
 fn schedule_type_to_string(schedule_type: &ScheduleType) -> &'static str {
@@ -168,6 +197,9 @@ struct AgentDetailDto {
     context_window_size: Option<usize>,
     /// Execution mode: "focused" or "free"
     execution_mode: String,
+    /// Custom system prompt override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system_prompt: Option<String>,
 }
 
 /// Agent resource for API responses.
@@ -514,7 +546,7 @@ impl From<AiAgent> for AgentDto {
             id: agent.id,
             name: agent.name,
             description: agent.description,
-            status: format!("{:?}", agent.status),
+            status: status_to_string(&agent.status).to_string(),
             created_at: format_datetime(agent.created_at),
             last_execution_at: agent.last_execution_at.map(format_datetime),
             execution_count: agent.stats.total_executions as u32,
@@ -526,7 +558,7 @@ impl From<AiAgent> for AgentDto {
             max_chain_depth: Some(agent.max_chain_depth),
             priority: Some(agent.priority),
             context_window_size: Some(agent.context_window_size),
-            execution_mode: format!("{:?}", agent.execution_mode).to_lowercase(),
+            execution_mode: execution_mode_to_string(&agent.execution_mode).to_string(),
         }
     }
 }
@@ -538,7 +570,7 @@ impl From<&AiAgent> for AgentDetailDto {
             name: agent.name.clone(),
             description: agent.description.clone(),
             user_prompt: agent.user_prompt.clone(),
-            status: format!("{:?}", agent.status),
+            status: status_to_string(&agent.status).to_string(),
             parsed_intent: agent.parsed_intent.as_ref().map(|i| ParsedIntentDto {
                 intent_type: format!("{:?}", i.intent_type),
                 target_metrics: i.target_metrics.clone(),
@@ -598,7 +630,8 @@ impl From<&AiAgent> for AgentDetailDto {
             max_chain_depth: Some(agent.max_chain_depth),
             priority: Some(agent.priority),
             context_window_size: Some(agent.context_window_size),
-            execution_mode: format!("{:?}", agent.execution_mode).to_lowercase(),
+            execution_mode: execution_mode_to_string(&agent.execution_mode).to_string(),
+            system_prompt: agent.system_prompt.clone(),
         }
     }
 }
@@ -610,7 +643,7 @@ impl From<AgentExecutionRecord> for AgentExecutionDto {
             agent_id: record.agent_id,
             timestamp: format_datetime(record.timestamp),
             trigger_type: record.trigger_type,
-            status: format!("{:?}", record.status),
+            status: execution_status_to_string(&record.status).to_string(),
             duration_ms: record.duration_ms,
             error: record.error,
         }
@@ -624,7 +657,7 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
             agent_id: record.agent_id,
             timestamp: format_datetime(record.timestamp),
             trigger_type: record.trigger_type,
-            status: format!("{:?}", record.status),
+            status: execution_status_to_string(&record.status).to_string(),
             duration_ms: record.duration_ms,
             error: record.error,
             decision_process: Some(DecisionProcessDto {
@@ -742,7 +775,7 @@ pub async fn list_agents(
             .map(|a| AgentSummaryDto {
                 id: a.id,
                 name: a.name,
-                status: format!("{:?}", a.status),
+                status: status_to_string(&a.status).to_string(),
             })
             .collect();
 

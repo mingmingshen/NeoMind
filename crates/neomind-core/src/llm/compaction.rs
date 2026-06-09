@@ -125,7 +125,19 @@ impl CompactionConfig {
     /// Larger contexts preserve more history (gentler compaction),
     /// smaller contexts use aggressive compaction to stay within limits.
     pub fn for_context_size(context_window: usize) -> Self {
-        if context_window > 16000 {
+        // 128K+ context models (GPT-4o-128k, Qwen3-128K, etc.):
+        // generous limits — compaction rarely needed within normal agent runs.
+        if context_window > 100_000 {
+            Self {
+                reserve_tokens_floor: 2048,
+                max_history_share: 0.93,
+                min_recent_messages: 12,
+                max_message_length: 65536,
+                compact_tool_results: true,
+                keep_recent_tool_results: 10,
+            }
+        // 16K–100K context models (standard tier)
+        } else if context_window > 16000 {
             Self {
                 reserve_tokens_floor: 1024,
                 max_history_share: 0.92,

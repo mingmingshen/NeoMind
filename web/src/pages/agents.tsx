@@ -401,10 +401,7 @@ export function AgentsPage() {
       setShowAgentDialog(false)
       setEditingAgent(undefined)
       await loadItems()
-      toast({
-        title: tCommon('success'),
-        description: editingAgent ? tAgent('agentUpdated') : tAgent('agentCreated'),
-      })
+      // Toast is shown by AgentEditorFullScreen — don't duplicate here
     } catch (error) {
       handleError(error, { operation: 'Save agent', showToast: false })
       throw error

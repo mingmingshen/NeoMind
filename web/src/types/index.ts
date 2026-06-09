@@ -1883,6 +1883,12 @@ export interface AiAgent {
   error_count: number
   avg_duration_ms: number
   llm_backend_id?: string
+  // Advanced configuration (returned by list API)
+  enable_tool_chaining?: boolean
+  max_chain_depth?: number
+  priority?: number
+  context_window_size?: number
+  execution_mode?: 'focused' | 'free'
 }
 
 /**
@@ -1897,20 +1903,12 @@ export interface AiAgentDetail extends AiAgent {
   stats: AgentStats
   updated_at: string
   error_message?: string
-  // Legacy field — no longer written to, kept for backward compat
-  conversation_history?: never[]
   user_messages: UserMessage[]
-  conversation_summary: string | null
   context_window_size: number
   // Tool chaining configuration
   enable_tool_chaining?: boolean
   max_chain_depth?: number
   priority?: number
-  /** Tool configuration for function calling mode */
-  tool_config?: {
-    enabled: boolean
-    allowed_tools?: string[]
-  }
   /** Execution mode: "focused" for bound-resource agents, "free" for unrestricted tool-calling */
   execution_mode?: 'focused' | 'free'
   /** Custom system prompt override */
@@ -2187,6 +2185,10 @@ export interface UpdateAgentRequest {
   priority?: number
   /** Context window size in tokens (default: 8192) */
   context_window_size?: number
+  /** Execution mode: "focused" for bound-resource agents, "free" for unrestricted tool-calling */
+  execution_mode?: 'focused' | 'free'
+  /** Custom system prompt override */
+  system_prompt?: string
 }
 
 /**

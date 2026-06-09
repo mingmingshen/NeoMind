@@ -88,6 +88,7 @@ export function DevicesPage() {
   const fetchTelemetryData = useStore((s) => s.fetchTelemetryData)
   const fetchTelemetrySummary = useStore((s) => s.fetchTelemetrySummary)
   const fetchDeviceCurrentState = useStore((s) => s.fetchDeviceCurrentState)
+  const clearDeviceDetails = useStore((s) => s.clearDeviceDetails)
   const updateDeviceStatus = useStore((s) => s.updateDeviceStatus)
 
   // Pagination state
@@ -274,6 +275,9 @@ export function DevicesPage() {
     let cancelled = false
 
     const loadDevice = async () => {
+      // Clear stale data immediately to prevent flash of previous device
+      clearDeviceDetails()
+
       // Find device in list first (synchronous)
       let device = devices.find(d => d.id === urlDeviceId)
 
@@ -412,6 +416,8 @@ export function DevicesPage() {
   }
 
   const handleOpenDeviceDetails = async (device: Device) => {
+    // Clear stale data immediately to prevent flash of previous device
+    clearDeviceDetails()
     // Navigate to device detail URL
     navigate(`/devices/${device.id}`)
     setDeviceDetailView(device.id)
@@ -494,17 +500,14 @@ export function DevicesPage() {
 
   // Device edit handlers
   const handleEditDevice = async (device: Device) => {
-    // Fetch full device details to get connection_config
+    // Open dialog immediately with list data for instant feedback
+    setEditingDevice(device)
+    setEditDeviceOpen(true)
+    // Fetch full details (including connection_config) in background
     const details = await fetchDeviceDetails(device.id)
     if (details) {
+      // Update form data if dialog is still open
       setEditingDevice(details)
-      setEditDeviceOpen(true)
-    } else {
-      toast({
-        title: t('devices:loadFailed'),
-        description: t('devices:failedToLoadDetails'),
-        variant: "destructive",
-      })
     }
   }
 

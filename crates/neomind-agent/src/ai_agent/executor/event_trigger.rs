@@ -6,6 +6,14 @@
 use super::*;
 
 impl AgentExecutor {
+    /// Prune stale entries from the event dedup map.
+    /// Entries older than 360 s (6× the 60 s cooldown) are removed.
+    async fn cleanup_stale_dedup_entries(&self) {
+        let now = chrono::Utc::now().timestamp();
+        let mut recent = self.recent_executions.write().await;
+        recent.retain(|_, &mut ts| now - ts < 360);
+    }
+
     /// Check if an event should trigger any agent and execute it (legacy device-only entry point).
     pub async fn check_and_trigger_event(
         &self,
@@ -30,10 +38,8 @@ impl AgentExecutor {
         let device_id_for_spawn = device_id.clone();
 
         // Clean up old entries from recent_executions (older than cooldown window)
+        self.cleanup_stale_dedup_entries().await;
         let now = chrono::Utc::now().timestamp();
-        let mut recent = self.recent_executions.write().await;
-        recent.retain(|_, &mut timestamp| now - timestamp < 360);
-        drop(recent);
 
         for (_agent_id, agent) in event_agents.iter() {
             // Check if this agent has event-based schedule
@@ -179,10 +185,8 @@ impl AgentExecutor {
         let source_id_for_spawn = source_id.clone();
 
         // Clean up old entries from recent_executions (older than cooldown window)
+        self.cleanup_stale_dedup_entries().await;
         let now = chrono::Utc::now().timestamp();
-        let mut recent = self.recent_executions.write().await;
-        recent.retain(|_, &mut timestamp| now - timestamp < 360);
-        drop(recent);
 
         for (_agent_id, agent) in event_agents.iter() {
             // Check if this agent has event-based schedule

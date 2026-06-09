@@ -1971,7 +1971,7 @@ pub async fn process_stream_events_with_safeguards(
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
-        const MAX_TOOL_ITERATIONS: usize = 100;
+        const MAX_TOOL_ITERATIONS: usize = 30;
         // Accumulate ALL tool results across rounds for final summary
         let mut all_round_tool_results: Vec<(String, String)> = Vec::new();
         // Track per-round thinking and content for persistence (round number → text)

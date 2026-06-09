@@ -49,8 +49,16 @@ impl HistoryConfig {
 }
 
 /// Build a unified history context string from agent memory.
-/// Ordered by priority: User Messages → Knowledge Files → Execution Journal.
-pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> String {
+/// Ordered by priority: User Messages → Knowledge Files (inline) → Execution Journal.
+///
+/// `knowledge_content`: optional pre-fetched file contents (name → content).
+/// When provided, knowledge files are inlined directly so the agent doesn't
+/// waste a tool-call round reading them.
+pub(crate) fn build_history_context(
+    agent: &AiAgent,
+    config: &HistoryConfig,
+    knowledge_content: Option<&std::collections::HashMap<String, String>>,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     // 1. User Messages (HIGHEST PRIORITY — right after task)
@@ -71,21 +79,33 @@ pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> 
         ));
     }
 
-    // 2. Knowledge Files Index (from database metadata)
+    // 2. Knowledge Files — inline content when available, index otherwise
     if !agent.memory.knowledge_files.is_empty() {
-        let files = agent
-            .memory
-            .knowledge_files
-            .iter()
-            .map(|f| format!("- custom:{} — {}", f.name, f.description))
-            .collect::<Vec<_>>();
-        parts.push(format!(
-            "### Your Knowledge Files\n{}\n\
-             → Read: `memory(action='read', target='custom:{{name}}')`\n\
-             → Update: `memory(action='add', target='custom:{{name}}', content='...')`\n\
-             → Create new: `memory(action='create', target='custom:{{name}}', content='...')`",
-            files.join("\n")
-        ));
+        let kc = knowledge_content
+            .and_then(|m| if m.is_empty() { None } else { Some(m) });
+        if let Some(content_map) = kc {
+            // Inline mode: embed actual file contents directly
+            let mut sections = Vec::new();
+            for f in &agent.memory.knowledge_files {
+                if let Some(content) = content_map.get(&f.name) {
+                    sections.push(format!("#### custom:{}\n{}", f.name, content));
+                }
+            }
+            if !sections.is_empty() {
+                parts.push(format!(
+                    "### Your Knowledge (loaded)\n{}\n\
+                     → Update: `memory(action='add', target='custom:{{name}}', content='...')`\n\
+                     → Create new: `memory(action='create', target='custom:{{name}}', content='...')`",
+                    sections.join("\n\n")
+                ));
+            } else {
+                // Fallback to index if no content was loaded
+                parts.push(build_knowledge_index(&agent.memory.knowledge_files));
+            }
+        } else {
+            // Index-only mode: show file names and descriptions
+            parts.push(build_knowledge_index(&agent.memory.knowledge_files));
+        }
     } else {
         parts.push(
             "### Memory\n\
@@ -112,13 +132,13 @@ pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> 
                     "- [{}][{}] {} → {}",
                     ts,
                     status,
-                    truncate_to(&r.outcome, 120),
-                    truncate_to(&r.action_taken, 50)
+                    truncate_to(&r.outcome, 300),
+                    truncate_to(&r.action_taken, 300)
                 )
             })
             .collect::<Vec<_>>();
         parts.push(format!(
-            "### Recent Executions\n{}\n→ Do NOT repeat alerts/actions from recent entries.",
+            "### Recent Executions\n{}\n→ Learn from patterns: avoid repeating failed actions, adjust thresholds based on past outcomes, skip alerts already sent recently.",
             entries.join("\n")
         ));
     }
@@ -130,8 +150,25 @@ pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> 
     }
 }
 
+/// Build knowledge file index section (name + description + tool commands).
+fn build_knowledge_index(
+    files: &[neomind_storage::KnowledgeFileRef],
+) -> String {
+    let items: Vec<String> = files
+        .iter()
+        .map(|f| format!("- custom:{} — {}", f.name, f.description))
+        .collect();
+    format!(
+        "### Your Knowledge Files\n{}\n\
+         → Read: `memory(action='read', target='custom:{{name}}')`\n\
+         → Update: `memory(action='add', target='custom:{{name}}', content='...')`\n\
+         → Create new: `memory(action='create', target='custom:{{name}}', content='...')`",
+        items.join("\n")
+    )
+}
+
 /// Format a Unix timestamp as a human-readable date string.
-fn format_timestamp(ts: i64) -> String {
+pub(crate) fn format_timestamp(ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
         .map(|dt| dt.format("%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "??".to_string())

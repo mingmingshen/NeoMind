@@ -285,27 +285,32 @@ export function RulesList({
         {
           key: 'name',
           label: t('automation:ruleName'),
-          width: '28%',
+          width: '24%',
         },
         {
           key: 'trigger',
           label: t('automation:trigger'),
-          width: '24%',
+          width: '22%',
         },
         {
           key: 'actions',
           label: t('automation:ruleBuilder.executeActions'),
-          width: '20%',
+          width: '18%',
+        },
+        {
+          key: 'createdAt',
+          label: t('common:createdAt', 'Created'),
+          width: '14%',
         },
         {
           key: 'lastTriggered',
           label: t('automation:lastTriggered'),
-          width: '16%',
+          width: '14%',
         },
         {
           key: 'status',
           label: t('automation:status'),
-          width: '12%',
+          width: '8%',
         },
       ]}
       data={paginatedRules as unknown as Record<string, unknown>[]}
@@ -389,6 +394,13 @@ export function RulesList({
               </div>
             )
           }
+
+          case 'createdAt':
+            return (
+              <span className="text-xs text-muted-foreground">
+                {formatTimestamp(rule.created_at)}
+              </span>
+            )
 
           case 'lastTriggered': {
             const hasTriggered = rule.last_triggered && rule.last_triggered !== '-' && rule.last_triggered !== 0

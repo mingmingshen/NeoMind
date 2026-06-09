@@ -15,10 +15,6 @@ pub(crate) enum AnalysisResult {
         reasoning_steps: Vec<ReasoningStep>,
         decisions: Vec<Decision>,
         conclusion: String,
-        /// LLM-generated insight — kept in response schema for token compatibility
-        /// but no longer used by the executor (memory system simplified).
-        #[allow(dead_code)]
-        insight: Option<String>,
     },
     Free {
         decision_process: DecisionProcess,
@@ -27,417 +23,6 @@ pub(crate) enum AnalysisResult {
 }
 
 impl AgentExecutor {
-    pub(crate) fn build_available_commands_description(agent: &AiAgent) -> String {
-        let mut device_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
-            std::collections::HashMap::new();
-        let mut extension_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
-            std::collections::HashMap::new();
-
-        // Group commands by device or extension
-        for resource in &agent.resources {
-            match resource.resource_type {
-                ResourceType::Command => {
-                    // Parse device_id from resource_id (format: "device_id:command_name")
-                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let device_id = if !parts.is_empty() {
-                        parts[0]
-                    } else {
-                        "unknown"
-                    };
-
-                    device_commands
-                        .entry(device_id.to_string())
-                        .or_default()
-                        .push(resource);
-                }
-                ResourceType::ExtensionTool => {
-                    // Parse extension_id from resource_id (format: "extension:extension_id:command_name")
-                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let ext_id = if parts.len() >= 2 {
-                        parts[1]
-                    } else {
-                        "unknown"
-                    };
-
-                    extension_commands
-                        .entry(ext_id.to_string())
-                        .or_default()
-                        .push(resource);
-                }
-                _ => {}
-            }
-        }
-
-        if device_commands.is_empty() && extension_commands.is_empty() {
-            return "无可用命令".to_string();
-        }
-
-        let mut descriptions = Vec::new();
-
-        // Add device commands
-        if !device_commands.is_empty() {
-            descriptions.push("## 可用设备命令\n".to_string());
-
-            for (device_id, commands) in &device_commands {
-                descriptions.push(format!("### 设备: {}", device_id));
-
-                for cmd in commands {
-                    // Extract command name from resource_id
-                    let parts: Vec<&str> = cmd.resource_id.split(':').collect();
-                    let command_name = if parts.len() >= 2 {
-                        parts[1]
-                    } else {
-                        &cmd.resource_id
-                    };
-
-                    // Get display name or use command name
-                    let display_name = if !cmd.name.is_empty() {
-                        &cmd.name
-                    } else {
-                        command_name
-                    };
-
-                    // Format: "device_id:command_name" - display_name
-                    descriptions.push(format!(
-                        "- `{}:{}` - {}",
-                        device_id, command_name, display_name
-                    ));
-
-                    // Add parameters info if available
-                    if let Some(params) = cmd.config.get("parameters").and_then(|v| v.as_array()) {
-                        let param_names: Vec<_> = params
-                            .iter()
-                            .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
-                            .collect();
-                        if !param_names.is_empty() {
-                            descriptions.push(format!("  参数: {}", param_names.join(", ")));
-                        }
-                    }
-                }
-
-                descriptions.push(String::new()); // Empty line between devices
-            }
-        }
-
-        // Add extension commands
-        if !extension_commands.is_empty() {
-            descriptions.push("## 可用扩展工具\n".to_string());
-
-            for (ext_id, commands) in &extension_commands {
-                descriptions.push(format!("### 扩展: {}", ext_id));
-
-                for cmd in commands {
-                    // Extract command name from resource_id (format: "extension:ext_id:command_name")
-                    let parts: Vec<&str> = cmd.resource_id.split(':').collect();
-                    let command_name = if parts.len() >= 3 {
-                        parts[2]
-                    } else {
-                        &cmd.resource_id
-                    };
-
-                    // Get display name or use command name
-                    let display_name = if !cmd.name.is_empty() {
-                        &cmd.name
-                    } else {
-                        command_name
-                    };
-
-                    // Format: "extension:ext_id:command_name" - display_name
-                    descriptions.push(format!(
-                        "- `extension:{}:{}` - {}",
-                        ext_id, command_name, display_name
-                    ));
-
-                    // Add parameters info if available
-                    if let Some(params) = cmd.config.get("parameters").and_then(|v| v.as_array()) {
-                        let param_names: Vec<_> = params
-                            .iter()
-                            .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
-                            .collect();
-                        if !param_names.is_empty() {
-                            descriptions.push(format!("  参数: {}", param_names.join(", ")));
-                        }
-                    }
-                }
-
-                descriptions.push(String::new()); // Empty line between extensions
-            }
-        }
-
-        // Add usage instructions
-        descriptions.push(
-            "### 命令执行说明\n\
-             在 decisions 中，如需执行命令，请使用以下格式：\n\
-             - 设备命令: action: \"device_id:command_name\" (例如: \"light1:turn_on\")\n\
-             - 扩展工具: action: \"extension:ext_id:command_name\" (例如: \"extension:weather:get_forecast\")\n\
-             - decision_type: \"command\"\n\
-             - description: 命令描述\n\
-             - rationale: 执行原因".to_string()
-        );
-
-        descriptions.join("\n")
-    }
-
-    /// Build available data sources description for LLM.
-    pub(crate) fn build_available_data_sources_description(agent: &AiAgent) -> String {
-        let mut device_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
-            std::collections::HashMap::new();
-        let mut extension_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
-            std::collections::HashMap::new();
-        let mut device_resources: Vec<&AgentResource> = Vec::new();
-
-        // Group data sources by type
-        for resource in &agent.resources {
-            match resource.resource_type {
-                ResourceType::Metric => {
-                    // Parse device_id from resource_id (format: "device_id:metric_name")
-                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let device_id = if !parts.is_empty() {
-                        parts[0]
-                    } else {
-                        "unknown"
-                    };
-
-                    device_metrics
-                        .entry(device_id.to_string())
-                        .or_default()
-                        .push(resource);
-                }
-                ResourceType::ExtensionMetric => {
-                    // Parse extension_id from resource_id (format: "extension:extension_id:metric")
-                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let ext_id = if parts.len() >= 2 {
-                        parts[1]
-                    } else {
-                        "unknown"
-                    };
-
-                    extension_metrics
-                        .entry(ext_id.to_string())
-                        .or_default()
-                        .push(resource);
-                }
-                ResourceType::Device => {
-                    device_resources.push(resource);
-                }
-                _ => {}
-            }
-        }
-
-        if device_metrics.is_empty() && extension_metrics.is_empty() && device_resources.is_empty()
-        {
-            return String::new();
-        }
-
-        let mut descriptions = Vec::new();
-
-        // Add device metrics
-        if !device_metrics.is_empty() {
-            descriptions.push("## 可用设备数据源\n".to_string());
-
-            for (device_id, metrics) in &device_metrics {
-                descriptions.push(format!("### 设备: {}", device_id));
-
-                for metric in metrics {
-                    // Extract metric name from resource_id
-                    let parts: Vec<&str> = metric.resource_id.split(':').collect();
-                    let metric_name = if parts.len() >= 2 {
-                        parts[1]
-                    } else {
-                        &metric.resource_id
-                    };
-
-                    // Get display name or use metric name
-                    let display_name = if !metric.name.is_empty() {
-                        &metric.name
-                    } else {
-                        metric_name
-                    };
-
-                    // Get data type and unit from config
-                    let data_type = metric
-                        .config
-                        .get("data_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("number");
-                    let unit = metric.config.get("unit").and_then(|v| v.as_str());
-
-                    let unit_str = if let Some(u) = unit {
-                        format!(" ({})", u)
-                    } else {
-                        String::new()
-                    };
-
-                    descriptions.push(format!(
-                        "- `{}:{}` - {}{} [{}]",
-                        device_id, metric_name, display_name, unit_str, data_type
-                    ));
-                }
-
-                descriptions.push(String::new()); // Empty line between devices
-            }
-        }
-
-        // Add device resources (full device data)
-        if !device_resources.is_empty() {
-            descriptions.push("## 可用设备\n".to_string());
-
-            for resource in device_resources {
-                let display_name = if !resource.name.is_empty() {
-                    &resource.name
-                } else {
-                    &resource.resource_id
-                };
-                descriptions.push(format!("- `{}` - {}", resource.resource_id, display_name));
-            }
-
-            descriptions.push(String::new());
-        }
-
-        // Add extension metrics
-        if !extension_metrics.is_empty() {
-            descriptions.push("## 可用扩展数据源\n".to_string());
-
-            for (ext_id, metrics) in &extension_metrics {
-                descriptions.push(format!("### 扩展: {}", ext_id));
-
-                for metric in metrics {
-                    // Extract metric name from resource_id (format: "extension:ext_id:metric" or "extension:ext_id:command:field")
-                    let parts: Vec<&str> = metric.resource_id.split(':').collect();
-                    let metric_path = if parts.len() >= 3 {
-                        parts[2..].join(":")
-                    } else if parts.len() >= 3 {
-                        parts[2].to_string()
-                    } else {
-                        metric.resource_id.clone()
-                    };
-
-                    let display_name = if !metric.name.is_empty() {
-                        &metric.name
-                    } else {
-                        &metric_path
-                    };
-
-                    descriptions.push(format!("- `{}:{}` - {}", ext_id, metric_path, display_name));
-                }
-
-                descriptions.push(String::new()); // Empty line between extensions
-            }
-        }
-
-        // Add usage instructions
-        if !descriptions.is_empty() {
-            descriptions.push(
-                "### 数据查询说明\n\
-                 - 当前数据值会在下方「当前数据」部分显示\n\
-                 - 如果显示「No data available」，表示数据源暂时没有最新数据\n\
-                 - 如需查询特定时间范围的数据，在 decision 的 action 中使用格式：\n\
-                   * `query:device_id:metric:1h` - 查询最近1小时\n\
-                   * `query:device_id:metric:24h` - 查询最近24小时\n\
-                   * `query:device_id:metric:7d` - 查询最近7天\n\
-                   * `query:device_id:metric:yesterday` - 查询昨天\n\
-                   * `query:device_id:metric:last_week` - 查询上周\n\
-                 - 支持的时间单位: m(分钟), h(小时), d(天), w(周)\n\
-                 - 示例: `query:sensor1:temperature:24h` 查询传感器最近24小时温度"
-                    .to_string(),
-            );
-        }
-
-        descriptions.join("\n")
-    }
-
-    /// Build structured data table for Focused Mode prompt.
-    /// Returns markdown tables of current data and available commands.
-    pub(crate) fn build_focused_data_table(agent: &AiAgent, data: &[DataCollected]) -> String {
-        let mut sections = Vec::new();
-
-        // --- Current Data Table ---
-        let data_entries: Vec<&DataCollected> = data
-            .iter()
-            .filter(|d| d.source != "system")
-            .take(15)
-            .collect();
-
-        // Separate image entries from text entries
-        let (image_entries, text_entries): (Vec<_>, Vec<_>) = data_entries
-            .into_iter()
-            .partition(|d| {
-                d.values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-            });
-
-        if !text_entries.is_empty() {
-            sections.push("## Current Data (live from bound resources)".to_string());
-            sections.push("| Resource | Type | Value |".to_string());
-            sections.push("|----------|------|-------|".to_string());
-            for d in &text_entries {
-                let value = if let Some(v) = d.values.get("value") {
-                    format!("{}", v)
-                } else {
-                    let json_str = serde_json::to_string(&d.values).unwrap_or_default();
-                    if json_str.len() > 100 {
-                        let end = json_str.floor_char_boundary(100);
-                        json_str[..end].to_string() + "..."
-                    } else {
-                        json_str
-                    }
-                };
-                sections.push(format!("| {} | {} | {} |", d.source, d.data_type, value));
-            }
-        }
-
-        if !image_entries.is_empty() {
-            let sources: Vec<&str> = image_entries.iter().map(|d| d.source.as_str()).collect();
-            sections.push(format!(
-                "\n**Images**: {} (included in message)",
-                sources.join(", ")
-            ));
-        }
-
-        // --- Available Commands Table ---
-        let commands: Vec<&AgentResource> = agent
-            .resources
-            .iter()
-            .filter(|r| {
-                matches!(
-                    r.resource_type,
-                    ResourceType::Command | ResourceType::ExtensionTool
-                )
-            })
-            .collect();
-
-        if !commands.is_empty() {
-            sections.push(String::new());
-            sections.push("## Available Commands (only execute when needed)".to_string());
-            sections.push("| Name | Action Value |".to_string());
-            sections.push("|------|-------------|".to_string());
-            for cmd in &commands {
-                let display_name = if cmd.name.is_empty() {
-                    &cmd.resource_id
-                } else {
-                    &cmd.name
-                };
-                sections.push(format!("| {} | `{}` |", display_name, cmd.resource_id));
-            }
-        }
-
-        // --- Decision Template ---
-        sections.push(String::new());
-        sections.push("## Decision Format".to_string());
-        if !commands.is_empty() {
-            sections.push("Execute a command:".to_string());
-            sections.push("`{\"decision_type\": \"command\", \"action\": \"<copy Action Value>\", \"description\": \"<reason>\"}`".to_string());
-        }
-        sections.push("Send a notification:".to_string());
-        sections.push("`{\"decision_type\": \"alert\", \"description\": \"<message>\"}` or `\"warning\"` / `\"critical\"`".to_string());
-        sections.push("No action needed:".to_string());
-        sections.push("`\"decisions\": []`".to_string());
-
-        sections.join("\n")
-    }
-
     pub(crate) async fn analyze_situation_with_intent(
         &self,
         agent: &AiAgent,
@@ -503,7 +88,7 @@ impl AgentExecutor {
                     .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
                     .await
                 {
-                    Ok((situation_analysis, reasoning_steps, decisions, conclusion, insight)) => {
+                    Ok((situation_analysis, reasoning_steps, decisions, conclusion)) => {
                         tracing::info!(
                             agent_id = %agent.id,
                             "LLM-based analysis completed successfully"
@@ -513,7 +98,6 @@ impl AgentExecutor {
                             reasoning_steps,
                             decisions,
                             conclusion,
-                            insight,
                         });
                     }
                     Err(e) => {
@@ -548,148 +132,108 @@ impl AgentExecutor {
             reasoning_steps,
             decisions,
             conclusion,
-            insight: None, // rule-based analysis has no insight
         })
     }
 
+    /// Legacy analysis path for LLMs that don't support function calling.
+    ///
+    /// Simplified: uses `build_tool_system_prompt` (without tools) and requests
+    /// plain-text analysis instead of fragile JSON. Derives ReasoningStep/Decision
+    /// from the text output deterministically.
     pub(crate) async fn analyze_with_llm(
         &self,
         llm: Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>,
         agent: &AiAgent,
         data: &[DataCollected],
-        parsed_intent: Option<&neomind_storage::ParsedIntent>,
+        _parsed_intent: Option<&neomind_storage::ParsedIntent>,
         execution_id: &str,
-    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String, Option<String>)> {
+    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
-
-        let _ = parsed_intent; // retained for API stability; may be used in future
-        let current_time = chrono::Utc::now();
-        let time_str = current_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-
 
         tracing::info!(
             agent_id = %agent.id,
             data_count = data.len(),
             execution_id,
-            current_time = %time_str,
-            "Calling LLM for situation analysis..."
+            "Legacy Focused path: calling LLM for plain-text analysis"
         );
 
-        // Collect image parts directly from data_collected
-        // Images are already collected in data_collected, no need to re-query storage
+        // Collect image parts from data
         let (image_parts, image_sources_info) = collect_image_parts(data);
-
-        // Check if LLM supports vision/multimodal
         let llm_supports_vision = llm.capabilities().supports_images;
-
-        // Only use multimodal mode if we have valid images AND LLM supports vision
         let has_valid_images = !image_parts.is_empty() && llm_supports_vision;
 
-        // === DIAGNOSTIC LOG: vision path decision ===
-        {
-            let model_name = llm.model_name().to_string();
-            tracing::info!(
-                target: "neomind::agent::event_value",
-                agent_id = %agent.id,
-                model_name = %model_name,
-                llm_supports_vision,
-                image_parts_count = image_parts.len(),
-                image_sources_count = image_sources_info.len(),
-                has_valid_images,
-                data_total = data.len(),
-                "[DIAG] analyzer vision decision"
-            );
-            for (i, (src, dtype, content)) in image_parts.iter().enumerate() {
-                let (kind, len) = match content {
-                    ImageContent::Base64(d, m) => ("base64", format!("len={}, mime={}", d.len(), m)),
-                    ImageContent::Url(u) => ("url", format!("url={}", u)),
-                };
-                tracing::info!(
-                    target: "neomind::agent::event_value",
-                    idx = i, source = %src, data_type = %dtype, kind = kind, detail = %len,
-                    "[DIAG] image_part"
-                );
-            }
-        }
-
-        // Log when images are available but LLM doesn't support vision
+        // Log vision decision
+        tracing::info!(
+            target: "neomind::agent::event_value",
+            agent_id = %agent.id,
+            model_name = %llm.model_name(),
+            llm_supports_vision,
+            image_parts_count = image_parts.len(),
+            has_valid_images,
+            "[DIAG] legacy analyzer vision decision"
+        );
         if !image_parts.is_empty() && !llm_supports_vision {
             tracing::warn!(
                 agent_id = %agent.id,
                 image_count = image_parts.len(),
-                "Agent has image data but LLM doesn't support vision. Images will be ignored."
+                "Images available but LLM doesn't support vision — images ignored"
             );
         }
 
-        // Build text data summary for non-image data
-        // IMPORTANT: Filter out memory-related data to avoid confusing small models
-        let text_data_summary = build_text_data_summary(data);
+        // Build system prompt using the shared builder (no tools, no invocation)
+        let config = ToolLoopConfig::focused_plus(agent);
+        let knowledge_content = self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
+        let system_prompt = Self::build_tool_system_prompt(
+            agent, data, None, &config, knowledge_content.as_ref(),
+        );
 
-        // Build history context from conversation turns and memory (shared with Free mode)
-        let history_context = build_history_context(agent, &HistoryConfig::focused(agent.context_window_size));
-
-        // === USER MESSAGES ===
-        // Build user messages context for adding to user message (not system message)
-        let user_messages_for_user_msg = if !agent.user_messages.is_empty() {
-            let user_msgs_text: Vec<String> = agent
-                .user_messages
-                .iter()
-                .enumerate()
-                .map(|(i, msg)| {
-                    let timestamp_str = chrono::DateTime::from_timestamp(msg.timestamp, 0)
-                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "??".to_string());
-                    format!("{}. [{}] {}", i + 1, timestamp_str, msg.content)
-                })
-                .collect();
-
-            Some(format!(
-                "## ⚠️ 用户最新指令 (必须严格遵循)\n\n\
-                用户在运行期间发送了以下消息，这些消息包含对执行策略的更新。\
-                **请务必将这些指令作为最高优先级，覆盖初始配置中的任何冲突规则：**\n\n\
-                {}\n",
-                user_msgs_text.join("\n")
-            ))
+        // Build user message with data summary
+        let data_lines = build_compact_data_summary(data);
+        let image_info = if !image_sources_info.is_empty() && !has_valid_images {
+            format!("\n\n[Image data unavailable — LLM does not support vision: {}]",
+                image_sources_info.join(", "))
         } else {
-            None
+            String::new()
         };
 
-        // === SYSTEM PROMPT ===
-        // This was the proven working format - don't over-engineer it
-        // Detect language from user_prompt to determine response language
-        let detected_language = SemanticToolMapper::detect_language(&agent.user_prompt);
-        let is_chinese = matches!(
-            detected_language,
-            crate::agent::semantic_mapper::Language::Chinese
-                | crate::agent::semantic_mapper::Language::Mixed
+        // User message instructing plain-text output
+        let user_msg_text = format!(
+            "{}{}\n\nAnalyze the data above and provide your findings as plain text. \
+             Include your conclusion at the end.",
+            data_lines.join("\n"),
+            image_info,
         );
 
-        let system_prompt = build_focused_system_prompt(
-            agent,
-            data,
-            has_valid_images,
-            is_chinese,
-            &history_context,
-        );
-
-        // Build messages - multimodal if images present
-        let messages = build_focused_user_message(
-            &system_prompt,
-            &text_data_summary,
-            &image_parts,
-            &image_sources_info,
-            has_valid_images,
-            is_chinese,
-            "",
-            user_messages_for_user_msg.as_deref(),
-        );
+        // Build multimodal messages if images present
+        let messages = if has_valid_images {
+            let mut parts = vec![ContentPart::text(user_msg_text)];
+            for (_source, _data_type, image_content) in &image_parts {
+                match image_content {
+                    ImageContent::Base64(data, mime) => {
+                        parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
+                    }
+                    ImageContent::Url(url) => {
+                        parts.push(ContentPart::image_url(url.clone()));
+                    }
+                }
+            }
+            vec![
+                Message::new(MessageRole::System, Content::text(system_prompt)),
+                Message::from_parts(MessageRole::User, parts),
+            ]
+        } else {
+            vec![
+                Message::new(MessageRole::System, Content::text(system_prompt)),
+                Message::new(MessageRole::User, Content::text(user_msg_text)),
+            ]
+        };
 
         let input = LlmInput {
             messages,
             params: GenerationParams {
                 temperature: Some(0.7),
-                max_tokens: Some(5000), // Balanced for speed and completeness
-                thinking_enabled: Some(false), // Disable thinking — analyzer needs strict JSON output
+                max_tokens: Some(8000),
+                thinking_enabled: Some(false),
                 ..Default::default()
             },
             model: None,
@@ -697,592 +241,109 @@ impl AgentExecutor {
             tools: None,
         };
 
-        // Add timeout for LLM generation (5 minutes max)
+        // LLM call with timeout
         const LLM_TIMEOUT_SECS: u64 = 300;
-        let llm_call_start = std::time::Instant::now();
-        tracing::info!(
-            target: "neomind::agent::event_value",
-            agent_id = %agent.id,
-            model = %llm.model_name(),
-            has_valid_images,
-            image_parts_count = image_parts.len(),
-            "[DIAG] >>> Sending LLM generate() request"
-        );
         let llm_result = match tokio::time::timeout(
             std::time::Duration::from_secs(LLM_TIMEOUT_SECS),
             llm.generate(input),
         )
         .await
         {
-            Ok(result) => {
-                tracing::info!(
-                    target: "neomind::agent::event_value",
-                    agent_id = %agent.id,
-                    elapsed_ms = llm_call_start.elapsed().as_millis() as u64,
-                    is_ok = result.is_ok(),
-                    "[DIAG] <<< LLM generate() returned"
-                );
-                result
-            }
+            Ok(result) => result,
             Err(_) => {
-                tracing::warn!(
-                    agent_id = %agent.id,
-                    "LLM generation timed out after {}s",
-                    LLM_TIMEOUT_SECS
-                );
-                return Err(NeoMindError::Llm(format!(
-                    "LLM timeout after {}s",
-                    LLM_TIMEOUT_SECS
-                )));
+                tracing::warn!(agent_id = %agent.id, "LLM timed out after {}s", LLM_TIMEOUT_SECS);
+                return Err(NeoMindError::Llm(format!("LLM timeout after {}s", LLM_TIMEOUT_SECS)));
             }
         };
 
-        match llm_result {
-            Ok(output) => {
-                let json_str = output.text.trim();
-                let preview: String = json_str.chars().take(200).collect();
-                tracing::info!(
-                    target: "neomind::agent::event_value",
-                    agent_id = %agent.id,
-                    text_len = json_str.len(),
-                    is_empty = json_str.is_empty(),
-                    preview = %preview,
-                    "[DIAG] LLM output text received"
-                );
-                if json_str.is_empty() {
-                    tracing::warn!(
-                        target: "neomind::agent::event_value",
-                        agent_id = %agent.id,
-                        "[DIAG] LLM returned EMPTY text — model may not support multimodal or refused the request"
-                    );
-                }
-                // Extract JSON if wrapped in markdown
-                let json_str = extract_json_from_codeblock(json_str).unwrap_or(json_str);
+        let output = llm_result.map_err(|e| {
+            tracing::error!(agent_id = %agent.id, error = %e, "LLM generation failed");
+            NeoMindError::Llm(format!("LLM generation failed: {}", e))
+        })?;
 
-                // Sanitize control characters that may break JSON parsing
-                let sanitized_json = sanitize_json_string(json_str);
-                let json_str = sanitized_json.as_str();
+        let text = output.text.trim().to_string();
+        if text.is_empty() {
+            tracing::warn!(agent_id = %agent.id, "LLM returned empty response");
+            return Ok((
+                "No analysis produced.".to_string(),
+                vec![ReasoningStep {
+                    step_number: 1,
+                    description: "LLM returned empty response".to_string(),
+                    step_type: "llm_analysis".to_string(),
+                    input: None,
+                    output: String::new(),
+                    confidence: 0.3,
+                }],
+                vec![Decision {
+                    decision_type: "info".to_string(),
+                    description: "Empty LLM response".to_string(),
+                    action: "log".to_string(),
+                    rationale: "LLM returned no content".to_string(),
+                    expected_outcome: "Manual review needed".to_string(),
+                }],
+                "LLM produced no output.".to_string(),
+            ));
+        }
 
-                // Parse the LLM response
-                // Note: situation_analysis and conclusion can be either String or Object
-                // depending on LLM output format, so we use Value and convert later
-                #[derive(serde::Deserialize)]
-                struct LlmResponse {
-                    #[serde(default)]
-                    situation_analysis: serde_json::Value,
-                    #[serde(default)]
-                    reasoning_steps: Vec<ReasoningFromLlm>,
-                    #[serde(default)]
-                    decisions: Vec<DecisionFromLlm>,
-                    #[serde(default)]
-                    conclusion: serde_json::Value,
-                    /// Key finding worth remembering (optional, omit if routine)
-                    /// Uses Value to tolerate non-string types from small models (e.g. true, 0, null)
-                    #[serde(default)]
-                    insight: serde_json::Value,
-                }
+        tracing::info!(
+            agent_id = %agent.id,
+            text_len = text.len(),
+            "Legacy Focused analysis completed"
+        );
 
-                impl LlmResponse {
-                    fn situation_analysis_string(&self) -> String {
-                        json_value_to_string(&self.situation_analysis)
-                    }
-                    fn conclusion_string(&self) -> String {
-                        json_value_to_string(&self.conclusion)
-                    }
-                }
+        // Derive structured output from plain text
+        let situation_analysis = truncate_to(&text, 2000);
+        let char_count = text.chars().count();
+        let conclusion = if char_count > 500 {
+            let start = char_count - 500;
+            text.chars().skip(start).collect::<String>()
+        } else {
+            text.clone()
+        };
+        let reasoning_steps = vec![ReasoningStep {
+            step_number: 1,
+            description: truncate_to(&text, 400),
+            step_type: "llm_analysis".to_string(),
+            input: Some(format!("{} data sources", data.len())),
+            output: truncate_to(&text, 500),
+            confidence: 0.7,
+        }];
+        let decisions = vec![Decision {
+            decision_type: "info".to_string(),
+            description: truncate_to(&text, 200),
+            action: "log".to_string(),
+            rationale: "Legacy path analysis completed".to_string(),
+            expected_outcome: conclusion.clone(),
+        }];
 
-                #[derive(serde::Deserialize)]
-                struct ReasoningFromLlm {
-                    #[serde(alias = "step_number", default)]
-                    step: serde_json::Value,
-                    #[serde(alias = "output", default)]
-                    description: Option<String>,
-                    /// Step-specific result/finding (distinct from the overall situation_analysis)
-                    #[serde(default)]
-                    result: Option<String>,
-                    #[serde(default)]
-                    confidence: f32,
-                }
-
-                // Helper to extract step number from either string or number
-                fn extract_step_number(value: &serde_json::Value, default: u32) -> u32 {
-                    match value {
-                        serde_json::Value::Number(n) => n.as_u64().unwrap_or(default as u64) as u32,
-                        serde_json::Value::String(s) => s.parse().unwrap_or(default),
-                        _ => default,
-                    }
-                }
-
-                #[derive(serde::Deserialize)]
-                struct DecisionFromLlm {
-                    #[serde(default)]
-                    decision_type: Option<String>,
-                    #[serde(default)]
-                    description: Option<String>,
-                    #[serde(default)]
-                    action: Option<String>,
-                    #[serde(default)]
-                    rationale: Option<String>,
-                    #[serde(default)]
-                    confidence: f32,
-                }
-
-                match serde_json::from_str::<LlmResponse>(json_str) {
-                    Ok(response) => {
-                        let situation_analysis = response.situation_analysis_string();
-                        let conclusion = response.conclusion_string();
-                        let reasoning_steps: Vec<neomind_storage::ReasoningStep> = response
-                            .reasoning_steps
-                            .into_iter()
-                            .enumerate()
-                            .map(|(_i, step)| {
-                                let desc = step.description.clone().unwrap_or_default();
-                                neomind_storage::ReasoningStep {
-                                    step_number: extract_step_number(&step.step, (_i + 1) as u32),
-                                    description: desc.clone(),
-                                    step_type: "llm_analysis".to_string(),
-                                    input: Some(text_data_summary.join("\n")),
-                                    output: step.result.or(Some(desc)).unwrap_or_default(),
-                                    confidence: step.confidence,
-                                }
-                            })
-                            .collect();
-
-                        let decisions: Vec<neomind_storage::Decision> = response
-                            .decisions
-                            .into_iter()
-                            .map(|d| neomind_storage::Decision {
-                                decision_type: d.decision_type.unwrap_or_default(),
-                                description: d.description.unwrap_or_default(),
-                                action: d.action.unwrap_or_default(),
-                                rationale: d.rationale.unwrap_or_default(),
-                                expected_outcome: conclusion.clone(),
-                            })
-                            .collect();
-
-                        // === Fallback: fill missing fields from situation_analysis ===
-                        // Small models often omit reasoning_steps, conclusion, or decisions.
-                        // Deterministic fill — no extra LLM call, no circular risk.
-
-                        let reasoning_steps = if reasoning_steps.is_empty()
-                            && !situation_analysis.is_empty()
-                        {
-                            vec![neomind_storage::ReasoningStep {
-                                step_number: 1,
-                                description: truncate_to(&situation_analysis, 200),
-                                step_type: "llm_analysis".to_string(),
-                                input: None,
-                                output: truncate_to(&situation_analysis, 300),
-                                confidence: 0.7,
-                            }]
-                        } else {
-                            reasoning_steps
-                        };
-
-                        let conclusion = if conclusion.is_empty() && !situation_analysis.is_empty()
-                        {
-                            truncate_to(&situation_analysis, 200)
-                        } else {
-                            conclusion
-                        };
-
-                        let decisions = if decisions.is_empty() && !situation_analysis.is_empty() {
-                            vec![neomind_storage::Decision {
-                                decision_type: "info".to_string(),
-                                description: truncate_to(&situation_analysis, 100),
-                                action: "log".to_string(),
-                                rationale: "Analysis completed".to_string(),
-                                expected_outcome: conclusion.clone(),
-                            }]
-                        } else {
-                            decisions
-                        };
-
-                        // Emit AgentThinking events for each reasoning step
-                        if let Some(ref bus) = self.event_bus {
-                            let event_timestamp = chrono::Utc::now().timestamp();
-                            for step in &reasoning_steps {
-                                let _ = bus
-                                    .publish(NeoMindEvent::AgentThinking {
-                                        agent_id: agent.id.clone(),
-                                        execution_id: execution_id.to_string(),
-                                        step_number: step.step_number,
-                                        step_type: step.step_type.clone(),
-                                        description: step.description.clone(),
-                                        details: None,
-                                        timestamp: event_timestamp,
-                                    })
-                                    .await;
-                            }
-
-                            // Emit AgentDecision events for each decision
-                            for decision in &decisions {
-                                let _ = bus
-                                    .publish(NeoMindEvent::AgentDecision {
-                                        agent_id: agent.id.clone(),
-                                        execution_id: execution_id.to_string(),
-                                        description: decision.description.clone(),
-                                        rationale: decision.rationale.clone(),
-                                        action: decision.action.clone(),
-                                        confidence: 0.8_f32,
-                                        timestamp: event_timestamp,
-                                    })
-                                    .await;
-                            }
-                        }
-
-                        let insight = response.insight.as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
-
-                        Ok((situation_analysis, reasoning_steps, decisions, conclusion, insight))
-                    }
-                    Err(parse_error) => {
-                        // Convert error to string safely to avoid UTF-8 boundary panics
-                        let error_str = parse_error.to_string();
-                        // Truncate error message safely using char boundaries
-                        let error_preview: String = error_str.chars().take(200).collect();
-
-                        tracing::warn!(
-                            error = %error_preview,
-                            response_preview = %json_str.chars().take(500).collect::<String>(),
-                            "Failed to parse LLM JSON response, attempting recovery"
-                        );
-
-                        // STEP 1: Try to extract JSON from mixed text (model output text before JSON)
-                        if let Some(extracted_json) = extract_json_from_mixed_text(json_str) {
-                            tracing::info!(
-                                agent_id = %agent.id,
-                                extracted_len = extracted_json.len(),
-                                "Successfully extracted JSON from mixed text response"
-                            );
-                            match serde_json::from_str::<LlmResponse>(&extracted_json) {
-                                Ok(response) => {
-                                    let situation_analysis = response.situation_analysis_string();
-                                    let conclusion = response.conclusion_string();
-                                    let reasoning_steps: Vec<neomind_storage::ReasoningStep> =
-                                        response
-                                            .reasoning_steps
-                                            .into_iter()
-                                            .enumerate()
-                                            .map(|(_i, step)| {
-                                                let desc =
-                                                    step.description.clone().unwrap_or_default();
-                                                neomind_storage::ReasoningStep {
-                                                    step_number: extract_step_number(
-                                                        &step.step,
-                                                        (_i + 1) as u32,
-                                                    ),
-                                                    description: desc.clone(),
-                                                    step_type: "llm_analysis".to_string(),
-                                                    input: Some(text_data_summary.join("\n")),
-                                                    output: step
-                                                        .result
-                                                        .or(Some(desc))
-                                                        .unwrap_or_default(),
-                                                    confidence: step.confidence,
-                                                }
-                                            })
-                                            .collect();
-
-                                    let decisions: Vec<neomind_storage::Decision> = response
-                                        .decisions
-                                        .into_iter()
-                                        .map(|decision| neomind_storage::Decision {
-                                            decision_type: decision
-                                                .decision_type
-                                                .unwrap_or_default(),
-                                            description: decision.description.unwrap_or_default(),
-                                            action: decision.action.unwrap_or_default(),
-                                            rationale: decision.rationale.unwrap_or_default(),
-                                            expected_outcome: format!(
-                                                "Confidence: {:.0}%",
-                                                decision.confidence * 100.0
-                                            ),
-                                        })
-                                        .collect();
-
-                                    let insight = response.insight.as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
-
-                                    return Ok((
-                                        situation_analysis,
-                                        reasoning_steps,
-                                        decisions,
-                                        conclusion,
-                                        insight,
-                                    ));
-                                }
-                                Err(_) => {
-                                    tracing::warn!("Extracted JSON failed to parse as LlmResponse");
-                                }
-                            }
-                        }
-
-                        // STEP 2: Try to recover truncated JSON by finding the last complete object
-                        let recovered = try_recover_truncated_json(json_str);
-
-                        if let Some((recovered_json, was_truncated)) = recovered {
-                            if was_truncated {
-                                tracing::info!(
-                                    agent_id = %agent.id,
-                                    "Successfully recovered truncated JSON response"
-                                );
-                            }
-                            match serde_json::from_str::<LlmResponse>(&recovered_json) {
-                                Ok(response) => {
-                                    let situation_analysis = response.situation_analysis_string();
-                                    let conclusion = response.conclusion_string();
-                                    let reasoning_steps: Vec<neomind_storage::ReasoningStep> =
-                                        response
-                                            .reasoning_steps
-                                            .into_iter()
-                                            .enumerate()
-                                            .map(|(_i, step)| {
-                                                let desc =
-                                                    step.description.clone().unwrap_or_default();
-                                                neomind_storage::ReasoningStep {
-                                                    step_number: extract_step_number(
-                                                        &step.step,
-                                                        (_i + 1) as u32,
-                                                    ),
-                                                    description: desc.clone(),
-                                                    step_type: "llm_analysis".to_string(),
-                                                    input: Some(text_data_summary.join("\n")),
-                                                    output: step
-                                                        .result
-                                                        .or(Some(desc))
-                                                        .unwrap_or_default(),
-                                                    confidence: step.confidence,
-                                                }
-                                            })
-                                            .collect();
-
-                                    let decisions: Vec<neomind_storage::Decision> = response
-                                        .decisions
-                                        .into_iter()
-                                        .map(|decision| neomind_storage::Decision {
-                                            decision_type: decision
-                                                .decision_type
-                                                .unwrap_or_default(),
-                                            description: decision.description.unwrap_or_default(),
-                                            action: decision.action.unwrap_or_default(),
-                                            rationale: decision.rationale.unwrap_or_default(),
-                                            expected_outcome: format!(
-                                                "Confidence: {:.0}%",
-                                                decision.confidence * 100.0
-                                            ),
-                                        })
-                                        .collect();
-
-                                    let insight = response.insight.as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
-
-                                    return Ok((
-                                        situation_analysis,
-                                        reasoning_steps,
-                                        decisions,
-                                        if was_truncated {
-                                            format!(
-                                                "{} (Response was truncated, some content may be incomplete)",
-                                                conclusion
-                                            )
-                                        } else {
-                                            conclusion
-                                        },
-                                        insight,
-                                    ));
-                                }
-                                Err(e) => {
-                                    tracing::debug!(error = %e, "Recovered JSON still failed to parse, trying lenient extraction");
-                                }
-                            }
-                        }
-
-                        // Lenient extraction: parse as Value and extract fields (handles different LLM JSON shapes)
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if let Some(obj) = value.as_object() {
-                                // Use extract_string_field to handle both string and nested object types
-                                let situation_analysis =
-                                    extract_string_field(obj, "situation_analysis");
-                                let conclusion = extract_string_field(obj, "conclusion");
-                                let mut reasoning_steps = Vec::new();
-                                if let Some(arr) =
-                                    obj.get("reasoning_steps").and_then(|v| v.as_array())
-                                {
-                                    for (i, item) in arr.iter().enumerate() {
-                                        let step_num = (i + 1) as u32;
-                                        let description: String = item
-                                            .get("description")
-                                            .and_then(|v| v.as_str())
-                                            .or_else(|| item.get("output").and_then(|v| v.as_str()))
-                                            .unwrap_or("")
-                                            .to_string();
-                                        if description.is_empty() {
-                                            continue;
-                                        }
-                                        let confidence = item
-                                            .get("confidence")
-                                            .and_then(|v| v.as_f64())
-                                            .unwrap_or(0.8)
-                                            as f32;
-                                        let step_result = item
-                                            .get("result")
-                                            .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string())
-                                            .or_else(|| Some(description.clone()))
-                                            .unwrap_or_default();
-                                        reasoning_steps.push(neomind_storage::ReasoningStep {
-                                            step_number: step_num,
-                                            description,
-                                            step_type: "llm_analysis".to_string(),
-                                            input: Some(text_data_summary.join("\n")),
-                                            output: step_result,
-                                            confidence,
-                                        });
-                                    }
-                                }
-                                let mut decisions = Vec::new();
-                                if let Some(arr) = obj.get("decisions").and_then(|v| v.as_array()) {
-                                    for item in arr {
-                                        let decision_type = item
-                                            .get("decision_type")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("analysis")
-                                            .to_string();
-                                        let description = item
-                                            .get("description")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let action = item
-                                            .get("action")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("review")
-                                            .to_string();
-                                        let rationale = item
-                                            .get("rationale")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-                                        decisions.push(neomind_storage::Decision {
-                                            decision_type,
-                                            description,
-                                            action,
-                                            rationale,
-                                            expected_outcome: conclusion.clone(),
-                                        });
-                                    }
-                                }
-                                if !situation_analysis.is_empty() || !conclusion.is_empty() {
-                                    tracing::info!(
-                                        agent_id = %agent.id,
-                                        "Extracted decision process from JSON via lenient parsing"
-                                    );
-                                    return Ok((
-                                        if situation_analysis.is_empty() {
-                                            conclusion.chars().take(500).collect::<String>()
-                                        } else {
-                                            situation_analysis.clone()
-                                        },
-                                        if reasoning_steps.is_empty() {
-                                            vec![neomind_storage::ReasoningStep {
-                                                step_number: 1,
-                                                description: "LLM analysis completed".to_string(),
-                                                step_type: "llm_analysis".to_string(),
-                                                input: Some(format!("{} data sources", data.len())),
-                                                output: situation_analysis
-                                                    .chars()
-                                                    .take(200)
-                                                    .collect::<String>(),
-                                                confidence: 0.7,
-                                            }]
-                                        } else {
-                                            reasoning_steps
-                                        },
-                                        if decisions.is_empty() {
-                                            vec![neomind_storage::Decision {
-                                                decision_type: "analysis".to_string(),
-                                                description: "See situation analysis for details"
-                                                    .to_string(),
-                                                action: "review".to_string(),
-                                                rationale: "LLM provided structured analysis"
-                                                    .to_string(),
-                                                expected_outcome: conclusion.clone(),
-                                            }]
-                                        } else {
-                                            decisions
-                                        },
-                                        if conclusion.is_empty() {
-                                            "Analysis complete.".to_string()
-                                        } else {
-                                            conclusion
-                                        },
-                                        None, // recovery path — no reliable insight
-                                    ));
-                                } else {
-                                    // Both situation_analysis and conclusion are empty, fall through to final fallback
-                                    tracing::debug!("JSON was valid but contained no useful data, falling back to raw text");
-                                }
-                            }
-                        } // Close if let Ok(value)
-
-                        // Final fallback: use raw text - show actual content, not placeholder
-                        let raw_text = output.text.trim();
-                        let situation_analysis = if raw_text.chars().count() > 1000 {
-                            raw_text.chars().take(1000).collect::<String>() + "..."
-                        } else {
-                            raw_text.to_string()
-                        };
-                        let char_count = raw_text.chars().count();
-                        let conclusion = if char_count > 500 {
-                            raw_text
-                                .chars()
-                                .skip(char_count.saturating_sub(500))
-                                .collect::<String>()
-                                + "..."
-                        } else {
-                            raw_text.to_string()
-                        };
-
-                        let reasoning_steps = vec![neomind_storage::ReasoningStep {
-                            step_number: 1,
-                            description: if situation_analysis.chars().count() > 200 {
-                                situation_analysis.chars().take(200).collect::<String>() + "..."
-                            } else {
-                                situation_analysis.clone()
-                            },
-                            step_type: "llm_analysis".to_string(),
-                            input: Some(format!("{} data sources", data.len())),
-                            output: situation_analysis.clone(),
-                            confidence: 0.7,
-                        }];
-
-                        let decisions = vec![neomind_storage::Decision {
-                            decision_type: "analysis".to_string(),
-                            description: "See situation analysis for details".to_string(),
-                            action: "review".to_string(),
-                            rationale: "LLM provided text response instead of structured JSON"
-                                .to_string(),
-                            expected_outcome: "Manual review of analysis recommended".to_string(),
-                        }];
-
-                        tracing::info!(
-                            agent_id = %agent.id,
-                            raw_response_length = raw_text.len(),
-                            "Using raw LLM response as fallback (content preserved)"
-                        );
-
-                        Ok((situation_analysis, reasoning_steps, decisions, conclusion, None))
-                    }
-                }
+        // Emit events
+        if let Some(ref bus) = self.event_bus {
+            let ts = chrono::Utc::now().timestamp();
+            for step in &reasoning_steps {
+                let _ = bus.publish(NeoMindEvent::AgentThinking {
+                    agent_id: agent.id.clone(),
+                    execution_id: execution_id.to_string(),
+                    step_number: step.step_number,
+                    step_type: step.step_type.clone(),
+                    description: step.description.clone(),
+                    details: None,
+                    timestamp: ts,
+                }).await;
             }
-            Err(e) => {
-                tracing::error!(
-                    agent_id = %agent.id,
-                    error = %e,
-                    error_details = ?e,
-                    "LLM generation failed - check LLM backend configuration and connectivity"
-                );
-                Err(NeoMindError::Llm(format!("LLM generation failed: {}", e)))
+            for decision in &decisions {
+                let _ = bus.publish(NeoMindEvent::AgentDecision {
+                    agent_id: agent.id.clone(),
+                    execution_id: execution_id.to_string(),
+                    description: decision.description.clone(),
+                    rationale: decision.rationale.clone(),
+                    action: decision.action.clone(),
+                    confidence: 0.7,
+                    timestamp: ts,
+                }).await;
             }
         }
+
+        Ok((situation_analysis, reasoning_steps, decisions, conclusion))
     }
 
     pub(crate) async fn analyze_rule_based(
@@ -1531,7 +592,7 @@ fn collect_image_parts(
 ///
 /// Filters out images, memory-internal data types, and placeholder entries,
 /// then formats up to 15 metrics as `- source: type = value` lines.
-fn build_text_data_summary(data: &[DataCollected]) -> Vec<String> {
+fn build_compact_data_summary(data: &[DataCollected]) -> Vec<String> {
     let max_metrics = 15;
     data.iter()
         .filter(|d| {
@@ -1588,227 +649,4 @@ fn build_text_data_summary(data: &[DataCollected]) -> Vec<String> {
             format!("- {}: {} = {}", d.source, d.data_type, value_str)
         })
         .collect()
-}
-
-/// Build the system prompt for focused-mode LLM analysis.
-///
-/// Assembles role prompt, resources info, JSON output format template,
-/// user instruction header, and appends time/history context.
-fn build_focused_system_prompt(
-    agent: &AiAgent,
-    data: &[DataCollected],
-    has_valid_images: bool,
-    is_chinese: bool,
-    history_context: &str,
-) -> String {
-    // DEPRECATED: This function is only reached via the legacy Focused JSON path,
-    // which is no longer active since all agents now use tool-calling.
-    // See should_use_tools() in mod.rs.
-    let default_role_prompt = if is_chinese {
-        "你是一个物联网自动化助手。只输出有效的JSON格式，不要输出其他任何文字。"
-    } else {
-        "You are an IoT automation assistant. Output ONLY valid JSON. No other text."
-    };
-    let role_prompt = agent
-        .system_prompt
-        .as_deref()
-        .unwrap_or(default_role_prompt);
-
-    // Build history context string for injection into system prompt
-    let history_context_str = if history_context.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "## Historical Context\n\nRefer to the following history to avoid duplicate alerts and track trends.\n\n{}\n\n",
-            history_context
-        )
-    };
-
-    // Get current time context for temporal understanding
-    let time_context = get_time_context();
-
-    // Build resources info based on execution mode
-    let resources_info = match agent.execution_mode {
-        neomind_storage::agents::ExecutionMode::Focused => {
-            AgentExecutor::build_focused_data_table(agent, data)
-        }
-        neomind_storage::agents::ExecutionMode::Free => {
-            let available_commands = AgentExecutor::build_available_commands_description(agent);
-            let available_data_sources =
-                AgentExecutor::build_available_data_sources_description(agent);
-            if available_data_sources.is_empty() {
-                available_commands
-            } else {
-                format!("{}\n\n{}", available_commands, available_data_sources)
-            }
-        }
-    };
-
-    // Language-specific templates
-    let (output_format_header, user_instruction_header) = if is_chinese {
-        (
-            "# 输出格式 - 仅输出JSON，不要输出其他任何文字",
-            "# 用户指令",
-        )
-    } else {
-        (
-            "# Output Format - Output ONLY valid JSON, no other text",
-            "# User Instruction",
-        )
-    };
-
-    let system_prompt = if has_valid_images {
-        if is_chinese {
-            format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
-                role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-            )
-        } else {
-            format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
-                role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-            )
-        }
-    } else if is_chinese {
-        format!(
-            "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
-            role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-        )
-    } else {
-        format!(
-            "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
-            role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-        )
-    };
-
-    // Inject time context and history context into system prompt
-    let mut prompt = system_prompt;
-    if !time_context.is_empty() {
-        prompt = format!("{}\n\n{}", prompt, time_context);
-    }
-    if !history_context_str.is_empty() {
-        prompt = format!("{}\n\n{}", prompt, history_context_str);
-    }
-    prompt
-}
-
-/// Build the user-facing message (and system message) pair for focused-mode LLM analysis.
-///
-/// Handles both multimodal (with images) and text-only paths, appending
-/// memory context and user messages as content parts or text sections.
-fn build_focused_user_message(
-    system_prompt: &str,
-    text_data_summary: &[String],
-    image_parts: &[(String, String, ImageContent)],
-    image_sources_info: &[String],
-    has_valid_images: bool,
-    is_chinese: bool,
-    memory_context_for_msg: &str,
-    user_messages_for_user_msg: Option<&str>,
-) -> Vec<Message> {
-    if has_valid_images {
-        let (current_data_header, important_note, image_only_text) = if is_chinese {
-            (
-                "## 当前数据",
-                "重要：只输出JSON格式，不要有任何其他文字。",
-                "仅有图像数据",
-            )
-        } else {
-            (
-                "## Current Data",
-                "Important: Output ONLY JSON format, no other text.",
-                "Image data only",
-            )
-        };
-
-        let mut parts = vec![ContentPart::text(format!(
-            "{}\n{}\n\n{}",
-            current_data_header,
-            if text_data_summary.is_empty() {
-                // Show image sources info instead of generic "image only" text
-                if !image_sources_info.is_empty() {
-                    format!("{}\n{}", image_only_text, image_sources_info.join("\n"))
-                } else {
-                    image_only_text.to_string()
-                }
-            } else {
-                text_data_summary.join("\n")
-            },
-            important_note
-        ))];
-
-        // Add images
-        for (source, _data_type, image_content) in image_parts {
-            match image_content {
-                ImageContent::Base64(data, mime) => {
-                    parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
-                    tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
-                }
-                ImageContent::Url(url) => {
-                    parts.push(ContentPart::image_url(url.clone()));
-                    tracing::debug!(source = %source, url = %url, "Adding URL image to LLM message");
-                }
-            }
-        }
-
-        // Add memory context and user messages
-        if !memory_context_for_msg.is_empty() {
-            parts.push(ContentPart::text(memory_context_for_msg.to_string()));
-        }
-        if let Some(user_msgs) = user_messages_for_user_msg {
-            parts.push(ContentPart::text(format!("\n\n{}", user_msgs)));
-        }
-
-        vec![
-            Message::new(MessageRole::System, Content::text(system_prompt.to_string())),
-            Message::from_parts(MessageRole::User, parts),
-        ]
-    } else {
-        // Text-only message
-        let data_summary = if text_data_summary.is_empty() {
-            // Check if we have image data that couldn't be displayed
-            if !image_sources_info.is_empty() {
-                if is_chinese {
-                    format!(
-                        "当前只有图像数据（LLM 不支持视觉）：\n{}",
-                        image_sources_info.join("\n")
-                    )
-                } else {
-                    format!(
-                        "Image data only (LLM doesn't support vision):\n{}",
-                        image_sources_info.join("\n")
-                    )
-                }
-            } else if is_chinese {
-                "当前无预采集的传感器数据。请基于用户指令和已知模式进行分析，如需设备数据请建议用户绑定数据源。".to_string()
-            } else {
-                "No pre-collected sensor data available. Analyze based on the user's instructions and known patterns. If device data is needed, suggest the user bind data sources.".to_string()
-            }
-        } else {
-            text_data_summary.join("\n")
-        };
-
-        let (current_data_header, json_only_note) = if is_chinese {
-            ("## 当前数据", "只输出JSON，不要有其他文字。")
-        } else {
-            ("## Current Data", "Output ONLY JSON, no other text.")
-        };
-
-        let mut user_msg_content = format!(
-            "{}\n{}\n\n{}",
-            current_data_header, data_summary, json_only_note
-        );
-
-        if !memory_context_for_msg.is_empty() {
-            user_msg_content = format!("{}\n\n{}", user_msg_content, memory_context_for_msg);
-        }
-        if let Some(user_msgs) = user_messages_for_user_msg {
-            user_msg_content = format!("{}\n\n{}", user_msg_content, user_msgs);
-        }
-
-        vec![
-            Message::new(MessageRole::System, Content::text(system_prompt.to_string())),
-            Message::new(MessageRole::User, Content::text(user_msg_content)),
-        ]
-    }
 }

@@ -55,7 +55,7 @@ Respond in JSON format:
             messages,
             params: GenerationParams {
                 temperature: Some(0.3),
-                max_tokens: Some(500),
+                max_tokens: Some(1024),
                 ..Default::default()
             },
             model: None,

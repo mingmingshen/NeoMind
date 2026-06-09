@@ -203,7 +203,7 @@ export function ResponsiveTable({
                   <tr
                     key={rowKey(rowData)}
                     className={cn(
-                      "border-b transition-all duration-200 hover:bg-brand-bg/40 hover:shadow-sm animate-fade-in-up",
+                      "border-b transition-colors duration-150 hover:bg-muted-30 animate-fade-in-up",
                       onRowClick && 'cursor-pointer',
                       rowClass
                     )}

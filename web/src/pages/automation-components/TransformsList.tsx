@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable, EmptyState } from "@/components/shared"
-import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, Download, MoreVertical } from "lucide-react"
+import { Edit, Trash2, Code, Globe, Cpu, HardDrive, Download, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 import { textMini } from "@/design-system/tokens/typography"
 import type { TransformAutomation } from "@/types"
 import { useIsMobile } from "@/hooks/useMobile"
@@ -211,15 +212,17 @@ export function TransformsList({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                {/* Row 2: scope badge + output prefix */}
+                {/* Row 2: scope badge + last executed */}
                 <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
                   <Badge variant="outline" className={cn(textMini, "h-5 px-1.5 gap-0.5", scopeInfo.color)}>
                     <ScopeIcon className="h-3 w-3" />
                     {getScopeLabel(transform.scope)}
                   </Badge>
-                  <code className={cn(textMini, "text-muted-foreground truncate")}>
-                    {(transform.output_prefix || 'transform') + '.'}
-                  </code>
+                  <span className={cn(textMini, "text-muted-foreground ml-auto")}>
+                    {transform.last_executed && transform.last_executed !== 0
+                      ? formatTimestamp(transform.last_executed)
+                      : t('automation:never', 'Never')}
+                  </span>
                 </div>
               </div>
             </Card>
@@ -232,7 +235,7 @@ export function TransformsList({
         {
           key: 'name',
           label: t('automation:name'),
-          width: '30%',
+          width: '28%',
         },
         {
           key: 'scope',
@@ -240,9 +243,14 @@ export function TransformsList({
           width: '18%',
         },
         {
-          key: 'transformCode',
-          label: t('automation:transformBuilder.transformCode'),
-          width: '30%',
+          key: 'createdAt',
+          label: t('common:createdAt', 'Created'),
+          width: '18%',
+        },
+        {
+          key: 'lastExecuted',
+          label: t('automation:lastExecuted', 'Last Executed'),
+          width: '18%',
         },
         {
           key: 'status',
@@ -274,9 +282,8 @@ export function TransformsList({
                 </div>
                 <div className="min-w-0">
                   <div className="font-medium text-sm truncate">{transform.name}</div>
-                  <div className="text-xs text-muted-foreground line-clamp-1 flex items-center gap-1">
-                    <Database className="h-3 w-3 shrink-0" />
-                    <code className="truncate">{(transform.output_prefix || 'transform')}.</code>
+                  <div className="text-xs text-muted-foreground line-clamp-1">
+                    {transform.description || <code>{(transform.output_prefix || 'transform')}.</code>}
                   </div>
                 </div>
               </div>
@@ -290,12 +297,27 @@ export function TransformsList({
               </Badge>
             )
 
-          case 'transformCode':
+          case 'createdAt':
             return (
-              <code className="text-xs font-mono bg-muted px-2 py-1 rounded-md truncate block">
-                {getCodeSummary(transform.js_code || '')}
-              </code>
+              <span className="text-xs text-muted-foreground">
+                {formatTimestamp(transform.created_at)}
+              </span>
             )
+
+          case 'lastExecuted': {
+            const hasExecuted = transform.last_executed && transform.last_executed !== 0
+            const execCount = transform.execution_count || 0
+            return !hasExecuted ? (
+              <span className="text-xs text-muted-foreground">-</span>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs">{formatTimestamp(transform.last_executed ?? undefined)}</span>
+                {execCount > 1 && (
+                  <span className="text-xs text-muted-foreground">{execCount}x</span>
+                )}
+              </div>
+            )
+          }
 
           case 'status':
             return (

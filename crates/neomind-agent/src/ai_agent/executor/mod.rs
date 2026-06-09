@@ -26,6 +26,7 @@ use neomind_storage::{
     DataCollected,
     Decision,
     DecisionProcess,
+    ExecutionRecord,
     ExecutionResult as StorageExecutionResult,
     ExecutionStatus,
     GeneratedReport,
@@ -41,7 +42,6 @@ use tokio::sync::{RwLock, Semaphore};
 // Import DataSourceId for type-safe extension metric queries
 use neomind_core::datasource::DataSourceId;
 
-use crate::agent::semantic_mapper::SemanticToolMapper;
 use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
 
@@ -81,6 +81,10 @@ enum DedupOutcome {
     /// All tool calls were duplicates.
     AllDuplicate,
 }
+
+/// Hard limit for a single tool result (128 KB).
+/// Applied both during tool-loop message construction and Phase 2 summary.
+const TOOL_RESULT_MAX_LEN: usize = 131_072;
 
 /// Configuration for the tool loop, varying by execution mode.
 struct ToolLoopConfig {
@@ -145,14 +149,13 @@ pub use context::{DataSourceRef, EventTriggerData};
 
 // Re-export functions needed by sibling modules (via use super::*)
 pub(crate) use context::{
-    build_history_context, truncate_to, HistoryConfig,
+    build_history_context, format_timestamp, truncate_to, HistoryConfig,
 };
 pub(crate) use data_collector::get_time_context;
 pub(crate) use intent::extract_threshold;
 pub(crate) use response_parser::{
     extract_command_from_description, extract_device_from_description, extract_json_from_codeblock,
-    extract_json_from_mixed_text, extract_string_field, json_value_to_string, sanitize_json_string,
-    summarize_tool_output, try_recover_truncated_json,
+    summarize_tool_output,
 };
 
 /// Resolve the role prompt for an agent.
@@ -538,13 +541,42 @@ impl AgentExecutor {
     /// (knowledge files, execution journal, user messages) so the
     /// agent can leverage accumulated experience and make progressively better
     /// decisions.
+    ///
+    /// `knowledge_content`: pre-fetched knowledge file contents for inline
+    /// injection, avoiding the need to waste a tool-call round reading them.
     fn build_tool_system_prompt(
         agent: &AiAgent,
         data_collected: &[DataCollected],
         invocation_input: Option<&super::AgentInput>,
         config: &ToolLoopConfig,
+        knowledge_content: Option<&std::collections::HashMap<String, String>>,
     ) -> String {
         let time_ctx = get_time_context();
+
+        // ── Event trigger callout (if triggered by data event) ──
+        let event_callout = data_collected
+            .iter()
+            .find(|d| d.values.get("_is_event_data").and_then(|v| v.as_bool()).unwrap_or(false))
+            .map(|d| {
+                let value_str = if let Some(v) = d.values.get("value") {
+                    match v {
+                        serde_json::Value::String(s) => truncate_to(s, 100),
+                        other => truncate_to(&other.to_string(), 100),
+                    }
+                } else {
+                    truncate_to(&serde_json::to_string(&d.values).unwrap_or_default(), 100)
+                };
+                let ts = format_timestamp(d.timestamp);
+                format!(
+                    "\n## TRIGGERING EVENT\n\
+                     Source: **{}**\n\
+                     Time: {}\n\
+                     Value: **{}**\n\
+                     → This event triggered your execution. Prioritize analyzing this data.\n",
+                    d.source, ts, value_str
+                )
+            })
+            .unwrap_or_default();
 
         // ── Merged resource + data section (eliminates redundancy) ──
         let resource_data_section = if config.is_focused_plus {
@@ -555,9 +587,9 @@ impl AgentExecutor {
 
         // ── Context: User Messages → Knowledge Files → Journal ──
         let history_section = if config.is_focused_plus {
-            build_history_context(agent, &HistoryConfig::focused(agent.context_window_size))
+            build_history_context(agent, &HistoryConfig::focused(agent.context_window_size), knowledge_content)
         } else {
-            build_history_context(agent, &HistoryConfig::free(agent.context_window_size))
+            build_history_context(agent, &HistoryConfig::free(agent.context_window_size), knowledge_content)
         };
 
         // Build invocation input section
@@ -650,10 +682,11 @@ impl AgentExecutor {
         let identity = resolve_role(agent, &default_identity);
 
         format!(
-            "{}\nTime: {}\nTask: {}\n{}\n{}\n{}\n{}\n\n{}\n",
+            "{}\nTime: {}\nTask: {}\n{}{}\n{}\n{}\n{}\n\n{}\n",
             identity,
             time_ctx,
             agent.user_prompt,
+            event_callout,
             history_section,
             resource_data_section,
             invocation_section,
@@ -668,24 +701,27 @@ impl AgentExecutor {
         agent: &AiAgent,
         data_collected: &[DataCollected],
     ) -> String {
-        // Build lookup: source -> latest value
-        let mut latest_values: HashMap<&str, String> = HashMap::new();
+        // Build lookup: source -> (value, age_seconds)
+        let now_ts = chrono::Utc::now().timestamp();
+        let mut latest_values: HashMap<&str, (String, i64)> = HashMap::new();
         let mut image_sources: Vec<&str> = Vec::new();
         for d in data_collected {
             if d.source == "system" {
                 continue;
             }
             if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
-                // Record image source for display (image data is embedded in user message)
                 image_sources.push(&d.source);
                 continue;
             }
-            if let Some(v) = d.values.get("value") {
-                latest_values.insert(&d.source, format!("{}", v));
+            let val_str = if let Some(v) = d.values.get("value") {
+                format!("{}", v)
             } else if d.values != serde_json::Value::Null {
-                // Fallback: show full JSON when no "value" field (e.g. {"status":"online"})
-                latest_values.insert(&d.source, truncate_to(&serde_json::to_string(&d.values).unwrap_or_default(), 80));
-            }
+                truncate_to(&serde_json::to_string(&d.values).unwrap_or_default(), 80)
+            } else {
+                continue;
+            };
+            let age = (now_ts - d.timestamp).max(0);
+            latest_values.insert(&d.source, (val_str, age));
         }
 
         if agent.resources.is_empty() && latest_values.is_empty() {
@@ -693,7 +729,7 @@ impl AgentExecutor {
         }
 
         let mut section = String::from("\n## Resources & Data\n");
-        section.push_str("| Resource | Type | Current |\n|----------|------|--------|\n");
+        section.push_str("| Resource | Type | Current | Age |\n|----------|------|---------|-----|\n");
 
         for r in &agent.resources {
             let type_str = match r.resource_type {
@@ -702,18 +738,22 @@ impl AgentExecutor {
                 ResourceType::Device => "device",
                 ResourceType::DataStream => "stream",
             };
-            let current = latest_values
+            let (current, age_str) = latest_values
                 .get(r.resource_id.as_str())
-                .cloned()
-                .unwrap_or_else(|| "-".to_string());
-            section.push_str(&format!("| {} | {} | {} |\n", r.name, type_str, current));
+                .map(|(v, age)| {
+                    let age_fmt = if *age == 0 { "now".to_string() } else { format!("{}s", age) };
+                    (v.clone(), age_fmt)
+                })
+                .unwrap_or_else(|| ("-".to_string(), "-".to_string()));
+            section.push_str(&format!("| {} | {} | {} | {} |\n", r.name, type_str, current, age_str));
         }
 
         // Add any data sources not in resources
-        for (source, value) in &latest_values {
+        for (source, (value, age)) in &latest_values {
             let source_id = source.to_string();
             if !agent.resources.iter().any(|r| r.resource_id == source_id) {
-                section.push_str(&format!("| {} | - | {} |\n", source, value));
+                let age_fmt = if *age == 0 { "now".to_string() } else { format!("{}s", age) };
+                section.push_str(&format!("| {} | - | {} | {} |\n", source, value, age_fmt));
             }
         }
 
@@ -761,8 +801,30 @@ impl AgentExecutor {
                 true
             })
             .map(|d| {
-                let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
-                format!("**{}**: {}", d.source, json_str)
+                // Format as readable key=value pairs for small models
+                let formatted = if let Some(obj) = d.values.as_object() {
+                    let pairs: Vec<String> = obj
+                        .iter()
+                        .filter(|(k, _)| !k.starts_with('_')) // skip internal fields
+                        .map(|(k, v)| {
+                            let val = match v {
+                                serde_json::Value::String(s) => s.clone(),
+                                serde_json::Value::Number(n) => n.to_string(),
+                                serde_json::Value::Bool(b) => b.to_string(),
+                                other => truncate_to(&other.to_string(), 100),
+                            };
+                            format!("{}={}", k, val)
+                        })
+                        .collect();
+                    if pairs.is_empty() {
+                        serde_json::to_string_pretty(&d.values).unwrap_or_default()
+                    } else {
+                        pairs.join(", ")
+                    }
+                } else {
+                    serde_json::to_string_pretty(&d.values).unwrap_or_default()
+                };
+                format!("**{}**: {}", d.source, formatted)
             })
             .collect();
 
@@ -1433,13 +1495,29 @@ impl AgentExecutor {
                     // UTF-8 safe truncation (has fast-path for short strings)
                     // 128KB limit: large enough for compact time-series and multi-device
                     // queries. The compaction layer handles context window limits later.
-                    const MAX_TOOL_RESULT_IN_MSG: usize = 131072;
                     crate::agent::streaming::truncate_result_utf8(
                         &sanitized,
-                        MAX_TOOL_RESULT_IN_MSG,
+                        TOOL_RESULT_MAX_LEN,
                     )
                 }
-                Err(e) => format!("Error: {}", e),
+                Err(e) => {
+                    let err_msg = format!("Error: {}", e);
+                    // Add actionable hint so the LLM can adjust its strategy
+                    let hint = if e.to_string().contains("not found") {
+                        " Check available tools and spelling."
+                    } else if e.to_string().contains("Invalid arguments")
+                        || e.to_string().contains("missing")
+                    {
+                        " Check parameter names and types."
+                    } else if e.to_string().contains("timed out") {
+                        " The operation took too long. Try a simpler query."
+                    } else if e.to_string().contains("Permission denied") {
+                        " This action is not allowed. Try an alternative approach."
+                    } else {
+                        ""
+                    };
+                    format!("{}{}", err_msg, hint)
+                }
             };
 
             // Skill tool results go to separate reference buffer, not messages history
@@ -1507,7 +1585,6 @@ impl AgentExecutor {
             all_tool_results.len(),
         );
 
-        const TOOL_RESULT_MAX_LEN: usize = 131072;
         for r in all_tool_results {
             let result_text = match &r.result {
                 Ok(output) => {
@@ -1530,13 +1607,20 @@ impl AgentExecutor {
             task
         ));
 
-        // Phase 2 summary is always a generic summarization instruction —
-        // it should NOT use the agent's custom system_prompt (which is a role
-        // identity, not a summarization directive).
-        let summary_role = "You are an intelligent assistant. Analyze the tool execution results \
-                     and provide a comprehensive, user-friendly response in the SAME language \
-                     as the task. Focus on the actual data and insights, not on mentioning that \
-                     tools were called.";
+        // Phase 2 summary: include agent role for domain-aware analysis.
+        // The agent's custom system_prompt provides domain context (e.g. "temperature
+        // monitoring agent") that produces more relevant summaries than a generic role.
+        let default_role = format!(
+            "You are an intelligent IoT agent named '{}'.",
+            agent.name
+        );
+        let agent_role = resolve_role(agent, &default_role);
+        let summary_role = format!(
+            "{}\n\nAnalyze the tool execution results and provide a comprehensive, \
+             user-friendly response in the SAME language as the task. \
+             Focus on the actual data and insights, not on mentioning that tools were called.",
+            agent_role
+        );
         let summary_messages = vec![
             Message::new(
                 MessageRole::System,
@@ -1549,7 +1633,7 @@ impl AgentExecutor {
             messages: summary_messages,
             params: GenerationParams {
                 temperature: Some(0.7),
-                max_tokens: Some(2000),
+                max_tokens: Some(8192),
                 ..Default::default()
             },
             model: None,
@@ -1831,8 +1915,14 @@ impl AgentExecutor {
                 "Sanitized tool names for API compatibility"
             );
         }
+
+        // Pre-fetch knowledge file content for inline injection.
+        // This avoids wasting a tool-call round to read files the agent already
+        // knows about — especially valuable in Focused+ mode with only 3 rounds.
+        let knowledge_content = self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
+
         let system_prompt =
-            Self::build_tool_system_prompt(agent, data_collected, invocation_input, &tool_config);
+            Self::build_tool_system_prompt(agent, data_collected, invocation_input, &tool_config, knowledge_content.as_ref());
         let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
 
         let loop_output = self
@@ -2092,14 +2182,20 @@ impl AgentExecutor {
         // Wrap with catch_unwind so panics (e.g. UTF-8 slice bugs) are converted
         // to Err and a proper Failed execution record is created instead of
         // silently disappearing.
+        // Also enforce a global timeout (5 min) as a safety net against runaway
+        // execution (e.g., 30 rounds × slow extension tools).
+        const GLOBAL_EXECUTION_TIMEOUT_SECS: u64 = 300;
         let execution_result: AgentResult<(DecisionProcess, StorageExecutionResult)> =
-            match std::panic::AssertUnwindSafe(self.execute_internal(context, event_data.clone(), per_exec_knowledge_files.clone()))
-                .catch_unwind()
-                .await
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(GLOBAL_EXECUTION_TIMEOUT_SECS),
+                std::panic::AssertUnwindSafe(self.execute_internal(context, event_data.clone(), per_exec_knowledge_files.clone()))
+                    .catch_unwind(),
+            )
+            .await
             {
-                Ok(Ok(result)) => Ok(result),
-                Ok(Err(e)) => Err(e),
-                Err(panic_payload) => {
+                Ok(Ok(Ok(result))) => Ok(result),
+                Ok(Ok(Err(e))) => Err(e),
+                Ok(Err(panic_payload)) => {
                     let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
                         (*s).to_string()
                     } else if let Some(s) = panic_payload.downcast_ref::<String>() {
@@ -2114,6 +2210,18 @@ impl AgentExecutor {
                         "Agent execution panicked — converting to error"
                     );
                     Err(NeoMindError::Llm(format!("Execution panic: {}", msg)))
+                }
+                Err(_) => {
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        execution_id = %execution_id,
+                        timeout_secs = GLOBAL_EXECUTION_TIMEOUT_SECS,
+                        "Agent execution timed out globally"
+                    );
+                    Err(NeoMindError::Llm(format!(
+                        "Execution timed out after {}s",
+                        GLOBAL_EXECUTION_TIMEOUT_SECS
+                    )))
                 }
             };
 
@@ -2159,6 +2267,32 @@ impl AgentExecutor {
                         error = %stats_err,
                         "Failed to update agent stats after failed execution"
                     );
+                }
+
+                // Write failure entry to journal so next execution can see the
+                // failure pattern and potentially adapt its behavior.
+                if let Ok(Some(agent_data)) = self.store.get_agent(&agent_id).await {
+                    let mut memory = agent_data.memory;
+                    let error_msg = truncate_to(&e.to_string(), 300);
+                    memory.journal.records.push(ExecutionRecord {
+                        timestamp: chrono::Utc::now().timestamp(),
+                        execution_id: execution_id.clone(),
+                        outcome: error_msg,
+                        action_taken: "execution failed".to_string(),
+                        success: false,
+                    });
+                    // FIFO — keep only max_records
+                    while memory.journal.records.len() > memory.journal.max_records {
+                        memory.journal.records.remove(0);
+                    }
+                    memory.updated_at = chrono::Utc::now().timestamp();
+                    if let Err(mem_err) = self.store.update_agent_memory(&agent_id, memory).await {
+                        tracing::warn!(
+                            agent_id = %agent_id,
+                            error = %mem_err,
+                            "Failed to update agent memory with failure entry"
+                        );
+                    }
                 }
 
                 AgentExecutionRecord {
@@ -2485,7 +2619,6 @@ impl AgentExecutor {
                 reasoning_steps,
                 decisions,
                 conclusion,
-                insight: _,
             } => {
                 // Send thinking event for analysis completion
                 self.send_thinking(

@@ -11,33 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Agent executor refactor** — Extracted LLM runtime management into `llm_runtime.rs` and event trigger logic into `event_trigger.rs`, removing ~900 lines from `executor/mod.rs` and deleting the obsolete `llm_pool.rs` module
-- **Security scanner performance** — Pre-compiled regex injection/exfiltration patterns via `OnceLock`, eliminating per-scan regex compilation overhead in `memory/security.rs`
-- **Tool semantic classification** — Improved `tool_name_to_semantic_type()` to handle shell tools, extension tools (via naming conventions), and fallback classification for unknown tools
-- **Rate limiter robustness** — Enhanced rate-limited client with better timeout and error handling
-- **Token/tool parsing** — Updated tokenizer and tool parser for improved reliability
-- **Memory compressor** — Refined compression logic for more accurate memory summarization
-- **Session management** — Improved session state handling and lifecycle management
-- **Tool mapper** — Updated tool mapping for consistency with current CLI commands
-- **API dependencies** — Added required crate dependencies in `neomind-api/Cargo.toml`
+- **Agent focused-path simplification** — Removed ~1300 lines of dead code from `analyzer.rs` and `response_parser.rs` (dead `insight` field, 5 unused JSON parsing functions, `build_focused_system_prompt`, `build_available_commands_description`, etc.)
+- **Tool result hard limit** — Consolidated duplicate `TOOL_RESULT_MAX_LEN` constants into single 128KB module-level limit
+- **Knowledge inline injection** — `build_tool_system_prompt()` now receives pre-fetched knowledge file contents, eliminating per-execution tool-call overhead
+- **Context compaction refinement** — Adjusted priority-based token compaction thresholds for 128K context models
+- **Context-aware history** — `build_history_context()` updated with knowledge content parameter and improved data freshness display
+- **Memory journal** — Relaxed action_taken truncation to 150 chars/action, improved learning guidance language
+- **Streaming dedup cleanup** — Reduced `MAX_TOOL_ITERATIONS` from 100 to 30 (matches scheduled executor max_rounds)
 
 ### Fixed
 
 - **Agent storage query** — Fixed agent list query in `neomind-storage`
-- **ExecutionDetailDialog image rendering** — Extracted pure helper functions for base64/image detection, improved image display in execution details
 - **Agent API handlers** — Fixed agent CRUD and execution endpoints in `neomind-api`
-- **Dashboard helpers** — Minor fix in dashboard helper utilities
+- **Duplicate toast on agent save** — Removed redundant toast from `AgentsPage`, now handled by `AgentEditorFullScreen`
 
-### Frontend (Agents)
+### Frontend
 
-- **ExecutionDetailDialog rewrite** — Refactored 332-line component with extracted helpers, improved image/data display
-- **Agent event hooks** — Updated `useAgentEvents` for better SSE event handling
-- **SkillsPanel** — Improved skill management UI
-- **AgentCard / AgentDetailPanel** — Visual and functional improvements
-- **AgentEditorFullScreen** — Editor refinements
-- **AgentExecutionTimeline** — Timeline display improvements
-- **i18n** — Added/updated agent translation keys for both en and zh locales
-- **Agents page** — Layout and interaction improvements
+- **Rules list** — Added `Created` and `Last Triggered` columns with execution count display
+- **Transforms list** — Added `Created` and `Last Executed` columns, replaced Transform Code with description subtitle, mobile cards show last executed time
+- **Agent editor** — Added Max Chain Depth slider control
+- **ResponsiveTable** — Fixed row hover to use `bg-muted-30` for consistency with design tokens
+- **MapDisplay** — Removed unused center point indicator
+- **Device detail** — Minor UI fixes
 
 ## [0.8.8] - 2026-06-09
 
