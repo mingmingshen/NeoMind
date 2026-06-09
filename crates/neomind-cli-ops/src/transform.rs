@@ -3,10 +3,44 @@ use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
-/// List all transforms
+/// List all transforms with compact summary.
+///
+/// Returns id, name, scope, and output_prefix per transform.
+/// Full JS code is available via `neomind transform get <id>`.
 pub async fn list_transforms(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/automations/transforms").await?;
-    Ok(CliResponse::success(data, "Transforms listed"))
+
+    let transforms = extract_list_array(&data, "transforms");
+
+    let Some(transforms) = transforms else {
+        return Ok(CliResponse::success(data, "Transforms listed"));
+    };
+
+    let total = transforms.len();
+    let summary: Vec<serde_json::Value> = transforms
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                "name": t.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "scope": t.get("scope"),
+                "output_prefix": t.get("output_prefix").and_then(|v| v.as_str()).unwrap_or(""),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "transforms": summary }),
+        format!("{} transform(s) listed", total),
+    ))
+}
+
+/// Helper: extract an array from API response, trying common nesting patterns.
+fn extract_list_array(data: &serde_json::Value, key: &str) -> Option<Vec<serde_json::Value>> {
+    data.as_array().cloned()
+        .or_else(|| data.get(key).and_then(|v| v.as_array()).cloned())
+        .or_else(|| data.get("data").and_then(|d| d.as_array()).cloned())
+        .or_else(|| data.get("data").and_then(|d| d.get(key)).and_then(|v| v.as_array()).cloned())
 }
 
 /// Get transform by ID

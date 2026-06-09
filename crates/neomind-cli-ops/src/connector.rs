@@ -3,10 +3,47 @@ use serde_json::json;
 use crate::types::CliResponse;
 use crate::ApiClient;
 
-/// List all data connectors (external MQTT brokers, etc.)
+/// List all data connectors with compact summary.
+///
+/// Returns id, name, type, host, port, and status per connector.
+/// Full config is available via `neomind connector get <id>`.
 pub async fn list_connectors(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/brokers").await?;
-    Ok(CliResponse::success(data, "Connectors listed"))
+
+    let connectors = extract_list_array(&data, "connectors");
+
+    let Some(connectors) = connectors else {
+        return Ok(CliResponse::success(data, "Connectors listed"));
+    };
+
+    let total = connectors.len();
+    let summary: Vec<serde_json::Value> = connectors
+        .iter()
+        .map(|c| {
+            json!({
+                "id": c.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                "name": c.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "connector_type": c.get("connector_type").or_else(|| c.get("type")).and_then(|v| v.as_str()).unwrap_or("mqtt"),
+                "host": c.get("host").and_then(|v| v.as_str()).unwrap_or("?"),
+                "port": c.get("port").and_then(|v| v.as_u64()).unwrap_or(0),
+                "status": c.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "connectors": summary }),
+        format!("{} connector(s) listed", total),
+    ))
+}
+
+/// Helper: extract an array from API response, trying common nesting patterns.
+fn extract_list_array(data: &serde_json::Value, key: &str) -> Option<Vec<serde_json::Value>> {
+    data.as_array()
+        .map(|a| a.clone())
+        .or_else(|| data.get(key).and_then(|v| v.as_array()).cloned())
+        .or_else(|| data.get("data").and_then(|d| d.as_array()).cloned())
+        .or_else(|| data.get("data").and_then(|d| d.get(key)).and_then(|v| v.as_array()).cloned())
 }
 
 /// Get connector by ID

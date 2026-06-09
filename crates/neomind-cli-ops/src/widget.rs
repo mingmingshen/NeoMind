@@ -282,10 +282,44 @@ fn get_icon_for_type(widget_type: &str) -> &'static str {
     }
 }
 
-/// List all installed widgets
+/// List all installed widgets with compact summary.
+///
+/// Returns id, name, type, and version per widget.
+/// Full manifest is available via `neomind widget get <id>`.
 pub async fn list_widgets(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/frontend-components").await?;
-    Ok(CliResponse::success(data, "Widgets listed"))
+
+    let widgets = extract_list_array(&data, "components");
+
+    let Some(widgets) = widgets else {
+        return Ok(CliResponse::success(data, "Widgets listed"));
+    };
+
+    let total = widgets.len();
+    let summary: Vec<serde_json::Value> = widgets
+        .iter()
+        .map(|w| {
+            json!({
+                "id": w.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                "name": w.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "widget_type": w.get("widget_type").or_else(|| w.get("type")).and_then(|v| v.as_str()).unwrap_or("unknown"),
+                "version": w.get("version").and_then(|v| v.as_str()).unwrap_or("?"),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "widgets": summary }),
+        format!("{} widget(s) listed", total),
+    ))
+}
+
+/// Helper: extract an array from API response, trying common nesting patterns.
+fn extract_list_array(data: &serde_json::Value, key: &str) -> Option<Vec<serde_json::Value>> {
+    data.as_array().cloned()
+        .or_else(|| data.get(key).and_then(|v| v.as_array()).cloned())
+        .or_else(|| data.get("data").and_then(|d| d.as_array()).cloned())
+        .or_else(|| data.get("data").and_then(|d| d.get(key)).and_then(|v| v.as_array()).cloned())
 }
 
 /// Get widget by ID

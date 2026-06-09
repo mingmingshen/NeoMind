@@ -3,10 +3,44 @@ use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
-/// List all agents
+/// List all agents with compact summary.
+///
+/// Returns id, name, status, schedule type, execution mode, and stats per agent.
+/// Full agent config is available via `neomind agent get <id>`.
 pub async fn list_agents(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/agents").await?;
-    Ok(CliResponse::success(data, "Agents listed"))
+
+    let agents = data
+        .as_array()
+        .or_else(|| data.get("agents").and_then(|v| v.as_array()))
+        .or_else(|| data.get("data").and_then(|d| d.as_array()).or_else(|| data.get("data").and_then(|d| d.get("agents")).and_then(|v| v.as_array())));
+
+    let Some(agents) = agents else {
+        return Ok(CliResponse::success(data, "Agents listed"));
+    };
+
+    let total = agents.len();
+    let summary: Vec<serde_json::Value> = agents
+        .iter()
+        .map(|a| {
+            json!({
+                "id": a.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                "name": a.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "status": a.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                "execution_mode": a.get("execution_mode").and_then(|v| v.as_str()).unwrap_or("focused"),
+                "schedule_type": a.get("schedule").and_then(|s| s.get("schedule_type")).and_then(|v| v.as_str()).unwrap_or("event"),
+                "execution_count": a.get("execution_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                "success_count": a.get("success_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                "error_count": a.get("error_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                "avg_duration_ms": a.get("avg_duration_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "agents": summary }),
+        format!("{} agent(s) listed", total),
+    ))
 }
 
 /// Get agent by ID

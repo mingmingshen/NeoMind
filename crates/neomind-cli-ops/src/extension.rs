@@ -3,10 +3,41 @@ use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
-/// List all extensions
+/// List all extensions with compact summary.
+///
+/// Returns id, name, version, status, and enabled flag per extension.
+/// Full config is available via `neomind extension get <id>`.
 pub async fn list_extensions(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/extensions").await?;
-    Ok(CliResponse::success(data, "Extensions listed"))
+
+    let extensions = data
+        .as_array()
+        .or_else(|| data.get("extensions").and_then(|v| v.as_array()))
+        .or_else(|| data.get("data").and_then(|d| d.as_array()).or_else(|| data.get("data").and_then(|d| d.get("extensions")).and_then(|v| v.as_array())));
+
+    let Some(extensions) = extensions else {
+        return Ok(CliResponse::success(data, "Extensions listed"));
+    };
+
+    let total = extensions.len();
+    let summary: Vec<serde_json::Value> = extensions
+        .iter()
+        .map(|e| {
+            json!({
+                "id": e.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                "name": e.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "version": e.get("version").and_then(|v| v.as_str()).unwrap_or("?"),
+                "status": e.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                "enabled": e.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                "description": e.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "extensions": summary }),
+        format!("{} extension(s) listed", total),
+    ))
 }
 
 /// Get extension by ID

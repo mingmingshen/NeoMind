@@ -3,10 +3,39 @@ use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
-/// List all rules
+/// List all rules with compact summary.
+///
+/// Returns id, name, enabled, and trigger description per rule.
+/// Full DSL is available via `neomind rule get <id>`.
 pub async fn list_rules(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/rules").await?;
-    Ok(CliResponse::success(data, "Rules listed"))
+
+    let rules = data
+        .as_array()
+        .or_else(|| data.get("rules").and_then(|v| v.as_array()))
+        .or_else(|| data.get("data").and_then(|d| d.as_array()).or_else(|| data.get("data").and_then(|d| d.get("rules")).and_then(|v| v.as_array())));
+
+    let Some(rules) = rules else {
+        return Ok(CliResponse::success(data, "Rules listed"));
+    };
+
+    let total = rules.len();
+    let summary: Vec<serde_json::Value> = rules
+        .iter()
+        .map(|r| {
+            json!({
+                "id": r.get("id").and_then(|v| v.as_str()).unwrap_or(r.get("rule_id").and_then(|v| v.as_str()).unwrap_or("?")),
+                "name": r.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "enabled": r.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                "description": r.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "rules": summary }),
+        format!("{} rule(s) listed", total),
+    ))
 }
 
 /// Get rule by ID

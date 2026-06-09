@@ -11,10 +11,39 @@ fn extract_inner_data(resp: serde_json::Value) -> serde_json::Value {
     resp.get("data").cloned().unwrap_or(resp)
 }
 
-/// List push targets.
+/// List push targets with compact summary.
+///
+/// Returns id, name, type, and enabled per target.
+/// Full config is available via `neomind push-target get <id>`.
 pub async fn list_targets(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/data-push").await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Push targets listed"))
+    let inner = extract_inner_data(data);
+
+    let targets: Option<&Vec<serde_json::Value>> = inner.as_array()
+        .or_else(|| inner.get("targets").and_then(|v| v.as_array()))
+        .or_else(|| inner.get("data").and_then(|d| d.as_array()));
+
+    let Some(targets) = targets else {
+        return Ok(CliResponse::success(inner, "Push targets listed"));
+    };
+
+    let total = targets.len();
+    let summary: Vec<serde_json::Value> = targets
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                "name": t.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
+                "target_type": t.get("target_type").or_else(|| t.get("type")).and_then(|v| v.as_str()).unwrap_or("unknown"),
+                "enabled": t.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({ "total": total, "targets": summary }),
+        format!("{} push target(s) listed", total),
+    ))
 }
 
 /// Get a push target by ID.

@@ -3,10 +3,72 @@ use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
-/// List all dashboards
+/// List all dashboards with compact summary.
+///
+/// Returns only id, name, and component count per dashboard — NOT the full
+/// component tree.  Full data is available via `neomind dashboard get <id>`.
+/// This avoids returning 1MB+ JSON that gets truncated before the LLM can
+/// count the dashboards.
 pub async fn list_dashboards(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/dashboards").await?;
-    Ok(CliResponse::success(data, "Dashboards listed"))
+
+    // Extract the dashboard array from nested API response
+    let dashboards = data
+        .get("dashboards")
+        .or_else(|| data.get("data").and_then(|d| d.get("dashboards")))
+        .and_then(|v| v.as_array());
+
+    let Some(dashboards) = dashboards else {
+        // Fallback: return raw data if structure is unexpected
+        return Ok(CliResponse::success(data, "Dashboards listed"));
+    };
+
+    let total = dashboards.len();
+    let summary: Vec<serde_json::Value> = dashboards
+        .iter()
+        .map(|d| {
+            let id = d.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)");
+            let comp_count = d
+                .get("components")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            // Collect component type distribution
+            let type_counts: std::collections::BTreeMap<String, usize> = d
+                .get("components")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    let mut map = std::collections::BTreeMap::new();
+                    for c in arr {
+                        if let Some(ct) = c.get("type").and_then(|v| v.as_str()) {
+                            *map.entry(ct.to_string()).or_insert(0) += 1;
+                        }
+                    }
+                    map
+                })
+                .unwrap_or_default();
+            let component_types: Vec<serde_json::Value> = type_counts
+                .iter()
+                .map(|(t, c)| json!({ "type": t, "count": c }))
+                .collect();
+
+            json!({
+                "id": id,
+                "name": name,
+                "components": comp_count,
+                "component_types": component_types,
+            })
+        })
+        .collect();
+
+    Ok(CliResponse::success(
+        json!({
+            "total": total,
+            "dashboards": summary,
+        }),
+        format!("{} dashboard(s) listed", total),
+    ))
 }
 
 /// Get dashboard by ID
