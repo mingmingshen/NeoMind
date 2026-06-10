@@ -239,10 +239,16 @@ pub struct LlmOutput {
 
     /// Thinking content (for models that support reasoning/thinking)
     pub thinking: Option<String>,
+
+    /// Native structured tool calls from the API response.
+    /// Populated by backends that support native tool calling (OpenAI, Ollama, llama.cpp).
+    /// Each entry is a JSON object with `id`, `name`, and `arguments` fields.
+    pub tool_calls: Option<Vec<serde_json::Value>>,
 }
 
 /// Finish reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FinishReason {
     /// Model stopped naturally
     Stop,
@@ -255,6 +261,9 @@ pub enum FinishReason {
 
     /// Content filter triggered
     ContentFilter,
+
+    /// Model wants to call tools
+    ToolCalls,
 }
 
 /// Token usage statistics.

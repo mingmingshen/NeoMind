@@ -298,6 +298,7 @@ impl LlmRuntime for MockRuntime {
             finish_reason: neomind_core::llm::backend::FinishReason::Stop,
             usage: Some(neomind_core::llm::backend::TokenUsage::new(10, 20)),
             thinking: None,
+            tool_calls: None,
         })
     }
 

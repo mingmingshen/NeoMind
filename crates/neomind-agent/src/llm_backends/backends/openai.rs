@@ -668,7 +668,7 @@ impl CloudRuntime {
         let mut response_text = choice.message.content.unwrap_or_default();
 
         // Handle native tool calls from OpenAI - preserve JSON format to keep tool ID
-        if let Some(ref tool_calls) = choice.message.tool_calls {
+        let native_tool_calls = if let Some(ref tool_calls) = choice.message.tool_calls {
             if !tool_calls.is_empty() {
                 tracing::debug!("OpenAI: received {} native tool calls", tool_calls.len());
                 // Build JSON array to preserve tool IDs (OpenAI-compatible format)
@@ -685,10 +685,16 @@ impl CloudRuntime {
                         })
                     })
                     .collect();
+                // Keep text serialization for backward compat
                 let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
                 response_text.push_str(&json_str);
+                Some(tool_calls_json)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         let result = Ok(LlmOutput {
             text: response_text,
@@ -696,7 +702,7 @@ impl CloudRuntime {
                 "stop" => FinishReason::Stop,
                 "length" => FinishReason::Length,
                 "content_filter" => FinishReason::ContentFilter,
-                "tool_calls" => FinishReason::Stop, // Tool calls are a valid stop reason
+                "tool_calls" => FinishReason::ToolCalls,
                 _ => FinishReason::Error,
             },
             usage: chat_response.usage.map(|u| TokenUsage {
@@ -705,6 +711,7 @@ impl CloudRuntime {
                 total_tokens: u.total_tokens,
             }),
             thinking: None,
+            tool_calls: native_tool_calls,
         });
 
         // Record metrics
@@ -848,7 +855,7 @@ impl CloudRuntime {
             Some("end_turn") => FinishReason::Stop,
             Some("max_tokens") => FinishReason::Length,
             Some("stop_sequence") => FinishReason::Stop,
-            Some("tool_use") => FinishReason::Stop,
+            Some("tool_use") => FinishReason::ToolCalls,
             _ => FinishReason::Error,
         };
 
@@ -861,6 +868,11 @@ impl CloudRuntime {
                 total_tokens: api_response.usage.input_tokens + api_response.usage.output_tokens,
             }),
             thinking: None,
+            tool_calls: if tool_calls_json.is_empty() {
+                None
+            } else {
+                Some(tool_calls_json)
+            },
         });
 
         // Record metrics

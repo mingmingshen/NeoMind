@@ -65,6 +65,7 @@ fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
                         thinking: None,
                         finish_reason: neomind_core::llm::backend::FinishReason::Stop,
                         usage: Some(neomind_core::llm::backend::TokenUsage::new(0, 0)),
+                        tool_calls: None,
                     })
                 }
                 async fn generate_stream(

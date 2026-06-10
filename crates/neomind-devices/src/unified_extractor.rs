@@ -396,14 +396,24 @@ impl UnifiedExtractor {
         }
 
         if let Some(obj) = data.as_object() {
-            for (key, value) in obj {
+            for (raw_key, value) in obj {
+                // Trim whitespace from JSON keys — devices may send keys with
+                // leading/trailing spaces (e.g. " values.image") which would
+                // break metric lookups downstream.
+                let key = raw_key.trim();
+
+                // Skip empty keys after trimming
+                if key.is_empty() {
+                    continue;
+                }
+
                 // Skip _raw as it's already stored
                 if key == "_raw" {
                     continue;
                 }
 
                 let current_path = if parent_path.is_empty() {
-                    key.clone()
+                    key.to_string()
                 } else {
                     format!("{}.{}", parent_path, key)
                 };

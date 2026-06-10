@@ -91,6 +91,7 @@ impl RealPerfTestContext {
                 finish_reason: neomind_core::llm::backend::FinishReason::Error,
                 usage: None,
                 thinking: None,
+                tool_calls: None,
             }
         });
         let elapsed = start.elapsed().as_millis();
@@ -628,6 +629,7 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
                         finish_reason: neomind_core::llm::backend::FinishReason::Error,
                         usage: None,
                         thinking: None,
+                        tool_calls: None,
                     }
                 });
                 let elapsed = start.elapsed().as_millis();

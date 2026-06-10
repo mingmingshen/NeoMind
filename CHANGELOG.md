@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.10] - 2026-06-11
+
+### Agent Native Tool Calling
+
+Complete overhaul of the tool-call parsing pipeline — agent executor now uses native structured tool calls from the LLM API response directly, instead of parsing them from freeform text.
+
+- **Native `tool_calls` field** — Added `LlmOutput.tool_calls: Option<Vec<Value>>` in `neomind-core::llm::backend`. All three backends (OpenAI, Ollama, llama.cpp) now populate this field with structured JSON from the API response, preserving tool call IDs
+- **Priority-based parsing** — Tool loop uses native `tool_calls` first → text parsing fallback → thinking field fallback. Eliminates fragility of regex-based extraction for models that support native tool calling
+- **`FinishReason::ToolCalls`** — New finish reason variant for tool-call stop conditions. OpenAI (`tool_calls`), Anthropic (`tool_use`), Ollama, and llama.cpp all map to this instead of `Stop`
+- **Continuation mechanism** — When the LLM is still making tool calls at `max_rounds`, up to 10 additional rounds are allowed so the agent can finish its work instead of being cut off mid-task
+- **Vision tool exclusion** — Vision tool is excluded from the tool list when the multimodal LLM already receives images inline, avoiding redundant image analysis
+
+### Agent Data Collection
+
+- **Device info block** — `build_resource_table()` now renders a separate `**Devices:**` section above the metrics table, showing device ID, name, and type for each bound device
+- **Resource display names** — Resource table shows both `resource_id` and `name` when they differ (e.g. `device-001 (Temperature Sensor)`)
+- **Image metric child-path skip** — Data collector skips child paths of already-collected image metrics (e.g. `values.image.image_base64` under `values.image`) to prevent duplicate image data
+- **Event-triggered device metadata** — Event-triggered executions now include device metadata (ID, type, name, adapter) in the data context, so the LLM knows which device triggered the event
+- **Image metric extraction guard** — If an event metric is recognized as an image but extraction fails (no URL, no base64), execution is skipped instead of producing an empty analysis
+
+### AI Analyst
+
+- **WS/API dedup** — Invoke response now uses execution ID for message dedup with WebSocket events, preventing duplicate AI messages when both WS and HTTP API return results
+- **Streaming placeholder cleanup** — Properly cleans up streaming placeholders and polling intervals when invoke resolves or errors, including error/timeout paths
+- **Agent name dedup** — Agent name now includes component ID prefix (`AI Analyst [a1b2c3d4]`) to prevent name collisions across multiple analyst instances
+- **Device info filter** — History message loader skips `device_info` entries (device metadata, not sensor data) when building AI analyst context
+
+### Device Data
+
+- **JSON key trimming** — `UnifiedExtractor` now trims whitespace from JSON object keys before processing. Handles devices that send keys with leading/trailing spaces (e.g. `" values.image"`) which would break downstream metric lookups
+- **Empty key skip** — JSON keys that are empty after trimming are skipped entirely
+
+### Fixed
+
+- **CI release uploads** — Added `contents: write` permission to GitHub Actions workflow for release asset uploads
+
 ## [0.8.9] - 2026-06-10
 
 ### Image History Performance Overhaul

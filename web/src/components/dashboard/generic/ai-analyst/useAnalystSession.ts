@@ -292,6 +292,9 @@ async function loadHistoryMessages(
         const allImages: string[] = []
         const allLines: string[] = []
         for (const dc of dataCollected) {
+          // Skip device_info — device metadata, not sensor data
+          if (dc.data_type === 'device_info') continue
+
           const values = dc.values
           const dataType = dc.data_type
 
@@ -683,7 +686,7 @@ export function useAnalystSession({
       const dsList = normalizeDataSource(ds)
       const resources = buildResources(dsList)
       const eventFilter = buildEventFilter(dsList)
-      const agentName = titleRef.current || 'AI Analyst'
+      const agentName = `${titleRef.current || 'AI Analyst'} [${componentId.slice(0, 8)}]`
 
       // Search for existing agent by name to avoid duplicates.
       let agentId: string
@@ -807,7 +810,8 @@ export function useAnalystSession({
     if (!agentId || !isConnected) return
     if (!title || title === prevTitleRef.current) return
     prevTitleRef.current = title
-    api.updateAgent(agentId, { name: title }).catch(() => {})
+    const nameWithId = `${title} [${componentId.slice(0, 8)}]`
+    api.updateAgent(agentId, { name: nameWithId }).catch(() => {})
   }, [title, isConnected])
 
   // Sync event_filter and resources when dataSource changes after agent creation
@@ -964,24 +968,75 @@ export function useAnalystSession({
       api.invokeAgent(agentId, { input: text })
         .then((result) => {
           const duration = Date.now() - startTime
+          const execId = result.execution_id as string | undefined
+
+          // Register for WS event dedup
+          if (execId) addSeenExecId(execId)
+
+          // Stop streaming polling (WS AgentExecutionStarted may have started it)
+          if (streamingPollRef.current) {
+            clearInterval(streamingPollRef.current)
+            streamingPollRef.current = null
+          }
+
+          // Clean up streaming placeholder (if WS AgentExecutionStarted created one)
+          const placeholderId = streamingMsgIdRef.current
+          streamingMsgIdRef.current = null
+          setStreamingMsgId(null)
+
+          // Use same ID format as WS handler for cross-path dedup
+          const dedupKey = execId ? `exec-${execId}` : nextId()
           const aiMsg: AnalystMessage = {
-            id: nextId(),
+            id: dedupKey,
             type: result.has_error ? 'error' : 'ai',
             content: result.conclusion || result.error || 'No result',
             timestamp: Date.now(),
             modelName: config.modelName,
             duration,
           }
-          setMessages((prev) => trimMessages([...prev, aiMsg]))
+
+          setMessages((prev) => {
+            // Skip if WS event already added this execution
+            if (prev.some((m) => m.id === dedupKey)) return prev
+            const withoutStreaming = placeholderId
+              ? prev.filter((m) => m.id !== placeholderId)
+              : prev
+            return trimMessages([...withoutStreaming, aiMsg])
+          })
         })
         .catch((err) => {
+          // Clean up WS state (polling + placeholder) for error/timeout cases
+          if (streamingPollRef.current) {
+            clearInterval(streamingPollRef.current)
+            streamingPollRef.current = null
+          }
+          const placeholderId = streamingMsgIdRef.current
+          streamingMsgIdRef.current = null
+          setStreamingMsgId(null)
+
+          // If WS already added AI message for this execution, skip error
           const errMsg: AnalystMessage = {
             id: nextId(),
             type: 'error',
             content: err instanceof Error ? err.message : 'Request failed',
             timestamp: Date.now(),
           }
-          setMessages((prev) => trimMessages([...prev, errMsg]))
+          setMessages((prev) => {
+            const withoutStreaming = placeholderId
+              ? prev.filter((m) => m.id !== placeholderId)
+              : prev
+            // Avoid duplicate if WS event already added a completed AI message
+            let lastAi = -1
+            let lastUser = -1
+            for (let i = withoutStreaming.length - 1; i >= 0; i--) {
+              const m = withoutStreaming[i]
+              if (lastAi === -1 && m.type === 'ai' && !m.isStreaming) lastAi = i
+              if (lastUser === -1 && m.type === 'user') lastUser = i
+              if (lastAi !== -1 && lastUser !== -1) break
+            }
+            if (lastAi > lastUser && lastAi !== -1) return withoutStreaming
+            return trimMessages([...withoutStreaming, errMsg])
+          })
         })
         .finally(() => {
           setIsStreaming(false)

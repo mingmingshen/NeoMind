@@ -724,6 +724,7 @@ mod tests {
                 finish_reason: neomind_core::llm::backend::FinishReason::Stop,
                 usage: None,
                 thinking: None,
+                tool_calls: None,
             })
         }
 

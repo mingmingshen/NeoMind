@@ -567,12 +567,22 @@ impl AgentExecutor {
             ];
 
             let mut image_found = false;
+            let mut collected_image_parent: Option<String> = None;
 
             // Collect data for each metric
             for metric_name in metrics {
                 // Skip if we already found an image and this is another image metric
-                if image_found && image_metric_names.contains(&metric_name.as_str()) {
-                    continue;
+                if image_found {
+                    // Skip known image metric names
+                    if image_metric_names.contains(&metric_name.as_str()) {
+                        continue;
+                    }
+                    // Skip child paths of the already-collected image metric (e.g. "values.image.image_base64" under "values.image")
+                    if let Some(ref parent) = collected_image_parent {
+                        if metric_name.starts_with(&format!("{}.", parent)) {
+                            continue;
+                        }
+                    }
                 }
 
                 // Query for data points
@@ -612,6 +622,7 @@ impl AgentExecutor {
                             });
 
                             image_found = true;
+                            collected_image_parent = Some(metric_name.clone());
                         } else {
                             // Regular metric - add latest value
                             let values_json = serde_json::json!({
@@ -1069,6 +1080,18 @@ impl AgentExecutor {
             "[DIAG] Image extraction result"
         );
 
+        // If the field is recognized as an image metric but extraction failed
+        // (no URL and no base64), the event data is unusable — skip execution
+        // rather than producing a meaningless empty analysis.
+        if is_image && image_url.is_none() && image_base64.is_none() {
+            tracing::warn!(
+                source_id = %event_data.source.source_id,
+                field = %event_data.source.field,
+                "Event data is an image metric but extraction failed — skipping execution"
+            );
+            return Ok(vec![]);
+        }
+
         let mut event_values = serde_json::json!({
             "value": event_data.value,
             "timestamp": event_data.timestamp,
@@ -1115,6 +1138,28 @@ impl AgentExecutor {
             values: event_values,
             timestamp: event_data.timestamp,
         });
+
+        // Add device metadata so the LLM knows which device triggered this event
+        if event_data.source.source_type == "device" {
+            if let Some(ref device_service) = self.device_service {
+                if let Some(device) = device_service.get_device(&event_data.source.source_id) {
+                    let device_meta = serde_json::json!({
+                        "device_id": device.device_id,
+                        "device_type": device.device_type,
+                        "name": device.name,
+                        "adapter_type": device.adapter_type,
+                        "_is_event_device": true,
+                    });
+
+                    data.push(DataCollected {
+                        source: event_data.source.source_id.clone(),
+                        data_type: "device_info".to_string(),
+                        values: device_meta,
+                        timestamp: event_data.timestamp,
+                    });
+                }
+            }
+        }
 
         // Then collect other data from regular sources
         let regular_data = self.collect_data(agent).await?;

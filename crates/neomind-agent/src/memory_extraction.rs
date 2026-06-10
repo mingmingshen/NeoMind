@@ -520,6 +520,7 @@ mod tests {
                 finish_reason: FinishReason::Stop,
                 usage: None,
                 thinking: None,
+                tool_calls: None,
             })
         }
 

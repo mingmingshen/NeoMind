@@ -639,7 +639,7 @@ impl LlmRuntime for OllamaRuntime {
         };
 
         // Handle native tool calls from Ollama - preserve JSON format to keep tool ID
-        if !ollama_response.message.tool_calls.is_empty() {
+        let native_tool_calls = if !ollama_response.message.tool_calls.is_empty() {
             tracing::debug!(
                 "Ollama: received {} native tool calls",
                 ollama_response.message.tool_calls.len()
@@ -657,13 +657,21 @@ impl LlmRuntime for OllamaRuntime {
                     })
                 })
                 .collect();
+            // Keep text serialization for backward compat
             let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
             response_text.push_str(&json_str);
-        }
+            Some(tool_calls_json)
+        } else {
+            None
+        };
+
+        let has_tool_calls = native_tool_calls.is_some();
 
         let result = Ok(LlmOutput {
             text: response_text,
-            finish_reason: if ollama_response.done {
+            finish_reason: if has_tool_calls {
+                FinishReason::ToolCalls
+            } else if ollama_response.done {
                 FinishReason::Stop
             } else {
                 FinishReason::Error
@@ -679,6 +687,7 @@ impl LlmRuntime for OllamaRuntime {
             } else {
                 Some(ollama_response.message.thinking.clone())
             },
+            tool_calls: native_tool_calls,
         });
 
         // Record metrics

@@ -43,6 +43,7 @@ use tokio::sync::{RwLock, Semaphore};
 use neomind_core::datasource::DataSourceId;
 
 use crate::agent::types::LlmBackend;
+use crate::agent::types::ToolCall;
 use crate::error::{NeoMindError, Result as AgentResult};
 
 /// Internal representation of image content for multimodal LLM messages.
@@ -701,12 +702,20 @@ impl AgentExecutor {
         agent: &AiAgent,
         data_collected: &[DataCollected],
     ) -> String {
-        // Build lookup: source -> (value, age_seconds)
         let now_ts = chrono::Utc::now().timestamp();
+
+        // Separate device_info from metric data
+        let mut device_info_map: HashMap<&str, &serde_json::Value> = HashMap::new();
         let mut latest_values: HashMap<&str, (String, i64)> = HashMap::new();
         let mut image_sources: Vec<&str> = Vec::new();
+
         for d in data_collected {
             if d.source == "system" {
+                continue;
+            }
+            // Collect device_info entries separately
+            if d.data_type == "device_info" {
+                device_info_map.insert(&d.source, &d.values);
                 continue;
             }
             if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -724,11 +733,31 @@ impl AgentExecutor {
             latest_values.insert(&d.source, (val_str, age));
         }
 
-        if agent.resources.is_empty() && latest_values.is_empty() {
+        if agent.resources.is_empty() && latest_values.is_empty() && device_info_map.is_empty() {
             return "\n## Resources & Data\nNo bound resources. Use tools to query.\n".to_string();
         }
 
         let mut section = String::from("\n## Resources & Data\n");
+
+        // Render device summary block
+        if !device_info_map.is_empty() {
+            section.push_str("**Devices:**\n");
+            // Sort for deterministic output
+            let mut devices: Vec<_> = device_info_map.iter().collect();
+            devices.sort_by_key(|(id, _)| *id);
+            for (device_id, info) in devices {
+                let name = info.get("name").and_then(|v| v.as_str()).unwrap_or(device_id);
+                let dev_type = info.get("device_type").and_then(|v| v.as_str()).unwrap_or("-");
+                let display = if name != *device_id {
+                    format!("{} ({})", device_id, name)
+                } else {
+                    device_id.to_string()
+                };
+                section.push_str(&format!("- {} {}\n", display, dev_type));
+            }
+            section.push('\n');
+        }
+
         section.push_str("| Resource | Type | Current | Age |\n|----------|------|---------|-----|\n");
 
         for r in &agent.resources {
@@ -738,6 +767,11 @@ impl AgentExecutor {
                 ResourceType::Device => "device",
                 ResourceType::DataStream => "stream",
             };
+            let display_name = if r.name != r.resource_id {
+                format!("{} ({})", r.resource_id, r.name)
+            } else {
+                r.resource_id.clone()
+            };
             let (current, age_str) = latest_values
                 .get(r.resource_id.as_str())
                 .map(|(v, age)| {
@@ -745,7 +779,7 @@ impl AgentExecutor {
                     (v.clone(), age_fmt)
                 })
                 .unwrap_or_else(|| ("-".to_string(), "-".to_string()));
-            section.push_str(&format!("| {} | {} | {} | {} |\n", r.name, type_str, current, age_str));
+            section.push_str(&format!("| {} | {} | {} | {} |\n", display_name, type_str, current, age_str));
         }
 
         // Add any data sources not in resources
@@ -943,11 +977,14 @@ impl AgentExecutor {
         filtered_tools: &[neomind_core::llm::backend::ToolDefinition],
         messages: &mut Vec<Message>,
         execution_id: &str,
-        max_rounds: usize,
+        max_rounds: usize, // Made implicitly mutable by continuation mechanism below
         tool_name_map: &std::collections::HashMap<String, String>,
     ) -> ToolLoopOutput {
         use crate::agent::tool_parser::parse_tool_calls;
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
+
+        // max_rounds may be extended by the continuation mechanism
+        let mut max_rounds = max_rounds;
 
         // Build reverse map: original_name → sanitized_name
         // Used to convert tool result names back to what the LLM expects
@@ -974,7 +1011,16 @@ impl AgentExecutor {
         // Get context window for token-aware compaction
         let context_window = llm_runtime.max_context_length();
 
-        for round in 0..max_rounds {
+        // Continuation mechanism: when LLM is still making tool calls at
+        // max_rounds, allow extra rounds (up to MAX_CONTINUATION_ROUNDS)
+        // so the agent can finish its work instead of being cut off mid-task.
+        const MAX_CONTINUATION_ROUNDS: usize = 10;
+        let mut round: usize = 0;
+
+        loop {
+            if round >= max_rounds {
+                break;
+            }
             // Inject accumulated skill reference into system prompt once, after first tool round
             if round > 0 && !skill_reference.is_empty() && !skill_injected {
                 if let Some(sys_msg) = messages.first_mut() {
@@ -1030,49 +1076,136 @@ impl AgentExecutor {
                 }
             };
 
-            let mut tool_calls = match parse_tool_calls(&output.text) {
-                Ok((_, calls)) => calls,
-                Err(e) => {
-                    // Thinking model fallback: some models (qwen3, deepseek-r1) put tool calls
-                    // in the thinking field instead of the main text output.
-                    let text_empty = output.text.trim().is_empty() || output.text.trim().len() < 20;
-                    if text_empty {
-                        if let Some(ref thinking) = output.thinking {
-                            if let Ok((_, thinking_calls)) = parse_tool_calls(thinking) {
-                                if !thinking_calls.is_empty() {
-                                    tracing::debug!(
+            // Priority: native tool_calls from API → parse from text → thinking field fallback
+            let mut tool_calls = if let Some(ref native) = output.tool_calls {
+                if !native.is_empty() {
+                    tracing::debug!(
+                        agent_id = %agent.id,
+                        "Using {} native tool calls from API",
+                        native.len()
+                    );
+                    let converted: Vec<ToolCall> = native
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, tc)| {
+                            // Try "name" first, then "tool"/"function" for consistency with text parser
+                            let name = tc.get("name")
+                                .and_then(|v| v.as_str())
+                                .or_else(|| tc.get("tool").and_then(|v| v.as_str()))
+                                .or_else(|| tc.get("function").and_then(|v| v.as_str()));
+                            match name {
+                                Some(n) => Some(ToolCall {
+                                    name: n.to_string(),
+                                    id: tc
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .filter(|s| !s.is_empty())
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                                    arguments: tc.get("arguments").cloned().unwrap_or(serde_json::json!({})),
+                                    result: None,
+                                    round: None,
+                                }),
+                                None => {
+                                    tracing::warn!(
                                         agent_id = %agent.id,
-                                        "Found {} tool calls in thinking field (fallback)",
-                                        thinking_calls.len()
+                                        index = i,
+                                        "Dropping native tool call with missing name: {:?}",
+                                        tc
                                     );
-                                    thinking_calls
-                                } else {
-                                    tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
-                                    final_text = output.text;
-                                    break;
+                                    None
                                 }
-                            } else {
-                                tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
-                                final_text = output.text;
-                                break;
                             }
+                        })
+                        .collect();
+                    if converted.len() != native.len() {
+                        tracing::warn!(
+                            agent_id = %agent.id,
+                            expected = native.len(),
+                            converted = converted.len(),
+                            "Some native tool calls were dropped due to missing fields"
+                        );
+                    }
+                    converted
+                } else {
+                    Vec::new()
+                }
+            } else {
+                // Legacy fallback: parse tool calls from response text
+                match parse_tool_calls(&output.text) {
+                    Ok((_, calls)) if !calls.is_empty() => calls,
+                    _ => {
+                        // Main text had no parseable tool calls. Check thinking field
+                        // — many models (qwen3, deepseek-r1) embed tool calls there.
+                        let mut found = Vec::new();
+
+                        // Try thinking field first (models like qwen3/deepseek-r1)
+                        if let Some(ref thinking) = output.thinking {
+                            // Check for XML-wrapped tool calls: <tool_calls>...</tool_calls>
+                            if let Some(start) = thinking.find("<tool_calls>") {
+                                if let Some(end) = thinking.find("</tool_calls>") {
+                                    let xml_content = &thinking[start..end + 13];
+                                    if let Ok((_, calls)) = parse_tool_calls(xml_content) {
+                                        if !calls.is_empty() {
+                                            tracing::debug!(
+                                                agent_id = %agent.id,
+                                                "Found {} tool calls in thinking XML",
+                                                calls.len()
+                                            );
+                                            found.extend(calls);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Also try JSON-style tool calls in thinking
+                            if found.is_empty() {
+                                if let Ok((_, calls)) = parse_tool_calls(thinking) {
+                                    if !calls.is_empty() {
+                                        tracing::debug!(
+                                            agent_id = %agent.id,
+                                            "Found {} tool calls in thinking field (fallback)",
+                                            calls.len()
+                                        );
+                                        found.extend(calls);
+                                    }
+                                }
+                            }
+                        }
+
+                        if !found.is_empty() {
+                            found
                         } else {
-                            tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
+                            // No tool calls found anywhere — LLM produced final text
                             final_text = output.text;
                             break;
                         }
-                    } else {
-                        tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
-                        final_text = output.text;
-                        break;
                     }
                 }
             };
 
             // Get remaining text for reasoning tracking
-            let remaining_text = match parse_tool_calls(&output.text) {
-                Ok((text, _)) => text,
-                Err(_) => output.text.clone(),
+            let remaining_text = if output.tool_calls.is_some() {
+                // Native tool calls: strip the appended JSON from text directly
+                // (backends append serialized tool_calls to response_text for backward compat)
+                if let Some(pos) = output.text.rfind('[') {
+                    // Heuristic: if the last '[' starts a valid JSON array that looks like tool calls,
+                    // take everything before it as the reasoning text.
+                    let candidate = &output.text[pos..];
+                    if candidate.starts_with("[{\"") {
+                        output.text[..pos].trim().to_string()
+                    } else {
+                        output.text.clone()
+                    }
+                } else {
+                    output.text.clone()
+                }
+            } else {
+                // Legacy path: parse tool calls from text to extract the non-tool portion
+                match parse_tool_calls(&output.text) {
+                    Ok((text, _)) => text,
+                    Err(_) => output.text.clone(),
+                }
             };
 
             if tool_calls.is_empty() {
@@ -1307,6 +1440,24 @@ impl AgentExecutor {
                     ));
                 }
             }
+
+            // --- Continuation check ---
+            // At the current max_rounds boundary, if the LLM was still making
+            // tool calls this round (didn't naturally finish), extend the loop
+            // so the agent can complete its work instead of being cut off mid-task.
+            let had_tool_calls = !round_data_list.last().map_or(true, |rd| rd.tool_calls.is_empty());
+            if round + 1 == max_rounds && had_tool_calls {
+                let extension = MAX_CONTINUATION_ROUNDS;
+                max_rounds += extension;
+                tracing::info!(
+                    agent_id = %agent.id,
+                    new_limit = max_rounds,
+                    "LLM still executing tools at round limit — extending by {} rounds",
+                    extension,
+                );
+            }
+
+            round += 1;
         }
 
         // If all rounds exhausted without LLM producing final text, OR if LLM failed
@@ -2095,19 +2246,30 @@ impl AgentExecutor {
             )
             .await;
 
-        // If the LLM call itself failed (no tools executed, first-round failure),
-        // return Err to trigger the fallback chain → analyze_with_llm (which sends
-        // images WITHOUT tools, matching the chat path that works correctly).
-        let llm_failed_first_round = loop_output.final_text
-            == "LLM generation failed during tool execution."
-            && loop_output.all_tool_results.is_empty();
-        if llm_failed_first_round {
+        // Graceful degradation: when the tool-calling loop produced no useful
+        // results, fall back to the legacy analysis path (analyze_with_llm)
+        // which analyzes data directly without tool calling.
+        //
+        // Triggers:
+        // 1. LLM generation itself failed (network error, etc.)
+        // 2. LLM produced malformed/truncated tool calls that the parser
+        //    couldn't recognize — no tools were executed and the output
+        //    contains XML-like function call fragments
+        let no_tools_executed = loop_output.all_tool_results.is_empty();
+        let has_malformed_output = loop_output.final_text.contains("</parameter>")
+            || loop_output.final_text.contains("</function>")
+            || loop_output.final_text.contains("</tool_call");
+        let llm_generation_failed = loop_output.final_text
+            == "LLM generation failed during tool execution.";
+
+        if no_tools_executed && (llm_generation_failed || has_malformed_output) {
             tracing::info!(
                 agent_id = %agent.id,
-                "LLM failed in first tool round with no tools executed — falling back to legacy analysis"
+                malformed_output = has_malformed_output,
+                "Tool-calling produced no results — falling back to direct LLM analysis"
             );
             return Err(NeoMindError::Llm(
-                "LLM generation failed in tool-calling mode — falling back to legacy path".to_string(),
+                "LLM tool-calling failed — falling back to direct analysis".to_string(),
             ));
         }
 
@@ -2651,6 +2813,42 @@ impl AgentExecutor {
         } else {
             self.collect_data(&agent).await?
         };
+
+        // If event-triggered collection returned no usable data (e.g. image
+        // extraction failed due to malformed field names), skip LLM analysis
+        // and return a minimal result instead of producing a meaningless empty
+        // execution record.
+        if event_data.is_some() && data_collected.is_empty() {
+            tracing::warn!(
+                agent_id = %agent_id,
+                "Skipping analysis — event data collection produced no usable data"
+            );
+            self.send_progress(
+                &agent_id,
+                &execution_id,
+                "skipped",
+                "Skipped",
+                Some("No usable data collected from event"),
+            )
+            .await;
+
+            let decision_process = DecisionProcess {
+                situation_analysis: "Event data collection failed — no usable data to analyze.".to_string(),
+                data_collected: vec![],
+                reasoning_steps: vec![],
+                decisions: vec![],
+                conclusion: "Execution skipped: event data was recognized as an image metric but image extraction failed. Check device data format and field names.".to_string(),
+                confidence: 0.0,
+            };
+            let exec_result = neomind_storage::ExecutionResult {
+                actions_executed: vec![],
+                report: None,
+                notifications_sent: vec![],
+                summary: "Skipped: event data extraction failed".to_string(),
+                success_rate: 0.0,
+            };
+            return Ok((decision_process, exec_result));
+        }
 
         // Send thinking events for each data source collected
         for data in &data_collected {

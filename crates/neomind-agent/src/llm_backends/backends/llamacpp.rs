@@ -436,7 +436,7 @@ impl LlmRuntime for LlamaCppRuntime {
         let mut response_text = choice.message.content.unwrap_or_default();
 
         // Handle tool calls
-        if let Some(ref tool_calls) = choice.message.tool_calls {
+        let native_tool_calls = if let Some(ref tool_calls) = choice.message.tool_calls {
             if !tool_calls.is_empty() {
                 tracing::debug!("llama.cpp: received {} native tool calls", tool_calls.len());
                 let tool_calls_json: Vec<serde_json::Value> = tool_calls
@@ -451,10 +451,16 @@ impl LlmRuntime for LlamaCppRuntime {
                         })
                     })
                     .collect();
+                // Keep text serialization for backward compat
                 let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
                 response_text.push_str(&json_str);
+                Some(tool_calls_json)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         // Extract thinking content from reasoning_content field
         let thinking = choice.message.reasoning_content;
@@ -465,7 +471,7 @@ impl LlmRuntime for LlamaCppRuntime {
                 "stop" => FinishReason::Stop,
                 "length" => FinishReason::Length,
                 "content_filter" => FinishReason::ContentFilter,
-                "tool_calls" => FinishReason::Stop,
+                "tool_calls" => FinishReason::ToolCalls,
                 _ => FinishReason::Error,
             },
             usage: chat_response.usage.map(|u| TokenUsage {
@@ -474,6 +480,7 @@ impl LlmRuntime for LlamaCppRuntime {
                 total_tokens: u.total_tokens,
             }),
             thinking,
+            tool_calls: native_tool_calls,
         });
 
         // Record metrics
