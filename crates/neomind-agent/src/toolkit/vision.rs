@@ -491,7 +491,11 @@ impl Tool for VisionTool {
     fn description(&self) -> &str {
         r#"Analyze images from URLs, files, or extension outputs using a vision-language model.
 
-DO NOT use this tool for images the user uploaded directly in the chat — analyze those yourself, they are already visible to you. Only use this tool when you need to analyze images from other sources:
+DO NOT use this tool for images you can already see — analyze those yourself directly. This includes:
+- Images uploaded by the user in chat
+- Images embedded in the current message (e.g., from bound data sources) — these are already visible to you
+
+Only use this tool when you need to analyze images from OTHER sources:
 - HTTP/HTTPS image URLs (e.g., camera snapshots, web images) — fetches automatically, private/local URLs blocked
 - /path/to/file.jpg — local image file on disk (must have an image extension)
 - data:image/...;base64,... — base64 data URL from extension outputs

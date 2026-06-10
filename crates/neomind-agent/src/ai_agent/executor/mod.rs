@@ -1011,7 +1011,20 @@ impl AgentExecutor {
             let output = match llm_runtime.generate(input).await {
                 Ok(o) => o,
                 Err(e) => {
-                    tracing::warn!(agent_id = %agent.id, error = %e, "LLM generation failed in tool loop");
+                    let round_num = round + 1;
+                    let msg_count = messages.len();
+                    let has_images = messages.iter().any(|m| {
+                        matches!(&m.content, Content::Parts(parts) if parts.iter().any(|p| matches!(p, ContentPart::ImageBase64 { .. } | ContentPart::ImageUrl { .. })))
+                    });
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        error = %e,
+                        round = round_num,
+                        msg_count,
+                        has_images,
+                        model = %llm_runtime.model_name(),
+                        "LLM generation failed in tool loop — will trigger fallback to legacy path if first round"
+                    );
                     final_text = "LLM generation failed during tool execution.".to_string();
                     break;
                 }
@@ -2026,7 +2039,32 @@ impl AgentExecutor {
             neomind_storage::agents::ExecutionMode::Focused => ToolLoopConfig::focused_plus(agent),
         };
 
-        let (filtered_tools, tool_name_map) = Self::filter_tools(&registry, &agent.tool_config);
+        let (mut filtered_tools, mut tool_name_map) = Self::filter_tools(&registry, &agent.tool_config);
+
+        // When the LLM already supports vision AND images are embedded in the
+        // multimodal user message, remove the `vision` tool to prevent redundant
+        // calls.  The LLM sees the images directly — calling a separate VLM
+        // wastes a round, passes truncated data (the LLM can only reference a
+        // tiny preview in tool arguments), and may hit rate limits.
+        let has_images_in_data = data_collected.iter().any(|d| {
+            d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false)
+        });
+        let llm_supports_vision = llm_runtime.capabilities().supports_images;
+        if has_images_in_data && llm_supports_vision {
+            let before = filtered_tools.len();
+            let vision_names = ["vision"];
+            filtered_tools.retain(|t| !vision_names.contains(&t.name.as_str()));
+            tool_name_map.retain(|_, orig| !vision_names.contains(&orig.as_str()));
+            let removed = before - filtered_tools.len();
+            if removed > 0 {
+                tracing::info!(
+                    agent_id = %agent.id,
+                    removed,
+                    "Excluded vision tool(s) — images already visible to multimodal LLM"
+                );
+            }
+        }
+
         if !tool_name_map.is_empty() {
             tracing::debug!(
                 agent_id = %agent.id,
@@ -2056,6 +2094,22 @@ impl AgentExecutor {
                 &tool_name_map,
             )
             .await;
+
+        // If the LLM call itself failed (no tools executed, first-round failure),
+        // return Err to trigger the fallback chain → analyze_with_llm (which sends
+        // images WITHOUT tools, matching the chat path that works correctly).
+        let llm_failed_first_round = loop_output.final_text
+            == "LLM generation failed during tool execution."
+            && loop_output.all_tool_results.is_empty();
+        if llm_failed_first_round {
+            tracing::info!(
+                agent_id = %agent.id,
+                "LLM failed in first tool round with no tools executed — falling back to legacy analysis"
+            );
+            return Err(NeoMindError::Llm(
+                "LLM generation failed in tool-calling mode — falling back to legacy path".to_string(),
+            ));
+        }
 
         let (decision_process, execution_result) =
             Self::build_tool_result(agent, data_collected, loop_output);
