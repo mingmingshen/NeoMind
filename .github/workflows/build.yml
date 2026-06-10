@@ -26,6 +26,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 env:
   # CI 环境变量优化
   CARGO_INCREMENTAL: 0
