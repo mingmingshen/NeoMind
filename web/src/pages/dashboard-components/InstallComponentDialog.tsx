@@ -7,7 +7,7 @@
 
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import * as lucideReact from 'lucide-react'
+import { PackagePlus, FileArchive, Upload } from 'lucide-react'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { useStore } from '@/store'
 import { notifySuccess, notifyFromError } from '@/lib/notify'
@@ -72,7 +72,7 @@ export function InstallComponentDialog({ open, onOpenChange }: InstallComponentD
       open={open}
       onOpenChange={handleOpenChange}
       title={t('componentLibrary.importTitle')}
-      icon={<lucideReact.PackagePlus className="w-full h-full" />}
+      icon={<PackagePlus className="w-full h-full" />}
       width="lg"
       className="z-[110]"
       isSubmitting={isSubmitting}
@@ -103,7 +103,7 @@ export function InstallComponentDialog({ open, onOpenChange }: InstallComponentD
           />
           {zipFile ? (
             <div className="space-y-1">
-              <lucideReact.FileArchive className="w-10 h-10 text-success mx-auto" />
+              <FileArchive className="w-10 h-10 text-success mx-auto" />
               <p className="text-sm font-medium text-foreground">{zipFile.name}</p>
               <p className="text-xs text-muted-foreground">
                 {(zipFile.size / 1024).toFixed(1)} KB
@@ -111,7 +111,7 @@ export function InstallComponentDialog({ open, onOpenChange }: InstallComponentD
             </div>
           ) : (
             <div className="space-y-2">
-              <lucideReact.Upload className="w-10 h-10 text-muted-foreground mx-auto" />
+              <Upload className="w-10 h-10 text-muted-foreground mx-auto" />
               <p className="text-sm text-muted-foreground">{t('selectFile')} (.zip)</p>
             </div>
           )}

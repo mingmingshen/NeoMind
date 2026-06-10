@@ -61,6 +61,14 @@ type ImageLoadState = 'loading' | 'loaded' | 'error'
  * Replaces the old normalizeImageData + transformTelemetryToImages pair.
  * Uses the cached normalizeImageUrl from shared utils.
  */
+/**
+ * Fast check: is this string already a valid image source that needs no normalization?
+ * Catches pre-normalized data URLs (from fetch/WS layer) and HTTP/blob URLs.
+ */
+function isAlreadyNormalized(src: string): boolean {
+  return src.startsWith('data:image/') || src.startsWith('http') || src.startsWith('blob:')
+}
+
 function toImageHistoryItems(data: unknown): ImageHistoryItem[] {
   if (data === null || data === undefined) return []
 
@@ -71,40 +79,57 @@ function toImageHistoryItems(data: unknown): ImageHistoryItem[] {
       const item = data[i]
 
       if (typeof item === 'string') {
-        const norm = normalizeImageUrl(item)
-        if (norm) result.push({ src: norm.src, alt: `Image ${i + 1}` })
+        if (isAlreadyNormalized(item)) {
+          result.push({ src: item, alt: `Image ${i + 1}` })
+        } else {
+          const norm = normalizeImageUrl(item)
+          if (norm) result.push({ src: norm.src, alt: `Image ${i + 1}` })
+        }
       } else if (typeof item === 'number' || typeof item === 'boolean') {
         // skip — can't be an image
       } else if (item !== null && typeof item === 'object') {
         const obj = item as Record<string, unknown>
         const rawSrc = String(obj.src ?? obj.url ?? obj.image ?? obj.imageUrl ?? obj.value ?? obj.v ?? '')
-        const norm = normalizeImageUrl(rawSrc)
-        if (norm) {
+        // Fast path: already a valid image URL — skip expensive normalizeImageUrl
+        // (fetch/WS layer pre-normalizes raw base64 to data URLs via normalizeImageValue)
+        if (isAlreadyNormalized(rawSrc)) {
           result.push({
-            src: norm.src,
+            src: rawSrc,
             timestamp: extractTimestamp(obj),
             label: typeof obj.label === 'string' ? obj.label : typeof obj.name === 'string' ? obj.name as string : undefined,
             alt: typeof obj.alt === 'string' ? obj.alt as string : `Image ${i + 1}`,
           })
+        } else {
+          const norm = normalizeImageUrl(rawSrc)
+          if (norm) {
+            result.push({
+              src: norm.src,
+              timestamp: extractTimestamp(obj),
+              label: typeof obj.label === 'string' ? obj.label : typeof obj.name === 'string' ? obj.name as string : undefined,
+              alt: typeof obj.alt === 'string' ? obj.alt as string : `Image ${i + 1}`,
+            })
+          }
         }
       }
     }
 
     // Stable sort by timestamp descending (newest first), undefined timestamps go to end
-    const indexed = result.map((item, i) => ({ item, i }))
-    indexed.sort((a, b) => {
-      if (a.item.timestamp === undefined && b.item.timestamp === undefined) return a.i - b.i
-      if (a.item.timestamp === undefined) return 1
-      if (b.item.timestamp === undefined) return -1
-      const diff = (b.item.timestamp as number) - (a.item.timestamp as number)
-      return diff !== 0 ? diff : a.i - b.i
+    // Index-based sort avoids creating temporary wrapper objects
+    const indices = result.map((_, i) => i)
+    indices.sort((a, b) => {
+      const at = result[a].timestamp, bt = result[b].timestamp
+      if (at === undefined && bt === undefined) return a - b
+      if (at === undefined) return 1
+      if (bt === undefined) return -1
+      const diff = (bt as number) - (at as number)
+      return diff !== 0 ? diff : a - b
     })
-    indexed.forEach(({ item }, i) => { result[i] = item })
-    return result
+    return indices.map(i => result[i])
   }
 
   // Single string
   if (typeof data === 'string') {
+    if (isAlreadyNormalized(data)) return [{ src: data, alt: 'Image 1' }]
     const norm = normalizeImageUrl(data)
     return norm ? [{ src: norm.src, alt: 'Image 1' }] : []
   }
@@ -120,6 +145,14 @@ function toImageHistoryItems(data: unknown): ImageHistoryItem[] {
     }
     // Single image object
     const rawSrc = String(obj.src ?? obj.url ?? obj.image ?? obj.value ?? '')
+    if (isAlreadyNormalized(rawSrc)) {
+      return [{
+        src: rawSrc,
+        timestamp: extractTimestamp(obj),
+        label: typeof obj.label === 'string' ? obj.label as string : undefined,
+        alt: typeof obj.alt === 'string' ? obj.alt as string : 'Image 1',
+      }]
+    }
     const norm = normalizeImageUrl(rawSrc)
     if (norm) {
       return [{
@@ -145,6 +178,16 @@ function formatTimestamp(timestamp: string | number | undefined): string {
   return date.toLocaleTimeString('zh-CN', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
+}
+
+/**
+ * Lightweight fingerprint for image source tracking.
+ * Avoids storing full base64 strings (~50KB each) in Sets/arrays.
+ * Collision risk: negligible — requires same length + same first/last 32 chars.
+ */
+function srcFingerprint(src: string): string {
+  if (src.length <= 64) return src
+  return `${src.length}:${src.charCodeAt(0)}:${src.slice(-32)}`
 }
 
 function normalizeDataSourceForImages(
@@ -205,15 +248,44 @@ export const ImageHistory = memo(function ImageHistory({
   const { t } = useTranslation('dashboardComponents')
   const sizeConfig = dashboardComponentSize[size]
 
-  // Normalized data source — memoized
-  const normalizedDataSource = useMemo(
+  // Two-phase loading: quick (3 images, 1h) for fast first paint, then full history
+  const quickSource = useMemo(
+    () => normalizeDataSourceForImages(dataSource, 3, 1),
+    [dataSource],
+  )
+  const fullSource = useMemo(
     () => normalizeDataSourceForImages(dataSource, limit, timeRange),
     [dataSource, limit, timeRange],
   )
 
-  const { data, loading, lastUpdate: dataSourceLastUpdate } = useDataSource(normalizedDataSource, {
-    fallback: propImages,
+  const [phase, setPhase] = useState<'quick' | 'full'>('quick')
+  const activeSource = phase === 'full' ? fullSource : quickSource
+
+  // Preserve quick-phase data across phase transition to avoid flash
+  const lastDataRef = useRef<unknown>(null)
+
+  // Reset phase when data source changes (new source should start with quick phase)
+  useEffect(() => {
+    setPhase('quick')
+    lastDataRef.current = null
+  }, [dataSource])
+
+  const { data, loading, lastUpdate: dataSourceLastUpdate } = useDataSource(activeSource, {
+    fallback: phase === 'full' && lastDataRef.current != null ? lastDataRef.current : propImages,
   })
+
+  // Track last valid data for phase transitions
+  useEffect(() => {
+    if (data != null) lastDataRef.current = data
+  }, [data])
+
+  // Transition from quick to full after initial data arrives
+  useEffect(() => {
+    if (phase === 'quick' && dataSourceLastUpdate) {
+      const timer = setTimeout(() => setPhase('full'), 200)
+      return () => clearTimeout(timer)
+    }
+  }, [phase, dataSourceLastUpdate])
 
   // Transform data to images — uses shared cached normalizeImageUrl
   const images = useMemo(
@@ -221,59 +293,50 @@ export const ImageHistory = memo(function ImageHistory({
     [data, propImages],
   )
 
-  // Track sources to detect real changes (not just reordering)
-  const imageSourcesRef = useRef<string[]>([])
+  // Track sources via fingerprints — avoids storing full base64 strings (~50KB each)
+  const imageFingerprintsRef = useRef<string[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>('loading')
-  const loadedImagesSrcRef = useRef<Set<string>>(new Set())
-
-  // Cache-bust timestamp — derived from dataSourceLastUpdate
-  const cacheBustTimestamp = dataSourceLastUpdate ?? 0
+  const loadedFingerprintsRef = useRef<Set<string>>(new Set())
 
   const currentImage = images[currentIndex]
   const currentImageSrc = currentImage?.src
   const hasImages = images.length > 0
   const canNavigate = images.length > 1
 
-  // Display src — only add cache buster for data URLs
-  const displayImageSrc = useMemo(() => {
-    if (!currentImageSrc) return currentImageSrc
-    if ((currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('blob:')) && cacheBustTimestamp) {
-      return `${currentImageSrc}#${cacheBustTimestamp}`
-    }
-    return currentImageSrc
-  }, [currentImageSrc, cacheBustTimestamp])
-
   // Reset index when actual image sources change (not just order)
   useEffect(() => {
-    const currentSources = images.map(img => img.src)
-    const prevSources = imageSourcesRef.current
-    const changed = currentSources.length !== prevSources.length ||
-      currentSources.some((src, i) => src !== prevSources[i])
+    const currentFps = images.map(img => srcFingerprint(img.src))
+    const prevFps = imageFingerprintsRef.current
+    const changed = currentFps.length !== prevFps.length ||
+      currentFps.some((fp, i) => fp !== prevFps[i])
 
     if (changed) {
-      imageSourcesRef.current = currentSources
+      imageFingerprintsRef.current = currentFps
       setCurrentIndex(0)
-      loadedImagesSrcRef.current = new Set(currentSources.filter(src => prevSources.includes(src)))
+      // Set-based O(n) intersection instead of O(n²) filter+includes on full URLs
+      const prevSet = new Set(prevFps)
+      loadedFingerprintsRef.current = new Set(currentFps.filter(fp => prevSet.has(fp)))
       setImageLoadState(
-        currentSources.length > 0 && loadedImagesSrcRef.current.has(currentSources[0])
+        currentFps.length > 0 && loadedFingerprintsRef.current.has(currentFps[0])
           ? 'loaded' : 'loading',
       )
     }
   }, [images])
 
   // Update load state on src/index change
-  const prevImageSrcRef = useRef<string | undefined>()
+  const prevFingerprintRef = useRef<string | undefined>()
   const prevIndexRef = useRef(-1)
   useEffect(() => {
-    const srcChanged = currentImageSrc && currentImageSrc !== prevImageSrcRef.current
+    const fp = currentImageSrc ? srcFingerprint(currentImageSrc) : undefined
+    const srcChanged = fp && fp !== prevFingerprintRef.current
     const idxChanged = currentIndex !== prevIndexRef.current
 
     if (srcChanged || idxChanged) {
-      if (currentImageSrc) {
-        setImageLoadState(loadedImagesSrcRef.current.has(currentImageSrc) ? 'loaded' : 'loading')
+      if (fp) {
+        setImageLoadState(loadedFingerprintsRef.current.has(fp) ? 'loaded' : 'loading')
       }
-      prevImageSrcRef.current = currentImageSrc
+      prevFingerprintRef.current = fp
     }
     prevIndexRef.current = currentIndex
   }, [currentImageSrc, currentIndex])
@@ -281,19 +344,20 @@ export const ImageHistory = memo(function ImageHistory({
   // Callbacks
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')
-    if (currentImageSrc) loadedImagesSrcRef.current.add(currentImageSrc)
+    if (currentImageSrc) loadedFingerprintsRef.current.add(srcFingerprint(currentImageSrc))
   }, [currentImageSrc])
 
   const handleImageError = useCallback(() => setImageLoadState('error'), [])
   const handleSliderChange = useCallback((values: number[]) => setCurrentIndex(values[0] ?? 0), [])
 
-  // --- Loading ---
-  if (loading && !hasImages) {
-    return <LoadingState size={size} className={className} />
-  }
-
-  // --- No images ---
-  if (!loading && !hasImages) {
+  // --- No images state ---
+  if (!hasImages) {
+    // Show loading while actively loading OR when dataSource is configured
+    // but we haven't received a response yet (prevents premature "No Images" flash)
+    const awaitingResponse = activeSource && !dataSourceLastUpdate
+    if (loading || awaitingResponse) {
+      return <LoadingState size={size} className={className} />
+    }
     return (
       <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
         <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16')} />
@@ -310,7 +374,7 @@ export const ImageHistory = memo(function ImageHistory({
     <div className={cn(dashboardCardBase, 'relative flex flex-col overflow-hidden', className)}>
       <div className={cn('w-full flex-1 relative', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')}>
         <img
-          src={displayImageSrc}
+          src={currentImageSrc}
           alt={currentImage?.alt || `Image ${currentIndex + 1}`}
           className={cn(
             'w-full h-full',
@@ -320,7 +384,6 @@ export const ImageHistory = memo(function ImageHistory({
             fit === 'none' && 'object-none',
             fit === 'scale-down' && 'object-scale-down',
           )}
-          loading="lazy"
           onLoad={handleImageLoad}
           onError={handleImageError}
         />

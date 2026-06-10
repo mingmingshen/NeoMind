@@ -18,6 +18,7 @@ import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
 import { BatchUpdater } from '@/lib/throttle'
 import { fetchCache } from '@/lib/utils/async'
+import { findDevice } from '@/lib/deviceUtils'
 
 export interface DeviceSlice extends DeviceState, TelemetryState {
   // Actions
@@ -573,7 +574,7 @@ export const createDeviceSlice: StateCreator<
           const now = new Date().toISOString()
           for (const [devId, props] of deviceUpdates) {
             // Skip devices that no longer exist (deleted between push and flush)
-            const device = state.devices.find((d: any) => d.id === devId || d.device_id === devId)
+            const device = findDevice(state.devices, devId)
             if (!device && !state.deviceTelemetry[devId]) continue
 
             const existing = state.deviceTelemetry[devId] || {}

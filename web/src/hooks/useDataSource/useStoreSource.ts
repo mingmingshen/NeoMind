@@ -14,29 +14,31 @@ import { logError } from '@/lib/errors'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
   getDataSourceLimit, findDevice, buildDeviceMap,
-  resolveDeviceInfoValue, insertAndMaintain, isImageDataSource,
+  resolveDeviceInfoValue, insertAndMaintain, isImageDataSource, normalizeImageValue,
 } from './helpers'
 import { fetchDeviceTelemetry, fetchedDevices, hasActiveFetch, telemetryCache } from './fetch'
 import { processTelemetryEvent, processNonTelemetryEvent, getTs } from './eventProcessors'
 
-// Performance probe
+// Performance probe — gated by module-level flag to avoid function call overhead in production
 const PERF_THRESHOLD = 100
+let perfDebugEnabled = false
+if (typeof localStorage !== 'undefined') {
+  try { perfDebugEnabled = localStorage.getItem('DEBUG_SCROLL') === 'true' } catch { /* SSR */ }
+}
 function perfMark(label: string) {
-  if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_SCROLL') === 'true') {
-    performance.mark(`uds:${label}`)
-  }
+  if (!perfDebugEnabled) return
+  performance.mark(`uds:${label}`)
 }
 function perfEnd(label: string) {
-  if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_SCROLL') === 'true') {
-    try {
-      performance.measure(`uds:${label}`, `uds:${label}`)
-      const entries = performance.getEntriesByName(`uds:${label}`, 'measure')
-      const last = entries[entries.length - 1]
-      if (last && last.duration > PERF_THRESHOLD) {
-        console.warn(`[perf] useDataSource ${label}: ${Math.round(last.duration)}ms`)
-      }
-    } catch { /* ignore */ }
-  }
+  if (!perfDebugEnabled) return
+  try {
+    performance.measure(`uds:${label}`, `uds:${label}`)
+    const entries = performance.getEntriesByName(`uds:${label}`, 'measure')
+    const last = entries[entries.length - 1]
+    if (last && last.duration > PERF_THRESHOLD) {
+      console.warn(`[perf] useDataSource ${label}: ${Math.round(last.duration)}ms`)
+    }
+  } catch { /* ignore */ }
 }
 
 export interface StoreSourceState<T> {
@@ -68,6 +70,7 @@ function processSingleTelemetryPoint(
   currentData: unknown,
   newPoint: { timestamp: number; time: number; value: unknown },
   dataSources: DataSource[],
+  dsIndex: number,
   ds: DataSource,
   preserveMultiple: boolean,
   maxLimit: number
@@ -77,7 +80,6 @@ function processSingleTelemetryPoint(
   let currentArray: unknown[] = []
   if (Array.isArray(currentData)) {
     if (preserveMultiple && dataSources.length > 1) {
-      const dsIndex = dataSources.indexOf(ds)
       if (dsIndex >= 0 && Array.isArray((currentData as unknown[])[dsIndex])) {
         currentArray = (currentData as unknown[])[dsIndex] as unknown[]
       }
@@ -89,7 +91,6 @@ function processSingleTelemetryPoint(
   const updated = insertAndMaintain(currentArray, newPoint, getTs, maxLimit, isImg)
 
   if (preserveMultiple && dataSources.length > 1) {
-    const dsIndex = dataSources.indexOf(ds)
     // Guard: currentData may be null/undefined on first invocation
     const existing = Array.isArray(currentData) ? currentData as unknown[] : []
     const result = existing.length > 0
@@ -98,6 +99,21 @@ function processSingleTelemetryPoint(
     return result
   }
   return updated
+}
+
+// ============================================================================
+// Global device map cache — shared across all useStoreSource instances
+// ============================================================================
+
+let cachedDeviceMapResult: { devicesRef: unknown; map: Map<string, Device> } | null = null
+
+function getCachedDeviceMap(devices: Device[]): Map<string, Device> {
+  if (cachedDeviceMapResult && cachedDeviceMapResult.devicesRef === devices) {
+    return cachedDeviceMapResult.map
+  }
+  const map = buildDeviceMap(devices)
+  cachedDeviceMapResult = { devicesRef: devices, map }
+  return map
 }
 
 export function useStoreSource<T = unknown>(
@@ -132,6 +148,29 @@ export function useStoreSource<T = unknown>(
   const processedDeviceEventsRef = useRef<Set<string>>(new Set())
   const lastProcessedDeviceEventIdRef = useRef<string | null>(null)
 
+  // Guard: skip store subscription telemetry merge when WS event effect already
+  // processed the same data point (prevents double-processing of telemetry)
+  const wsTelemetryProcessedAtRef = useRef(0)
+
+  // Cache for nonTelemetrySources — avoids re-filtering on every readDataFromStore call
+  const cachedNonTelRef = useRef<{ dsRef: DataSource[]; result: DataSource[] } | null>(null)
+  const getNonTelemetrySources = (dsList: DataSource[]): DataSource[] => {
+    if (cachedNonTelRef.current && cachedNonTelRef.current.dsRef === dsList) {
+      return cachedNonTelRef.current.result
+    }
+    const result = dsList.filter(
+      (ds) => {
+        if (ds.mode === 'timeseries') return false
+        if (ds.mode === 'latest' && ds.source === 'device') return true
+        if (ds.mode === 'info' && ds.source === 'device') return true
+        if (ds.mode === 'command' && ds.source === 'device') return true
+        return false
+      }
+    )
+    cachedNonTelRef.current = { dsRef: dsList, result }
+    return result
+  }
+
   // ============================================================================
   // readDataFromStore (device/metric/command/device-info)
   // ============================================================================
@@ -151,15 +190,7 @@ export function useStoreSource<T = unknown>(
       return
     }
 
-    const nonTelemetrySources = currentDataSources.filter(
-      (ds) => {
-        if (ds.mode === 'timeseries') return false
-        if (ds.mode === 'latest' && ds.source === 'device') return true
-        if (ds.mode === 'info' && ds.source === 'device') return true
-        if (ds.mode === 'command' && ds.source === 'device') return true
-        return false
-      }
-    )
+    const nonTelemetrySources = getNonTelemetrySources(currentDataSources)
 
     // When all sources are telemetry/system/extension, readDataFromStore has nothing to do.
     // Don't touch loading state — those hooks manage their own loading lifecycle.
@@ -281,22 +312,32 @@ export function useStoreSource<T = unknown>(
       return
     }
     if (!enabled) { finishStore(); return }
-    if (relevantDeviceIds.size === 0) {
+
+    // Only create a store subscription when there are device-mode sources
+    // (latest/command/info). Telemetry-only components get their data via
+    // useTelemetrySource + WS event processing; subscribing to the store
+    // would fire on every unrelated device telemetry update.
+    const hasDeviceModeSources = dataSources.some(ds => {
+      const mode = getUnifiedMode(ds)
+      const source = getUnifiedSource(ds)
+      return source === 'device' && (mode === 'latest' || mode === 'command' || mode === 'info')
+    })
+    if (!hasDeviceModeSources) {
       readDataFromStore()
       // readDataFromStore returns early for telemetry-only/extension-only sources
       // without touching loading state — those hooks manage their own loading lifecycle.
-      // When telemetry/extension sources will handle loading, they need to own the
-      // entire loading counter lifecycle. Finish the initial counter here so their
-      // own startLoading/finishLoading pairs stay balanced.
+      // Finish the initial counter here so their own startLoading/finishLoading
+      // pairs stay balanced.
       finishStore()
       return
     }
 
     readDataFromStore()
+    const initialStore = useStore.getState()
     prevStoreStateRef.current = {
-      rawDevices: useStore.getState().devices,
-      deviceTelemetry: useStore.getState().deviceTelemetry,
-      map: buildDeviceMap(useStore.getState().devices),
+      rawDevices: initialStore.devices,
+      deviceTelemetry: initialStore.deviceTelemetry,
+      map: getCachedDeviceMap(initialStore.devices),
     }
 
     let unsubscribed = false
@@ -319,7 +360,7 @@ export function useStoreSource<T = unknown>(
       const changedDeviceIds = new Set<string>()
 
       // Only rebuild device map when reference changes
-      const currMap = devicesChanged ? buildDeviceMap(s.devices) : prev.map
+      const currMap = devicesChanged ? getCachedDeviceMap(s.devices) : prev.map
 
       // Check telemetry changes (per-device diff for relevant devices only)
       if (telemetryChanged && !devicesLengthChanged) {
@@ -355,9 +396,13 @@ export function useStoreSource<T = unknown>(
       }
 
       if (devicesChanged || devicesLengthChanged || currentValuesChanged) {
-        const hasRelevantChange = devicesLengthChanged ||
-          Array.from(changedDeviceIds).some((id) => relevantDeviceIds.has(id)) ||
+        let hasRelevantChange = devicesLengthChanged ||
           (devicesChanged && changedDeviceIds.size === 0)
+        if (!hasRelevantChange) {
+          for (const id of changedDeviceIds) {
+            if (relevantDeviceIds.has(id)) { hasRelevantChange = true; break }
+          }
+        }
         if (!hasRelevantChange && !currentValuesChanged) {
           // Still update ref to avoid re-checking same state
           prevStoreStateRef.current = { rawDevices: s.devices, deviceTelemetry: s.deviceTelemetry, map: currMap }
@@ -371,8 +416,18 @@ export function useStoreSource<T = unknown>(
         // changed devices/metrics, then process in a single setData call
         const currentDataSources = state.dataSourcesRef.current
         // Only merge telemetry points for timeseries sources, NOT mode='latest'
-        const telSources = currentDataSources.filter((ds) => ds.mode === 'timeseries')
-        if (telSources.length > 0 && currentValuesChanged && changedDeviceIds.size > 0) {
+        // Pre-build index map to avoid O(n) indexOf inside nested loop
+        const telSourcesWithIndex: Array<{ ds: DataSource; idx: number }> = []
+        for (let i = 0; i < currentDataSources.length; i++) {
+          if (currentDataSources[i].mode === 'timeseries') {
+            telSourcesWithIndex.push({ ds: currentDataSources[i], idx: i })
+          }
+        }
+        if (telSourcesWithIndex.length > 0 && currentValuesChanged && changedDeviceIds.size > 0) {
+          // Skip telemetry merge if WS event effect just processed telemetry data
+          // (within last 100ms) to prevent double-processing the same data point
+          const skipDueToWsProcessing = (Date.now() - wsTelemetryProcessedAtRef.current) < 100
+          if (!skipDueToWsProcessing) {
           const { preserveMultiple: pm, transform: tf } = state.optionsRef.current
           const now = Math.floor(Date.now() / 1000)
           const cacheKeysToInvalidate: string[] = []
@@ -385,7 +440,7 @@ export function useStoreSource<T = unknown>(
               const cv = s.deviceTelemetry[deviceId] || findDevice(s.devices, deviceId)?.current_values
               if (!cv || typeof cv !== 'object') continue
 
-              for (const ds of telSources) {
+              for (const { ds, idx } of telSourcesWithIndex) {
                 // Only device-sourced telemetry can match changedDeviceIds
                 if (ds.source !== 'device') continue
                 const dsId = getUnifiedId(ds)
@@ -395,12 +450,14 @@ export function useStoreSource<T = unknown>(
                 if (latestValue === undefined) continue
 
                 // Inline the processTelemetryEvent logic for a single point
-                const newPoint = { timestamp: now, time: now, value: latestValue }
+                const imgDs = isImageDataSource(ds)
+                const normalizedVal = imgDs ? normalizeImageValue(latestValue) : latestValue
+                const newPoint = { timestamp: now, time: now, value: normalizedVal }
                 const maxLimit = getDataSourceLimit(ds)
 
                 // Update currentData in-place for next iteration
                 const updated = processSingleTelemetryPoint(
-                  currentData, newPoint, currentDataSources, ds, pm, maxLimit
+                  currentData, newPoint, currentDataSources, idx, ds, pm, maxLimit
                 )
                 if (updated !== undefined) {
                   currentData = updated
@@ -420,6 +477,7 @@ export function useStoreSource<T = unknown>(
           if (cacheKeysToInvalidate.length > 0) {
             state.setLastUpdate(Date.now())
           }
+          } // end if (!skipDueToWsProcessing)
         }
       }
       perfEnd('storeChange')
@@ -468,14 +526,37 @@ export function useStoreSource<T = unknown>(
     let startIndex = 0
     const lastProcessedId = lastProcessedDeviceEventIdRef.current
     if (lastProcessedId) {
-      const lastIndex = events.findIndex(e => e.id === lastProcessedId)
-      if (lastIndex !== -1) startIndex = lastIndex + 1
+      // Backward scan — cache-friendly, stops at first match
+      let found = -1
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].id === lastProcessedId) { found = i; break }
+      }
+      if (found !== -1) startIndex = found + 1
       else { startIndex = 0; const entries = Array.from(processedDeviceEventsRef.current); processedDeviceEventsRef.current = new Set(entries.slice(-50)) }
     }
     if (startIndex > events.length) { startIndex = 0; processedDeviceEventsRef.current.clear() }
 
     const newEvents = events.slice(startIndex)
     if (newEvents.length === 0) return
+
+    // Pre-compute outside event loop — avoids per-event scan
+    const currentDataSources = state.dataSourcesRef.current
+    // Use the prop rather than re-scanning; hasTelemetrySource is derived from
+    // the same dataSources via useMemo and doesn't change between renders
+    const hasTelemetrySrc = hasTelemetrySource
+
+    // Build deviceId → telemetry sources map for O(1) lookup per event
+    const telemetryByDevice = new Map<string, DataSource[]>()
+    if (hasTelemetrySrc) {
+      for (const ds of currentDataSources) {
+        if (ds.mode !== 'timeseries') continue
+        const dsId = getUnifiedId(ds)
+        if (!dsId) continue
+        const existing = telemetryByDevice.get(dsId)
+        if (existing) existing.push(ds)
+        else telemetryByDevice.set(dsId, [ds])
+      }
+    }
 
     let lastProcessedIdInBatch: string | null = null
 
@@ -524,7 +605,6 @@ export function useStoreSource<T = unknown>(
       }
 
       // Check if event matches data sources
-      const currentDataSources = state.dataSourcesRef.current
       for (const ds of currentDataSources) {
         const dsId = getUnifiedId(ds)
         const dsField = getUnifiedField(ds) ?? 'value'
@@ -539,22 +619,24 @@ export function useStoreSource<T = unknown>(
       }
 
       // Telemetry merge (optimized path) — only for timeseries mode
-      const hasTelemetrySrc = currentDataSources.some((ds) => ds.mode === 'timeseries')
       let telemetryAlreadyProcessed = false
 
       if (hasTelemetrySrc && isDeviceMetricEvent && hasDeviceId) {
         const eventDeviceId = eventData.device_id as string
-        const matchingSources = currentDataSources.filter((ds) => {
-          if (ds.mode !== 'timeseries') return false
-          const dsId = getUnifiedId(ds)
-          if (dsId !== eventDeviceId) return false
-          if (!eventMetric) return true
-          const metricId = getUnifiedField(ds) || 'value'
-          return eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
-        })
+        const deviceTelSources = telemetryByDevice.get(eventDeviceId)
+        const matchingSources = deviceTelSources
+          ? deviceTelSources.filter((ds) => {
+              if (!eventMetric) return true
+              const metricId = getUnifiedField(ds) || 'value'
+              return eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
+            })
+          : []
 
         if (matchingSources.length > 0) {
           telemetryAlreadyProcessed = true
+          // Mark that WS just processed telemetry — store subscription will skip
+          // its telemetry merge for a brief window to avoid double-processing
+          wsTelemetryProcessedAtRef.current = Date.now()
           const { preserveMultiple: pm, transform: tf } = state.optionsRef.current
           processTelemetryEvent(eventData, eventMetric, eventDeviceId, currentDataSources, pm, tf, (updater) => state.setData((prev) => updater(prev) as T), state.setLastUpdate)
 

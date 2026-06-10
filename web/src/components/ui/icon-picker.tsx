@@ -8,6 +8,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, X, Check } from 'lucide-react'
+import { dynamicIconMap } from '@/lib/dynamicIcons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,8 +19,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import * as LucideIcons from 'lucide-react'
-
 // Icon categories with their icons (no duplicates across categories)
 export const ICON_CATEGORIES = {
   common: [
@@ -125,7 +124,7 @@ export function IconPicker({
 
   // Get icon component by name - returns JSX element or null
   const renderIcon = (name: string, className = 'h-4 w-4') => {
-    const Icon = (LucideIcons as any)[name]
+    const Icon = dynamicIconMap[name]
     return Icon ? <Icon className={className} /> : null
   }
 
@@ -285,7 +284,7 @@ export interface IconDisplayProps {
 }
 
 export function IconDisplay({ name, className }: IconDisplayProps) {
-  const Icon = (LucideIcons as any)[name]
+  const Icon = dynamicIconMap[name]
   if (!Icon) return null
   return <Icon className={className} />
 }

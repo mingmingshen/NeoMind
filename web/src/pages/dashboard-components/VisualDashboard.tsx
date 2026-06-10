@@ -199,7 +199,7 @@ import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/regi
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
 import { DeviceBindingConfig } from '@/components/dashboard/config/DeviceBindingConfig'
 import { groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
-import * as lucideReact from 'lucide-react'
+// lucideReact barrel import removed — icons are imported individually above
 import { api, fetchAPI } from '@/lib/api'
 import { notifySuccess, notifyError } from '@/lib/notify'
 import { confirm } from '@/hooks/use-confirm'

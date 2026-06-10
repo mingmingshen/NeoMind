@@ -13,11 +13,11 @@ interface AnalystTimelineProps {
 
 export function AnalystTimeline({ messages, streamingContent, streamingMsgId, contextWindowSize }: AnalystTimelineProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
-  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on new messages (smart: only if near bottom)
   useEffect(() => {
-    const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    const el = viewportRef.current
     if (el) {
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100
       if (isNearBottom) {
@@ -39,7 +39,7 @@ export function AnalystTimeline({ messages, streamingContent, streamingMsgId, co
   }
 
   return (
-    <ScrollArea className="h-full" ref={scrollAreaRef}>
+    <ScrollArea className="h-full" viewportRef={viewportRef}>
       <div className="p-3 space-y-2">
         {visibleMessages.map((msg) => (
           <AnalystMessageBubble

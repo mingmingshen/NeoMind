@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 interface AnalystInputBarProps {
   onSend: (text: string) => void
   disabled?: boolean
+  streaming?: boolean
 }
 
-export function AnalystInputBar({ onSend, disabled }: AnalystInputBarProps) {
+export function AnalystInputBar({ onSend, disabled, streaming }: AnalystInputBarProps) {
   const [text, setText] = useState('')
 
   const handleSend = useCallback(() => {
@@ -39,7 +40,7 @@ export function AnalystInputBar({ onSend, disabled }: AnalystInputBarProps) {
           disabled={!text.trim() || disabled}
           className="h-9 px-3 shrink-0"
         >
-          {disabled ? (
+          {streaming ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Send className="h-4 w-4" />

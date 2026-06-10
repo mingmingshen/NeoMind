@@ -8,7 +8,7 @@
 
 import { memo, useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import * as lucideReact from 'lucide-react'
+import { dynamicIconMap } from '@/lib/dynamicIcons'
 import {
   LayoutGrid, Store as StoreIcon, Search,
   Box, Check, Trash2, Download, Loader2, Upload, PackagePlus, RefreshCw,
@@ -281,7 +281,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,(100%/6-10px)),1fr))] gap-3">
                     {marketComponents.map((mc: MarketComponentEntry) => {
                       const isInstalled = installedComponents.some(c => c.id === mc.id)
-                      const McIcon = (lucideReact as any)[mc.icon || 'Box'] || Box
+                      const McIcon = dynamicIconMap[mc.icon || 'Box'] || Box
                       const mcName = typeof mc.name === 'string' ? mc.name : (mc.name[i18n.language] || mc.name.en || Object.values(mc.name)[0] || mc.id)
                       const mcDesc = typeof mc.description === 'string' ? mc.description : (mc.description[i18n.language] || mc.description.en || Object.values(mc.description)[0] || '')
                       return (

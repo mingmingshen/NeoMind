@@ -22,11 +22,12 @@ export interface AnalystMessage {
   isStreaming?: boolean
 }
 
-export interface VisionModel {
+export interface AnalystModel {
   id: string
   name: string
   backendId: string
   backendName: string
+  isMultimodal: boolean
 }
 
 export const DEFAULT_SYSTEM_PROMPT =

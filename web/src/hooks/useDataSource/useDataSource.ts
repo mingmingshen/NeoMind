@@ -147,30 +147,6 @@ export function useDataSource<T = unknown>(
     return normalized
   }, [dataSource, sourceTransform])
 
-  const relevantDeviceIds = useMemo(() => {
-    return new Set(
-      dataSources
-        .map((ds) => {
-          const mode = getUnifiedMode(ds)
-          const source = getUnifiedSource(ds)
-          if (source === 'device' && (mode === 'latest' || mode === 'command' || mode === 'info')) {
-            return getUnifiedId(ds)
-          }
-          return null
-        })
-        .filter(Boolean) as string[]
-    )
-  }, [dataSources])
-
-  const deviceInfoIds = useMemo(() => {
-    return new Set(
-      dataSources
-        .filter((ds) => getUnifiedMode(ds) === 'info' && getUnifiedSource(ds) === 'device')
-        .map((ds) => getUnifiedId(ds))
-        .filter(Boolean) as string[]
-    )
-  }, [dataSources])
-
   const optionsRef = useRef({ enabled, transform, fallback, preserveMultiple })
   optionsRef.current = { enabled, transform, fallback, preserveMultiple }
   const dataSourcesRef = useRef(dataSources)
@@ -179,26 +155,36 @@ export function useDataSource<T = unknown>(
   const commandSource = useMemo(() => dataSources.find(ds => ds.mode === 'command'), [dataSources])
   const hasCommandSource = commandSource !== undefined
 
-  const telemetrySources = useMemo(() =>
-    dataSources.filter((ds) => ds.mode === 'timeseries' && ds.source !== 'system' && ds.source !== 'extension'),
-    [dataSources]
-  )
-
-  const pollingSources = useMemo(() => dataSources.filter(ds => {
-    if (ds.source === 'extension') return false          // handled by useExtensionSource
-    if (ds.mode === 'timeseries' && ds.source !== 'system') return false  // handled by useTelemetrySource
-    if (ds.source === 'system') return true               // ALL system modes including timeseries
-    if (ds.mode === 'list') return true                   // list mode → polling
-    return false
-  }), [dataSources])
-  const extensionSources = useMemo(() => dataSources.filter(ds => ds.source === 'extension'), [dataSources])
+  // Single-pass categorization — extracts categories + ID sets in one loop
+  const {
+    telemetrySources, pollingSources, extensionSources, needsWebSocket,
+    relevantDeviceIds, deviceInfoIds,
+  } = useMemo(() => {
+    const tel: DataSource[] = []
+    const poll: DataSource[] = []
+    const ext: DataSource[] = []
+    const deviceIds = new Set<string>()
+    const infoIds = new Set<string>()
+    let needsWs = false
+    for (const ds of dataSources) {
+      const mode = getUnifiedMode(ds)
+      const source = getUnifiedSource(ds)
+      // Collect device IDs for WS event filtering
+      if (source === 'device') {
+        const id = getUnifiedId(ds)
+        if (id) deviceIds.add(id)
+        if (mode === 'info') infoIds.add(id!)
+      }
+      if (ds.source === 'extension') { ext.push(ds); continue }
+      if (ds.mode === 'timeseries' && ds.source !== 'system') { tel.push(ds); continue }
+      if (ds.source === 'system' || ds.mode === 'list') { poll.push(ds) }
+      if (mode === 'latest' || mode === 'command' || mode === 'info' || mode === 'timeseries') needsWs = true
+    }
+    return { telemetrySources: tel, pollingSources: poll, extensionSources: ext, needsWebSocket: needsWs, relevantDeviceIds: deviceIds, deviceInfoIds: infoIds }
+  }, [dataSources])
 
   const hasTelemetrySource = telemetrySources.length > 0
   const hasExtensionSource = extensionSources.length > 0
-  const needsWebSocket = dataSources.some(ds => {
-    const mode = getUnifiedMode(ds)
-    return mode === 'latest' || mode === 'command' || mode === 'info' || mode === 'timeseries'
-  })
 
   const telemetryKey = useMemo(() => {
     return telemetrySources
@@ -226,7 +212,7 @@ export function useDataSource<T = unknown>(
     return extensionSources
       .map((ds) => {
         const tw = ds.timeWindow ? `${ds.timeWindow.type}:${ds.timeWindow.startTime ?? ''}:${ds.timeWindow.endTime ?? ''}` : ''
-        return createStableKey({ extensionId: getUnifiedId(ds), extensionMetric: getUnifiedField(ds), timeRange: ds.timeRange, limit: ds.limit, timeWindow: tw })
+        return `${getUnifiedId(ds) ?? ''}:${getUnifiedField(ds) ?? ''}:${ds.timeRange ?? ''}:${ds.limit ?? ''}:${tw}`
       })
       .join('|')
   }, [extensionSources])
@@ -293,6 +279,11 @@ export function useDataSource<T = unknown>(
     // No-op: loading is managed via ref counter
   }, [])
 
+  // Stable adapter — replaces 3 identical per-render closures (one per sub-hook)
+  const setDataAdapter = useCallback((updater: unknown | ((prev: unknown) => unknown)) => {
+    setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T)
+  }, [setData])
+
   // ============================================================================
   // D. Store source
   // ============================================================================
@@ -313,7 +304,7 @@ export function useDataSource<T = unknown>(
   // ============================================================================
 
   useTelemetrySource(telemetrySources, telemetryKey, enabled, hasTelemetrySource, relevantDeviceIds, wsConnected, {
-    setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
+    setData: setDataAdapter,
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
     readDataFromStore,
     sourceAdapters,
@@ -324,7 +315,7 @@ export function useDataSource<T = unknown>(
   // ============================================================================
 
   usePollingSource(pollingSources, pollingKey, enabled, {
-    setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
+    setData: setDataAdapter,
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
     sourceAdapters,
   })
@@ -334,7 +325,7 @@ export function useDataSource<T = unknown>(
   // ============================================================================
 
   useExtensionSource(extensionSources, extensionKey, enabled, currentKey, relevantExtensionIds, {
-    setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
+    setData: setDataAdapter,
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, dataSourcesRef, optionsRef,
     sourceAdapters,
   })

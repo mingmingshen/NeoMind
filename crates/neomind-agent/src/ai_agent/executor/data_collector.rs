@@ -1225,13 +1225,15 @@ pub(crate) fn extract_image_data(
             .get("base64")
             .or(obj.get("data"))
             .or(obj.get("image_data"))
+            .or(obj.get("image_base64"))
             .and_then(|v| v.as_str())
         {
-            tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched Object base64/data/image_data field, len={}", base64.len());
-            // Prefer the explicit mime_type/type field; otherwise infer from
+            tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched Object base64 field, len={}", base64.len());
+            // Prefer the explicit mime_type/type/image_mime_type field; otherwise infer from
             // base64 magic prefix; only fall back to jpeg if neither works.
             let mime = obj
-                .get("mime_type")
+                .get("image_mime_type")
+                .or(obj.get("mime_type"))
                 .or(obj.get("type"))
                 .and_then(|v| v.as_str())
                 .map(|m| m.to_string())

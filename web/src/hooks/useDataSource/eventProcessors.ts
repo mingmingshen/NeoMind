@@ -9,7 +9,7 @@ import { useStore } from '@/store'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
   getPointValue, isImageDataSource, getDataSourceLimit,
-  isDuplicatePoint, sortAndDedup,
+  isDuplicatePoint, sortAndDedup, normalizeImageValue,
   findDevice, resolveDeviceInfoValue, insertAndMaintain,
 } from './helpers'
 import { timeWindowToHours } from '@/lib/telemetryTransform'
@@ -80,8 +80,9 @@ export function mergeLiveData(
       const live = livePoints[i] ?? []
       const isImg = isImageDataSource(ds)
       const maxLimit = getDataSourceLimit(ds)
-      let result: unknown[] = []
-      for (const p of fetched) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
+      // Fetched data is already sorted & deduplicated by sortTelemetryResults.
+      // Only live WS points need individual insertion — avoids O(n²) array copies.
+      let result = fetched
       for (const p of live) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
       return result
     })
@@ -91,8 +92,7 @@ export function mergeLiveData(
   const ds = sources[0]
   const maxLimit = ds ? getDataSourceLimit(ds) : 50
   const isImg = ds ? isImageDataSource(ds) : false
-  let result: unknown[] = []
-  for (const p of fetched) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
+  let result = fetched
   for (const p of live) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
   return result
 }
@@ -138,64 +138,86 @@ export function processTelemetryEvent(
         ? Math.floor(rawEventTimestamp / 1000) : rawEventTimestamp)
     : now
 
-  // Pre-compute event values outside the updater to avoid recomputation
-  const matchedResults = dataSources.map((ds) => {
-    const isTimeseries = ds.mode === 'timeseries'
-    const dsId = getUnifiedId(ds)
-    if (!isTimeseries || dsId !== eventDeviceId) return undefined
-    // Use timeWindow for accurate range; fall back to timeRange (hours) for legacy sources
+  // Fast path: single source (covers ~90% of dashboard components)
+  if (dataSources.length === 1) {
+    const ds = dataSources[0]
+    if (ds.mode !== 'timeseries' || getUnifiedId(ds) !== eventDeviceId) return
+
     const dsTimeRangeHours = ds.timeWindow
       ? timeWindowToHours(ds.timeWindow.type)
       : (ds.timeRange ?? 1)
-    const rangeStartSec = now - Math.floor(dsTimeRangeHours * 3600)
-    if (eventTimestamp < rangeStartSec) return undefined
+    if (eventTimestamp < now - Math.floor(dsTimeRangeHours * 3600)) return
 
     const metricId = getUnifiedField(ds) || 'value'
     let eventValue: unknown
     const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
+    if ('value' in eventData && metricMatches) { eventValue = eventData.value }
+    else if (!eventMetric) { eventValue = extractValueFromData(eventData, metricId) }
+    else return
+    if (eventValue === undefined) return
 
+    const isImg = isImageDataSource(ds)
+    const maxLimit = getDataSourceLimit(ds)
+    const normalizedValue = isImg ? normalizeImageValue(eventValue) : eventValue
+    const newPoint = { timestamp: eventTimestamp, time: eventTimestamp, value: normalizedValue }
+
+    setData((prevData: unknown) => {
+      const currentArray = Array.isArray(prevData) ? prevData as unknown[] : []
+      if (isImg && isDuplicatePoint(currentArray, eventTimestamp, normalizedValue, getTs)) return prevData
+      const updated = insertAndMaintain(currentArray, newPoint, getTs, maxLimit, isImg)
+      return transform ? transform(updated) : updated
+    })
+    setLastUpdate(Date.now())
+    return
+  }
+
+  // Multi-source path: pre-compute matches outside updater
+  const matchedResults = dataSources.map((ds) => {
+    if (ds.mode !== 'timeseries' || getUnifiedId(ds) !== eventDeviceId) return undefined
+    const dsTimeRangeHours = ds.timeWindow
+      ? timeWindowToHours(ds.timeWindow.type)
+      : (ds.timeRange ?? 1)
+    if (eventTimestamp < now - Math.floor(dsTimeRangeHours * 3600)) return undefined
+
+    const metricId = getUnifiedField(ds) || 'value'
+    let eventValue: unknown
+    const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
     if ('value' in eventData && metricMatches) { eventValue = eventData.value }
     else if (!eventMetric) { eventValue = extractValueFromData(eventData, metricId) }
     else return undefined
     if (eventValue === undefined) return undefined
 
-    const isImg = isImageDataSource(ds)
-    return { eventValue, isImg, metricId }
+    return { eventValue, isImg: isImageDataSource(ds) }
   })
 
-  if (!matchedResults.some((r) => r !== undefined)) return
+  if (!matchedResults.some(Boolean)) return
 
   setData((prevData: unknown) => {
-    const currentData = prevData
     const updatedResults = dataSources.map((ds, index) => {
       const matched = matchedResults[index]
       if (!matched) return undefined
 
-      const maxLimit = getDataSourceLimit(ds)
-      const newPoint = { timestamp: eventTimestamp, time: eventTimestamp, value: matched.eventValue }
-
+      const normalizedVal = matched.isImg ? normalizeImageValue(matched.eventValue) : matched.eventValue
+      const newPoint = { timestamp: eventTimestamp, time: eventTimestamp, value: normalizedVal }
       let currentArray: unknown[] = []
-      if (Array.isArray(currentData)) {
-        if (preserveMultiple && dataSources.length > 1 && Array.isArray(currentData[index])) {
-          currentArray = currentData[index] as unknown[]
-        } else if (dataSources.length === 1 || !preserveMultiple) {
-          currentArray = currentData as unknown[]
-        }
+      if (Array.isArray(prevData)) {
+        if (preserveMultiple && dataSources.length > 1 && Array.isArray((prevData as unknown[])[index])) {
+          currentArray = (prevData as unknown[])[index] as unknown[]
+        } else { currentArray = prevData as unknown[] }
       }
 
-      if (matched.isImg && isDuplicatePoint(currentArray, eventTimestamp, matched.eventValue, getTs)) return undefined
-
-      return insertAndMaintain(currentArray, newPoint, getTs, maxLimit, matched.isImg)
+      if (matched.isImg && isDuplicatePoint(currentArray, eventTimestamp, normalizedVal, getTs)) return undefined
+      return insertAndMaintain(currentArray, newPoint, getTs, getDataSourceLimit(ds), matched.isImg)
     })
 
-    if (!updatedResults.some((r) => r !== undefined)) return currentData
+    if (!updatedResults.some(Boolean)) return prevData
 
-    const validResults = updatedResults.filter((r) => r !== undefined)
     let finalData: unknown
     if (preserveMultiple && dataSources.length > 1) {
-      finalData = updatedResults.map((r, i) => r !== undefined ? r : (Array.isArray(currentData) && currentData[i] !== undefined ? currentData[i] : []))
+      finalData = updatedResults.map((r, i) => r !== undefined ? r : (Array.isArray(prevData) && (prevData as unknown[])[i] !== undefined ? (prevData as unknown[])[i] : []))
     } else {
-      finalData = validResults[0] ?? currentData
+      const first = updatedResults.find((r) => r !== undefined)
+      finalData = first ?? prevData
     }
 
     return transform ? transform(finalData) : finalData
@@ -213,6 +235,70 @@ export function processNonTelemetryEvent(
   const currentDevices = storeState.devices
   const currentTelemetry = storeState.deviceTelemetry
 
+  // Fast path: single source (covers ~90% of dashboard components)
+  if (dataSources.length === 1) {
+    const ds = dataSources[0]
+    const mode = getUnifiedMode(ds)
+    const source = getUnifiedSource(ds)
+    let result: unknown
+
+    if (mode === 'latest' && source === 'device') {
+      const deviceId = getUnifiedId(ds)
+      if (!deviceId) { setData(() => transform ? transform(fallback) : fallback); setLastUpdate(Date.now()); return }
+      const property = getUnifiedField(ds) as string | undefined
+      if (!property) {
+        result = findDevice(currentDevices, deviceId) ?? null
+      } else if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+        const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
+        if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value }
+        else if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) result = extracted }
+        if (result === undefined) {
+          const cv = currentTelemetry[deviceId] || findDevice(currentDevices, deviceId)?.current_values
+          result = cv ? (extractValueFromData(cv, property) ?? '-') : '-'
+        }
+      } else {
+        const cv = currentTelemetry[deviceId] || findDevice(currentDevices, deviceId)?.current_values
+        result = cv ? (extractValueFromData(cv, property) ?? '-') : '-'
+      }
+      result = safeExtractValue(result, '-')
+    } else if (mode === 'command' && source === 'device') {
+      const deviceId = getUnifiedId(ds)
+      if (!deviceId) { setData(() => transform ? transform(fallback ?? false) : fallback ?? false); setLastUpdate(Date.now()); return }
+      const property = getUnifiedField(ds) || 'state'
+      if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+        const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
+        if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value }
+        else if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) result = extracted }
+      }
+      if (result === undefined) {
+        const cv = currentTelemetry[deviceId] || findDevice(currentDevices, deviceId)?.current_values
+        result = cv ? (extractValueFromData(cv, property) ?? false) : false
+      }
+      result = safeExtractValue(result, false)
+    } else if (mode === 'info' && source === 'device') {
+      const deviceId = getUnifiedId(ds)
+      if (!deviceId) { setData(() => transform ? transform(fallback ?? '-') : fallback ?? '-'); setLastUpdate(Date.now()); return }
+      const infoProperty = getUnifiedField(ds) || 'name'
+      const device = findDevice(currentDevices, deviceId)
+      result = resolveDeviceInfoValue(device, infoProperty, fallback)
+      result = safeExtractValue(result as unknown, (fallback ?? '-') as any)
+    } else if (mode === 'latest' && source === 'system') {
+      result = fallback ?? null
+    } else if (mode === 'timeseries') {
+      // Timeseries is handled by processTelemetryEvent; preserve existing
+      return
+    } else {
+      // Unhandled — preserve existing
+      return
+    }
+
+    const finalData = transform ? transform(result) : result
+    setData(() => finalData)
+    setLastUpdate(Date.now())
+    return
+  }
+
+  // Multi-source path
   setData((prevData: unknown) => {
     const results = dataSources.map((ds, index) => {
       let result: unknown

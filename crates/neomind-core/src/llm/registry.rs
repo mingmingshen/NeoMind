@@ -195,7 +195,7 @@ pub fn heuristic_vision_match(model: &str) -> bool {
     // Native multimodal families — ALL variants in these series support vision.
     // Qwen 3.5/3.6: native multimodal (early fusion), all sizes support vision.
     // Gemma 3: native multimodal, all sizes support vision.
-    if m.starts_with("qwen3.5") || m.starts_with("qwen3.6") || m.starts_with("gemma3") {
+    if m.starts_with("qwen3.5") || m.starts_with("qwen3.6") || m.starts_with("qwen3.7") || m.starts_with("gemma3") {
         return true;
     }
     false

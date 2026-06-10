@@ -20,6 +20,7 @@ import {
   ChevronUp,
   X,
   Sparkles,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -79,6 +80,7 @@ export function ComponentConfigDialog({
   const { t } = useTranslation('dashboardComponents')
   const isMobile = useIsMobile()
   const insets = useSafeAreaInsets()
+  const [saving, setSaving] = useState(false)
 
   // Extract config schema sections
   const dataSourceSections = configSchema?.dataSourceSections ?? []
@@ -432,7 +434,8 @@ export function ComponentConfigDialog({
                 <Button variant="outline" onClick={onClose} className="min-w-[80px]">
                   {t('common.cancel')}
                 </Button>
-                <Button onClick={onSave} className="min-w-[80px]">
+                <Button onClick={async () => { setSaving(true); try { await onSave() } finally { setSaving(false) } }} className="min-w-[80px]" disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
                   {t('common.saveChanges')}
                 </Button>
               </div>
@@ -578,8 +581,8 @@ export function ComponentConfigDialog({
         <Button variant="outline" onClick={onClose}>
           {t('common.cancel')}
         </Button>
-        <Button onClick={onSave}>
-          <Sparkles className="h-4 w-4 mr-2" />
+        <Button onClick={async () => { setSaving(true); try { await onSave() } finally { setSaving(false) } }} disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
           {t('common.saveChanges')}
         </Button>
       </FullScreenDialogFooter>

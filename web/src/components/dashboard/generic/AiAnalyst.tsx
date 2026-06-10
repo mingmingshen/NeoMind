@@ -9,11 +9,11 @@
  * Frontend listens for WebSocket events to display results in the timeline.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ScanEye,
   Loader2,
-
+  Settings2,
   AlertCircle,
   Activity,
   Clock,
@@ -29,8 +29,10 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { LoadingState } from '../shared'
 import { AnalystTimeline } from './ai-analyst/AnalystTimeline'
 import { AnalystInputBar } from './ai-analyst/AnalystInputBar'
+import { AnalystConfigPanel } from './ai-analyst/AnalystConfigPanel'
 import { useAnalystSession } from './ai-analyst/useAnalystSession'
 import type { AiAnalystConfig } from './ai-analyst/types'
+import { DEFAULT_SYSTEM_PROMPT } from './ai-analyst/types'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -45,6 +47,7 @@ interface AiAnalystProps {
   /** Display title from dashboard component config */
   title?: string
   modelId?: string
+  modelName?: string
   systemPrompt?: string
   contextWindowSize?: number
   /** Persist config changes back to dashboard component (survives refresh) */
@@ -76,13 +79,14 @@ function isBase64Image(str: string): boolean {
   }
 }
 
-function normalizeToDataUrl(str: string): string {
+function normalizeToDataUrl(str: string, depth = 0): string {
+  if (depth > 5) return str // guard against infinite recursion
   if (str.startsWith('data:image/')) {
     const commaIdx = str.indexOf(',')
     if (commaIdx === -1) return str
     let b64 = str.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '')
     // Unwrap double-prefixed data URLs
-    if (b64.startsWith('data:image/') || b64.startsWith('data:')) return normalizeToDataUrl(b64)
+    if (b64.startsWith('data:image/') || b64.startsWith('data:')) return normalizeToDataUrl(b64, depth + 1)
     return str.slice(0, commaIdx + 1) + b64
   }
   const clean = str.replace(/[\s\r\n]+/g, '')
@@ -110,6 +114,7 @@ export function AiAnalyst({
   sessionId: sessionIdProp,
   dataSource: dataSourceProp,
   modelId: modelIdProp,
+  modelName: modelNameProp,
   systemPrompt: systemPromptProp,
   contextWindowSize: contextWindowSizeProp,
   onConfigChange,
@@ -118,23 +123,31 @@ export function AiAnalyst({
   // when agentId is saved back as a prop (which would trigger cleanup and delete the agent)
   const componentIdRef = useRef<string | null>(null)
   if (!componentIdRef.current) {
-    componentIdRef.current = agentId || sessionIdProp || `analyst-${Date.now()}`
+    componentIdRef.current = agentId || sessionIdProp || `analyst-${crypto.randomUUID()}`
   }
   const componentId = componentIdRef.current
+
+  // Config panel open state
+  const [configOpen, setConfigOpen] = useState(false)
 
   /** Get a display label for the data source (handles both single and multi-source) */
   const dataSourceLabel = useMemo(() => {
     if (!dataSourceProp) return undefined
-    if (Array.isArray(dataSourceProp)) {
-      const labels = dataSourceProp.map((ds: any) =>
-        ds.extensionMetric?.replace('produce:', '')
-        || ds.metricId
-        || ds.property
-        || ds.extensionId
+    const ds = dataSourceProp as any
+    if (Array.isArray(ds)) {
+      const labels = ds.map((s: any) =>
+        s.extensionMetric?.replace('produce:', '')
+        || s.metricId
+        || s.property
+        || s.extensionId
       ).filter(Boolean)
       return labels.length > 0 ? labels.join(', ') : undefined
     }
-    return (dataSourceProp as any)?.id
+    return ds.extensionMetric?.replace('produce:', '')
+      || ds.metricId
+      || ds.property
+      || ds.extensionId
+      || ds.sourceId
   }, [dataSourceProp])
 
   // Config from props (persisted in dashboard store/localStorage), not Zustand memory
@@ -142,11 +155,11 @@ export function AiAnalyst({
     () => ({
       agentId,
       modelId: modelIdProp,
-      systemPrompt: systemPromptProp ||
-        'You are a professional data analysis assistant. Analyze the provided data — images, metrics, or structured data — describe what you observe, and point out any notable patterns, changes, or anomalies.',
+      modelName: modelNameProp,
+      systemPrompt: systemPromptProp || DEFAULT_SYSTEM_PROMPT,
       contextWindowSize: contextWindowSizeProp || 10,
     }),
-    [agentId, modelIdProp, systemPromptProp, contextWindowSizeProp],
+    [agentId, modelIdProp, modelNameProp, systemPromptProp, contextWindowSizeProp],
   )
 
   // Persist config back to dashboard via onConfigChange (survives page refresh)
@@ -154,19 +167,20 @@ export function AiAnalyst({
     (updates: Partial<AiAnalystConfig>) => {
       if (onConfigChange) {
         const newConfig: Record<string, any> = {}
-        // Only include fields that have actual values (skip undefined)
-        const agentIdVal = updates.agentId ?? agentId
-        if (agentIdVal) newConfig.agentId = agentIdVal
-        const modelIdVal = updates.modelId ?? modelIdProp
-        if (modelIdVal) newConfig.modelId = modelIdVal
-        const promptVal = updates.systemPrompt ?? systemPromptProp
-        if (promptVal) newConfig.systemPrompt = promptVal
-        const cwVal = updates.contextWindowSize ?? contextWindowSizeProp
-        if (cwVal) newConfig.contextWindowSize = cwVal
+        const pairs: [string, unknown][] = [
+          ['agentId', updates.agentId ?? agentId],
+          ['modelId', updates.modelId ?? modelIdProp],
+          ['modelName', updates.modelName ?? modelNameProp],
+          ['systemPrompt', updates.systemPrompt ?? systemPromptProp],
+          ['contextWindowSize', updates.contextWindowSize ?? contextWindowSizeProp],
+        ]
+        for (const [key, val] of pairs) {
+          if (val !== undefined && val !== null) newConfig[key] = val
+        }
         onConfigChange(newConfig)
       }
     },
-    [onConfigChange, modelIdProp, systemPromptProp, contextWindowSizeProp, agentId],
+    [onConfigChange, modelIdProp, modelNameProp, systemPromptProp, contextWindowSizeProp, agentId],
   )
 
   const {
@@ -277,7 +291,7 @@ export function AiAnalyst({
     } else {
       sendData(latestValue, dataSourceLabel)
     }
-  }, [editMode, dsData, isStreaming, dataSourceProp])
+  }, [editMode, dsData, isStreaming, dataSourceProp, extractLatestValue, sendImage, sendData, dataSourceLabel])
 
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null
@@ -436,10 +450,19 @@ export function AiAnalyst({
               )}
             </div>
           </div>
+
+          {/* Settings button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => setConfigOpen(true)}
+            aria-label="Analyst settings"
+          >
+            <Settings2 className="h-4 w-4" />
+          </Button>
         </div>
       </div>
-
-      {/* Content: Timeline */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <AnalystTimeline
           messages={messages}
@@ -450,7 +473,16 @@ export function AiAnalyst({
       </div>
 
       {/* Footer: Input Bar */}
-      <AnalystInputBar onSend={sendText} disabled={isStreaming || !isConnected} />
+      <AnalystInputBar onSend={sendText} disabled={isStreaming || !isConnected} streaming={isStreaming} />
+
+      {/* Config Panel */}
+      <AnalystConfigPanel
+        open={configOpen}
+        onOpenChange={setConfigOpen}
+        config={config}
+        onSave={handleConfigUpdate}
+        dataSource={dataSourceLabel}
+      />
     </div>
   )
 }

@@ -508,7 +508,7 @@ export const componentRegistry: ComponentRegistry = {
     hasDataSource: true,
     hasDisplayConfig: false,
     hasActions: true,
-    acceptsProp: (prop) => ['agentId', 'sessionId', 'className', 'editMode'].includes(prop),
+    acceptsProp: (prop) => ['agentId', 'sessionId', 'className', 'editMode', 'modelId', 'modelName', 'systemPrompt', 'contextWindowSize', 'title'].includes(prop),
     defaultProps: { agentId: undefined },
     variants: ['default'],
   },

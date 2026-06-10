@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { VisionModel } from './types'
+import type { AnalystModel } from './types'
 
 export function useAnalystModels() {
-  const [models, setModels] = useState<VisionModel[]>([])
+  const [models, setModels] = useState<AnalystModel[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -13,20 +13,19 @@ export function useAnalystModels() {
     try {
       const resp = await api.listLlmBackends()
       const backends = resp.backends || []
-      const visionModels: VisionModel[] = []
+      const result: AnalystModel[] = []
 
       for (const backend of backends) {
-        if (backend.capabilities?.supports_multimodal) {
-          visionModels.push({
-            id: backend.id,
-            name: backend.name || backend.model,
-            backendId: backend.id,
-            backendName: backend.name || backend.id,
-          })
-        }
+        result.push({
+          id: backend.id,
+          name: backend.name || backend.model,
+          backendId: backend.id,
+          backendName: backend.name || backend.id,
+          isMultimodal: backend.capabilities?.supports_multimodal ?? false,
+        })
       }
 
-      setModels(visionModels)
+      setModels(result)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load models')
     } finally {

@@ -8,7 +8,7 @@
  * but is specifically for community marketplace components.
  */
 
-import * as lucideReact from 'lucide-react'
+import { dynamicIconMap } from '@/lib/dynamicIcons'
 import type { ComponentMeta } from './types'
 import type { FrontendComponentMeta } from '@/types/frontend-component'
 import { isTauriEnv, getServerOrigin } from '@/lib/api'
@@ -411,8 +411,7 @@ export class CommunityComponentRegistry {
   communityMetaToComponentMeta(meta: FrontendComponentMeta): ComponentMeta {
     // Get icon component from lucide-react
     const iconName = meta.icon || 'Box'
-    const lucideRecord: any = lucideReact
-    const IconComponent = lucideRecord[iconName] || lucideRecord.Box
+    const IconComponent = dynamicIconMap[iconName] || dynamicIconMap.Box
 
     // Get localized name (current locale or fallback to English)
     const getName = (): string => {

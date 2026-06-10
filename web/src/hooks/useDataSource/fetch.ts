@@ -8,7 +8,7 @@ import { getUnifiedField } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { logError, isNetworkError } from '@/lib/errors'
 import { getTimeRange } from '@/lib/telemetryTransform'
-import { insertAndMaintain } from './helpers'
+import { insertAndMaintain, normalizeImageValue } from './helpers'
 
 // ============================================================================
 // Cache (replaces TypedCache class instances)
@@ -83,6 +83,32 @@ export function clearTelemetryCache() {
 }
 
 // ============================================================================
+// Shared extractors for telemetry data points (module scope for reuse)
+// ============================================================================
+
+const extractValue = (point: unknown): number => {
+  if (typeof point === 'number') return point
+  if (typeof point === 'object' && point !== null) {
+    const p = point as Record<string, unknown>
+    const rawValue = p.value ?? p.v ?? p.avg ?? p.min ?? p.max ?? 0
+    if (typeof rawValue === 'number') return rawValue
+    if (typeof rawValue === 'string') { const parsed = parseFloat(rawValue); return isNaN(parsed) ? 0 : parsed }
+    if (typeof rawValue === 'boolean') return rawValue ? 1 : 0
+    return 0
+  }
+  return 0
+}
+
+const extractTimestamp = (point: unknown): number => {
+  if (typeof point === 'object' && point !== null) {
+    const p = point as Record<string, unknown>
+    const ts = p.timestamp ?? p.time ?? p.t
+    if (typeof ts === 'number') return ts > 10000000000 ? Math.floor(ts / 1000) : ts
+  }
+  return Math.floor(Date.now() / 1000)
+}
+
+// ============================================================================
 // Telemetry fetching (from telemetryFetch.ts)
 // ============================================================================
 
@@ -138,11 +164,13 @@ export async function fetchHistoricalTelemetry(
         metricId.toLowerCase().includes('values.image')
       ))
       const isImgMetric = isImageSource || isImgByMetric
-      // Images: no bucketing — just fetch `limit` newest points
-      const fetchLimit = timeWindow
-        ? 3000
-        : isImgMetric
-          ? limit
+      // Images: no bucketing — just fetch `limit` newest points.
+      // For non-image metrics with timeWindow, fetch up to 3000 for bucketed display.
+      // For image metrics, always respect the caller's limit to avoid huge payloads (base64).
+      const fetchLimit = isImgMetric
+        ? limit
+        : timeWindow
+          ? 3000
           : Math.max(limit * 2, timeRange <= 1 ? 100 : Math.min(Math.ceil(timeRange * 17), 1000))
 
       // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
@@ -179,28 +207,6 @@ export async function fetchHistoricalTelemetry(
       }
 
       if (Array.isArray(metricData) && metricData.length > 0) {
-        const extractValue = (point: unknown): number => {
-          if (typeof point === 'number') return point
-          if (typeof point === 'object' && point !== null) {
-            const p = point as Record<string, unknown>
-            const rawValue = p.value ?? p.v ?? p.avg ?? p.min ?? p.max ?? 0
-            if (typeof rawValue === 'number') return rawValue
-            if (typeof rawValue === 'string') { const parsed = parseFloat(rawValue); return isNaN(parsed) ? 0 : parsed }
-            if (typeof rawValue === 'boolean') return rawValue ? 1 : 0
-            return 0
-          }
-          return 0
-        }
-
-        const extractTimestamp = (point: unknown): number => {
-          if (typeof point === 'object' && point !== null) {
-            const p = point as Record<string, unknown>
-            const ts = p.timestamp ?? p.time ?? p.t
-            if (typeof ts === 'number') return ts > 10000000000 ? Math.floor(ts / 1000) : ts
-          }
-          return Math.floor(Date.now() / 1000)
-        }
-
         const allValues = metricData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
 
         let values: number[]
@@ -254,34 +260,50 @@ export async function fetchHistoricalTelemetry(
           values = [aggVal]
           if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else {
-          // raw — points are already the right count:
-          //   - timeWindow queries: backend did bucketed downsampling
-          //   - default queries: backend returned limited newest points
-          // Build ascending array via insertAndMaintain, apply display limit.
-          // Use content-based dedup (isImage=true) for includeRawPoints to avoid
-          // collapsing multiple images that share the same second-precision timestamp.
+          // raw — sort once then cap, instead of O(n²) per-point insertion.
+          // Backend returns newest-first; sort ascending (oldest-first) for display.
           const displayLimit = limit || 50
           const preserveAll = includeRawPoints
-          const getPointTs = (p: unknown): number => extractTimestamp(p)
-          let ascData: unknown[] = []
-          for (const p of metricData) {
-            ascData = insertAndMaintain(ascData, p, getPointTs, displayLimit, preserveAll)
-          }
-          values = ascData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
-          rawPoints = includeRawPoints ? ascData.map((point) => {
+
+          // Sort indices by timestamp ascending to avoid creating wrapper objects
+          const indices = metricData.map((_, i) => i)
+          indices.sort((a, b) => extractTimestamp(metricData[a]) - extractTimestamp(metricData[b]))
+          const ascData = indices.map(i => metricData[i])
+
+          // Apply limit (keep newest = last N)
+          const trimmed = ascData.length > displayLimit
+            ? ascData.slice(ascData.length - displayLimit)
+            : ascData
+          values = trimmed.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
+          rawPoints = includeRawPoints ? trimmed.map((point) => {
             if (typeof point === 'number') return { timestamp: Math.floor(Date.now() / 1000), value: point }
             if (typeof point === 'object' && point !== null) {
               const p = point as Record<string, unknown>
               const ts = p.timestamp ?? p.time ?? p.t
               const timestamp = typeof ts === 'number' ? (ts > 10000000000 ? Math.floor(ts / 1000) : ts) : Math.floor(Date.now() / 1000)
-              // Preserve ALL original fields (image, data, src, etc.) — not just value/v
+              // For image sources, pre-normalize raw base64 to data URL once here
+              // so toImageHistoryItems doesn't re-compute expensive normalization on every render
+              if (isImgMetric) {
+                const rawVal = p.value ?? p.v
+                const normalized = normalizeImageValue(rawVal)
+                if (normalized !== rawVal) {
+                  return { ...p, timestamp, value: normalized }
+                }
+              }
               return { ...p, timestamp }
             }
             return { timestamp: Math.floor(Date.now() / 1000), value: point }
           }) : undefined
         }
 
-        telemetryCache.set(cacheKey, { data: values, raw: rawPoints }, { cachedAt: Date.now() })
+        // For image sources, only cache the last 5 raw items to avoid
+        // holding 30-50MB of base64 data in memory. Switching back to the
+        // dashboard will instantly show the latest 5 images from cache while
+        // the full history loads in the background.
+        const rawToCache = isImgMetric && rawPoints && rawPoints.length > 5
+          ? rawPoints.slice(-5)
+          : rawPoints
+        telemetryCache.set(cacheKey, { data: values, raw: rawToCache }, { cachedAt: Date.now() })
         return { data: values, raw: rawPoints, success: true }
       }
 

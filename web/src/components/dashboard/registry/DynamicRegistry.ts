@@ -8,7 +8,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import * as jsxRuntime from 'react/jsx-runtime'
-import * as lucideReact from 'lucide-react'
+import { dynamicIconMap } from '@/lib/dynamicIcons'
 import { ComponentMeta } from './types'
 import type { DashboardComponentDto, DashboardComponentsResponse } from '@/types'
 import { isTauriEnv, getServerOrigin } from '@/lib/api'
@@ -628,8 +628,7 @@ export const dynamicRegistry = new DynamicComponentRegistry()
 export function dtoToComponentMeta(dto: DashboardComponentDto): ComponentMeta {
   // Get icon component from lucide-react
   const iconName = dto.icon || 'Box'
-  const lucideRecord: any = lucideReact
-  const IconComponent = lucideRecord[iconName] || lucideRecord.Box
+  const IconComponent = dynamicIconMap[iconName] || dynamicIconMap.Box
 
   return {
     type: dto.type as any, // Extension component types are dynamic

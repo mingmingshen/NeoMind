@@ -9,7 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.8.9] - 2026-06-10
+
+### Image History Performance Overhaul
+
+Complete end-to-end optimization of the image telemetry data pipeline — from API response to rendered `<img>`. Cuts first meaningful paint from ~12s to ~1-2s for dashboards with camera image history widgets.
+
+- **Two-phase loading** — ImageHistory now loads 3 latest images (1h range) within ~1-2s, then fetches full 200-image history in the background. User sees images immediately instead of waiting for the entire 6MB+ payload
+- **Pre-normalized base64 pipeline** — Raw base64 from the database is converted to `data:image/...;base64,...` data URLs once at fetch time (fetch layer, WS events, store merge path), eliminating expensive per-render normalization (`isPureBase64` regex + `atob` + string copies on 50KB strings × 200 images)
+- **Fast-path rendering** — `toImageHistoryItems()` detects pre-normalized data URLs via `startsWith()` (no regex/atob) and skips `normalizeImageUrl()` entirely — zero string copies per image
+- **Fingerprint-based tracking** — Replaced full base64 URL storage in source tracking Sets/arrays with lightweight fingerprints (length + charCode + last 32 chars), reducing tracking memory from ~10MB to ~8KB
+- **O(n) source comparison** — Replaced O(n²) `filter+includes` on 50KB strings with Set-based O(n) intersection using fingerprints
+- **Removed cache busting** — Eliminated pointless `#timestamp` fragment appended to data/blob URLs (no effect on inline content, only created 50KB string copies)
+- **mergeLiveData O(k) optimization** — Fetched data is already sorted by `sortTelemetryResults`; only live WS points need individual insertion — eliminates O(n²) array copies (was 20,100 intermediate arrays per merge)
+- **Raw cache limiting** — Telemetry cache for image sources stores only the last 5 raw items instead of all 200, reducing in-memory cache from ~30-50MB to ~1.5MB
+- **Phase reset on source change** — Fixed bug where switching image data source kept `phase='full'`, causing stale data to display while the new source loaded
+
+### DataSource Pipeline Optimization
+
+- **Single-pass source categorization** — Replaced 5 separate `useMemo` + `.filter()` calls in `useDataSource` with a single loop that extracts telemetry/polling/extension sources + device ID sets + WS flag in one pass
+- **Stable setDataAdapter** — Eliminated 3 identical per-render closures (one per sub-hook) with a single `useCallback` adapter, reducing re-render cascade
+- **Shared `getTs` utility** — Extracted timestamp accessor from `useExtensionSource` into `eventProcessors` shared module, deduplicating identical local functions
+- **Backward scan for extension events** — Changed `findIndex` (forward scan) to backward loop in event dedup, which is cache-friendly and stops at first match
+- **Extension cache key** — Reused `effectiveTimeWindow` computed during fetch instead of recomputing per-source in cache step
+- **findDevice O(1) cache** — Module-level `Map` cache in `deviceUtils.ts` shared across all callers, replacing O(n) `.find()` scan; used by `deviceSlice` telemetry flush path
+
+### AI Analyst Enhancement
+
+- **Config panel** — Added settings dialog (gear button) with model selector, system prompt editor, and context window size control
+- **Model selector** — Uses design-system `Select` component with Auto (default) option, vision capability indicator (Eye icon), and per-backend model grouping
+- **Model name persistence** — Config now saves both `modelId` and `modelName` to survive page refresh
+- **Streaming indicator** — Input bar shows streaming state during LLM response generation
+- **Icon picker** — Replaced raw `lucide-react` barrel import with `dynamicIconMap` for tree-shaking in icon picker, component library, community registry, and dynamic registry
+- **Barrel import cleanup** — Removed `import * as lucideReact` from 6 files (ComponentLibrarySidebar, InstallComponentDialog, VisualDashboard, componentLibraryUtils, CommunityRegistry, DynamicRegistry), replaced with individual imports or `dynamicIconMap`
+
+### Backend
+
+- **Image data extraction** — Added `image_base64` and `image_mime_type` field support in `data_collector.rs::extract_image_data`, covering more extension output formats
+- **Qwen 3.7 multimodal** — Added `qwen3.7` to heuristic vision match for native multimodal detection
+- **Agent error message** — LLM failure path now produces actionable conclusion ("check model availability and capabilities") instead of generic fallback
+- **Agent API handlers** — Fixed agent CRUD and execution endpoints in `neomind-api`
+- **Agent storage query** — Fixed agent list query in `neomind-storage`
+
+### Agent Memory & Context
 
 - **Agent focused-path simplification** — Removed ~1300 lines of dead code from `analyzer.rs` and `response_parser.rs` (dead `insight` field, 5 unused JSON parsing functions, `build_focused_system_prompt`, `build_available_commands_description`, etc.)
 - **Tool result hard limit** — Consolidated duplicate `TOOL_RESULT_MAX_LEN` constants into single 128KB module-level limit
@@ -21,12 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Agent storage query** — Fixed agent list query in `neomind-storage`
-- **Agent API handlers** — Fixed agent CRUD and execution endpoints in `neomind-api`
+- **Component config save** — Added loading spinner and disabled state to save buttons in `ComponentConfigDialog` (both desktop and mobile layouts), prevents double-submit
 - **Duplicate toast on agent save** — Removed redundant toast from `AgentsPage`, now handled by `AgentEditorFullScreen`
 
 ### Frontend
 
+- **Font loading** — Switched Google Fonts to async load (`media="print" onload`) to eliminate render-blocking, added italic 400/800 weights
 - **Rules list** — Added `Created` and `Last Triggered` columns with execution count display
 - **Transforms list** — Added `Created` and `Last Executed` columns, replaced Transform Code with description subtitle, mobile cards show last executed time
 - **Agent editor** — Added Max Chain Depth slider control

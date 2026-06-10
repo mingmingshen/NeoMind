@@ -117,8 +117,8 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
                 <p key={i} className="text-xs text-foreground font-mono leading-relaxed break-all">
                   {line.includes(':')
                     ? <>
-                        <span className="text-foreground">{line.split(':').slice(0, -1).join(':')}:</span>
-                        <span className="text-foreground">{line.split(':').slice(-1)[0]}</span>
+                        <span className="text-muted-foreground">{line.split(':').slice(0, -1).join(':')}:</span>
+                        <span>{line.split(':').slice(-1)[0]}</span>
                       </>
                     : line
                   }
@@ -191,7 +191,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
         <div className="flex-1 min-w-0 flex flex-col items-end">
           <div className="flex justify-between items-center w-full">
             <span className={cn(textNano, "text-muted-foreground")}>{formatTime(message.timestamp)}</span>
-            <span className={cn(textNano, "text-accent-purple/70 flex items-center gap-1")}>
+            <span className={cn(textNano, "text-accent-purple flex items-center gap-1 opacity-70")}>
               <User className="h-2.5 w-2.5" />
               User
             </span>

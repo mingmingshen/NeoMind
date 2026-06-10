@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { AiAnalystConfig } from '@/components/dashboard/generic/ai-analyst/types'
+import { DEFAULT_SYSTEM_PROMPT } from '@/components/dashboard/generic/ai-analyst/types'
 
 export interface AiAnalystState {
   analystConfigs: Record<string, AiAnalystConfig>
@@ -12,7 +13,7 @@ export interface AiAnalystSlice extends AiAnalystState {
 }
 
 const DEFAULT_CONFIG: AiAnalystConfig = {
-  systemPrompt: 'You are a professional data analysis assistant. Analyze the provided data — images, metrics, or structured data — describe what you observe, and point out any notable patterns, changes, or anomalies.',
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
   contextWindowSize: 10,
 }
 

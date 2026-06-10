@@ -1825,15 +1825,17 @@ impl AgentExecutor {
         // Tool calls already executed all actions. The final_text is the LLM's
         // summary/analysis for the user — use it directly as conclusion.
 
+        let llm_failed = final_text == "LLM generation failed during tool execution.";
+
         // --- situation_analysis: use the LLM's first-round thinking as context summary ---
-        // This is more meaningful than "Executed N tool operations" because it tells
-        // the user what the agent was thinking/trying to accomplish.
         let situation_analysis = round_data_list_raw
             .iter()
             .find_map(|(thought, _)| thought.as_ref().filter(|t| !t.is_empty()))
             .cloned()
             .unwrap_or_else(|| {
-                if all_tool_results.is_empty() {
+                if llm_failed {
+                    "LLM model API call failed.".to_string()
+                } else if all_tool_results.is_empty() {
                     "No tools were executed.".to_string()
                 } else {
                     format!("Executed {} tool operation(s).", all_tool_results.len())
@@ -1843,12 +1845,13 @@ impl AgentExecutor {
         // --- conclusion: LLM's natural language response, directly ---
         let is_generic = final_text.is_empty()
             || final_text == "Completed tool execution rounds."
-            || final_text == "LLM generation failed during tool execution.";
+            || llm_failed;
 
         let conclusion = if !is_generic {
             final_text.clone()
+        } else if llm_failed {
+            "LLM model call failed. Please check that the bound model is available and supports the required capabilities (e.g., multimodal for image analysis).".to_string()
         } else if !all_tool_results.is_empty() {
-            // Fallback: summarize tool results when LLM didn't produce text
             let tool_summary: Vec<String> = all_tool_results
                 .iter()
                 .map(|r| match &r.result {

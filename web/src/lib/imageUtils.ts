@@ -109,10 +109,29 @@ export function normalizeImageUrl(value: string | number | undefined | null): No
   return result
 }
 
+/** MIME string → ImageFormatType lookup (avoids scanning IMAGE_MAGIC_BYTES). */
+const MIME_TO_FORMAT: Record<string, ImageFormatType> = {
+  'png': 'png', 'jpeg': 'jpeg', 'jpg': 'jpg', 'gif': 'gif',
+  'webp': 'webp', 'bmp': 'bmp', 'svg': 'svg', 'tiff': 'tiff', 'ico': 'ico',
+}
+
 /** Inner computation — separated for caching. */
 function computeNormalizedImage(trimmed: string, valueStr: string): NormalizedImage | null {
   // 1. Proper data:image/ URL
   if (trimmed.startsWith('data:image/')) {
+    // Fast path: already a well-formed base64 data URL — skip expensive
+    // slice/regex/concat on potentially multi-MB strings.
+    if (trimmed.includes(';base64,')) {
+      const mimeMatch = trimmed.match(/^data:image\/([^;,]+)/i)
+      const mimeStr = mimeMatch?.[1]?.toLowerCase()
+      return {
+        src: trimmed,
+        format: (mimeStr ? MIME_TO_FORMAT[mimeStr] : undefined) ?? 'unknown',
+        isBase64: true,
+        isDataUrl: true,
+        originalValue: valueStr,
+      }
+    }
     const commaIdx = trimmed.indexOf(',')
     let b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
     if (b64.startsWith('data:image/') || b64.startsWith('data:')) {

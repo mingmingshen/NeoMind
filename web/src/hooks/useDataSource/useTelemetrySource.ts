@@ -13,6 +13,10 @@ import { fetchHistoricalTelemetry } from './fetch'
 import {
   isImageDataSource, getDataSourceLimit,
 } from './helpers'
+import {
+  getTs, getNewestTimestamp, extractPointsNewerThan, mergeLiveData,
+  sortTelemetryResults,
+} from './eventProcessors'
 
 /**
  * Check if a data source truly represents image data (not just any raw source).
@@ -27,10 +31,6 @@ function isActualImageSource(metricId: string | undefined): boolean {
          lower.includes('photo') || lower.includes('capture') ||
          metricId.includes('values.image')
 }
-import {
-  getTs, getNewestTimestamp, extractPointsNewerThan, mergeLiveData,
-  sortTelemetryResults,
-} from './eventProcessors'
 
 export interface TelemetrySourceState {
   setData: (value: unknown | ((prev: unknown) => unknown)) => void

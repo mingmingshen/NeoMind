@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings2, Cpu, MessageSquare, Gauge } from 'lucide-react'
+import { Settings2, Cpu, MessageSquare, Gauge, Eye } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAnalystModels } from './useAnalystModels'
 import type { AiAnalystConfig } from './types'
 import { DEFAULT_SYSTEM_PROMPT } from './types'
@@ -26,23 +33,24 @@ interface AnalystConfigPanelProps {
 
 export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSource }: AnalystConfigPanelProps) {
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt)
-  const [modelId, setModelId] = useState(config.modelId || '')
+  const [modelId, setModelId] = useState(config.modelId || '__auto__')
   const [contextWindowSize, setContextWindowSize] = useState(config.contextWindowSize)
   const { models, loading } = useAnalystModels()
 
   useEffect(() => {
     setSystemPrompt(config.systemPrompt)
-    setModelId(config.modelId || '')
+    setModelId(config.modelId || '__auto__')
     setContextWindowSize(config.contextWindowSize)
   }, [config])
 
   const handleSave = () => {
-    const selectedModel = models.find((m) => m.id === modelId)
+    const isAuto = modelId === '__auto__'
+    const selectedModel = isAuto ? undefined : models.find((m) => m.id === modelId)
     // Use default prompt if user left it empty
     const effectivePrompt = systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT
     onSave({
       systemPrompt: effectivePrompt,
-      modelId: modelId || undefined,
+      modelId: isAuto ? undefined : modelId,
       modelName: selectedModel?.name,
       contextWindowSize,
     })
@@ -77,20 +85,26 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
             {loading ? (
               <div className="mt-1 text-xs text-muted-foreground">Loading models...</div>
             ) : models.length === 0 ? (
-              <div className="mt-1 text-xs text-warning">No vision models found. Configure an LLM backend with a vision-capable model first.</div>
+              <div className="mt-1 text-xs text-warning">No LLM backends found. Configure an LLM backend first.</div>
             ) : (
-              <select
-                value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Select a model</option>
-                {models.map((m) => (
-                  <option key={`${m.backendId}-${m.id}`} value={m.id}>
-                    {m.name} ({m.backendName})
-                  </option>
-                ))}
-              </select>
+              <Select value={modelId} onValueChange={setModelId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__auto__">Auto (default)</SelectItem>
+                  {models.map((m) => (
+                    <SelectItem key={`${m.backendId}-${m.id}`} value={m.id}>
+                      <span className="flex items-center gap-2">
+                        {m.name} ({m.backendName})
+                        {m.isMultimodal && (
+                          <Eye className="h-3 w-3 text-info" />
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
 

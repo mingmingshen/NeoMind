@@ -7,7 +7,7 @@
 
 import type React from 'react'
 import { groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
-import * as lucideReact from 'lucide-react'
+import { dynamicIconMap } from '@/lib/dynamicIcons'
 import { Box } from 'lucide-react'
 
 // ============================================================================
@@ -119,7 +119,6 @@ export function getComponentLibrary(t: (key: string) => string): ComponentCatego
   return grouped.map((group) => {
     const catInfo = getCategoryInfo(group.category as any)
     const labelKey = categoryLabelKeys[group.category]
-    const lucideRecord: any = lucideReact
 
     return {
       category: group.category,
@@ -128,7 +127,7 @@ export function getComponentLibrary(t: (key: string) => string): ComponentCatego
       categoryColor: categoryColors[group.category] || 'bg-muted text-muted-foreground',
       items: group.components.map((comp) => {
         const iconName = (comp.icon as any)?.displayName || 'Box'
-        const IconComponent = typeof comp.icon === 'function' ? comp.icon : (lucideRecord[iconName] || Box)
+        const IconComponent = typeof comp.icon === 'function' ? comp.icon : (dynamicIconMap[iconName] || Box)
         const nKey = nameKeys[comp.type]
         const dKey = descKeys[comp.type]
 

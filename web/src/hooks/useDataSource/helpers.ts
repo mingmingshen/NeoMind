@@ -64,15 +64,11 @@ export function extractValueFromData(rawData: string | unknown, property: string
   if (found !== undefined) return found
 
   // Try nested in common properties
+  // NOTE: If property contains '.', we already handled dot-notation above and returned.
+  // The nested-property loop only needs to check for plain (non-dotted) properties.
   for (const nestedProp of ['current_values', 'currentValues', 'metrics', 'data', 'values', 'device_info', 'deviceInfo']) {
     if (nestedProp in dataObj && typeof dataObj[nestedProp] === 'object') {
       const nested = dataObj[nestedProp] as Record<string, unknown>
-      if (property.includes('.')) {
-        const remainingParts = property.split('.')
-        if (remainingParts[0].toLowerCase() === nestedProp.toLowerCase()) {
-          return extractValueFromData(nested, remainingParts.slice(1).join('.'))
-        }
-      }
       const nestedValue = findPropertyCI(nested, property)
       if (nestedValue !== undefined) return nestedValue
     }
@@ -199,6 +195,28 @@ function isImageMetric(metricId: string | undefined): boolean {
   return lower.includes('image') || lower.includes('img') || metricId.includes('values.image')
 }
 
+/**
+ * Convert raw base64 to data URL using fast prefix-based format detection.
+ * Detects PNG/JPEG/GIF/WebP/BMP by their base64-encoded magic bytes.
+ * Default: image/jpeg (camera frames).
+ */
+export function base64ToDataUrl(raw: string): string {
+  let mime = 'image/jpeg'
+  if (raw.startsWith('iVBOR')) mime = 'image/png'
+  else if (raw.startsWith('R0lGOD')) mime = 'image/gif'
+  else if (raw.startsWith('UklGR')) mime = 'image/webp'
+  else if (raw.startsWith('Qk')) mime = 'image/bmp'
+  return `data:${mime};base64,${raw}`
+}
+
+/** Pre-normalize raw base64 to data URL for image sources. No-op for non-base64. */
+export function normalizeImageValue(value: unknown): unknown {
+  if (typeof value === 'string' && value.length > 100 && !value.startsWith('data:') && !value.startsWith('http')) {
+    return base64ToDataUrl(value)
+  }
+  return value
+}
+
 /** Detect image data source from params/transform/field. */
 export function isImageDataSource(
   ds: { params?: { includeRawPoints?: boolean }; transform?: string; field?: string; metricId?: string }
@@ -227,36 +245,62 @@ export function isDuplicatePoint(
 ): boolean {
   if (existingPoints.length === 0) return false
 
-  const newStr = typeof newValue === 'string' ? newValue : JSON.stringify(newValue)
+  // Fast path: for string values (common case — base64 images, URLs),
+  // skip JSON.stringify entirely. Only stringify objects.
+  const newIsStr = typeof newValue === 'string'
+  const newStr = newIsStr ? newValue as string : JSON.stringify(newValue)
   if (!newStr) return false
 
-  const extractContent = (str: string): string => {
-    if (str.startsWith('data:')) {
-      const commaIndex = str.indexOf(',')
-      if (commaIndex !== -1) return str.slice(commaIndex + 1)
-    }
-    return str
+  // Extract content after data: prefix for comparison
+  let newContent: string
+  if (newIsStr && newStr.startsWith('data:')) {
+    const ci = newStr.indexOf(',')
+    newContent = ci !== -1 ? newStr.slice(ci + 1) : newStr
+  } else {
+    newContent = newStr
   }
 
-  const newContent = extractContent(newStr)
+  // For large strings (images), use prefix+suffix fingerprint to avoid
+  // full-string comparison. Pre-compute once instead of per-iteration.
+  const isLarge = newContent.length > 2000
+  const newPre = isLarge ? newContent.slice(0, 64) : ''
+  const newSuf = isLarge ? newContent.slice(-64) : ''
+  const newLen = newContent.length
 
-  return existingPoints.some((p) => {
+  // Only check last few points — duplicates are almost always the newest.
+  // Scanning the full array is O(n) per point but rarely useful beyond the tail.
+  const startIdx = Math.max(0, existingPoints.length - 5)
+
+  for (let i = existingPoints.length - 1; i >= startIdx; i--) {
+    const p = existingPoints[i]
     const existingTs = getTs(p)
-    if (Math.abs(existingTs - newTimestamp) > 1) return false
+    if (Math.abs(existingTs - newTimestamp) > 1) continue
 
     const existingVal = getPointValue(p)
-    if (existingVal === undefined || existingVal === null) return false
+    if (existingVal === undefined || existingVal === null) continue
 
-    const existingStr = typeof existingVal === 'string' ? existingVal : JSON.stringify(existingVal)
-    if (!existingStr) return false
-
-    const existingContent = extractContent(existingStr)
-    if (newContent.length > 100 && existingContent.length > 100) {
-      return newContent.slice(0, 500) === existingContent.slice(0, 500) &&
-             newContent.slice(-500) === existingContent.slice(-500)
+    const exIsStr = typeof existingVal === 'string'
+    let existingContent: string
+    if (exIsStr) {
+      const es = existingVal as string
+      if (es.startsWith('data:')) {
+        const ci = es.indexOf(',')
+        existingContent = ci !== -1 ? es.slice(ci + 1) : es
+      } else {
+        existingContent = es
+      }
+    } else {
+      existingContent = JSON.stringify(existingVal)
+      if (!existingContent) continue
     }
-    return newContent === existingContent
-  })
+
+    if (isLarge && existingContent.length > 2000) {
+      if (newLen === existingContent.length &&
+          newPre === existingContent.slice(0, 64) &&
+          newSuf === existingContent.slice(-64)) return true
+    } else if (newContent === existingContent) return true
+  }
+  return false
 }
 
 /**
@@ -382,9 +426,13 @@ export function sortAndDedup(
 ): unknown[] {
   if (!Array.isArray(points) || points.length === 0) return points
 
-  const idx = points.map((p, i) => ({ p, i }))
-  idx.sort((a, b) => { const d = getTs(b.p) - getTs(a.p); return d !== 0 ? d : a.i - b.i })
-  const sorted = idx.map(({ p }) => p)
+  // Sort indices in-place to avoid creating wrapper objects
+  const indices = points.map((_, i) => i)
+  indices.sort((a, b) => {
+    const d = getTs(points[b]) - getTs(points[a])
+    return d !== 0 ? d : a - b
+  })
+  const sorted = indices.map(i => points[i])
 
   if (isImage) {
     const out: unknown[] = []

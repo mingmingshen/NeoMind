@@ -7,10 +7,17 @@
 
 import type { Device } from '@/types'
 
-/** Find a device by id or device_id. O(n). */
+// Module-level cache so ALL callers share the same Map — avoids rebuilding
+// per-component when the devices array reference hasn't changed.
+let cachedFindDeviceMap: { devicesRef: Device[]; map: Map<string, Device> } | null = null
+
+/** Find a device by id or device_id. O(1) via cached Map. */
 export function findDevice(devices: Device[], id: string | undefined): Device | undefined {
   if (!id) return undefined
-  return devices.find(d => d.id === id || d.device_id === id)
+  if (!cachedFindDeviceMap || cachedFindDeviceMap.devicesRef !== devices) {
+    cachedFindDeviceMap = { devicesRef: devices, map: buildDeviceMap(devices) }
+  }
+  return cachedFindDeviceMap.map.get(id)
 }
 
 /** Build a Map for O(1) device lookups by both id and device_id. */

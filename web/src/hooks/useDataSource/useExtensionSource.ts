@@ -9,7 +9,7 @@ import { logError } from '@/lib/errors'
 import { useEvents } from '@/hooks/useEvents'
 import { getTimeRange, getEffectiveTimeWindow } from '@/lib/telemetryTransform'
 import { extensionDataCache } from './fetch'
-import { normalizeOutputName } from './eventProcessors'
+import { normalizeOutputName, getTs } from './eventProcessors'
 
 export interface ExtensionSourceState {
   setData: (value: unknown | ((prev: unknown) => unknown)) => void
@@ -106,6 +106,7 @@ export function useExtensionSource(
             if (!extensionId || !metric) return { data: null }
 
             // Compute time range from dataSource's timeWindow, falling back to timeRange
+            // (also reused as cache-key component below — avoids duplicate getEffectiveTimeWindow call)
             const effectiveTimeWindow = ds.timeWindow ?? (
               ds.timeRange != null ? getEffectiveTimeWindow(ds) : undefined
             )
@@ -214,14 +215,15 @@ export function useExtensionSource(
           })
         )
 
-        // Cache successful results (use same key structure as fetch for consistency)
+        // Cache successful results — reuse effectiveTimeWindow computed during fetch
+        // instead of calling getEffectiveTimeWindow again per data source
+        const cacheTimeBucket = Math.floor(Date.now() / 60000)
         extensionSources.forEach((ds, i) => {
           const extId = getUnifiedId(ds)
           const metric = getUnifiedField(ds) ?? ''
           if (extId && metric && results[i]?.success) {
             const tw = ds.timeWindow ?? (ds.timeRange != null ? getEffectiveTimeWindow(ds) : undefined)
-            const timeBucket = Math.floor(Date.now() / 60000)
-            const key = `${extId}|${metric}|${tw?.type ?? 'rel'}|${ds.limit ?? 100}|${timeBucket}`
+            const key = `${extId}|${metric}|${tw?.type ?? 'rel'}|${ds.limit ?? 100}|${cacheTimeBucket}`
             extensionDataCache.set(key, results[i].data)
           }
         })
@@ -237,11 +239,6 @@ export function useExtensionSource(
 
         // Merge: preserve live WebSocket points that are newer than fetched data
         // (instead of blindly replacing, which causes WS data to flash and disappear)
-        const getTs = (p: unknown): number => {
-          if (p == null || typeof p === 'number') return 0
-          const o = p as Record<string, unknown>
-          return ((o.timestamp ?? o.time ?? o.t ?? 0) as number)
-        }
 
         const isScalar = finalData !== null && finalData !== undefined && !Array.isArray(finalData)
 
@@ -366,8 +363,12 @@ export function useExtensionSource(
     let extStartIndex = 0
     const lastProcessedExtId = lastProcessedExtEventIdRef.current
     if (lastProcessedExtId) {
-      const lastIndex = extensionEvents.findIndex(e => e.id === lastProcessedExtId)
-      if (lastIndex !== -1) extStartIndex = lastIndex + 1
+      // Backward scan — cache-friendly, stops at first match
+      let found = -1
+      for (let i = extensionEvents.length - 1; i >= 0; i--) {
+        if (extensionEvents[i].id === lastProcessedExtId) { found = i; break }
+      }
+      if (found !== -1) extStartIndex = found + 1
       else { extStartIndex = 0; const entries = Array.from(processedExtEventsRef.current); processedExtEventsRef.current = new Set(entries.slice(-50)) }
     }
     if (extStartIndex > extensionEvents.length) { extStartIndex = 0; processedExtEventsRef.current.clear() }
@@ -375,10 +376,19 @@ export function useExtensionSource(
     const newEvents = extensionEvents.slice(extStartIndex)
     if (newEvents.length === 0) return
 
-    const extDataSources = state.dataSourcesRef.current.filter((ds) =>
-      ds.source === 'extension'
-    )
+    // Use extensionSources directly instead of filtering dataSourcesRef each time
+    const extDataSources = extensionSources
     if (extDataSources.length === 0) return
+
+    // Build extensionId → DataSource[] map for O(1) lookup per event
+    const extByDeviceId = new Map<string, DataSource[]>()
+    for (const ds of extDataSources) {
+      const extId = getUnifiedId(ds)
+      if (!extId) continue
+      const existing = extByDeviceId.get(extId)
+      if (existing) existing.push(ds)
+      else extByDeviceId.set(extId, [ds])
+    }
 
     let lastProcessedExtIdInBatch: string | null = null
 
@@ -392,9 +402,20 @@ export function useExtensionSource(
       const eventOutputName = eventData.output_name as string
 
       // Deterministic event ID using event content to properly deduplicate
-      const valueKey = typeof eventData.value === 'object' && eventData.value !== null
-        ? `obj:${(eventData.value as any).type || ''}:${JSON.stringify(eventData.value).slice(0, 80)}`
-        : String(eventData.value ?? '')
+      // Avoid JSON.stringify on large objects — use lightweight fingerprint
+      const v = eventData.value
+      let valueKey: string
+      if (typeof v === 'string') {
+        valueKey = v.length > 200 ? `${v.length}:${v.slice(0, 64)}:${v.slice(-64)}` : v
+      } else if (typeof v === 'number' || typeof v === 'boolean') {
+        valueKey = String(v)
+      } else if (v !== null && typeof v === 'object') {
+        const obj = v as Record<string, unknown>
+        const keys = Object.keys(obj)
+        valueKey = `obj:${keys.length}:${keys.slice(0, 5).join(',')}:${String(obj[keys[0]]).slice(0, 40)}`
+      } else {
+        valueKey = ''
+      }
       const uniqueEventId = latestEvent.id || `${eventType}_${eventExtensionId || ''}_${eventOutputName || ''}_${eventData.timestamp || ''}_${valueKey}`
       if (processedExtEventsRef.current.has(uniqueEventId)) continue
       processedExtEventsRef.current.add(uniqueEventId)
@@ -409,33 +430,31 @@ export function useExtensionSource(
 
       const normalizedOutput = normalizeOutputName(eventOutputName)
 
-      const matchingSources = extDataSources.filter((ds) => {
-        const dsId = getUnifiedId(ds)
-        if (dsId !== eventExtensionId) return false
-        const dsField = getUnifiedField(ds) ?? ''
-        if (!dsField) return false
-        const parts = dsField.split(':')
-        const metricName = parts.length > 1 ? parts[1] : parts[0]
-        return metricName === normalizedOutput || metricName === eventOutputName
-      })
+      // O(1) lookup by extensionId, then filter by metric name
+      const candidates = extByDeviceId.get(eventExtensionId)
+      const matchingSources = candidates
+        ? candidates.filter((ds) => {
+            const dsField = getUnifiedField(ds) ?? ''
+            if (!dsField) return false
+            const parts = dsField.split(':')
+            const metricName = parts.length > 1 ? parts[1] : parts[0]
+            return metricName === normalizedOutput || metricName === eventOutputName
+          })
+        : []
 
       if (matchingSources.length > 0) {
         const { transform: transformFn, preserveMultiple: pm } = state.optionsRef.current
         const eventValue = eventData.value
         const now = Math.floor(Date.now() / 1000)
         const newPoint = { timestamp: now, time: now, value: eventValue }
-        const allExtSources = state.dataSourcesRef.current.filter((ds) =>
-          ds.source === 'extension'
-        )
-
         // Use setData(prev => ...) to avoid stale dataRef race condition
         state.setData((prevData: unknown) => {
           const currentData = prevData as unknown
           let newData: unknown
 
-          if (pm && allExtSources.length > 1 && Array.isArray(currentData)) {
+          if (pm && extDataSources.length > 1 && Array.isArray(currentData)) {
             const nested = (currentData as unknown[][]).map((arr, i) => {
-              const ds = allExtSources[i]
+              const ds = extDataSources[i]
               if (!ds) return arr
               const parts = (getUnifiedField(ds) ?? '').split(':')
               const metricName = parts.length > 1 ? parts[1] : parts[0]

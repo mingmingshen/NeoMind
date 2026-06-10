@@ -453,6 +453,17 @@ export function useAnalystSession({
   // Prevents the same execution from appearing twice with different ID prefixes (hist-X vs exec-X).
   const seenExecIdsRef = useRef<Set<string>>(new Set())
 
+  /** Prune dedup set to prevent unbounded growth */
+  const addSeenExecId = useCallback((id: string) => {
+    const set = seenExecIdsRef.current
+    set.add(id)
+    if (set.size > 200) {
+      const keys = Array.from(set)
+      const half = Math.floor(keys.length / 2)
+      for (let i = 0; i < half; i++) set.delete(keys[i])
+    }
+  }, [])
+
   // Stable refs for config values — avoids recreating initSession when config changes
   const configRef = useRef(config)
   configRef.current = config
@@ -501,7 +512,7 @@ export function useAnalystSession({
               }
               return
             }
-            seenExecIdsRef.current.add(exec.id)
+            addSeenExecId(exec.id)
             const dedupKey = `exec-${exec.id}`
             const aiMsg: AnalystMessage = {
               id: dedupKey,
@@ -613,7 +624,7 @@ export function useAnalystSession({
             }
             break
           }
-          seenExecIdsRef.current.add(completedData.execution_id)
+          addSeenExecId(completedData.execution_id)
           // Dedup key — prevent recovery polling and live event from adding the same execution twice
           const dedupKey = `exec-${completedData.execution_id}`
           api.getExecution(completedData.agent_id, completedData.execution_id)
@@ -742,15 +753,6 @@ export function useAnalystSession({
         agentIdRef.current = savedId
         setIsConnected(true)
         setInitializing(false)
-
-        // Sync current config (model, prompt) to the verified agent
-        const cfg = configRef.current
-        const updates: Record<string, unknown> = {}
-        if (cfg.modelId) updates.llm_backend_id = cfg.modelId
-        if (cfg.systemPrompt) updates.user_prompt = cfg.systemPrompt
-        if (Object.keys(updates).length > 0) {
-          api.updateAgent(savedId, updates).catch(() => {})
-        }
       })
       .catch(() => {
         if (cancelled) return
@@ -764,9 +766,10 @@ export function useAnalystSession({
     return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync llm_backend_id and user_prompt when config changes after agent creation
-  const prevModelIdRef = useRef(config.modelId)
-  const prevPromptRef = useRef(config.systemPrompt)
+  // Sync llm_backend_id and user_prompt when config changes after agent creation.
+  // Also fires on initial connection (isConnected transition) to sync saved config.
+  const prevModelIdRef = useRef<string | undefined>(undefined)
+  const prevPromptRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     const agentId = agentIdRef.current
     if (!agentId || !isConnected) return
@@ -782,6 +785,16 @@ export function useAnalystSession({
     }
 
     if (Object.keys(updates).length === 0) return
+    // Defer update if agent is mid-execution to avoid model/prompt switch during tool loop
+    if (isStreamingRef.current) {
+      const check = setInterval(() => {
+        if (!isStreamingRef.current) {
+          clearInterval(check)
+          api.updateAgent(agentId, updates).catch(() => {})
+        }
+      }, 1000)
+      return () => clearInterval(check)
+    }
     api.updateAgent(agentId, updates).catch(() => {
       // Non-critical: agent will use whatever configuration it has
     })
@@ -832,7 +845,7 @@ export function useAnalystSession({
           for (const m of history) {
             if (m.id.startsWith('hist-') && !m.id.startsWith('hist-data-') && !m.id.startsWith('hist-user-')) {
               const execId = m.id.slice(5) // Remove 'hist-' prefix
-              seenExecIdsRef.current.add(execId)
+              addSeenExecId(execId)
             }
           }
           // Merge: keep any live messages added while history was loading
@@ -929,6 +942,7 @@ export function useAnalystSession({
   // Send text to agent via invoke (user-initiated, synchronous)
   const sendText = useCallback(
     (text: string) => {
+      if (isStreamingRef.current) return // synchronous guard against concurrent invocations
       const agentId = agentIdRef.current
       if (!agentId) return
 
@@ -944,6 +958,7 @@ export function useAnalystSession({
       api.addAgentUserMessage(agentId, text).catch(() => {})
 
       setIsStreaming(true)
+      isStreamingRef.current = true
       const startTime = Date.now()
 
       api.invokeAgent(agentId, { input: text })
@@ -970,6 +985,7 @@ export function useAnalystSession({
         })
         .finally(() => {
           setIsStreaming(false)
+          isStreamingRef.current = false
         })
     },
     [config.modelName],
