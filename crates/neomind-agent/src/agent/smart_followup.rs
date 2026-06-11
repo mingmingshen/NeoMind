@@ -8,10 +8,7 @@
 //! 5. 资源索引集成 - 自动从 ResourceIndex 获取设备信息
 
 use super::conversation_context::{ConversationContext, ConversationTopic};
-use crate::context::ResourceIndex;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// 追问优先级
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -90,33 +87,17 @@ pub use crate::smart_conversation::Device as AvailableDevice;
 
 /// 智能追问管理器
 pub struct SmartFollowUpManager {
-    /// 资源索引（用于动态获取设备信息）
-    resource_index: Arc<RwLock<ResourceIndex>>,
     /// 可用设备列表（缓存）
     available_devices: Vec<AvailableDevice>,
-    /// 追问历史（避免重复追问）
-    asked_questions: Vec<String>,
     /// 最大追问次数
     max_followups: usize,
 }
 
 impl SmartFollowUpManager {
-    /// 创建新的智能追问管理器（需要资源索引）
-    pub fn with_resource_index(resource_index: Arc<RwLock<ResourceIndex>>) -> Self {
-        Self {
-            resource_index,
-            available_devices: Vec::new(),
-            asked_questions: Vec::new(),
-            max_followups: 2,
-        }
-    }
-
-    /// 创建默认的管理器（无资源索引，使用手动设置）
+    /// 创建新的智能追问管理器
     pub fn new() -> Self {
         Self {
-            resource_index: Arc::new(RwLock::new(ResourceIndex::new())),
             available_devices: Vec::new(),
-            asked_questions: Vec::new(),
             max_followups: 2,
         }
     }
@@ -124,37 +105,6 @@ impl SmartFollowUpManager {
     /// 设置可用设备列表（测试用）
     pub fn set_available_devices(&mut self, devices: Vec<AvailableDevice>) {
         self.available_devices = devices;
-    }
-
-    /// 基于模糊搜索获取设备建议
-    /// 返回与查询相关的设备名称列表
-    pub async fn get_device_suggestions(&self, query: &str, limit: usize) -> Vec<String> {
-        let index = self.resource_index.read().await;
-        let results = index.search_string(query).await;
-
-        results
-            .into_iter()
-            .take(limit)
-            .map(|r| r.resource.name.clone())
-            .collect()
-    }
-
-    /// 基于模糊搜索获取位置建议
-    pub async fn get_location_suggestions(&self, query: &str, limit: usize) -> Vec<String> {
-        let index = self.resource_index.read().await;
-        let results = index.search_string(query).await;
-
-        // 提取唯一的位置名称
-        let mut locations: Vec<String> = results
-            .into_iter()
-            .filter_map(|r| r.resource.as_device().and_then(|d| d.location.clone()))
-            .collect();
-
-        // 去重并限制数量
-        locations.sort();
-        locations.dedup();
-        locations.truncate(limit);
-        locations
     }
 
     /// 分析用户输入，判断是否需要追问
@@ -551,56 +501,6 @@ impl SmartFollowUpManager {
         }
 
         None
-    }
-
-    /// 增强版分析：使用模糊搜索提供更智能的建议
-    /// 这是 analyze_input 的异步版本，能够利用 ResourceIndex 的模糊搜索能力
-    pub async fn analyze_input_with_search(
-        &mut self,
-        user_input: &str,
-        context: &ConversationContext,
-    ) -> FollowUpAnalysis {
-        let mut analysis = self.analyze_input(user_input, context);
-
-        // 如果有缺失位置的追问，使用模糊搜索增强建议
-        for followup in &mut analysis.followups {
-            if followup.followup_type == FollowUpType::MissingLocation
-                || followup.followup_type == FollowUpType::MissingDevice
-            {
-                // 使用模糊搜索获取更相关的建议
-                let suggestions = self.get_device_suggestions(user_input, 4).await;
-                if !suggestions.is_empty() {
-                    followup.suggestions = suggestions;
-                    followup.question = format!(
-                        "{}\n相关设备：{}",
-                        followup
-                            .question
-                            .lines()
-                            .next()
-                            .unwrap_or(&followup.question),
-                        followup.suggestions.join("、")
-                    );
-                }
-            }
-        }
-
-        analysis
-    }
-
-    /// 清空追问历史
-    pub fn clear_history(&mut self) {
-        self.asked_questions.clear();
-    }
-
-    /// 记录已追问的问题
-    pub fn record_asked(&mut self, question: &str) {
-        self.asked_questions.push(question.to_string());
-    }
-}
-
-impl Default for SmartFollowUpManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -65,10 +65,7 @@ pub use conversation_context::{
 };
 pub use fallback::{default_fallback_rules, process_fallback, FallbackRule};
 pub use semantic_mapper::{SemanticToolMapper, DeviceMapping, SemanticMatchType};
-pub use smart_followup::{
-    AvailableDevice, DetectedIntent, FollowUpAnalysis, FollowUpItem, FollowUpPriority,
-    FollowUpType, SmartFollowUpManager,
-};
+pub use smart_followup::SmartFollowUpManager;
 pub use streaming::{
     cleanup_thinking_content, events_to_string_stream, format_tool_results,
     process_multimodal_stream_events, process_multimodal_stream_events_with_safeguards,
@@ -805,7 +802,7 @@ impl Agent {
             semantic_mapper,
             shared_state: Arc::new(tokio::sync::RwLock::new(AgentSharedState {
                 conversation_context: ConversationContext::new(),
-                smart_followup: SmartFollowUpManager::with_resource_index(resource_index.clone()),
+                smart_followup: SmartFollowUpManager::new(),
                 last_injected_context_hash: 0,
             })),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
