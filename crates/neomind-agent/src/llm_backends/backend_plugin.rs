@@ -20,9 +20,6 @@ use std::sync::RwLock;
 use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
-use super::backends::openai::{CloudConfig, CloudRuntime};
-
-#[cfg(feature = "cloud")]
 use neomind_core::llm::backend::{LlmError, LlmRuntime};
 
 /// Plugin trait for LLM backend implementations.
@@ -157,46 +154,6 @@ impl BackendRegistry {
     }
 }
 
-/// Register built-in LLM backend plugins.
-///
-/// This function should be called during application initialization
-/// to register all built-in backends (Ollama, OpenAI, etc.).
-#[cfg(feature = "cloud")]
-pub fn register_builtin_backends() {
-    use neomind_core::llm::backend::{LlmError, LlmRuntime};
-
-    let registry = BackendRegistry::global();
-
-    // Ollama plugin
-    #[cfg(all(feature = "ollama", feature = "cloud"))]
-    {
-        use super::backends::ollama::{OllamaConfig, OllamaRuntime};
-
-        let ollama_plugin = Arc::new(DynBackendPlugin::new(
-            "ollama",
-            "Ollama Native Backend",
-            |config| {
-                let cfg: OllamaConfig = serde_json::from_value(config.clone())
-                    .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
-                Ok(Box::new(OllamaRuntime::new(cfg)?) as Box<dyn LlmRuntime>)
-            },
-        ));
-        registry.register(ollama_plugin);
-    }
-
-    // OpenAI/Cloud plugin
-    let cloud_plugin = Arc::new(DynBackendPlugin::new(
-        "openai",
-        "OpenAI Compatible",
-        |config| {
-            let cfg: CloudConfig = serde_json::from_value(config.clone())
-                .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
-            Ok(Box::new(CloudRuntime::new(cfg)?) as Box<dyn LlmRuntime>)
-        },
-    ));
-    registry.register(cloud_plugin);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,17 +166,4 @@ mod tests {
         assert!(std::ptr::eq(r1, r2));
     }
 
-    #[test]
-    fn test_register_builtin_backends() {
-        #[cfg(feature = "cloud")]
-        register_builtin_backends();
-
-        #[cfg(feature = "cloud")]
-        {
-            let registry = BackendRegistry::global();
-            let list = registry.list();
-            assert!(list.contains(&"ollama".to_string()));
-            assert!(list.contains(&"openai".to_string()));
-        }
-    }
 }

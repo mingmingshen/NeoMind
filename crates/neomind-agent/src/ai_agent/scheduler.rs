@@ -90,16 +90,6 @@ pub enum SchedulerError {
     #[error("Schedule calculation error: {0}")]
     CalculationError(String),
 
-    #[error("Scheduler is not running")]
-    SchedulerNotRunning,
-
-    #[error(
-        "Scheduler appears stale: last tick was {last_tick_ago_secs}s ago (threshold: {threshold_secs}s)"
-    )]
-    SchedulerStale {
-        last_tick_ago_secs: i64,
-        threshold_secs: i64,
-    },
 }
 
 /// A scheduled task.
@@ -542,40 +532,6 @@ impl AgentScheduler {
         }
 
         tracing::info!("Agent scheduler stopped");
-        Ok(())
-    }
-
-    /// Get all scheduled tasks.
-    pub async fn get_tasks(&self) -> Vec<ScheduledTask> {
-        self.tasks.read().await.values().cloned().collect()
-    }
-
-    /// Check scheduler health.
-    ///
-    /// Returns `Ok(())` if the scheduler is alive and ticking, or an error if:
-    /// - The scheduler is not running at all
-    /// - The scheduler's last tick is stale (exceeded `stale_threshold_secs`)
-    pub async fn health_check(&self, stale_threshold_secs: i64) -> Result<(), SchedulerError> {
-        let is_running = *self.running.read().await;
-        if !is_running {
-            return Err(SchedulerError::SchedulerNotRunning);
-        }
-
-        let last = self.last_tick.load(Ordering::Relaxed);
-        if last == 0 {
-            // Scheduler just started, no tick yet — this is OK if recent
-            return Ok(());
-        }
-
-        let now = Utc::now().timestamp();
-        let elapsed = now - last;
-        if elapsed > stale_threshold_secs {
-            return Err(SchedulerError::SchedulerStale {
-                last_tick_ago_secs: elapsed,
-                threshold_secs: stale_threshold_secs,
-            });
-        }
-
         Ok(())
     }
 

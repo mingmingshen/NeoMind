@@ -1663,41 +1663,6 @@ pub fn detect_model_context(model_name: &str) -> usize {
     128_000
 }
 
-/// Detect backend capabilities for an Ollama model from its name.
-///
-/// This is a public helper function that can be used when creating `LlmBackend`
-/// to provide accurate capabilities instead of `None`.
-///
-/// # Example
-/// ```ignore
-/// use neomind_agent::llm_backends::ollama::detect_ollama_capabilities;
-///
-/// let caps = detect_ollama_capabilities("qwen3-vl:2b");
-/// let backend = LlmBackend::Ollama {
-///     endpoint: "http://localhost:11434".to_string(),
-///     model: "qwen3-vl:2b".to_string(),
-///     capabilities: Some(caps),
-/// };
-/// ```
-pub fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
-    let caps = detect_model_capabilities(model_name);
-    let mut builder = BackendCapabilities::builder()
-        .streaming()
-        .max_context(caps.max_context);
-
-    if caps.supports_multimodal {
-        builder = builder.multimodal();
-    }
-    if caps.supports_thinking {
-        builder = builder.thinking_display();
-    }
-    if caps.supports_tools {
-        builder = builder.function_calling();
-    }
-
-    builder.build()
-}
-
 /// Tool definition in OpenAI-compatible format for Ollama.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OllamaTool {

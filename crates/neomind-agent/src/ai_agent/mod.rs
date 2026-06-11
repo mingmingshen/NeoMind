@@ -19,9 +19,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use executor::{AgentExecutor, AgentExecutorConfig};
-pub use scheduler::{
-    AgentScheduler, BackendSemaphores, ScheduledTask, SchedulerConfig, SchedulerError,
-};
+pub use scheduler::{AgentScheduler, BackendSemaphores, SchedulerConfig};
 
 /// AI Agent manager - the main entry point for user-defined agents.
 ///
