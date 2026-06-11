@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use futures::{Stream, StreamExt};
 
-use super::cache::ToolResultCache;
 use super::context::{build_context_window_with_config, build_context_window_with_summary, ToolExecutionResult};
 use super::dedup::deduplicate_tool_results;
 use super::intent::{all_tools_were_read_only, extract_action_hint, user_message_requires_action};
@@ -27,10 +26,6 @@ use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
 use neomind_core::llm::compaction::CompactionConfig;
 
-// Type aliases to reduce complexity
-pub(crate) type SharedLlm = Arc<tokio::sync::RwLock<LlmInterface>>;
-pub(crate) type ToolResultStream = Pin<Box<dyn Stream<Item = (String, String)> + Send>>;
-pub(crate) type EventChannel = tokio::sync::mpsc::Sender<AgentEvent>;
 
 /// Configuration for stream processing safeguards
 ///

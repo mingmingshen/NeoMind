@@ -44,11 +44,13 @@ pub use stream_multimodal::{
 };
 pub use thinking::cleanup_thinking_content;
 
-// pub(crate) re-exports for internal crate use and test access
-pub(crate) use sanitize::{
-    humanize_bytes, is_large_base64_string, sanitize_tool_result_for_prompt, truncate_result_utf8,
-};
-pub(crate) use tool_detect::detect_json_tool_calls;
+// Re-exports for internal crate use and test access
+pub(crate) use sanitize::{sanitize_tool_result_for_prompt, truncate_result_utf8};
+
+#[cfg(test)]
+use sanitize::{humanize_bytes, is_large_base64_string};
+#[cfg(test)]
+use tool_detect::detect_json_tool_calls;
 
 #[cfg(test)]
 mod tests {
