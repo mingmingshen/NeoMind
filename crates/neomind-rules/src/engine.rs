@@ -1422,12 +1422,6 @@ impl InMemoryValueProvider {
     }
 }
 
-impl Default for InMemoryValueProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ValueProvider for InMemoryValueProvider {
     fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
         let key = format!("{}:{}", device_id, metric);

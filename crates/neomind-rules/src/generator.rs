@@ -40,16 +40,6 @@ pub struct GeneratorConfig {
     pub temperature: Option<f32>,
 }
 
-impl Default for GeneratorConfig {
-    fn default() -> Self {
-        Self {
-            model: "ministral-3:3b".to_string(),
-            max_tokens: Some(512),
-            temperature: Some(0.3),
-        }
-    }
-}
-
 /// Extracted information from natural language description.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedRuleInfo {

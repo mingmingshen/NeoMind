@@ -912,12 +912,6 @@ impl ChannelRegistry {
     }
 }
 
-impl Default for ChannelRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Information about a registered channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelInfo {

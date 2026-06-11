@@ -389,12 +389,6 @@ impl Message {
     }
 }
 
-impl Default for Message {
-    fn default() -> Self {
-        Self::system("默认消息".to_string(), "这是一个默认消息".to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

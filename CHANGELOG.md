@@ -41,6 +41,7 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - **`is_wasm_extension()`** (Round 15) — in `neomind-core/src/extension/mod.rs`, zero callers. WASM extension support was never implemented; `is_native_extension()` is alive (used by native loader).
 - **6 dead `Default` impls across neomind-devices + neomind-agent** (Round 16) — `DeviceId` (`mdl.rs`), `DeviceRegistry` (`registry.rs`), `WebhookAdapterConfig` (`adapters/webhook.rs`), `MdlRegistry` (`mdl_format.rs`), `MqttAdapterConfig` (`adapters/mqtt.rs`), `ConversationContext` (`agent/conversation_context.rs`). All types are alive but `::default()` is never called — callers use `::new()` or construct explicitly.
 - **`VectorStore::default()`** (Round 17) — in `neomind-storage/src/vector.rs`, zero callers. All callers use `VectorStore::new()`.
+- **9 dead `Default` impls across rules + messages + cli-ops** (Round 18) — `GeneratorConfig` and `RuleHistoryStorage` and `CommandResultHistory` and `DependencyManager` and `UnifiedValueProvider` and `InMemoryValueProvider` (neomind-rules), `Message` and `ChannelRegistry` and `MessageManager` (neomind-messages), `ApiClient` (neomind-cli-ops). All types alive but `::default()` never called.
 - `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
 - `toolkit/registry.rs`: dead `categories()` method.
 

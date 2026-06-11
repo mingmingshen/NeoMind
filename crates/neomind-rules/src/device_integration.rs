@@ -304,12 +304,6 @@ impl CommandResultHistory {
     }
 }
 
-impl Default for CommandResultHistory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Statistics for command executions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandExecutionStats {

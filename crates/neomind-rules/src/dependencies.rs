@@ -114,12 +114,6 @@ pub struct DependencyManager {
     reverse_dependencies: HashMap<RuleId, HashSet<RuleId>>,
 }
 
-impl Default for DependencyManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DependencyManager {
     /// Create a new dependency manager.
     pub fn new() -> Self {

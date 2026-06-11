@@ -335,12 +335,6 @@ impl RuleHistoryStorage {
     }
 }
 
-impl Default for RuleHistoryStorage {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Error type for history operations.
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryError {

@@ -758,12 +758,6 @@ impl MessageManager {
     }
 }
 
-impl Default for MessageManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Message statistics.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MessageStats {

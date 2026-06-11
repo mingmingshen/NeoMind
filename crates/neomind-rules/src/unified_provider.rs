@@ -232,12 +232,6 @@ impl UnifiedValueProvider {
     }
 }
 
-impl Default for UnifiedValueProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ValueProvider for UnifiedValueProvider {
     fn get_value(&self, source_id: &str, metric: &str) -> Option<f64> {
         // Try to determine the source type from source_id
