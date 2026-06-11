@@ -202,16 +202,8 @@ impl From<uuid::Error> for Error {
 
 // Convenience constructors for common errors
 impl Error {
-    pub fn config(msg: impl Into<String>) -> Self {
-        Self::Config(msg.into())
-    }
-
     pub fn llm(msg: impl Into<String>) -> Self {
         Self::Llm(msg.into())
-    }
-
-    pub fn storage(msg: impl Into<String>) -> Self {
-        Self::Storage(msg.into())
     }
 
     pub fn not_found(msg: impl Into<String>) -> Self {
@@ -224,30 +216,6 @@ impl Error {
 
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self::Timeout(msg.into())
-    }
-
-    pub fn device(msg: impl Into<String>) -> Self {
-        Self::Device(msg.into())
-    }
-
-    pub fn tool(msg: impl Into<String>) -> Self {
-        Self::Tool(msg.into())
-    }
-
-    pub fn workflow(msg: impl Into<String>) -> Self {
-        Self::Workflow(msg.into())
-    }
-
-    pub fn rule(msg: impl Into<String>) -> Self {
-        Self::Rule(msg.into())
-    }
-
-    pub fn memory(msg: impl Into<String>) -> Self {
-        Self::Memory(msg.into())
-    }
-
-    pub fn auth(msg: impl Into<String>) -> Self {
-        Self::Auth(msg.into())
     }
 
     pub fn unauthorized(msg: impl Into<String>) -> Self {
