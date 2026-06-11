@@ -296,37 +296,6 @@ fn parse_invoke_element(invoke_section: &str) -> Option<ToolCall> {
     })
 }
 
-/// Parse tool call from JSON content (for streaming).
-pub fn parse_tool_call_json(content: &str) -> Result<(String, Value)> {
-    let content = content.trim();
-
-    let start = content
-        .find('{')
-        .ok_or_else(|| crate::error::invalid_input("No JSON object found"))?;
-
-    let end = content
-        .rfind('}')
-        .ok_or_else(|| crate::error::invalid_input("No JSON object end found"))?;
-
-    let json_str = &content[start..=end];
-
-    let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| crate::error::invalid_input(format!("Invalid JSON: {}", e)))?;
-
-    let tool_name = value
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| crate::error::invalid_input("Missing 'name' field"))?
-        .to_string();
-
-    let arguments = value
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
-
-    Ok((tool_name, arguments))
-}
-
 /// Remove tool call markers from response for memory storage.
 pub fn remove_tool_calls_from_response(response: &str) -> String {
     let mut result = response.to_string();

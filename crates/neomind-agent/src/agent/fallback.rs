@@ -79,47 +79,6 @@ pub fn default_fallback_rules() -> Vec<FallbackRule> {
     ]
 }
 
-/// Fallback response builder.
-pub struct FallbackBuilder {
-    message: String,
-    tool_calls: Vec<ToolCall>,
-    tools_used: Vec<String>,
-}
-
-impl FallbackBuilder {
-    /// Create a new fallback builder.
-    pub fn new() -> Self {
-        Self {
-            message: String::new(),
-            tool_calls: Vec::new(),
-            tools_used: Vec::new(),
-        }
-    }
-
-    /// Set the response message.
-    pub fn with_message(mut self, message: impl Into<String>) -> Self {
-        self.message = message.into();
-        self
-    }
-
-    /// Add a tool call.
-    pub fn with_tool(mut self, tool: &str) -> Self {
-        self.tools_used.push(tool.to_string());
-        self
-    }
-
-    /// Build into components.
-    pub fn build(self) -> (String, Vec<ToolCall>, Vec<String>) {
-        (self.message, self.tool_calls, self.tools_used)
-    }
-}
-
-impl Default for FallbackBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Process a fallback response.
 pub async fn process_fallback(
     tools: &Arc<ToolRegistry>,

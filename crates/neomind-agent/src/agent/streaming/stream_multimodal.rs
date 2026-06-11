@@ -22,30 +22,6 @@ use crate::agent::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMes
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
 
-/// Process a multimodal user message (text + images) with streaming response.
-///
-/// This is similar to `process_stream_events` but accepts images as base64 data URLs.
-/// Images are converted to ContentPart::ImageBase64 for the LLM.
-pub async fn process_multimodal_stream_events(
-    llm_interface: Arc<LlmInterface>,
-    internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
-    tools: Arc<crate::toolkit::ToolRegistry>,
-    user_message: &str,
-    images: Vec<String>, // Base64 data URLs (e.g., "data:image/png;base64,...")
-) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
-    process_multimodal_stream_events_with_safeguards(
-        llm_interface,
-        internal_state,
-        tools,
-        user_message,
-        images,
-        StreamSafeguards::default(),
-        None,
-        None,
-    )
-    .await
-}
-
 /// Process multimodal message with configurable safeguards.
 #[allow(clippy::too_many_arguments)]
 pub async fn process_multimodal_stream_events_with_safeguards(

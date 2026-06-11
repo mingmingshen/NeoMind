@@ -887,26 +887,6 @@ impl LargeDataCache {
         }
     }
 
-    /// Retrieve cached data by tool name.
-    pub fn get(&self, tool_name: &str) -> Option<&CachedLargeResult> {
-        self.entries.get(tool_name)
-    }
-
-    /// Check if a tool name has cached data.
-    pub fn has(&self, tool_name: &str) -> bool {
-        self.entries.contains_key(tool_name)
-    }
-
-    /// Clear all cached entries.
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
-
-    /// Iterate over all cached entries.
-    pub fn entries(&self) -> impl Iterator<Item = (&String, &CachedLargeResult)> {
-        self.entries.iter()
-    }
-
     /// Get the most recently cached image-like data entry.
     /// Used for auto-injection when the LLM fails to pass valid image arguments.
     /// Returns the extracted image data (base64) and the cache key.
@@ -1375,7 +1355,7 @@ impl AgentInternalState {
     }
 
     /// Calculate similarity hash for a response content.
-    pub fn hash_response(content: &str) -> u64 {
+    fn hash_response(content: &str) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
@@ -1392,22 +1372,6 @@ impl AgentInternalState {
         let mut h = DefaultHasher::new();
         normalized.hash(&mut h);
         h.finish()
-    }
-
-    /// Check if a response is too similar to recent responses.
-    pub fn is_response_repetitive(&self, content: &str, _threshold: f64) -> bool {
-        if self.recent_response_hashes.is_empty() {
-            return false;
-        }
-
-        let new_hash = Self::hash_response(content);
-
-        // Check for exact hash match (exact same response)
-        if self.recent_response_hashes.contains(&new_hash) {
-            return true;
-        }
-
-        false
     }
 
     /// Register a new assistant response for repetition detection.

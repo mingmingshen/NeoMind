@@ -36,12 +36,9 @@ pub use cache::ToolResultCache;
 pub use context::build_context_window_with_config;
 pub use result_format::format_tool_results;
 pub use stream_core::{
-    events_to_string_stream, process_stream_events, process_stream_events_with_safeguards,
-    StreamSafeguards,
+    events_to_string_stream, process_stream_events_with_safeguards, StreamSafeguards,
 };
-pub use stream_multimodal::{
-    process_multimodal_stream_events, process_multimodal_stream_events_with_safeguards,
-};
+pub use stream_multimodal::process_multimodal_stream_events_with_safeguards;
 pub use thinking::cleanup_thinking_content;
 
 // Re-exports for internal crate use and test access

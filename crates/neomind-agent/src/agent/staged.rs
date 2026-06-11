@@ -265,13 +265,6 @@ impl Default for IntentClassifier {
 }
 
 impl IntentClassifier {
-    /// Create a new classifier with custom threshold.
-    pub fn with_threshold(threshold: f32) -> Self {
-        Self {
-            confidence_threshold: threshold,
-        }
-    }
-
     /// Classify user intent from message.
     pub fn classify(&self, message: &str) -> IntentResult {
         let message_lower = message.to_lowercase();

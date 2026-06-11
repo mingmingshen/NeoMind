@@ -121,22 +121,22 @@ pub enum ResourceLimitError {
 
 #[cfg(unix)]
 fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitError> {
-    use libc::{getrlimit, rlimit, setpriority, setrlimit, PRIO_PROCESS, RLIMIT_AS, RLIMIT_DATA};
-
     // 1. Set memory limit
     if let Some(soft_mb) = config.memory_limit_mb {
+        let hard_mb = config.memory_limit_hard_mb.unwrap_or(soft_mb * 2);
+
         // On macOS, setrlimit for memory is unreliable inside Tauri/sandboxed processes.
         // RLIMIT_AS and RLIMIT_DATA both return EINVAL. Skip entirely to avoid noise.
         #[cfg(not(target_os = "macos"))]
         {
+            use libc::{getrlimit, rlimit, setrlimit, RLIMIT_AS, RLIMIT_DATA};
+
             let soft = soft_mb * 1024 * 1024;
-            let desired_hard =
-                config.memory_limit_hard_mb.unwrap_or(soft_mb * 2) * 1024 * 1024;
+            let desired_hard = hard_mb * 1024 * 1024;
 
             info!(
                 "Setting memory limit: soft={}MB, hard={}MB",
-                soft_mb,
-                config.memory_limit_hard_mb.unwrap_or(soft_mb * 2)
+                soft_mb, hard_mb
             );
 
             // Clamp hard limit to the system's current hard limit to avoid EINVAL
@@ -186,13 +186,15 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
 
         #[cfg(target_os = "macos")]
         {
-            let _ = soft_mb; // suppress unused warning
+            let _ = (soft_mb, hard_mb); // suppress unused warning
             info!("Memory limit skipped on macOS (not supported in sandboxed processes)");
         }
     }
 
     // 2. Set process priority (nice level)
     if let Some(nice) = config.nice_level {
+        use libc::{setpriority, PRIO_PROCESS};
+
         info!("Setting nice level to {}", nice);
 
         let result = unsafe { setpriority(PRIO_PROCESS, 0, nice) };
@@ -311,7 +313,7 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = ResourceLimitsConfig::default();
-        assert_eq!(config.memory_limit_mb, Some(2048));
+        assert_eq!(config.memory_limit_mb, Some(4096));
         assert_eq!(config.nice_level, Some(10));
         assert!(config.cpu_affinity.is_none());
         assert!(config.memory_limit_hard_mb.is_none());
@@ -327,7 +329,7 @@ mod tests {
         };
 
         assert_eq!(config.memory_limit_mb, Some(2048));
-        assert_eq!(config.memory_limit_hard_mb, Some(2048));
+        assert_eq!(config.memory_limit_hard_mb, Some(4096));
         assert_eq!(config.cpu_affinity, Some(vec![0, 1]));
         assert_eq!(config.nice_level, Some(5));
     }

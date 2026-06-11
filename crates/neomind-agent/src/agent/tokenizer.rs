@@ -82,43 +82,6 @@ pub fn estimate_message_tokens(message: &crate::agent::AgentMessage) -> usize {
     tokens
 }
 
-/// Calculate how many messages fit within a token budget.
-pub fn select_messages_within_token_limit(
-    messages: &[crate::agent::AgentMessage],
-    max_tokens: usize,
-    min_messages: usize,
-) -> Vec<&crate::agent::AgentMessage> {
-    // Pre-allocate with estimated capacity (assume average 50 tokens per message)
-    let estimated_messages = (max_tokens / 50).min(messages.len());
-    let mut selected = Vec::with_capacity(estimated_messages);
-    let mut current_tokens = 0;
-
-    // Always include at least min_messages most recent messages
-    let _min_from_end = messages.len().saturating_sub(min_messages);
-
-    // Process in reverse (most recent first)
-    for (i, msg) in messages.iter().rev().enumerate() {
-        // Always keep the most recent min_messages
-        if i < min_messages {
-            selected.push(msg);
-            current_tokens += estimate_message_tokens(msg);
-            continue;
-        }
-
-        // Check if adding this message would exceed the limit
-        let msg_tokens = estimate_message_tokens(msg);
-        if current_tokens + msg_tokens > max_tokens {
-            break;
-        }
-
-        selected.push(msg);
-        current_tokens += msg_tokens;
-    }
-
-    selected.reverse();
-    selected
-}
-
 /// === P1.2: Relevance-Based Context Selection ===
 ///
 /// Calculate importance score for a message based on multiple factors:
@@ -185,7 +148,6 @@ pub fn calculate_message_importance(
 /// === P1.2: Enhanced Context Selection with Importance Scoring ===
 ///
 /// Select messages within token limit using importance-based prioritization.
-/// This is an enhanced version of `select_messages_within_token_limit` that:
 /// - Always keeps recent N messages (for continuity)
 /// - Prioritizes high-importance messages within the token budget
 /// - Falls back to recency-only when importance is similar

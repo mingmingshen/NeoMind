@@ -142,6 +142,36 @@ Removed ~250 lines of dead re-exports and dead types across 8 module files. All 
 **Other dead code removed:**
 - `MemoryScheduler.manager` field — stored but never read (also updated 3 tests + 1 production caller in `agent_state.rs`)
 
+### Dead Code Cleanup (Round 7)
+
+Removed ~200 lines of dead functions, dead builder methods, and a dead abstraction across 7 files. All removals verified: workspace builds clean, 435 agent tests + 40 extension-runner tests pass.
+
+**Dead streaming functions removed (all callers use `_with_safeguards` variants):**
+- `process_stream_events` (stream_core.rs, ~19 lines) — zero callers; Agent has its own method with same name
+- `process_multimodal_stream_events` (stream_multimodal.rs, ~19 lines) — zero callers; Agent has its own method
+- Cleaned up `streaming/mod.rs` re-exports (removed 2 dead re-exports)
+
+**Dead StreamSafeguards builder methods (zero callers):**
+- `fast_model()`, `reasoning_model()`, `with_interrupt()`, `new()` — all callers use `StreamSafeguards::default()` + `.with_interrupt_signal()`
+
+**Dead functions in agent utility modules:**
+- `tokenizer.rs`: `select_messages_within_token_limit` — superseded by `select_messages_with_importance` (zero callers)
+- `tool_parser.rs`: `parse_tool_call_json` — zero callers
+- `staged.rs`: `IntentClassifier::with_threshold` — all callers use `IntentClassifier::default()`
+
+**Dead abstraction removed:**
+- `fallback.rs`: `FallbackBuilder` struct + 4 methods + Default impl (~35 lines) — `process_fallback` constructs results directly; builder never used
+
+**Dead methods on internal types:**
+- `types.rs`: `LargeDataCache::{get, has, clear, entries}` — 4 methods with zero callers (only `store`, `resolve_reference`, `get_latest_image` are used)
+- `types.rs`: `AgentInternalState::is_response_repetitive` — zero callers; made `hash_response` private (only used internally by `register_response`)
+- `session.rs`: `SessionManager::validate_session` — zero callers (not used by `cleanup_invalid_sessions` which loads history directly)
+
+**Extension-runner cleanup (pre-existing warnings fixed):**
+- `resource_limits.rs`: moved platform-specific `libc` imports inside their `#[cfg]` blocks (fixed 2 macOS-only unused import warnings)
+- `resource_limits.rs`: hoisted `hard_mb` computation out of cfg block (fixed field-never-read warning for `memory_limit_hard_mb`)
+- `resource_limits.rs`: fixed 2 stale test assertions (`test_config_default` expected 2048 but Default sets 4096; `test_config_custom` set hard_mb=4096 but asserted 2048)
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

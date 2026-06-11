@@ -1423,11 +1423,6 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Validate a session - check if it actually exists in the database.
-    pub fn validate_session(&self, session_id: &str) -> bool {
-        self.store.session_exists(session_id).unwrap_or(false)
-    }
-
     /// Clean up invalid/empty sessions.
     ///
     /// Removes sessions that either:

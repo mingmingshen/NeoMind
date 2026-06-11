@@ -102,87 +102,12 @@ impl Default for StreamSafeguards {
 }
 
 impl StreamSafeguards {
-    /// Create a new StreamSafeguards with default values
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create a StreamSafeguards optimized for fast models.
-    ///
-    /// This reduces timeouts and limits for models that respond quickly
-    /// and don't need extended thinking time.
-    pub fn fast_model() -> Self {
-        Self {
-            max_stream_duration: Duration::from_secs(120),
-            max_thinking_length: 10_000,
-            max_tool_iterations: 8,
-            ..Self::default()
-        }
-    }
-
-    /// Create a StreamSafeguards optimized for reasoning models.
-    ///
-    /// This increases timeouts for models that benefit from extended
-    /// reasoning time (e.g., vision models, thinking-enabled models).
-    pub fn reasoning_model() -> Self {
-        Self {
-            max_stream_duration: Duration::from_secs(600),
-            max_thinking_length: 100_000,
-            max_tool_iterations: 15,
-            ..Self::default()
-        }
-    }
-
     /// Set the interrupt signal for this stream
     /// Returns a sender that can be used to trigger the interrupt
     pub fn with_interrupt_signal(mut self, rx: tokio::sync::watch::Receiver<bool>) -> Self {
         self.interrupt_signal = Some(rx);
         self
     }
-
-    /// Create an interruptible stream with a (tx, rx) pair
-    /// Returns (safeguards, sender) where sender can be used to interrupt
-    pub fn with_interrupt() -> (Self, tokio::sync::watch::Sender<bool>) {
-        let (tx, rx) = tokio::sync::watch::channel(false);
-        let safeguards = Self::default().with_interrupt_signal(rx);
-        (safeguards, tx)
-    }
-}
-
-/// Process a user message with streaming response.
-///
-/// Logic:
-/// 1. Stream LLM response in real-time
-/// 2. Detect tool calls during streaming
-/// 3. If tool call detected:
-///    - Execute tools in parallel
-///    - Get final LLM response based on tool results
-///    - Stream the final response
-///
-/// ## Safeguards against infinite loops:
-/// - Global stream timeout (60s default)
-/// - Maximum thinking content length (10000 chars)
-/// - Maximum content length (20000 chars)
-/// - Repetition detection to catch loops
-/// - Maximum tool call iterations (5)
-pub async fn process_stream_events(
-    llm_interface: Arc<LlmInterface>,
-    internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
-    tools: Arc<crate::toolkit::ToolRegistry>,
-    user_message: &str,
-    conversation_summary: Option<String>,
-    summary_up_to_index: Option<u64>,
-) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
-    process_stream_events_with_safeguards(
-        llm_interface,
-        internal_state,
-        tools,
-        user_message,
-        StreamSafeguards::default(),
-        conversation_summary,
-        summary_up_to_index,
-    )
-    .await
 }
 
 pub async fn process_stream_events_with_safeguards(
