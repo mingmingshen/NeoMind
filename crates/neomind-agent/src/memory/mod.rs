@@ -6,9 +6,7 @@
 pub mod compressor;
 pub mod dedup;
 pub mod error;
-pub mod extractor;
 pub mod scheduler;
-pub mod security;
 pub mod snapshot;
 
 // Re-exports consumed via shortcut path (crate::memory::TypeName)

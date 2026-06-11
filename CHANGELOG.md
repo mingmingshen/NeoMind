@@ -219,6 +219,10 @@ Removed ~250 lines of dead public API methods, dead registry methods, and dead d
 - `DedupResult` struct + `has_duplicates()` — only used by dead `dedup()`
 - Made `jaccard_similarity_with_ngram()` private (only called by `find_similar`)
 
+**Dead memory modules deleted:**
+- `memory/extractor.rs` (~255 lines) — `AgentExtractor`, `MemoryCandidate`, `MemoryAction`, `ExtractResult`, `parse_category()`. All types had zero production callers (only self-tests). The production memory system uses `AgentMemory` (scheduled) and `MemorySnapshot` (chat), not this LLM-based extractor.
+- `memory/security.rs` (~185 lines) — `MemorySecurityScanner`, `SecurityScanResult`. Zero production callers (only self-tests). Memory injection/exfiltration scanning was never wired into the memory write path.
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor
