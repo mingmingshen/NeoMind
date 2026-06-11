@@ -68,10 +68,7 @@ pub use conversation_context::{
     ConversationContext, ConversationTopic, EntityReference, EntityType,
 };
 pub use fallback::{default_fallback_rules, process_fallback, FallbackRule};
-pub use semantic_mapper::{
-    DeviceMapping, MappingStats, RuleMapping, SemanticMapping, SemanticMatchType,
-    SemanticToolMapper, WorkflowMapping,
-};
+pub use semantic_mapper::{SemanticToolMapper, DeviceMapping, SemanticMatchType};
 pub use smart_followup::{
     AvailableDevice, DetectedIntent, FollowUpAnalysis, FollowUpItem, FollowUpPriority,
     FollowUpType, SmartFollowUpManager,
@@ -1368,45 +1365,10 @@ impl Agent {
 
     // === CONTEXT SELECTOR METHODS ===
 
-    /// Get the context selector reference.
-    pub async fn context_selector(
-        &self,
-    ) -> Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>> {
-        Arc::clone(&self.context_selector)
-    }
-
     /// Analyze query intent and get suggested context bundle.
     pub async fn analyze_intent(&self, query: &str) -> (IntentAnalysis, ContextBundle) {
         let selector = self.context_selector.read().await;
         selector.select_context(query).await
-    }
-
-    /// Update device types in the context selector.
-    pub async fn update_context_device_types(
-        &self,
-        device_types: Vec<neomind_devices::mdl_format::DeviceTypeDefinition>,
-    ) {
-        let selector = self.context_selector.read().await;
-        selector.set_device_types(device_types).await;
-        selector.register_with_analyzer().await;
-    }
-
-    /// Update rule engine in the context selector.
-    pub async fn update_context_rule_engine(&self, engine: Arc<neomind_rules::RuleEngine>) {
-        let selector = self.context_selector.read().await;
-        selector.set_rule_engine(engine).await;
-    }
-
-    // === SEMANTIC MAPPING METHODS ===
-
-    // Semantic resource registration is performed by the executor pipeline
-    // directly on `self.semantic_mapper`. No public Agent-level wrapper is
-    // needed since callers register via the smart conversation pipeline.
-
-
-    /// Get semantic mapper statistics.
-    pub async fn get_semantic_mapping_stats(&self) -> semantic_mapper::MappingStats {
-        self.semantic_mapper.get_stats().await
     }
 
     /// === FAST PATH: Check for simple responses BEFORE acquiring lock ===

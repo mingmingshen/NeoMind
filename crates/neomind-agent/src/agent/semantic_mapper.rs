@@ -89,19 +89,6 @@ const DEVICE_NICKNAMES_EN: &[(&str, &[&str])] = &[
     ("wall", &["sconce", "wall_mounted"]),
 ];
 
-/// Mapping result from semantic name to technical ID.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemanticMapping {
-    /// Original natural language input
-    pub original: String,
-    /// Mapped technical ID
-    pub technical_id: String,
-    /// Match confidence (0-1)
-    pub confidence: f32,
-    /// Match type
-    pub match_type: SemanticMatchType,
-}
-
 /// How the semantic mapping matched.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SemanticMatchType {
@@ -136,45 +123,6 @@ pub struct DeviceMapping {
     pub capabilities: Vec<String>,
 }
 
-/// Rule semantic mapping.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuleMapping {
-    /// Rule name (natural language)
-    pub name: String,
-    /// Technical rule ID
-    pub rule_id: String,
-    /// Match type
-    pub match_type: SemanticMatchType,
-    /// Whether the rule is enabled
-    pub enabled: bool,
-}
-
-/// Workflow semantic mapping.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowMapping {
-    /// Workflow name (natural language)
-    pub name: String,
-    /// Technical workflow ID
-    pub workflow_id: String,
-    /// Match type
-    pub match_type: SemanticMatchType,
-    /// Whether the workflow is enabled
-    pub enabled: bool,
-}
-
-/// Mapping statistics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MappingStats {
-    /// Total mappings performed
-    pub total_mappings: usize,
-    /// Successful mappings
-    pub successful: usize,
-    /// Failed mappings (fell back to original)
-    pub failed: usize,
-    /// Average confidence
-    pub avg_confidence: f32,
-}
-
 /// Language detection result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Language {
@@ -188,12 +136,6 @@ pub enum Language {
 pub struct SemanticToolMapper {
     /// Resource index for looking up devices and other resources
     resource_index: Arc<RwLock<ResourceIndex>>,
-    /// Cache for rule name -> rule ID mappings
-    rule_cache: Arc<RwLock<HashMap<String, RuleMapping>>>,
-    /// Cache for workflow name -> workflow ID mappings
-    workflow_cache: Arc<RwLock<HashMap<String, WorkflowMapping>>>,
-    /// Mapping statistics
-    stats: Arc<RwLock<MappingStats>>,
     /// Additional alias mappings
     alias_mappings: Arc<RwLock<HashMap<String, Vec<String>>>>,
 }
@@ -235,14 +177,6 @@ impl SemanticToolMapper {
 
         Self {
             resource_index,
-            rule_cache: Arc::new(RwLock::new(HashMap::new())),
-            workflow_cache: Arc::new(RwLock::new(HashMap::new())),
-            stats: Arc::new(RwLock::new(MappingStats {
-                total_mappings: 0,
-                successful: 0,
-                failed: 0,
-                avg_confidence: 0.0,
-            })),
             alias_mappings: Arc::new(RwLock::new(alias_mappings)),
         }
     }
@@ -486,7 +420,6 @@ impl SemanticToolMapper {
         raw_params: Value,
     ) -> Result<Value, String> {
         let mut params = raw_params;
-        let mut mapping_applied = false;
 
         match tool_name {
             // ===== CLI domain tools (routed to shell for execution) =====
@@ -509,7 +442,6 @@ impl SemanticToolMapper {
                             params["_device_name"] = Value::String(name);
                             params["_match_type"] =
                                 Value::String(format!("{:?}", mapping.match_type));
-                            mapping_applied = true;
                         }
                     }
                 }
@@ -526,24 +458,9 @@ impl SemanticToolMapper {
 
             // The "rule" tool handles: list, get, create, update, delete, history
             "rule" => {
-                let rule_name = params
-                    .get("rule_id")
-                    .or(params.get("rule"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                if let Some(name) = rule_name {
-                    let looks_technical = name.contains('-')
-                        || name.contains(':')
-                        || (name.len() > 20 && name.chars().all(|c| c.is_ascii_alphanumeric()));
-                    if !looks_technical {
-                        if let Some(mapping) = self.resolve_rule(&name).await {
-                            params["rule_id"] = Value::String(mapping.rule_id.clone());
-                            params["_rule_name"] = Value::String(name);
-                            mapping_applied = true;
-                        }
-                    }
-                }
+                // Rule name → ID resolution removed: rule_cache was never populated
+                // (register_rule/register_rules had zero callers). Rule IDs from LLM
+                // pass through unchanged.
             }
 
             // The "agent" tool handles: list, get, create, update, control, memory, send_message, etc.
@@ -565,7 +482,6 @@ impl SemanticToolMapper {
                             if result.resource.id.resource_type == "agent" {
                                 params["agent_id"] = Value::String(result.resource.id.id.clone());
                                 params["_agent_name"] = Value::String(name);
-                                mapping_applied = true;
                                 break;
                             }
                         }
@@ -577,9 +493,6 @@ impl SemanticToolMapper {
                 // Other domains (message, transform, etc.) — no semantic ID mapping needed
             }
         }
-
-        // Update statistics
-        self.update_stats(mapping_applied).await;
 
         Ok(params)
     }
@@ -660,135 +573,6 @@ impl SemanticToolMapper {
         None
     }
 
-    /// Resolve multiple devices at once.
-    pub async fn resolve_devices(&self, device_refs: &[String]) -> Vec<DeviceMapping> {
-        let mut mappings = Vec::new();
-
-        for device_ref in device_refs {
-            if let Some(mapping) = self.resolve_device(device_ref).await {
-                mappings.push(mapping);
-            } else {
-                mappings.push(DeviceMapping {
-                    name: device_ref.clone(),
-                    device_id: device_ref.clone(),
-                    match_type: SemanticMatchType::NotFound,
-                    location: None,
-                    capabilities: vec![],
-                });
-            }
-        }
-
-        mappings
-    }
-
-    /// Register a rule mapping with multilingual aliases.
-    pub async fn register_rule(&self, rule_id: String, rule_name: String, enabled: bool) {
-        let mut cache = self.rule_cache.write().await;
-        cache.insert(
-            rule_name.clone(),
-            RuleMapping {
-                name: rule_name.clone(),
-                rule_id,
-                match_type: SemanticMatchType::Exact,
-                enabled,
-            },
-        );
-    }
-
-    /// Bulk register rules.
-    pub async fn register_rules(&self, rules: Vec<(String, String, bool)>) {
-        let mut cache = self.rule_cache.write().await;
-        for (rule_id, rule_name, enabled) in rules {
-            cache.insert(
-                rule_name.clone(),
-                RuleMapping {
-                    name: rule_name,
-                    rule_id,
-                    match_type: SemanticMatchType::Exact,
-                    enabled,
-                },
-            );
-        }
-    }
-
-    /// Resolve a rule reference to its technical ID.
-    pub async fn resolve_rule(&self, rule_ref: &str) -> Option<RuleMapping> {
-        let cache = self.rule_cache.read().await;
-
-        // Try exact match first
-        if let Some(mapping) = cache.get(rule_ref) {
-            return Some(mapping.clone());
-        }
-
-        // Try partial match
-        for (name, mapping) in cache.iter() {
-            if name.contains(rule_ref) || rule_ref.contains(name) {
-                return Some(mapping.clone());
-            }
-        }
-
-        None
-    }
-
-    /// Register a workflow mapping.
-    pub async fn register_workflow(
-        &self,
-        workflow_id: String,
-        workflow_name: String,
-        enabled: bool,
-    ) {
-        let mut cache = self.workflow_cache.write().await;
-        cache.insert(
-            workflow_name.clone(),
-            WorkflowMapping {
-                name: workflow_name.clone(),
-                workflow_id,
-                match_type: SemanticMatchType::Exact,
-                enabled,
-            },
-        );
-    }
-
-    /// Bulk register workflows.
-    pub async fn register_workflows(&self, workflows: Vec<(String, String, bool)>) {
-        let mut cache = self.workflow_cache.write().await;
-        for (workflow_id, workflow_name, enabled) in workflows {
-            cache.insert(
-                workflow_name.clone(),
-                WorkflowMapping {
-                    name: workflow_name,
-                    workflow_id,
-                    match_type: SemanticMatchType::Exact,
-                    enabled,
-                },
-            );
-        }
-    }
-
-    /// Resolve a workflow reference to its technical ID.
-    pub async fn resolve_workflow(&self, workflow_ref: &str) -> Option<WorkflowMapping> {
-        let cache = self.workflow_cache.read().await;
-
-        // Try exact match first
-        if let Some(mapping) = cache.get(workflow_ref) {
-            return Some(mapping.clone());
-        }
-
-        // Try partial match
-        for (name, mapping) in cache.iter() {
-            if name.contains(workflow_ref) || workflow_ref.contains(name) {
-                return Some(mapping.clone());
-            }
-        }
-
-        None
-    }
-
-    /// Register a device in the resource index.
-    pub async fn register_device(&self, device: Resource) -> Result<(), String> {
-        self.resource_index.write().await.register(device).await
-    }
-
     /// Get all registered devices.
     pub async fn list_devices(&self) -> Vec<Resource> {
         self.resource_index.read().await.list_devices().await
@@ -821,50 +605,6 @@ impl SemanticToolMapper {
         text
     }
 
-    /// Get available rule names for LLM context.
-    pub async fn get_rule_names_for_llm(&self) -> String {
-        let cache = self.rule_cache.read().await;
-
-        if cache.is_empty() {
-            return "暂无可用规则 / No rules available".to_string();
-        }
-
-        let mut text = String::from("可用规则 / Available Rules:\n");
-
-        for (_, mapping) in cache.iter() {
-            let status = if mapping.enabled {
-                "启用 / Enabled"
-            } else {
-                "禁用 / Disabled"
-            };
-            text.push_str(&format!("- {} ({})\n", mapping.name, status));
-        }
-
-        text
-    }
-
-    /// Get available workflow names for LLM context.
-    pub async fn get_workflow_names_for_llm(&self) -> String {
-        let cache = self.workflow_cache.read().await;
-
-        if cache.is_empty() {
-            return "暂无可用工作流 / No workflows available".to_string();
-        }
-
-        let mut text = String::from("可用工作流 / Available Workflows:\n");
-
-        for (_, mapping) in cache.iter() {
-            let status = if mapping.enabled {
-                "启用 / Enabled"
-            } else {
-                "禁用 / Disabled"
-            };
-            text.push_str(&format!("- {} ({})\n", mapping.name, status));
-        }
-
-        text
-    }
-
     /// Get complete semantic context for LLM prompt (multilingual).
     pub async fn get_semantic_context(&self) -> String {
         let mut context = String::new();
@@ -881,131 +621,16 @@ impl SemanticToolMapper {
         context.push_str("- 客厅 ↔ living room / lounge\n\n");
 
         context.push_str(&self.get_device_names_for_llm().await);
-        context.push('\n');
-
-        context.push_str(&self.get_rule_names_for_llm().await);
-        context.push('\n');
-
-        context.push_str(&self.get_workflow_names_for_llm().await);
 
         context
     }
 
-    /// Update mapping statistics.
-    async fn update_stats(&self, success: bool) {
-        let mut stats = self.stats.write().await;
-        stats.total_mappings += 1;
-        if success {
-            stats.successful += 1;
-        } else {
-            stats.failed += 1;
-        }
-    }
-
-    /// Get mapping statistics.
-    pub async fn get_stats(&self) -> MappingStats {
-        self.stats.read().await.clone()
-    }
-
-    /// Clear all caches.
-    pub async fn clear_caches(&self) {
-        self.rule_cache.write().await.clear();
-        self.workflow_cache.write().await.clear();
-    }
-
-    /// Periodic cache cleanup to prevent unbounded growth.
-    ///
-    /// This should be called on a timer (e.g., every 5 minutes) to keep cache sizes manageable.
-    /// Since the cache doesn't track timestamps, this performs a full clear when size exceeds threshold.
-    ///
-    /// # Arguments
-    /// * `max_cache_size` - Maximum entries per cache before cleanup (default: 1000)
-    pub async fn periodic_cache_cleanup(&self, max_cache_size: Option<usize>) {
-        let max_size = max_cache_size.unwrap_or(1000);
-
-        let rule_size = self.rule_cache.read().await.len();
-        let workflow_size = self.workflow_cache.read().await.len();
-
-        // Clear caches if they exceed threshold
-        if rule_size > max_size || workflow_size > max_size {
-            tracing::info!(
-                rule_cache_size = rule_size,
-                workflow_cache_size = workflow_size,
-                max_size = max_size,
-                "Cache size exceeded threshold, performing cleanup"
-            );
-            self.clear_caches().await;
-        }
-    }
-
-    /// Get suggestion for resolving an ambiguous reference.
-    pub async fn suggest_resolution(&self, reference: &str) -> Option<String> {
-        // Try device resolution first
-        if let Some(mapping) = self.resolve_device(reference).await {
-            return Some(format!(
-                "设备: {} (ID: {})",
-                mapping.name, mapping.device_id
-            ));
-        }
-
-        // Try rule resolution
-        if let Some(mapping) = self.resolve_rule(reference).await {
-            return Some(format!("规则: {} (ID: {})", mapping.name, mapping.rule_id));
-        }
-
-        // Try workflow resolution
-        if let Some(mapping) = self.resolve_workflow(reference).await {
-            return Some(format!(
-                "工作流: {} (ID: {})",
-                mapping.name, mapping.workflow_id
-            ));
-        }
-
-        // Search for similar devices
-        let results = self
-            .resource_index
-            .read()
-            .await
-            .search_string(reference)
-            .await;
-        if !results.is_empty() {
-            let suggestions: Vec<String> = results
-                .iter()
-                .take(3)
-                .map(|r| r.resource.name.clone())
-                .collect();
-            return Some(format!(
-                "您是不是指: {}? / Did you mean: {}?",
-                suggestions.join(", "),
-                suggestions.join(", ")
-            ));
-        }
-
-        None
-    }
-
-    /// Add custom alias mapping.
-    pub async fn add_alias(&self, from: String, to: String) {
-        let mut aliases = self.alias_mappings.write().await;
-        aliases.entry(from).or_insert_with(Vec::new).push(to);
-    }
-
-    /// Add bulk alias mappings.
-    pub async fn add_aliases(&self, mappings: Vec<(String, String)>) {
-        let mut aliases = self.alias_mappings.write().await;
-        for (from, to) in mappings {
-            aliases.entry(from).or_insert_with(Vec::new).push(to);
-        }
-    }
 }
 
 impl Clone for SemanticToolMapper {
     fn clone(&self) -> Self {
         Self {
             resource_index: Arc::clone(&self.resource_index),
-            rule_cache: Arc::clone(&self.rule_cache),
-            workflow_cache: Arc::clone(&self.workflow_cache),
-            stats: Arc::clone(&self.stats),
             alias_mappings: Arc::clone(&self.alias_mappings),
         }
     }
@@ -1101,33 +726,9 @@ mod tests {
             .await
             .unwrap();
 
-        mapper
-            .register_rules(vec![(
-                "rule_001".to_string(),
-                "温度报警规则".to_string(),
-                true,
-            )])
-            .await;
-
         let context = mapper.get_semantic_context().await;
         assert!(context.contains("客厅灯"));
-        assert!(context.contains("温度报警规则"));
         assert!(context.contains("Supported Languages"));
-    }
-
-    #[tokio::test]
-    async fn test_custom_aliases() {
-        let index = Arc::new(RwLock::new(ResourceIndex::new()));
-        let mapper = SemanticToolMapper::new(index.clone());
-
-        // Add custom alias
-        mapper
-            .add_alias("front_door".to_string(), "entrance_light".to_string())
-            .await;
-
-        // Verify alias was added
-        let aliases = mapper.alias_mappings.read().await;
-        assert!(aliases.contains_key("front_door"));
     }
 
     #[test]

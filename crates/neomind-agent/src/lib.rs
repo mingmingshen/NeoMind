@@ -49,7 +49,6 @@ pub mod skills;
 pub mod smart_conversation;
 pub mod toolkit;
 pub mod tools;
-pub mod translation;
 
 // Re-export commonly used types
 pub use agent::{

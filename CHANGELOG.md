@@ -69,6 +69,27 @@ Removed ~2500 lines of dead modules, functions, and legacy test files.
 - `pub use config::{get_default_config, set_default_config, StreamingConfig}` — removed along with the module
 - `pub use memory_extraction::MemoryExtractor` — removed along with the module
 
+### Dead Code Cleanup (Round 3)
+
+Removed ~1540 lines of dead code from `semantic_mapper.rs`, `translation.rs`, and `agent/mod.rs`.
+
+**Removed dead module:**
+
+- **`translation.rs`** (1142 lines) — `MdlTranslator`, `DslTranslator`, `Language`, `DeviceDescription`, `RuleDescription`. Zero callers anywhere in the workspace.
+
+**Removed dead SemanticToolMapper code (~400 lines):**
+
+- 18 dead methods: `resolve_devices`, `register_rule(s)`, `resolve_rule`, `register_workflow(s)`, `resolve_workflow`, `register_device`, `get_rule_names_for_llm`, `get_workflow_names_for_llm`, `update_stats`, `get_stats`, `clear_caches`, `periodic_cache_cleanup`, `suggest_resolution`, `add_alias(es)`
+- 4 dead types: `SemanticMapping`, `RuleMapping`, `WorkflowMapping`, `MappingStats`
+- 3 dead struct fields: `rule_cache`, `workflow_cache`, `stats`
+- **Key insight:** `rule_cache` and `workflow_cache` were never populated — all `register_*` methods had zero callers, so rule/workflow resolution always returned `None`. The caches and all dependent code were dead at runtime.
+- `get_semantic_context()` simplified — removed rule/workflow context sections (always showed "暂无可用规则/工作流")
+- `map_tool_parameters()` simplified — removed `resolve_rule` dead path and `update_stats` call
+
+**Removed dead Agent methods (4):**
+
+- `context_selector()`, `update_context_device_types()`, `update_context_rule_engine()`, `get_semantic_mapping_stats()` — zero callers
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor
