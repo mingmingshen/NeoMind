@@ -333,12 +333,6 @@ pub enum AggFunc {
     Last,
 }
 
-impl Default for AggFunc {
-    fn default() -> Self {
-        Self::Last
-    }
-}
-
 /// Query parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryParams {
@@ -486,12 +480,6 @@ impl DataSourceCatalog {
             DataSourceType::Extension => self.extensions.iter().collect(),
             DataSourceType::Transform => self.transforms.iter().collect(),
         }
-    }
-}
-
-impl Default for DataSourceCatalog {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -75,11 +75,3 @@ pub fn is_native_extension(path: &std::path::Path) -> bool {
         .map(|ext| matches!(ext, "so" | "dylib" | "dll"))
         .unwrap_or(false)
 }
-
-/// Check if a file is a WASM extension.
-pub fn is_wasm_extension(path: &std::path::Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|ext| ext == "wasm")
-        .unwrap_or(false)
-}

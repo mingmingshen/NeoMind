@@ -175,12 +175,6 @@ impl FrontendField {
     }
 }
 
-impl Default for FrontendField {
-    fn default() -> Self {
-        FrontendField::Struct(FrontendConfig::default())
-    }
-}
-
 /// Helper function to deserialize optional frontend field
 fn deserialize_frontend_opt<'de, D>(deserializer: D) -> Result<Option<FrontendConfig>, D::Error>
 where

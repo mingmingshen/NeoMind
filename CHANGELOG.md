@@ -37,6 +37,8 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - **`AgentExecutionResult`** struct (Round 14) — in `executor/mod.rs`, defined with 3 fields (`record`, `memory`, `success`) but never instantiated or returned by any function.
 - **`ExtensionToolGenerator` + `ExtensionFilter`** (Round 14) — in `extension_tools.rs`, ~90-line struct/enum with `generate()`, `generate_definitions()`, `format_for_llm()` methods. Zero production callers (only tests). Superseded by `ExtensionToolExecutor` which takes a registry and is used by `ToolRegistry`.
 - **`SkillRegistry::default()` impl** (Round 14) — all callers use `SkillRegistry::new()` or `SkillRegistry::load_all()`, never `::default()`.
+- **3 dead `Default` impls in neomind-core** (Round 15) — `AggFunc` (`datasource/mod.rs`), `DataSourceCatalog` (`datasource/mod.rs`), `FrontendField` (`extension/package.rs`). All types are alive but `::default()` is never called — callers use `::new()` or construct explicitly.
+- **`is_wasm_extension()`** (Round 15) — in `neomind-core/src/extension/mod.rs`, zero callers. WASM extension support was never implemented; `is_native_extension()` is alive (used by native loader).
 - `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
 - `toolkit/registry.rs`: dead `categories()` method.
 
