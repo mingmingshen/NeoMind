@@ -202,18 +202,6 @@ impl SessionMessage {
         self.timestamp = timestamp;
         self
     }
-
-    /// Add round contents.
-    pub fn with_round_contents(mut self, round_contents: serde_json::Value) -> Self {
-        self.round_contents = Some(round_contents);
-        self
-    }
-
-    /// Add round thinking.
-    pub fn with_round_thinking(mut self, round_thinking: serde_json::Value) -> Self {
-        self.round_thinking = Some(round_thinking);
-        self
-    }
 }
 
 /// P0.3: Pending stream state for tracking in-progress streaming responses.
@@ -296,19 +284,6 @@ impl PendingStreamState {
     /// Update the processing stage.
     pub fn set_stage(&mut self, stage: StreamStage) {
         self.stage = stage;
-        self.updated_at = chrono::Utc::now().timestamp();
-    }
-
-    /// Add tool calls.
-    pub fn set_tool_calls(&mut self, tool_calls: Vec<serde_json::Value>) {
-        self.tool_calls = Some(tool_calls);
-        self.stage = StreamStage::ToolExecution;
-        self.updated_at = chrono::Utc::now().timestamp();
-    }
-
-    /// Mark as interrupted.
-    pub fn mark_interrupted(&mut self) {
-        self.interrupted = true;
         self.updated_at = chrono::Utc::now().timestamp();
     }
 
@@ -1544,52 +1519,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_stream_state_tool_calls() {
-        let store = create_temp_store();
-
-        // Create state with tool calls
-        let mut state = PendingStreamState::new("test-session".to_string(), "Use tools".to_string());
-        let tool_calls = vec![
-            serde_json::json!({"name": "search", "args": {"query": "test"}}),
-            serde_json::json!({"name": "calculate", "args": {"x": 1, "y": 2}}),
-        ];
-        state.set_tool_calls(tool_calls);
-
-        store.save_pending_stream(&state).unwrap();
-
-        // Retrieve and verify
-        let loaded = store.get_pending_stream("test-session").unwrap();
-        assert!(loaded.is_some());
-        let loaded = loaded.unwrap();
-        assert!(loaded.tool_calls.is_some());
-        let tool_calls = loaded.tool_calls.unwrap();
-        assert_eq!(tool_calls.len(), 2);
-        assert_eq!(tool_calls[0]["name"], "search");
-        assert!(matches!(loaded.stage, StreamStage::ToolExecution));
-    }
-
-    #[test]
-    fn test_pending_stream_state_interrupted() {
-        let store = create_temp_store();
-
-        // Create and mark as interrupted
-        let mut state = PendingStreamState::new("test-session".to_string(), "Hello".to_string());
-        state.mark_interrupted();
-
-        store.save_pending_stream(&state).unwrap();
-
-        // Retrieve and verify
-        let loaded = store.get_pending_stream("test-session").unwrap();
-        assert!(loaded.is_some());
-        let loaded = loaded.unwrap();
-        assert!(loaded.interrupted);
-
-        // Check elapsed time
-        let elapsed = loaded.elapsed_secs();
-        assert!(elapsed >= 0);
-    }
-
-    #[test]
     fn test_session_message_with_images() {
         let store = create_temp_store();
 
@@ -1618,33 +1547,6 @@ mod tests {
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].mime_type, Some("image/png".to_string()));
         assert_eq!(images[1].mime_type, Some("image/jpeg".to_string()));
-    }
-
-    #[test]
-    fn test_session_message_with_round_contents() {
-        let store = create_temp_store();
-
-        // Create message with round contents
-        let msg = SessionMessage::assistant("Multi-step response")
-            .with_round_contents(serde_json::json!({
-                "0": "First step result",
-                "1": "Second step result",
-                "2": "Final step result"
-            }))
-            .with_round_thinking(serde_json::json!({
-                "0": "Thinking about step 1",
-                "1": "Thinking about step 2",
-                "2": "Thinking about step 3"
-            }));
-
-        store.save_session_id("test-session").unwrap();
-        store.append_message("test-session", &msg).unwrap();
-
-        // Retrieve and verify
-        let loaded = store.load_history("test-session").unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert!(loaded[0].round_contents.is_some());
-        assert!(loaded[0].round_thinking.is_some());
     }
 
     #[test]
@@ -1917,7 +1819,8 @@ mod tests {
         assert!(matches!(state.stage, StreamStage::Generating));
 
         // Transition to tool execution
-        state.set_tool_calls(vec![serde_json::json!({"name": "test"})]);
+        state.tool_calls = Some(vec![serde_json::json!({"name": "test"})]);
+        state.set_stage(StreamStage::ToolExecution);
         assert!(matches!(state.stage, StreamStage::ToolExecution));
 
         // Transition to complete
