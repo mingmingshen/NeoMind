@@ -535,12 +535,6 @@ impl VectorStore {
     }
 }
 
-impl Default for VectorStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Persistent vector store with redb backend.
 pub struct PersistentVectorStore {
     /// redb database.
