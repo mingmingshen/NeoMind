@@ -5,8 +5,6 @@
 //! 2. 危险操作前拦截并确认
 //! 3. 意图模糊时拦截并澄清
 
-use serde::{Deserialize, Serialize};
-
 /// 用户意图分析结果
 #[derive(Debug, Clone)]
 pub struct IntentAnalysis {
@@ -22,19 +20,6 @@ pub struct IntentAnalysis {
 
 /// 智能对话管理器
 pub struct SmartConversationManager;
-
-/// Device information for smart conversation and followup.
-/// Shared between smart_conversation and smart_followup modules.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Device {
-    pub id: String,
-    pub name: String,
-    pub location: String,
-    pub device_type: String,
-    /// Device capabilities (e.g., ["on_off", "brightness", "color_temp"])
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-}
 
 impl SmartConversationManager {
     pub fn new() -> Self {

@@ -681,12 +681,6 @@ impl ResourceIndex {
 
 }
 
-impl Default for ResourceIndex {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Helper trait to extract common data from ResourceData.
 pub trait ResourceDataHelper {
     /// Get location if applicable.

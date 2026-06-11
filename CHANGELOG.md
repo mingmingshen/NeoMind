@@ -29,6 +29,8 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - `smart_conversation.rs`: unused `devices`/`rules` fields, `update_devices()`/`update_rules()`, `Rule` struct.
 - `smart_followup.rs`: dead `refresh_devices()` method.
 - **`agent/scheduler.rs`** (~320 lines, Round 11) — "Dependency-Aware Tool Scheduling (P2.1)" feature (`ToolExecutionPlan`, `ExecutionBatch`, `build_execution_plan`, `DependencyNode`, and 4 helper functions). Designed for parallel/sequential tool execution based on `ToolRelationships` metadata, but never wired into any execution path. The production executor uses `tool_loop.rs` (sequential) and `registry::execute_parallel` (parallel) directly. The module was declared `pub mod scheduler;` but had zero callers outside its own file/tests.
+- **`smart_conversation::Device`** struct (Round 12) — 12-line struct with `Serialize`/`Deserialize` derives, commented "Shared between smart_conversation and smart_followup modules" but never used in either. `ConversationContext` uses its own `EntityReference` type for device tracking instead.
+- **7 dead `Default` impls** (Round 12) — `ToolResultCache` (local, `agent/mod.rs`), `ToolNameMapper` (`tools/mapper.rs`), `DedupProcessor` (`memory/dedup.rs`), `ResourceIndex` (`context/resource_index.rs`), `AskUserTool`/`ConfirmActionTool`/`ClarifyIntentTool` (`tools/interaction.rs`). All constructors are only called via `::new()` or `::with_defaults()`, never via `::default()` or `Default::default()`.
 - `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
 - `toolkit/registry.rs`: dead `categories()` method.
 

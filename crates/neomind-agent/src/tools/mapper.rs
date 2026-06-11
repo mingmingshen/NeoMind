@@ -236,12 +236,6 @@ impl ToolNameMapper {
 
 }
 
-impl Default for ToolNameMapper {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// 全局工具名称映射器
 static GLOBAL_MAPPER: OnceLock<ToolNameMapper> = OnceLock::new();
 

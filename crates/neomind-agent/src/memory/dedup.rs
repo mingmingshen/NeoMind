@@ -73,12 +73,6 @@ impl DedupProcessor {
     }
 }
 
-impl Default for DedupProcessor {
-    fn default() -> Self {
-        Self::with_defaults()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

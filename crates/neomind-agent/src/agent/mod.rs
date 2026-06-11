@@ -679,12 +679,6 @@ impl ToolResultCache {
     }
 }
 
-impl Default for ToolResultCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Check if a tool action modifies state and should trigger cache invalidation.
 ///
 /// Write actions (create, update, delete, control, send, acknowledge, etc.)

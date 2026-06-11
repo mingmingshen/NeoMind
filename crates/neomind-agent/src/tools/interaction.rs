@@ -56,12 +56,6 @@ impl AskUserTool {
     }
 }
 
-impl Default for AskUserTool {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl Tool for AskUserTool {
     fn name(&self) -> &str {
@@ -196,12 +190,6 @@ impl ConfirmActionTool {
 
 }
 
-impl Default for ConfirmActionTool {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl Tool for ConfirmActionTool {
     fn name(&self) -> &str {
@@ -308,12 +296,6 @@ pub struct ClarifyIntentTool {
 impl ClarifyIntentTool {
     pub fn new() -> Self {
         Self { _private: () }
-    }
-}
-
-impl Default for ClarifyIntentTool {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
