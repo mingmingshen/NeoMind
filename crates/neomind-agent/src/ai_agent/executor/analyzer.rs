@@ -183,7 +183,7 @@ impl AgentExecutor {
         // Build system prompt using the shared builder (no tools, no invocation)
         let config = ToolLoopConfig::focused_plus(agent);
         let knowledge_content = self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
-        let system_prompt = Self::build_tool_system_prompt(
+        let system_prompt = super::tool_prompt::build_tool_system_prompt(
             agent, data, None, &config, knowledge_content.as_ref(),
         );
 
