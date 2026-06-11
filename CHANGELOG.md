@@ -172,6 +172,28 @@ Removed ~200 lines of dead functions, dead builder methods, and a dead abstracti
 - `resource_limits.rs`: hoisted `hard_mb` computation out of cfg block (fixed field-never-read warning for `memory_limit_hard_mb`)
 - `resource_limits.rs`: fixed 2 stale test assertions (`test_config_default` expected 2048 but Default sets 4096; `test_config_custom` set hard_mb=4096 but asserted 2048)
 
+### Dead Code Cleanup (Round 8)
+
+Removed ~120 lines of dead `LlmInterface` methods, `Agent` methods, and error helpers. All zero-caller removals verified: workspace builds clean, 434 tests pass.
+
+**Dead `LlmInterface` methods removed (llm.rs):**
+- `get_concurrent_limit()` — free function, zero callers
+- `set_llm_from_box()` — broken stub that stored `None` (comment said "caller should use Arc directly")
+- `switch_backend()` — zero callers
+- `get_available_backends()` — zero callers
+- `chat_without_tools()` — zero callers (use `chat()` or `chat_with_history()`)
+- `chat_stream()` — zero callers (use `chat_stream_with_history()`)
+
+**Dead `Agent` methods removed (agent/mod.rs):**
+- `internal_state()` — zero callers (streaming code accesses the field directly)
+- `is_llm_configured()` — zero callers (callers use `llm_interface().is_ready()`)
+- `tool_definitions()` — zero callers
+- `process_tool_result()` — zero callers (26-line stub that never called LLM)
+
+**Dead error helpers removed (error.rs):**
+- `from_memory_err()`, `from_tool_err()`, `from_device_err()` — zero callers
+- `invalid_input()` — last caller (`parse_tool_call_json`) was removed in Round 7
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

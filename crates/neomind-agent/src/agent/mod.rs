@@ -806,11 +806,6 @@ impl Agent {
         }
     }
 
-    /// Get internal state for streaming (used by streaming module).
-    pub fn internal_state(&self) -> Arc<tokio::sync::RwLock<AgentInternalState>> {
-        self.internal_state.clone()
-    }
-
     /// Get the LLM interface (for capability checks).
     pub fn llm_interface(&self) -> Arc<LlmInterface> {
         Arc::clone(&self.llm_interface)
@@ -1295,11 +1290,6 @@ impl Agent {
         prompt
     }
 
-    /// Check if LLM is configured.
-    pub async fn is_llm_configured(&self) -> bool {
-        self.llm_interface.is_ready().await
-    }
-
     /// Get the session ID.
     pub fn session_id(&self) -> &str {
         &self.session_id
@@ -1339,11 +1329,6 @@ impl Agent {
     /// Get available tools.
     pub fn available_tools(&self) -> Vec<String> {
         self.tools.list()
-    }
-
-    /// Get tool definitions for LLM.
-    pub fn tool_definitions(&self) -> Value {
-        self.tools.definitions_json()
     }
 
     /// === FAST PATH: Check for simple responses BEFORE acquiring lock ===
@@ -2881,34 +2866,6 @@ END"#
             elapsed.as_millis(),
             last_error
         )))
-    }
-
-    /// Process a tool call result.
-    pub async fn process_tool_result(
-        &self,
-        tool_call_id: &str,
-        result: &str,
-    ) -> Result<AgentResponse> {
-        // Add tool result to history
-        let tool_msg = AgentMessage::tool_result(tool_call_id, result);
-        self.internal_state.write().await.push_message(tool_msg);
-
-        // Get LLM response based on tool result
-        let response_content = format!("Tool execution completed. Result: {}", result);
-
-        let response = AgentMessage::assistant(response_content);
-        self.internal_state
-            .write()
-            .await
-            .push_message(response.clone());
-
-        Ok(AgentResponse {
-            message: response,
-            tool_calls: Vec::new(),
-            memory_context_used: true,
-            tools_used: Vec::new(),
-            processing_time_ms: 0,
-        })
     }
 
     /// Process a user message with streaming response (returns AgentEvent stream).
