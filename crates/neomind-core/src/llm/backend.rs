@@ -3,13 +3,9 @@
 //! This module defines the core abstraction for LLM inference,
 //! supporting multiple backends (Hailo, Candle, Cloud, etc.).
 
-use async_trait::async_trait;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Arc;
-use parking_lot::RwLock;
 use std::time::Duration;
 
 use super::modality::{ImageContent, ModalityContent};
@@ -496,177 +492,6 @@ pub enum LlmError {
     Unknown(String),
 }
 
-/// Factory for creating LLM runtime backends.
-///
-/// This trait allows for dynamic backend registration and instantiation.
-#[async_trait]
-pub trait BackendFactory: Send + Sync {
-    /// Get the unique identifier for this backend type.
-    fn backend_id(&self) -> &str;
-
-    /// Get a human-readable name for this backend.
-    fn display_name(&self) -> &str;
-
-    /// Create a new backend instance from configuration.
-    ///
-    /// The config is a JSON value that allows flexible configuration
-    /// without requiring changes to core types.
-    fn create(&self, config: &serde_json::Value) -> Result<Box<dyn LlmRuntime>, LlmError>;
-
-    /// Validate backend configuration before creation.
-    fn validate_config(&self, config: &serde_json::Value) -> Result<(), LlmError>;
-
-    /// Get the default configuration for this backend.
-    fn default_config(&self) -> serde_json::Value {
-        serde_json::json!({})
-    }
-
-    /// Check if this backend is available on the current system.
-    async fn is_available(&self) -> bool {
-        true
-    }
-}
-
-/// Registry for LLM backend factories.
-///
-/// This registry allows dynamic registration and instantiation of backends.
-pub struct BackendRegistry {
-    factories: HashMap<String, Box<dyn BackendFactory>>,
-}
-
-impl BackendRegistry {
-    /// Create a new empty registry.
-    pub fn new() -> Self {
-        Self {
-            factories: HashMap::new(),
-        }
-    }
-
-    /// Register a backend factory.
-    pub fn register(&mut self, factory: Box<dyn BackendFactory>) {
-        let id = factory.backend_id().to_string();
-        self.factories.insert(id, factory);
-    }
-
-    /// Get a backend factory by ID.
-    pub fn get_factory(&self, id: &str) -> Option<&dyn BackendFactory> {
-        self.factories.get(id).map(|f| f.as_ref())
-    }
-
-    /// List all registered backend IDs.
-    pub fn list_backends(&self) -> Vec<String> {
-        self.factories.keys().cloned().collect()
-    }
-
-    /// Create a backend instance from configuration.
-    ///
-    /// The configuration should have a "backend" field specifying the backend type.
-    pub fn create_backend(
-        &self,
-        config: &serde_json::Value,
-    ) -> Result<Box<dyn LlmRuntime>, LlmError> {
-        let backend_id = config
-            .get("backend")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| LlmError::InvalidInput("Missing 'backend' field in config".into()))?;
-
-        let factory = self
-            .get_factory(backend_id)
-            .ok_or_else(|| LlmError::BackendUnavailable(backend_id.to_string()))?;
-
-        factory.validate_config(config)?;
-        factory.create(config)
-    }
-
-    /// Find the best available backend for given requirements.
-    pub fn find_best_backend(&self, requirements: &BackendRequirements) -> Option<String> {
-        for id in self.factories.keys() {
-            if let Ok(true) = self.meets_requirements(id, requirements) {
-                return Some(id.clone());
-            }
-        }
-        None
-    }
-
-    /// Check if a backend meets the given requirements.
-    fn meets_requirements(
-        &self,
-        backend_id: &str,
-        req: &BackendRequirements,
-    ) -> Result<bool, LlmError> {
-        let factory = self
-            .get_factory(backend_id)
-            .ok_or_else(|| LlmError::BackendUnavailable(backend_id.to_string()))?;
-
-        // Create a temp instance to check capabilities
-        let config = factory.default_config();
-        if let Ok(runtime) = factory.create(&config) {
-            let caps = runtime.capabilities();
-
-            if req.streaming && !caps.streaming {
-                return Ok(false);
-            }
-            if req.multimodal && !caps.multimodal {
-                return Ok(false);
-            }
-            if req.function_calling && !caps.function_calling {
-                return Ok(false);
-            }
-            if let Some(min_context) = req.min_context {
-                if let Some(max_context) = caps.max_context {
-                    if max_context < min_context {
-                        return Ok(false);
-                    }
-                }
-            }
-
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-}
-
-impl Default for BackendRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Global backend registry singleton.
-static GLOBAL_REGISTRY: once_cell::sync::Lazy<Arc<RwLock<BackendRegistry>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(BackendRegistry::new())));
-
-/// Get the global backend registry.
-pub fn global_registry() -> Arc<RwLock<BackendRegistry>> {
-    Arc::clone(&GLOBAL_REGISTRY)
-}
-
-/// Register a backend factory with the global registry.
-pub fn register_backend(factory: Box<dyn BackendFactory>) {
-    let mut registry = GLOBAL_REGISTRY.write();
-    registry.register(factory);
-}
-
-/// Requirements for backend selection.
-#[derive(Debug, Clone, Default)]
-pub struct BackendRequirements {
-    /// Requires streaming support
-    pub streaming: bool,
-
-    /// Requires multimodal support
-    pub multimodal: bool,
-
-    /// Requires function calling support
-    pub function_calling: bool,
-
-    /// Minimum context length
-    pub min_context: Option<usize>,
-
-    /// Required capabilities
-    pub required_capabilities: Vec<String>,
-}
-
 /// Metrics for LLM backend operations.
 #[derive(Debug, Clone, Default)]
 pub struct BackendMetrics {
@@ -814,61 +639,11 @@ impl BackendCapabilities {
     pub fn builder() -> BackendCapabilitiesBuilder {
         BackendCapabilitiesBuilder::new()
     }
-
-    /// Check if all specified capabilities are supported.
-    pub fn supports_all(&self, capabilities: &[&str]) -> bool {
-        capabilities
-            .iter()
-            .all(|cap| self.modalities.contains(&cap.to_string()))
-    }
-
-    /// Check if any of the specified capabilities are supported.
-    pub fn supports_any(&self, capabilities: &[&str]) -> bool {
-        capabilities
-            .iter()
-            .any(|cap| self.modalities.contains(&cap.to_string()))
-    }
-
-    /// Add a capability.
-    pub fn with_capability(mut self, capability: impl Into<String>) -> Self {
-        self.modalities.push(capability.into());
-        self
-    }
-
-    /// Set streaming support.
-    pub fn with_streaming(mut self, streaming: bool) -> Self {
-        self.streaming = streaming;
-        self
-    }
-
-    /// Set multimodal support.
-    pub fn with_multimodal(mut self, multimodal: bool) -> Self {
-        self.multimodal = multimodal;
-        self
-    }
-
-    /// Set function calling support.
-    pub fn with_function_calling(mut self, function_calling: bool) -> Self {
-        self.function_calling = function_calling;
-        self
-    }
-
-    /// Set max context length.
-    pub fn with_max_context(mut self, max_context: usize) -> Self {
-        self.max_context = Some(max_context);
-        self
-    }
 }
 
 /// Builder for BackendCapabilities.
 pub struct BackendCapabilitiesBuilder {
     capabilities: BackendCapabilities,
-}
-
-impl Default for BackendCapabilitiesBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl BackendCapabilitiesBuilder {
@@ -904,12 +679,6 @@ impl BackendCapabilitiesBuilder {
         self
     }
 
-    /// Add a supported modality.
-    pub fn modality(mut self, modality: impl Into<String>) -> Self {
-        self.capabilities.modalities.push(modality.into());
-        self
-    }
-
     /// Enable thinking display.
     pub fn thinking_display(mut self) -> Self {
         self.capabilities.thinking_display = true;
@@ -919,107 +688,6 @@ impl BackendCapabilitiesBuilder {
     /// Build the capabilities.
     pub fn build(self) -> BackendCapabilities {
         self.capabilities
-    }
-}
-
-/// Dynamic LLM runtime that can switch between backends.
-pub struct DynamicLlmRuntime {
-    backends: std::collections::HashMap<String, Box<dyn LlmRuntime>>,
-    default_backend: String,
-}
-
-impl DynamicLlmRuntime {
-    /// Create a new dynamic runtime.
-    pub fn new(default_backend: impl Into<String>) -> Self {
-        Self {
-            backends: std::collections::HashMap::new(),
-            default_backend: default_backend.into(),
-        }
-    }
-
-    /// Add a backend.
-    pub fn add_backend(&mut self, backend: Box<dyn LlmRuntime>) {
-        let backend_id = backend.backend_id().as_str().to_string();
-        self.backends.insert(backend_id, backend);
-    }
-
-    /// Get a backend by ID.
-    pub fn get_backend(&self, backend_id: &str) -> Option<&dyn LlmRuntime> {
-        self.backends.get(backend_id).map(|b| b.as_ref())
-    }
-
-    /// Get the default backend.
-    pub fn default_backend(&self) -> Option<&dyn LlmRuntime> {
-        self.get_backend(&self.default_backend)
-    }
-
-    /// Set the default backend.
-    pub fn set_default_backend(&mut self, backend_id: impl Into<String>) {
-        self.default_backend = backend_id.into();
-    }
-
-    /// Get the first available backend.
-    pub fn first_available(&self) -> Option<(&str, &dyn LlmRuntime)> {
-        if let Some((backend_id, backend)) = self.backends.iter().next() {
-            return Some((backend_id.as_str(), backend.as_ref()));
-        }
-        None
-    }
-}
-
-#[async_trait::async_trait]
-impl LlmRuntime for DynamicLlmRuntime {
-    fn backend_id(&self) -> BackendId {
-        BackendId::new(self.default_backend.clone())
-    }
-
-    fn model_name(&self) -> &str {
-        self.default_backend()
-            .map(|b| b.model_name())
-            .unwrap_or("none")
-    }
-
-    async fn is_available(&self) -> bool {
-        if let Some(backend) = self.default_backend() {
-            backend.is_available().await
-        } else {
-            false
-        }
-    }
-
-    async fn generate(&self, input: LlmInput) -> Result<LlmOutput, LlmError> {
-        let backend = self
-            .default_backend()
-            .ok_or_else(|| LlmError::BackendUnavailable(format!("{:?}", self.default_backend)))?;
-        backend.generate(input).await
-    }
-
-    async fn generate_stream(
-        &self,
-        input: LlmInput,
-    ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
-        let backend = self
-            .default_backend()
-            .ok_or_else(|| LlmError::BackendUnavailable(format!("{:?}", self.default_backend)))?;
-        backend.generate_stream(input).await
-    }
-
-    fn max_context_length(&self) -> usize {
-        self.default_backend()
-            .map(|b| b.max_context_length())
-            .unwrap_or(0)
-    }
-
-    fn supports_multimodal(&self) -> bool {
-        self.default_backend()
-            .map(|b| b.supports_multimodal())
-            .unwrap_or(false)
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.default_backend()
-            .map(|b| b.capabilities())
-            .unwrap_or_default()
     }
 }
 

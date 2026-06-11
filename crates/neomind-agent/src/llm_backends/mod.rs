@@ -12,7 +12,6 @@
 pub mod backend_plugin;
 pub mod backends;
 pub mod config;
-pub mod factories;
 pub mod instance_manager;
 pub mod rate_limited_client;
 

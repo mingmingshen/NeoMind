@@ -21,7 +21,7 @@ pub use llm::LlmError;
 
 // Exports
 pub use llm::backend::{
-    BackendCapabilities, BackendId, DynamicLlmRuntime, FinishReason, GenerationParams,
+    BackendCapabilities, BackendId, FinishReason, GenerationParams,
     LlmInput as LlmRuntimeInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
 };
 pub use llm::modality::{ImageContent, ImageFormat, ImageInput, ModalityContent};
@@ -55,7 +55,7 @@ pub mod prelude {
 
     // New runtime types
     pub use crate::llm::backend::{
-        BackendId, DynamicLlmRuntime, GenerationParams, LlmInput, LlmRuntime,
+        BackendId, GenerationParams, LlmInput, LlmRuntime,
     };
     pub use crate::llm::modality::{ImageContent, ModalityContent};
 

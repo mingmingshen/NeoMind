@@ -12,7 +12,7 @@ pub mod registry;
 pub mod token_counter;
 
 pub use backend::{
-    BackendCapabilities, BackendId, DynamicLlmRuntime, FinishReason, GenerationParams, LlmError,
+    BackendCapabilities, BackendId, FinishReason, GenerationParams, LlmError,
     LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
 };
 pub use capability::{
