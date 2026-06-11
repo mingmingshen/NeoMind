@@ -5,11 +5,9 @@
 pub mod backend;
 pub mod capability;
 pub mod compaction;
-pub mod memory_consolidation;
 pub mod modality;
 pub mod models;
 pub mod registry;
-pub mod token_counter;
 
 pub use backend::{
     BackendCapabilities, BackendId, FinishReason, GenerationParams, LlmError,
@@ -22,10 +20,6 @@ pub use capability::{
 pub use compaction::{
     compact_messages, estimate_tokens, CompactionConfig, CompactionResult, MessagePriority,
 };
-pub use memory_consolidation::{
-    ConsolidatedMessage, ConsolidationResult, MemoryConfig, MemoryConsolidator,
-};
 pub use modality::{ImageContent, ImageInput, ModalityContent};
 pub use models::*;
-pub use token_counter::{count_tokens, heuristic_count, CounterMode, EncodingType, TokenCounter};
 
