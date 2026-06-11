@@ -247,6 +247,19 @@ Removed ~900 lines of dead public API methods, dead registry methods, dead dedup
 - `toolkit/mod.rs`: removed 10 dead re-exports (`NeoMindError`, `ToolCall`, `DynTool`, `Parameter`, `ExtensionTool`, `ExtensionToolExecutor`, `array_property`, `boolean_property`, `number_property`, `property`)
 - `tools/mod.rs`: removed dead `map_tool_parameters` re-export (callers use full path `tools::mapper::map_tool_parameters`)
 - `prompts/mod.rs` + `prompts/builder.rs`: removed dead `CONVERSATION_CONTEXT_ZH` constant + re-export (stale comment said "used by memory.rs" but zero actual references)
+- `agent/streaming/mod.rs`: removed dead `build_context_window_with_config` re-export (callers use `super::context::` directly)
+
+**Dead methods removed from `llm.rs`:**
+- `LlmInterface::instance_manager()` — only test caller (field access used directly where needed)
+- `LlmInterface::set_instance_manager()` — placeholder stub (`let _ = manager;`), zero callers
+- `LlmInterface::max_concurrent()` — only test callers (`available_permits()` covers production needs)
+
+**Dead methods removed from `session.rs`:**
+- `SessionCleanupConfig::new()` — zero callers (`Default::default()` used everywhere)
+- `SessionCleanupConfig::disabled()` — zero callers
+- `SessionManager::with_config()` — zero callers (builder method never chained)
+- `SessionManager::set_cleanup_config()` — zero callers
+- `SessionManager::cleanup_config()` getter — zero callers
 
 ## [0.8.11] - 2026-06-11
 

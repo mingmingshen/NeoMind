@@ -164,27 +164,9 @@ impl Default for SessionCleanupConfig {
 }
 
 impl SessionCleanupConfig {
-    /// Create a new cleanup config.
-    pub fn new(max_age_seconds: i64, cleanup_interval_seconds: u64) -> Self {
-        Self {
-            enabled: true,
-            max_age_seconds,
-            cleanup_interval_seconds,
-            max_empty_age_seconds: 24 * 3600,
-        }
-    }
-
     /// Get the cleanup interval as Duration.
     pub fn cleanup_interval(&self) -> Duration {
         Duration::from_secs(self.cleanup_interval_seconds)
-    }
-
-    /// Disable automatic cleanup.
-    pub fn disabled() -> Self {
-        Self {
-            enabled: false,
-            ..Default::default()
-        }
     }
 }
 
@@ -467,12 +449,6 @@ impl SessionManager {
             .collect();
 
         Ok(messages)
-    }
-
-    /// Set the default agent config.
-    pub fn with_config(mut self, config: AgentConfig) -> Self {
-        self.default_config = config;
-        self
     }
 
     /// Set the default LLM backend for NEW sessions only.
@@ -1626,23 +1602,6 @@ impl SessionManager {
     pub async fn stop_cleanup_task(&self) {
         *self.cleanup_running.write().await = false;
         tracing::info!("Session cleanup task stop requested");
-    }
-
-    /// Set the cleanup configuration.
-    pub async fn set_cleanup_config(&mut self, config: SessionCleanupConfig) {
-        self.cleanup_config = config;
-
-        // Restart cleanup task if enabled
-        if self.cleanup_config.enabled {
-            self.start_cleanup_task().await;
-        } else {
-            self.stop_cleanup_task().await;
-        }
-    }
-
-    /// Get the current cleanup configuration.
-    pub fn cleanup_config(&self) -> &SessionCleanupConfig {
-        &self.cleanup_config
     }
 
     /// Perform an immediate cleanup pass.

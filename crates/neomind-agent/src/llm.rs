@@ -382,20 +382,6 @@ impl LlmInterface {
         self.use_instance_manager.load(Ordering::Relaxed) == 1
     }
 
-    /// Get the instance manager if available.
-    pub fn instance_manager(&self) -> Option<Arc<LlmBackendInstanceManager>> {
-        self.instance_manager.clone()
-    }
-
-    /// Set the instance manager.
-    pub async fn set_instance_manager(&self, manager: Arc<LlmBackendInstanceManager>) {
-        // Update the instance manager reference
-        // Note: This requires interior mutability pattern
-        let _ = manager;
-        // For now, this is a placeholder - the instance manager is set at creation time
-        // To make this fully dynamic, we'd need to wrap it in Arc<RwLock<>>
-    }
-
     /// Get the current LLM runtime.
     /// Priority: Direct runtime (set via configure_llm) > Instance manager active runtime
     /// This ensures that when a specific backend is configured via backendId, it takes precedence.
@@ -524,12 +510,6 @@ impl LlmInterface {
         *self.model.write().await = Some(model_name);
         let mut llm_guard = self.llm.write().await;
         *llm_guard = Some(llm);
-    }
-
-    /// Get the current concurrency limit (max concurrent requests).
-    /// This returns the dynamic limit which may be adjusted based on system load.
-    pub fn max_concurrent(&self) -> usize {
-        self.limiter.max.load(Ordering::Relaxed)
     }
 
     /// Get the number of available permit slots.
@@ -2182,16 +2162,13 @@ mod tests {
         };
         let interface = LlmInterface::new(config);
         assert!(!interface.uses_instance_manager());
-        assert_eq!(interface.max_concurrent(), 2);
         assert_eq!(interface.available_permits(), 2);
     }
 
     #[test]
     fn test_llm_interface_with_system_prompt() {
         let config = ChatConfig::default();
-        let interface = LlmInterface::new(config).with_system_prompt("You are a test assistant.");
-        // The system prompt is set internally
-        assert_eq!(interface.max_concurrent(), DEFAULT_CONCURRENT_LIMIT);
+        let _interface = LlmInterface::new(config).with_system_prompt("You are a test assistant.");
     }
 
     #[tokio::test]
@@ -2244,7 +2221,6 @@ mod tests {
 
         // Initially not using instance manager
         assert!(!interface.uses_instance_manager());
-        assert!(interface.instance_manager().is_none());
 
         // Enable instance manager mode
         interface.set_use_instance_manager(true).await;
@@ -2285,7 +2261,6 @@ mod tests {
         };
         let interface = LlmInterface::new(config);
 
-        assert_eq!(interface.max_concurrent(), 5);
         assert_eq!(interface.available_permits(), 5);
     }
 
