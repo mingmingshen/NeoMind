@@ -188,11 +188,6 @@ impl AgentEvent {
         }
     }
 
-    /// Create an intermediate end event (for multi-round processing).
-    pub fn intermediate_end() -> Self {
-        Self::IntermediateEnd
-    }
-
     /// Create an intent event.
     pub fn intent(
         category: impl Into<String>,

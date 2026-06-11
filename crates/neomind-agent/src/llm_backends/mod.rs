@@ -11,7 +11,6 @@
 
 pub mod backend_plugin;
 pub mod backends;
-pub mod config;
 pub mod instance_manager;
 pub mod rate_limited_client;
 
@@ -19,19 +18,8 @@ pub mod rate_limited_client;
 // (actual instantiation requires appropriate feature)
 pub use backends::ollama::{OllamaConfig, OllamaRuntime};
 
-#[cfg(feature = "llamacpp")]
-pub use backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
-
 #[cfg(feature = "cloud")]
 pub use backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
-
-// Config and utilities
-pub use config::{
-    GenerationParams as LlmGenerationParams, LlmBackendConfig, LlmConfig, LlmRuntimeManager,
-};
-
-// Plugin system
-pub use backend_plugin::BackendRegistry;
 
 // Instance manager
 pub use instance_manager::{
