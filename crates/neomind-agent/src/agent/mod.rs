@@ -81,9 +81,9 @@ pub use smart_followup::{
     FollowUpType, SmartFollowUpManager,
 };
 pub use streaming::{
-    events_to_string_stream, process_multimodal_stream_events,
-    process_multimodal_stream_events_with_safeguards, process_stream_events,
-    process_stream_events_with_safeguards, StreamSafeguards,
+    cleanup_thinking_content, events_to_string_stream, format_tool_results,
+    process_multimodal_stream_events, process_multimodal_stream_events_with_safeguards,
+    process_stream_events, process_stream_events_with_safeguards, StreamSafeguards,
 };
 pub use types::{
     AgentConfig, AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, AgentResponse,

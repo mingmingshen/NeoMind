@@ -61,3 +61,42 @@ pub(crate) fn make_result_dedup_key(name: &str, result: &str) -> String {
         .fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
     format!("{}|{:016x}", name, hash)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dedup_keeps_latest() {
+        let results = vec![
+            ("shell".to_string(), r#"{"device_id":"d1","status":"ok"}"#.to_string()),
+            ("shell".to_string(), r#"{"device_id":"d1","status":"updated"}"#.to_string()),
+        ];
+        let deduped = deduplicate_tool_results(&results);
+        assert_eq!(deduped.len(), 1);
+        assert!(deduped[0].1.contains("updated"));
+    }
+
+    #[test]
+    fn test_dedup_different_entities_kept() {
+        let results = vec![
+            ("shell".to_string(), r#"{"device_id":"d1","value":1}"#.to_string()),
+            ("shell".to_string(), r#"{"device_id":"d2","value":2}"#.to_string()),
+        ];
+        let deduped = deduplicate_tool_results(&results);
+        assert_eq!(deduped.len(), 2);
+    }
+
+    #[test]
+    fn test_dedup_key_json_extraction() {
+        let key = make_result_dedup_key("shell", r#"{"device_id":"sensor1","status":"ok"}"#);
+        assert!(key.contains("shell"));
+        assert!(key.contains("sensor1"));
+    }
+
+    #[test]
+    fn test_dedup_key_fallback_for_non_json() {
+        let key = make_result_dedup_key("shell", "not json at all");
+        assert!(key.starts_with("shell|"));
+    }
+}

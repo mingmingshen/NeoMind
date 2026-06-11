@@ -77,3 +77,41 @@ pub(crate) fn resolve_cached_arguments(
 pub(crate) fn resolve_tool_name(simplified_name: &str) -> String {
     crate::tools::resolve_tool_name(simplified_name)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_cached_arguments_passthrough() {
+        let cache = LargeDataCache::new();
+        let args = serde_json::json!({"name": "test", "count": 42});
+        let resolved = resolve_cached_arguments(&args, &cache);
+        assert_eq!(resolved["name"], "test");
+        assert_eq!(resolved["count"], 42);
+    }
+
+    #[test]
+    fn test_resolve_cached_arguments_missing_ref() {
+        let cache = LargeDataCache::new();
+        let args = serde_json::json!("$cached:nonexistent");
+        let resolved = resolve_cached_arguments(&args, &cache);
+        // Should pass through as-is when ref not found
+        assert_eq!(resolved, serde_json::json!("$cached:nonexistent"));
+    }
+
+    #[test]
+    fn test_http_urls_passed_through() {
+        let cache = LargeDataCache::new();
+        let args = serde_json::json!({"image": "https://example.com/img.png"});
+        let resolved = resolve_cached_arguments(&args, &cache);
+        assert_eq!(resolved["image"], "https://example.com/img.png");
+    }
+
+    #[test]
+    fn test_resolve_tool_name_passthrough() {
+        // Unknown simplified names should pass through unchanged
+        let result = resolve_tool_name("unknown_tool");
+        assert_eq!(result, "unknown_tool");
+    }
+}

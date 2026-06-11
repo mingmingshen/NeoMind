@@ -216,3 +216,43 @@ pub(crate) fn extract_action_hint(msg: &str) -> String {
         format!("neomind {} {}", domain, action)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_message_requires_action_chinese() {
+        assert!(user_message_requires_action("创建新设备"));
+        assert!(user_message_requires_action("删除旧配置"));
+        assert!(user_message_requires_action("启用监控"));
+        assert!(user_message_requires_action("发送消息"));
+        assert!(!user_message_requires_action("列出所有设备"));
+        assert!(!user_message_requires_action("查看状态"));
+    }
+
+    #[test]
+    fn test_user_message_requires_action_english() {
+        assert!(user_message_requires_action("create device"));
+        assert!(user_message_requires_action("delete old config"));
+        assert!(user_message_requires_action("STOP the service"));
+        assert!(!user_message_requires_action("list devices"));
+        assert!(!user_message_requires_action("get status"));
+    }
+
+    #[test]
+    fn test_all_tools_were_read_only() {
+        assert!(all_tools_were_read_only(&["neomind device list", "neomind rule list"], &[]));
+        assert!(!all_tools_were_read_only(&["neomind device create sensor1"], &[]));
+        assert!(!all_tools_were_read_only(&["neomind device list", "neomind device delete sensor1"], &[]));
+        assert!(!all_tools_were_read_only(&[], &[])); // empty = not read-only
+    }
+
+    #[test]
+    fn test_extract_action_hint() {
+        assert_eq!(extract_action_hint("创建新规则"), "neomind rule create");
+        assert_eq!(extract_action_hint("删除设备"), "neomind device delete");
+        assert_eq!(extract_action_hint("创建仪表盘"), "neomind dashboard create");
+        assert_eq!(extract_action_hint("查看状态"), "");
+    }
+}

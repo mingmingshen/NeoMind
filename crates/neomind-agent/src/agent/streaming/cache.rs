@@ -93,3 +93,52 @@ pub(crate) fn is_tool_cacheable(name: &str) -> bool {
 
 /// Minimum size (bytes) for a result to be considered large enough to strip base64 from.
 pub(crate) const BASE64_STRIP_THRESHOLD: usize = 4096;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_key_consistency() {
+        // Same arguments in different order should produce same key
+        let key1 = ToolResultCache::make_key("shell", &serde_json::json!({"b": 2, "a": 1}));
+        let key2 = ToolResultCache::make_key("shell", &serde_json::json!({"a": 1, "b": 2}));
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_cache_key_different_tools() {
+        let key1 = ToolResultCache::make_key("shell", &serde_json::json!({"cmd": "ls"}));
+        let key2 = ToolResultCache::make_key("device", &serde_json::json!({"cmd": "ls"}));
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_is_tool_cacheable() {
+        assert!(is_tool_cacheable("shell"));
+        assert!(is_tool_cacheable("device"));
+        assert!(!is_tool_cacheable("send_command"));
+        assert!(!is_tool_cacheable("delete_device"));
+    }
+
+    #[test]
+    fn test_cache_insert_and_get() {
+        let mut cache = ToolResultCache::new(Duration::from_secs(60));
+        let output = crate::toolkit::ToolOutput::success("test result");
+        let key = "test_key".to_string();
+        cache.insert(key.clone(), output);
+        let result = cache.get(&key);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().data, serde_json::json!("test result"));
+    }
+
+    #[test]
+    fn test_cache_ttl_expiration() {
+        let mut cache = ToolResultCache::new(Duration::from_millis(10));
+        let output = crate::toolkit::ToolOutput::success("expires");
+        cache.insert("key".to_string(), output);
+        assert!(cache.get("key").is_some()); // not expired yet
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(cache.get("key").is_none()); // expired
+    }
+}
