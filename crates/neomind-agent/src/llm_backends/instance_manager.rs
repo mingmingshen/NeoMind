@@ -878,13 +878,6 @@ impl LlmBackendInstanceManager {
         })
     }
 
-    /// Get backend type definition
-    pub fn get_backend_type(&self, backend_type: &str) -> Option<BackendTypeDefinition> {
-        self.get_available_types()
-            .into_iter()
-            .find(|t| t.id == backend_type)
-    }
-
     /// Clear the runtime cache (e.g., after configuration change)
     pub fn clear_cache(&self) {
         self.runtime_cache.clear();

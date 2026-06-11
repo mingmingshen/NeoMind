@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use tokio::sync::RwLock;
@@ -139,37 +138,6 @@ fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> 
     })
 }
 
-/// Configuration for session cleanup
-#[derive(Debug, Clone)]
-pub struct SessionCleanupConfig {
-    /// Enable automatic cleanup
-    pub enabled: bool,
-    /// Maximum session age in seconds before cleanup
-    pub max_age_seconds: i64,
-    /// Cleanup interval in seconds
-    pub cleanup_interval_seconds: u64,
-    /// Maximum empty session age in seconds before cleanup
-    pub max_empty_age_seconds: i64,
-}
-
-impl Default for SessionCleanupConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            max_age_seconds: 7 * 24 * 3600,   // 7 days
-            cleanup_interval_seconds: 3600,   // 1 hour
-            max_empty_age_seconds: 24 * 3600, // 1 day for empty sessions
-        }
-    }
-}
-
-impl SessionCleanupConfig {
-    /// Get the cleanup interval as Duration.
-    pub fn cleanup_interval(&self) -> Duration {
-        Duration::from_secs(self.cleanup_interval_seconds)
-    }
-}
-
 /// Information about a session for listing.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionInfo {
@@ -205,10 +173,6 @@ pub struct SessionManager {
     default_llm_backend: Arc<RwLock<Option<LlmBackend>>>,
     /// Tool registry for all sessions
     tool_registry: Arc<RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>>,
-    /// Session cleanup configuration
-    cleanup_config: SessionCleanupConfig,
-    /// Whether cleanup task is running
-    cleanup_running: Arc<RwLock<bool>>,
     /// Skill registry for scenario-driven prompt injection
     skill_registry: crate::skills::SharedSkillRegistry,
     /// Cancel signal senders for active streaming sessions (session_id → watch::Sender)
@@ -240,8 +204,6 @@ impl SessionManager {
             default_config: AgentConfig::default(),
             default_llm_backend: Arc::new(RwLock::new(None)),
             tool_registry: Arc::new(RwLock::new(None)),
-            cleanup_config: SessionCleanupConfig::default(),
-            cleanup_running: Arc::new(RwLock::new(false)),
             skill_registry: crate::skills::create_shared_registry(None),
             cancel_senders: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -261,8 +223,6 @@ impl SessionManager {
             default_config: AgentConfig::default(),
             default_llm_backend: Arc::new(RwLock::new(None)),
             tool_registry: Arc::new(RwLock::new(None)),
-            cleanup_config: SessionCleanupConfig::default(),
-            cleanup_running: Arc::new(RwLock::new(false)),
             skill_registry: crate::skills::create_shared_registry(Some(data_dir)),
             cancel_senders: Arc::new(RwLock::new(HashMap::new())),
         };
@@ -849,14 +809,6 @@ impl SessionManager {
             .get_session_metadata(session_id)
             .map(|m| m.memory_enabled)
             .unwrap_or(false)
-    }
-
-    /// Get session title.
-    pub async fn get_session_title(&self, session_id: &str) -> Result<Option<String>> {
-        self.store
-            .get_session_metadata(session_id)
-            .map_err(|e| NeoMindError::Storage(format!("Failed to get session metadata: {}", e)))
-            .map(|meta| meta.title)
     }
 
     /// List all active sessions with their metadata.
@@ -1470,155 +1422,6 @@ impl SessionManager {
         to_remove.len()
     }
 
-    /// Start the automatic session cleanup task.
-    /// This runs in the background and periodically cleans up old sessions.
-    pub async fn start_cleanup_task(&self) {
-        if !self.cleanup_config.enabled {
-            tracing::info!("Session cleanup is disabled");
-            return;
-        }
-
-        // Check if already running
-        {
-            let running = self.cleanup_running.read().await;
-            if *running {
-                tracing::info!("Session cleanup task is already running");
-                return;
-            }
-        }
-
-        // Mark as running
-        *self.cleanup_running.write().await = true;
-
-        let sessions = self.sessions.clone();
-        let session_messages = self.session_messages.clone();
-        let store = self.store.clone();
-        let cleanup_config = self.cleanup_config.clone();
-        let cleanup_running = self.cleanup_running.clone();
-        let cleanup_interval = cleanup_config.cleanup_interval();
-
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(cleanup_interval);
-            let mut first_tick = true;
-
-            while *cleanup_running.read().await {
-                if first_tick {
-                    first_tick = false;
-                } else {
-                    // Perform cleanup
-                    let now = chrono::Utc::now().timestamp();
-
-                    // Clean up sessions from database (both inactive and empty)
-                    let db_session_ids = match store.list_sessions() {
-                        Ok(ids) => ids,
-                        Err(e) => {
-                            tracing::error!("Failed to list sessions for cleanup: {}", e);
-                            continue;
-                        }
-                    };
-
-                    let mut removed_count = 0;
-                    for session_id in db_session_ids {
-                        let should_remove = match store.get_session_timestamp(&session_id) {
-                            Ok(Some(timestamp)) => {
-                                let age = now - timestamp;
-
-                                // Check if session is empty or too old
-                                if age > cleanup_config.max_age_seconds {
-                                    tracing::info!(
-                                        "Removing old session {} (age: {}s, max: {}s)",
-                                        session_id,
-                                        age,
-                                        cleanup_config.max_age_seconds
-                                    );
-                                    true
-                                } else {
-                                    // Check if empty session
-                                    match store.load_history(&session_id) {
-                                        Ok(messages) if messages.is_empty() => {
-                                            if age > cleanup_config.max_empty_age_seconds {
-                                                tracing::info!(
-                                                    "Removing empty session {} (age: {}s)",
-                                                    session_id,
-                                                    age
-                                                );
-                                                true
-                                            } else {
-                                                false
-                                            }
-                                        }
-                                        _ => false,
-                                    }
-                                }
-                            }
-                            Ok(None) => true, // No timestamp = corrupted, remove
-                            Err(_) => true,   // Error = corrupted, remove
-                        };
-
-                        if should_remove {
-                            // Remove from memory
-                            sessions.write().await.remove(&session_id);
-                            session_messages.write().await.remove(&session_id);
-
-                            // Remove from database
-                            if let Err(e) = store.delete_session(&session_id) {
-                                tracing::error!("Failed to delete session {}: {}", session_id, e);
-                            } else {
-                                removed_count += 1;
-                            }
-                        }
-                    }
-
-                    if removed_count > 0 {
-                        tracing::info!(
-                            "Session cleanup completed: removed {} sessions",
-                            removed_count
-                        );
-                    }
-                }
-
-                tokio::select! {
-                    _ = interval.tick() => {}
-                    _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                        // Check if we should stop
-                        if !*cleanup_running.read().await {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            tracing::info!("Session cleanup task stopped");
-        });
-
-        tracing::info!(
-            "Session cleanup task started (interval: {}s, max_age: {}s)",
-            cleanup_config.cleanup_interval_seconds,
-            cleanup_config.max_age_seconds
-        );
-    }
-
-    /// Stop the automatic session cleanup task.
-    pub async fn stop_cleanup_task(&self) {
-        *self.cleanup_running.write().await = false;
-        tracing::info!("Session cleanup task stop requested");
-    }
-
-    /// Perform an immediate cleanup pass.
-    /// Returns the number of sessions removed.
-    pub async fn perform_cleanup(&self) -> usize {
-        let mut total_removed = 0;
-
-        // Clean up inactive sessions from memory
-        total_removed += self
-            .cleanup_inactive(self.cleanup_config.max_age_seconds)
-            .await;
-
-        // Clean up invalid/empty sessions from database
-        total_removed += self.cleanup_invalid_sessions().await;
-
-        total_removed
-    }
 }
 
 impl Default for SessionManager {
@@ -1637,8 +1440,6 @@ impl Default for SessionManager {
                 default_config: AgentConfig::default(),
                 default_llm_backend: Arc::new(RwLock::new(None)),
                 tool_registry: Arc::new(RwLock::new(None)),
-                cleanup_config: SessionCleanupConfig::default(),
-                cleanup_running: Arc::new(RwLock::new(false)),
                 skill_registry: crate::skills::create_shared_registry(None),
                 cancel_senders: Arc::new(RwLock::new(HashMap::new())),
             }
