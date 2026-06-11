@@ -97,11 +97,6 @@ pub fn lookup_vision(model: &str) -> Option<bool> {
     lookup_field(model, "supports_vision", |e, k| e.bool_field(k))
 }
 
-/// Look up whether a model supports function calling / tools.
-pub fn lookup_tools(model: &str) -> Option<bool> {
-    lookup_field(model, "supports_function_calling", |e, k| e.bool_field(k))
-}
-
 /// Look up the max input tokens for a model.
 pub fn lookup_max_input_tokens(model: &str) -> Option<usize> {
     lookup_field(model, "max_input_tokens", |e, k| e.usize_field(k))

@@ -7,10 +7,7 @@
 //! - Extensions (command outputs)
 //! - Transforms (processed data)
 //!
-//! All data sources use the same `DataSourceId` format and can be queried
-//! through the same `UnifiedQueryService`.
-
-pub mod query;
+//! All data sources use the same `DataSourceId` format.
 
 use crate::event::MetricValue;
 use serde::{Deserialize, Serialize};
@@ -131,11 +128,6 @@ impl DataSourceId {
         }
     }
 
-    /// Parse field path into components
-    pub fn field_components(&self) -> Vec<&str> {
-        self.field_path.split('.').collect()
-    }
-
     /// Get the source_id part for TimeSeriesStorage API
     ///
     /// All types now return a prefixed format for consistency:
@@ -155,20 +147,6 @@ impl DataSourceId {
     /// Returns the field_path (metric name)
     pub fn metric_part(&self) -> &str {
         &self.field_path
-    }
-
-    /// Create DataSourceId from source_id and metric (TimeSeriesStorage format)
-    ///
-    /// This is the inverse of source_part() and metric_part()
-    /// Handles parsing both "device:id" and "extension:id" formats
-    pub fn from_storage_parts(source_id: &str, metric: &str) -> Option<Self> {
-        match source_id.split_once(':') {
-            Some(("extension", id)) => Some(Self::extension(id, metric)),
-            Some(("transform", id)) => Some(Self::transform(id, metric)),
-            Some(("device", id)) => Some(Self::device(id, metric)),
-            // Legacy bare device IDs (pre-migration) — treat as device
-            _ => Some(Self::device(source_id, metric)),
-        }
     }
 
     // ========================================================================
@@ -241,14 +219,6 @@ impl DataSourceId {
         })
     }
 
-    /// Check if this is an extension command data source (has nested field path)
-    ///
-    /// Extension command sources have field paths like "command.field"
-    /// while simple extension metrics have field paths like "temperature"
-    pub fn is_extension_command(&self) -> bool {
-        self.source_type == DataSourceType::Extension && self.field_path.contains('.')
-    }
-
     /// Parse as extension command, returning (extension_id, command, field)
     ///
     /// # Returns
@@ -305,189 +275,6 @@ impl DataPoint {
     }
 }
 
-/// Query result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub source_id: DataSourceId,
-    pub datapoints: Vec<DataPoint>,
-    pub aggregation: Option<AggregatedValue>,
-}
-
-/// Aggregated value
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AggregatedValue {
-    pub value: f64,
-    pub count: usize,
-    pub func: AggFunc,
-}
-
-/// Aggregation functions (defined here for query system)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AggFunc {
-    Avg,
-    Sum,
-    Min,
-    Max,
-    Count,
-    Last,
-}
-
-/// Query parameters
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryParams {
-    pub start: i64,
-    pub end: i64,
-    pub aggregation: Option<AggFunc>,
-    pub limit: Option<usize>,
-}
-
-impl QueryParams {
-    pub fn new(start: i64, end: i64) -> Self {
-        Self {
-            start,
-            end,
-            aggregation: None,
-            limit: None,
-        }
-    }
-
-    pub fn with_aggregation(mut self, agg: AggFunc) -> Self {
-        self.aggregation = Some(agg);
-        self
-    }
-
-    pub fn with_limit(mut self, limit: usize) -> Self {
-        self.limit = Some(limit);
-        self
-    }
-
-    pub fn last_minutes(minutes: u64) -> Self {
-        let now = chrono::Utc::now().timestamp_millis();
-        let start = now - (minutes as i64 * 60000);
-        Self::new(start, now)
-    }
-}
-
-// ============================================================================
-// Data Source Metadata
-// ============================================================================
-
-/// Information about a queryable data source
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DataSourceInfo {
-    pub id: DataSourceId,
-    pub display_name: String,
-    pub description: String,
-    pub data_type: String,
-    pub unit: Option<String>,
-    pub is_primary: bool,
-    pub aggregatable: bool,
-    pub available: bool,
-    pub last_update: Option<i64>,
-}
-
-impl DataSourceInfo {
-    /// Create from extension metric (V2 - device-standard compatible)
-    pub fn from_extension_metric(
-        extension_id: &str,
-        extension_name: &str,
-        metric: &crate::extension::MetricDefinition,
-    ) -> Self {
-        let id = DataSourceId::extension(extension_id, &metric.name);
-        Self {
-            display_name: format!("{}: {}", extension_name, metric.display_name),
-            description: metric.display_name.clone(),
-            data_type: format!("{:?}", metric.data_type),
-            unit: if metric.unit.is_empty() {
-                None
-            } else {
-                Some(metric.unit.clone())
-            },
-            is_primary: metric.required,
-            aggregatable: true,
-            id,
-            available: false,
-            last_update: None,
-        }
-    }
-
-    /// Create from device metric
-    pub fn from_device_metric(
-        device_id: &str,
-        device_name: &str,
-        metric: &crate::extension::MetricDefinition,
-    ) -> Self {
-        let id = DataSourceId::device(device_id, &metric.name);
-        Self {
-            display_name: format!("{}: {}", device_name, metric.display_name),
-            description: metric.display_name.clone(),
-            data_type: format!("{:?}", metric.data_type),
-            unit: if metric.unit.is_empty() {
-                None
-            } else {
-                Some(metric.unit.clone())
-            },
-            is_primary: metric.required,
-            aggregatable: true,
-            id,
-            available: false,
-            last_update: None,
-        }
-    }
-}
-
-/// Collection of data sources grouped by type
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DataSourceCatalog {
-    pub devices: Vec<DataSourceInfo>,
-    pub extensions: Vec<DataSourceInfo>,
-    pub transforms: Vec<DataSourceInfo>,
-}
-
-impl DataSourceCatalog {
-    pub fn new() -> Self {
-        Self {
-            devices: Vec::new(),
-            extensions: Vec::new(),
-            transforms: Vec::new(),
-        }
-    }
-
-    pub fn add_device(&mut self, info: DataSourceInfo) {
-        self.devices.push(info);
-    }
-
-    pub fn add_extension(&mut self, info: DataSourceInfo) {
-        self.extensions.push(info);
-    }
-
-    pub fn add_transform(&mut self, info: DataSourceInfo) {
-        self.transforms.push(info);
-    }
-
-    pub fn all(&self) -> Vec<&DataSourceInfo> {
-        let mut all = Vec::new();
-        all.extend(self.devices.iter());
-        all.extend(self.extensions.iter());
-        all.extend(self.transforms.iter());
-        all
-    }
-
-    pub fn by_type(&self, source_type: &DataSourceType) -> Vec<&DataSourceInfo> {
-        match source_type {
-            DataSourceType::Device => self.devices.iter().collect(),
-            DataSourceType::Extension => self.extensions.iter().collect(),
-            DataSourceType::Transform => self.transforms.iter().collect(),
-        }
-    }
-}
-
-// ============================================================================
-// Export query service
-// ============================================================================
-pub use query::{QueryError, UnifiedQueryService};
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -539,14 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn test_field_components() {
-        let id = DataSourceId::extension("weather", "temperature");
-        let parts = id.field_components();
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0], "temperature");
-    }
-
-    #[test]
     fn test_source_part() {
         // Device: "device:" prefix (unified)
         let id = DataSourceId::device("sensor1", "temperature");
@@ -565,68 +344,6 @@ mod tests {
     }
 
     #[test]
-    fn test_from_storage_parts() {
-        // Extension storage format
-        let id = DataSourceId::from_storage_parts("extension:weather", "temperature").unwrap();
-        assert_eq!(id.source_type, DataSourceType::Extension);
-        assert_eq!(id.source_id, "weather");
-        assert_eq!(id.field_path, "temperature");
-
-        // Device storage format (unified with prefix)
-        let id = DataSourceId::from_storage_parts("device:sensor1", "temperature").unwrap();
-        assert_eq!(id.source_type, DataSourceType::Device);
-        assert_eq!(id.source_id, "sensor1");
-        assert_eq!(id.field_path, "temperature");
-
-        // Legacy bare device ID (pre-migration backward compat)
-        let id = DataSourceId::from_storage_parts("sensor1", "temperature").unwrap();
-        assert_eq!(id.source_type, DataSourceType::Device);
-        assert_eq!(id.source_id, "sensor1");
-        assert_eq!(id.field_path, "temperature");
-
-        // Transform storage format
-        let id = DataSourceId::from_storage_parts("transform:processor", "output").unwrap();
-        assert_eq!(id.source_type, DataSourceType::Transform);
-        assert_eq!(id.source_id, "processor");
-        assert_eq!(id.field_path, "output");
-    }
-
-    #[test]
-    fn test_round_trip_storage_parts() {
-        // Test that source_part() + metric_part() round-trips through from_storage_parts()
-        // Extension
-        let original = DataSourceId::extension("weather", "temperature");
-        let reconstructed =
-            DataSourceId::from_storage_parts(&original.source_part(), original.metric_part())
-                .unwrap();
-        assert_eq!(original.source_type, reconstructed.source_type);
-        assert_eq!(original.source_id, reconstructed.source_id);
-        assert_eq!(original.field_path, reconstructed.field_path);
-
-        // Device (now uses "device:" prefix)
-        let original = DataSourceId::device("sensor1", "temperature");
-        let reconstructed =
-            DataSourceId::from_storage_parts(&original.source_part(), original.metric_part())
-                .unwrap();
-        assert_eq!(original.source_type, reconstructed.source_type);
-        assert_eq!(original.source_id, reconstructed.source_id);
-        assert_eq!(original.field_path, reconstructed.field_path);
-    }
-
-    #[test]
-    fn test_query_params() {
-        let params = QueryParams::last_minutes(5);
-        assert!(params.aggregation.is_none());
-        assert!(params.limit.is_none());
-
-        let params = params.with_aggregation(AggFunc::Avg);
-        assert!(params.aggregation.is_some());
-
-        let params = params.with_limit(100);
-        assert_eq!(params.limit, Some(100));
-    }
-
-    #[test]
     fn test_data_point() {
         let dp = DataPoint::new(123456, MetricValue::Float(23.5));
         assert_eq!(dp.timestamp, 123456);
@@ -634,28 +351,6 @@ mod tests {
 
         let dp = dp.with_quality(0.95);
         assert_eq!(dp.quality, Some(0.95));
-    }
-
-    #[test]
-    fn test_data_source_catalog() {
-        let mut catalog = DataSourceCatalog::new();
-        assert_eq!(catalog.all().len(), 0);
-
-        let info = DataSourceInfo {
-            id: DataSourceId::device("test", "value"),
-            display_name: "Test".to_string(),
-            description: "Test source".to_string(),
-            data_type: "float".to_string(),
-            unit: None,
-            is_primary: true,
-            aggregatable: true,
-            available: true,
-            last_update: None,
-        };
-
-        catalog.add_device(info);
-        assert_eq!(catalog.devices.len(), 1);
-        assert_eq!(catalog.all().len(), 1);
     }
 
     #[test]
@@ -713,21 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_extension_command() {
-        // Extension command has nested field path
-        let id = DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
-        assert!(id.is_extension_command());
-
-        // Simple extension metric has no nesting
-        let id = DataSourceId::extension("weather", "temperature");
-        assert!(!id.is_extension_command());
-
-        // Device is not an extension
-        let id = DataSourceId::device("sensor1", "temperature");
-        assert!(!id.is_extension_command());
-    }
-
-    #[test]
     fn test_as_extension_command_parts() {
         let id = DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
         let parts = id.as_extension_command_parts();
@@ -744,24 +424,6 @@ mod tests {
         // Device - no command parts
         let id = DataSourceId::device("sensor1", "temperature");
         assert!(id.as_extension_command_parts().is_none());
-    }
-
-    #[test]
-    fn test_extension_command_storage_parts() {
-        let id = DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
-
-        // source_part() should include "extension:" prefix
-        assert_eq!(id.source_part(), "extension:weather");
-
-        // metric_part() should be the full nested field path
-        assert_eq!(id.metric_part(), "get_current_weather.temperature_c");
-
-        // Should round-trip correctly
-        let reconstructed =
-            DataSourceId::from_storage_parts(&id.source_part(), id.metric_part()).unwrap();
-        assert_eq!(reconstructed.source_type, id.source_type);
-        assert_eq!(reconstructed.source_id, id.source_id);
-        assert_eq!(reconstructed.field_path, id.field_path);
     }
 
     #[test]

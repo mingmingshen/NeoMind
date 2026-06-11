@@ -11,9 +11,7 @@ pub mod event;
 pub mod eventbus;
 pub mod extension;
 pub mod llm;
-pub mod macros;
 pub mod message;
-pub mod session;
 pub mod storage;
 pub mod tools;
 
@@ -27,7 +25,6 @@ pub use llm::backend::{
 pub use llm::modality::{ImageContent, ImageFormat, ImageInput, ModalityContent};
 
 pub use message::{Content, ContentPart, ImageDetail, Message, MessageRole};
-pub use session::{Session, SessionId};
 
 // Event exports
 pub use event::{EventMetadata, MetricValue, NeoMindEvent, ProposedAction};
@@ -51,7 +48,6 @@ pub mod prelude {
 
     pub use crate::llm::LlmError;
     pub use crate::message::{Content, Message, MessageRole};
-    pub use crate::session::{Session, SessionId};
 
     // New runtime types
     pub use crate::llm::backend::{
@@ -97,8 +93,5 @@ pub mod prelude {
     };
 
     // Unified data source system
-    pub use crate::datasource::{
-        AggregatedValue, DataPoint, DataSourceCatalog, DataSourceId, DataSourceInfo,
-        DataSourceType, QueryError, QueryParams, QueryResult, UnifiedQueryService,
-    };
+    pub use crate::datasource::{DataPoint, DataSourceId, DataSourceType};
 }
