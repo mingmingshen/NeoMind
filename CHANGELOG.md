@@ -34,6 +34,9 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - **Dead scheduler methods + error variants** (Round 13) — `AgentScheduler::get_tasks()`, `AgentScheduler::health_check()` (zero callers), `SchedulerError::SchedulerNotRunning`, `SchedulerError::SchedulerStale` (only used by `health_check`). Dead re-exports `ScheduledTask` and `SchedulerError` removed from `ai_agent/mod.rs` (nobody imports via the shortcut path).
 - **`detect_ollama_capabilities()`** (Round 13) — public helper in `ollama.rs` with zero callers. The private `detect_model_capabilities()` it wraps is alive (4 call sites).
 - **`register_builtin_backends()`** (Round 13) — in `backend_plugin.rs`, designed to populate the plugin registry during init but never called in production (only its own test called it). The `create_backend()` match arms handle backend creation directly.
+- **`AgentExecutionResult`** struct (Round 14) — in `executor/mod.rs`, defined with 3 fields (`record`, `memory`, `success`) but never instantiated or returned by any function.
+- **`ExtensionToolGenerator` + `ExtensionFilter`** (Round 14) — in `extension_tools.rs`, ~90-line struct/enum with `generate()`, `generate_definitions()`, `format_for_llm()` methods. Zero production callers (only tests). Superseded by `ExtensionToolExecutor` which takes a registry and is used by `ToolRegistry`.
+- **`SkillRegistry::default()` impl** (Round 14) — all callers use `SkillRegistry::new()` or `SkillRegistry::load_all()`, never `::default()`.
 - `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
 - `toolkit/registry.rs`: dead `categories()` method.
 

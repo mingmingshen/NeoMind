@@ -178,12 +178,6 @@ impl SkillRegistry {
     }
 }
 
-impl Default for SkillRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Thread-safe wrapper for the skill registry.
 pub type SharedSkillRegistry = Arc<RwLock<SkillRegistry>>;
 

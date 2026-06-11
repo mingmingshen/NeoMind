@@ -1,6 +1,6 @@
 use super::*;
 
-use neomind_storage::ExecutionRecord;
+use neomind_storage::{AgentMemory, ExecutionRecord};
 
 impl AgentExecutor {
     /// Update agent memory with a new execution record.

@@ -322,99 +322,6 @@ impl Tool for ExtensionTool {
     }
 }
 
-/// Extension command tool generator.
-///
-/// This helper creates Tool definitions from extension commands
-/// for automatic tool registration with AI agents.
-pub struct ExtensionToolGenerator {
-    /// Whether to include tools from all extensions or specific ones
-    filter: ExtensionFilter,
-}
-
-/// Filter for which extensions to generate tools from.
-pub enum ExtensionFilter {
-    /// Generate tools from all extensions
-    All,
-    /// Only from specific extension IDs
-    Specific(Vec<String>),
-}
-
-impl ExtensionToolGenerator {
-    /// Create a new generator that includes all extensions.
-    pub fn new() -> Self {
-        Self {
-            filter: ExtensionFilter::All,
-        }
-    }
-
-    /// Create a generator that only includes specific extensions.
-    pub fn with_extensions(extension_ids: Vec<String>) -> Self {
-        Self {
-            filter: ExtensionFilter::Specific(extension_ids),
-        }
-    }
-
-    /// Generate tools from a list of extensions.
-    pub async fn generate(&self, extensions: Vec<DynExtension>) -> Vec<ExtensionTool> {
-        let mut all_tools = Vec::new();
-
-        for extension in extensions {
-            // Apply filter - need to access metadata through RwLock
-            let ext = extension.read().await;
-            let extension_id = ext.metadata().id.to_string();
-            drop(ext);
-
-            let should_include = match &self.filter {
-                ExtensionFilter::All => true,
-                ExtensionFilter::Specific(ids) => ids.contains(&extension_id),
-            };
-
-            if should_include {
-                let tools = ExtensionTool::from_extension(extension).await;
-                all_tools.extend(tools);
-            }
-        }
-
-        all_tools
-    }
-
-    /// Generate tool definitions for LLM consumption.
-    pub async fn generate_definitions(&self, extensions: Vec<DynExtension>) -> Vec<ToolDefinition> {
-        let tools = self.generate(extensions).await;
-        tools.into_iter().map(|t| t.to_tool_definition()).collect()
-    }
-
-    /// Format tools for LLM function calling.
-    ///
-    /// This returns a JSON array of tool definitions in the format
-    /// expected by most LLM function calling APIs.
-    pub async fn format_for_llm(&self, extensions: Vec<DynExtension>) -> Value {
-        let definitions = self.generate_definitions(extensions).await;
-
-        let tools: Vec<Value> = definitions
-            .into_iter()
-            .map(|def| {
-                json!({
-                    "type": "function",
-                    "function": {
-                        "name": def.name,
-                        "description": def.description,
-                        "parameters": def.parameters,
-                    }
-                })
-            })
-            .collect();
-
-        json!(tools)
-    }
-}
-
-impl Default for ExtensionToolGenerator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Extension tool executor - bridges tools with the extension registry.
 pub struct ExtensionToolExecutor {
     registry: Arc<ExtensionRegistry>,
@@ -601,34 +508,6 @@ mod tests {
         assert_eq!(def.name, "test.extension:test_command");
         assert_eq!(def.namespace, Some("test.extension".to_string()));
         assert_eq!(def.version, "2.0.0");
-    }
-
-    #[tokio::test]
-    async fn test_generator_generate() {
-        let generator = ExtensionToolGenerator::new();
-        let extensions = vec![create_mock_extension()];
-
-        let tools = generator.generate(extensions).await;
-        assert_eq!(tools.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_generator_format_for_llm() {
-        let generator = ExtensionToolGenerator::new();
-        let extensions = vec![create_mock_extension()];
-
-        let llm_tools = generator.format_for_llm(extensions).await;
-
-        assert!(llm_tools.is_array());
-        let tools_array = llm_tools.as_array().unwrap();
-        assert_eq!(tools_array.len(), 1);
-
-        let first_tool = &tools_array[0];
-        assert_eq!(first_tool["type"], "function");
-        assert_eq!(
-            first_tool["function"]["name"],
-            "test.extension:test_command"
-        );
     }
 
     #[test]

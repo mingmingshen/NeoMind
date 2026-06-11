@@ -17,7 +17,6 @@ use crate::llm_backends::{CloudConfig, CloudRuntime};
 use neomind_messages::MessageManager;
 use neomind_storage::{
     AgentExecutionRecord,
-    AgentMemory,
     AgentResource,
     AgentStore,
     AgentToolConfig,
@@ -261,16 +260,6 @@ pub struct ExecutionContext {
     pub execution_id: String,
     /// Invocation input from API/Rule/Agent caller
     pub invocation_input: Option<super::AgentInput>,
-}
-
-/// Result of agent execution.
-pub struct AgentExecutionResult {
-    /// Execution record
-    pub record: AgentExecutionRecord,
-    /// Updated memory
-    pub memory: AgentMemory,
-    /// Success status
-    pub success: bool,
 }
 
 /// AI Agent executor - handles execution of user-defined agents.
