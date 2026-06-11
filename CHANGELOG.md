@@ -39,6 +39,7 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - **`SkillRegistry::default()` impl** (Round 14) — all callers use `SkillRegistry::new()` or `SkillRegistry::load_all()`, never `::default()`.
 - **3 dead `Default` impls in neomind-core** (Round 15) — `AggFunc` (`datasource/mod.rs`), `DataSourceCatalog` (`datasource/mod.rs`), `FrontendField` (`extension/package.rs`). All types are alive but `::default()` is never called — callers use `::new()` or construct explicitly.
 - **`is_wasm_extension()`** (Round 15) — in `neomind-core/src/extension/mod.rs`, zero callers. WASM extension support was never implemented; `is_native_extension()` is alive (used by native loader).
+- **6 dead `Default` impls across neomind-devices + neomind-agent** (Round 16) — `DeviceId` (`mdl.rs`), `DeviceRegistry` (`registry.rs`), `WebhookAdapterConfig` (`adapters/webhook.rs`), `MdlRegistry` (`mdl_format.rs`), `MqttAdapterConfig` (`adapters/mqtt.rs`), `ConversationContext` (`agent/conversation_context.rs`). All types are alive but `::default()` is never called — callers use `::new()` or construct explicitly.
 - `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
 - `toolkit/registry.rs`: dead `categories()` method.
 

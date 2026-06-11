@@ -1077,12 +1077,6 @@ impl MdlRegistry {
     }
 }
 
-impl Default for MdlRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// MDL Storage - handles persistence of device type definitions
 ///
 /// Uses redb for efficient key-value storage.

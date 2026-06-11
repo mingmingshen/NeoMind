@@ -659,6 +659,7 @@ impl DeviceRegistry {
                             .collect(),
                     })
                     .collect(),
+                builtin_version: None,
             };
             store
                 .save_template(&storage_template)
@@ -791,6 +792,7 @@ impl DeviceRegistry {
                         .collect(),
                 })
                 .collect(),
+            builtin_version: None,
         };
 
         self.templates.insert(device_type, template);
@@ -1167,12 +1169,6 @@ impl DeviceRegistry {
     /// Get reference to storage backend (for command history, etc.)
     pub fn storage(&self) -> Option<&Arc<DeviceRegistryStore>> {
         self.storage.as_ref()
-    }
-}
-
-impl Default for DeviceRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

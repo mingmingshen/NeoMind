@@ -106,12 +106,6 @@ impl WebhookAdapterConfig {
     }
 }
 
-impl Default for WebhookAdapterConfig {
-    fn default() -> Self {
-        Self::new("webhook")
-    }
-}
-
 /// Webhook payload from device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WebhookPayload {

@@ -131,12 +131,6 @@ impl MqttAdapterConfig {
     }
 }
 
-impl Default for MqttAdapterConfig {
-    fn default() -> Self {
-        Self::new("mqtt", "localhost")
-    }
-}
-
 /// Single MQTT broker connection
 struct MqttClientInner {
     /// Unique broker identifier
