@@ -9,7 +9,6 @@ pub mod file_write;
 pub mod memory_tool;
 pub mod path_validator;
 pub mod registry;
-pub mod resolver;
 pub mod shell;
 pub mod skill_tool;
 pub mod time_utils;
@@ -17,7 +16,7 @@ pub mod tool;
 pub mod vision;
 pub mod web_fetch;
 
-// Re-exports commonly used types
+// Re-exports consumed via shortcut path (toolkit::TypeName)
 pub use error::{NeoMindError, Result, ToolError};
 pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult};
 pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
@@ -31,9 +30,7 @@ pub use neomind_core::tools::{
 // Extension Tools
 pub use extension_tools::{ExtensionTool, ExtensionToolExecutor};
 
-pub use shell::{ShellConfig, ShellTool};
-
-pub use skill_tool::SkillTool;
+pub use shell::ShellConfig;
 
 pub use memory_tool::MemoryTool;
 
@@ -42,8 +39,6 @@ pub use file_write::FileWriteTool;
 pub use vision::{VisionConfig, VisionTool};
 
 pub use web_fetch::WebFetchTool;
-
-pub use time_utils::{parse_time_range, TransformStore};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
