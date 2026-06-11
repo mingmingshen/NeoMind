@@ -325,11 +325,6 @@ impl ExtensionRuntime {
         self.proxy_registry.get(id).await
     }
 
-    /// Access the internal proxy registry.
-    pub fn proxy_registry(&self) -> Arc<ExtensionRegistry> {
-        Arc::clone(&self.proxy_registry)
-    }
-
     /// Access the underlying isolated manager.
     pub fn isolated_manager(&self) -> Arc<IsolatedExtensionManager> {
         Arc::clone(&self.isolated_manager)

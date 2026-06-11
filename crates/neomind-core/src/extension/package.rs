@@ -168,11 +168,6 @@ impl FrontendField {
             FrontendField::Struct(config) => config,
         }
     }
-
-    /// Check if this is an empty string format (no actual components)
-    pub fn is_empty_string(&self) -> bool {
-        matches!(self, FrontendField::String(_))
-    }
 }
 
 /// Helper function to deserialize optional frontend field
