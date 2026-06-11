@@ -36,12 +36,6 @@ pub use crate::llm_backends::{
 /// is loaded from environment variable AGENT_CONCURRENT_LIMIT with fallback to 3.
 pub const DEFAULT_CONCURRENT_LIMIT: usize = 3;
 
-/// Get the concurrent limit from environment or return default.
-#[inline]
-pub fn get_concurrent_limit() -> usize {
-    agent_env_vars::concurrent_limit()
-}
-
 /// Simple atomic-based concurrency limiter.
 ///
 /// This is simpler than using a semaphore for streams because it doesn't
@@ -532,43 +526,6 @@ impl LlmInterface {
         *llm_guard = Some(llm);
     }
 
-    /// Set the LLM runtime from a Box (for backward compatibility).
-    ///
-    /// This converts a Box<dyn LlmRuntime> to Arc<dyn LlmRuntime> by creating
-    /// an Arc wrapper around the boxed value.
-    pub async fn set_llm_from_box(&self, llm: Box<dyn LlmRuntime>) {
-        // We need to convert Box to Arc
-        // This is a bit tricky since we can't directly convert Box to Arc
-        // The runtime needs to be created as Arc from the start
-        // For backward compatibility, we'll need to use unsafe or restructure
-        let _ = llm;
-        // Store None for now - the caller should use Arc directly
-        let mut llm_guard = self.llm.write().await;
-        *llm_guard = None;
-    }
-    pub async fn switch_backend(&self, backend_id: &str) -> AgentResult<()> {
-        if let Some(manager) = &self.instance_manager {
-            manager
-                .set_active(backend_id)
-                .await
-                .map_err(|e| NeoMindError::Llm(e.to_string()))?;
-            Ok(())
-        } else {
-            Err(NeoMindError::Llm(
-                "No instance manager configured".to_string(),
-            ))
-        }
-    }
-
-    /// Get available backend types.
-    pub async fn get_available_backends(&self) -> Vec<BackendTypeDefinition> {
-        if let Some(manager) = &self.instance_manager {
-            manager.get_available_types()
-        } else {
-            Vec::new()
-        }
-    }
-
     /// Get the current concurrency limit (max concurrent requests).
     /// This returns the dynamic limit which may be adjusted based on system load.
     pub fn max_concurrent(&self) -> usize {
@@ -1005,15 +962,6 @@ impl LlmInterface {
         history: &[Message],
     ) -> AgentResult<ChatResponse> {
         self.chat_internal(user_message, Some(history)).await
-    }
-
-    /// Send a chat message without tools and get a response.
-    /// Used for intent detection, planning, and other non-tool queries.
-    pub async fn chat_without_tools(
-        &self,
-        user_message: impl Into<String>,
-    ) -> AgentResult<ChatResponse> {
-        self.chat_internal(user_message, None).await
     }
 
     /// Send a multimodal message (with images) with conversation history.
@@ -1467,15 +1415,6 @@ impl LlmInterface {
             finish_reason: format!("{:?}", output.finish_reason),
             thinking: output.thinking,
         })
-    }
-
-    /// Send a chat message with streaming response.
-    pub async fn chat_stream(
-        &self,
-        user_message: impl Into<String>,
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal(user_message, None, true, None)
-            .await
     }
 
     /// Send a chat message with streaming response, with conversation history.
