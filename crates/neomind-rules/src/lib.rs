@@ -58,7 +58,7 @@ pub use engine::{
     CompiledRule, InMemoryValueProvider, RuleEngine, RuleExecutionResult, RuleId, RuleState,
     RuleStatus, ValueProvider,
 };
-pub use error::{NeoMindError, RuleError};
+pub use error::RuleError;
 pub use extension_integration::{
     try_parse_extension_action, ConditionOperator as ExtensionConditionOperator, ExecutionResult,
     ExtensionActionExecutor, ExtensionCommandAction, ExtensionCondition, ExtensionRegistry,
