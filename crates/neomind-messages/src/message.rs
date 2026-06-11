@@ -348,13 +348,6 @@ impl Message {
         self
     }
 
-    /// Add a tag.
-    pub fn add_tag(&mut self, tag: String) {
-        if !self.tags.contains(&tag) {
-            self.tags.push(tag);
-        }
-    }
-
     /// Acknowledge the message.
     pub fn acknowledge(&mut self) {
         self.status = MessageStatus::Acknowledged;
@@ -373,19 +366,6 @@ impl Message {
     /// Check if the message is active.
     pub fn is_active(&self) -> bool {
         self.status == MessageStatus::Active
-    }
-
-    /// Get the duration since the message was created.
-    pub fn duration(&self) -> chrono::Duration {
-        Utc::now() - self.timestamp
-    }
-
-    /// Get a summary of the message.
-    pub fn summary(&self) -> String {
-        format!(
-            "[{}] {} - {} (来源: {})",
-            self.severity, self.title, self.message, self.source
-        )
     }
 }
 
@@ -515,23 +495,6 @@ mod tests {
     }
 
     #[test]
-    fn test_message_summary() {
-        let msg = Message::new(
-            "alert",
-            MessageSeverity::Critical,
-            "High Temp".to_string(),
-            "Temperature is too high".to_string(),
-            "sensor_1".to_string(),
-        );
-
-        let summary = msg.summary();
-        assert!(summary.contains("[Critical]"));
-        assert!(summary.contains("High Temp"));
-        assert!(summary.contains("Temperature is too high"));
-        assert!(summary.contains("sensor_1"));
-    }
-
-    #[test]
     fn test_message_type_from_string() {
         assert_eq!(
             MessageType::from_string("notification"),
@@ -633,21 +596,6 @@ mod tests {
     }
 
     #[test]
-    fn test_message_add_tag() {
-        let mut msg = Message::system("Test".to_string(), "Test".to_string());
-        assert_eq!(msg.tags.len(), 0);
-
-        msg.add_tag("tag1".to_string());
-        assert_eq!(msg.tags.len(), 1);
-
-        msg.add_tag("tag1".to_string()); // Duplicate should not be added
-        assert_eq!(msg.tags.len(), 1);
-
-        msg.add_tag("tag2".to_string());
-        assert_eq!(msg.tags.len(), 2);
-    }
-
-    #[test]
     fn test_message_with_metadata() {
         let metadata = serde_json::json!({
             "temperature": 85.5,
@@ -721,13 +669,6 @@ mod tests {
         let parsed: Message = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.title, msg.title);
         assert_eq!(parsed.severity, msg.severity);
-    }
-
-    #[test]
-    fn test_message_duration() {
-        let msg = Message::system("Test".to_string(), "Test".to_string());
-        let duration = msg.duration();
-        assert!(duration.num_seconds() >= 0);
     }
 
     #[test]

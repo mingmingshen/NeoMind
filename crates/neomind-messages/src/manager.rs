@@ -1650,16 +1650,4 @@ mod tests {
         assert_eq!(msg.severity, MessageSeverity::Info);
     }
 
-    #[tokio::test]
-    async fn test_message_duration() {
-        let manager = MessageManager::new();
-
-        let msg = Message::system("Test".to_string(), "Test".to_string());
-        let created = manager.create_message(msg).await.unwrap();
-
-        // Message should have a duration
-        let duration = created.duration();
-        assert!(duration.num_seconds() >= 0);
-        assert!(duration.num_seconds() < 10); // Should be very recent
-    }
 }

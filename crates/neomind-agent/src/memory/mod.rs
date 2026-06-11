@@ -5,7 +5,6 @@
 
 pub mod compressor;
 pub mod dedup;
-pub mod error;
 pub mod scheduler;
 pub mod snapshot;
 
