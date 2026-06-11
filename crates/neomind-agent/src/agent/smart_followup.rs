@@ -81,14 +81,8 @@ pub struct FollowUpAnalysis {
     pub fallback_suggestion: Option<String>,
 }
 
-/// 可用设备信息（用于动态生成追问）
-/// Re-export of Device from smart_conversation module
-pub use crate::smart_conversation::Device as AvailableDevice;
-
 /// 智能追问管理器
 pub struct SmartFollowUpManager {
-    /// 可用设备列表（缓存）
-    available_devices: Vec<AvailableDevice>,
     /// 最大追问次数
     max_followups: usize,
 }
@@ -97,14 +91,8 @@ impl SmartFollowUpManager {
     /// 创建新的智能追问管理器
     pub fn new() -> Self {
         Self {
-            available_devices: Vec::new(),
             max_followups: 2,
         }
-    }
-
-    /// 设置可用设备列表（测试用）
-    pub fn set_available_devices(&mut self, devices: Vec<AvailableDevice>) {
-        self.available_devices = devices;
     }
 
     /// 分析用户输入，判断是否需要追问
@@ -130,7 +118,7 @@ impl SmartFollowUpManager {
         }
 
         // 3. 上下文感知的缺失信息检测
-        let missing_info = self.detect_missing_info_aware(user_input, context);
+        let missing_info = self.detect_missing_info_aware(user_input);
 
         // 4. 意图模糊检测（结合上下文）
         let ambiguous = self.detect_ambiguous_aware(user_input, context);
@@ -249,40 +237,9 @@ impl SmartFollowUpManager {
     }
 
     /// 上下文感知的缺失信息检测
-    fn detect_missing_info_aware(
-        &self,
-        input: &str,
-        context: &ConversationContext,
-    ) -> Vec<FollowUpItem> {
+    fn detect_missing_info_aware(&self, input: &str) -> Vec<FollowUpItem> {
         let mut followups = Vec::new();
         let lower = input.to_lowercase();
-
-        // 设备控制类
-        if lower.contains("打开") || lower.contains("关闭") || lower.contains("开启") {
-            // 检查是否缺少位置信息
-            let has_location = self.has_location_info(input, context);
-
-            if !has_location && !self.available_devices.is_empty() {
-                // 生成基于可用设备的动态追问
-                let locations = self.get_available_locations();
-                let suggestions = if locations.len() <= 4 {
-                    locations.clone()
-                } else {
-                    locations.iter().take(4).cloned().collect()
-                };
-
-                followups.push(FollowUpItem {
-                    followup_type: FollowUpType::MissingLocation,
-                    priority: FollowUpPriority::High,
-                    question: format!(
-                        "请问要控制哪个位置的设备？\n可用位置：{}",
-                        suggestions.join("、")
-                    ),
-                    suggestions,
-                    can_proceed_degraded: false,
-                });
-            }
-        }
 
         // 温度设置类
         if lower.contains("设置")
@@ -296,25 +253,6 @@ impl SmartFollowUpManager {
                 suggestions: vec!["26度".to_string(), "24度".to_string(), "28度".to_string()],
                 can_proceed_degraded: false,
             });
-        }
-
-        // 查询温湿度
-        if (lower == "温度" || lower == "湿度" || lower == "温湿度")
-            && context.current_location.is_none()
-        {
-            let locations = self.get_available_locations();
-            if !locations.is_empty() {
-                followups.push(FollowUpItem {
-                    followup_type: FollowUpType::MissingLocation,
-                    priority: FollowUpPriority::High,
-                    question: format!(
-                        "请问要查看哪个位置的温湿度？\n可用位置：{}",
-                        locations.join("、")
-                    ),
-                    suggestions: locations.iter().take(3).cloned().collect(),
-                    can_proceed_degraded: true, // 可以显示所有位置的数据
-                });
-            }
         }
 
         followups
@@ -429,47 +367,6 @@ impl SmartFollowUpManager {
         intents
     }
 
-    /// 检查输入是否包含位置信息
-    fn has_location_info(&self, input: &str, context: &ConversationContext) -> bool {
-        let locations = [
-            "客厅",
-            "卧室",
-            "厨房",
-            "浴室",
-            "卫生间",
-            "书房",
-            "阳台",
-            "living room",
-            "bedroom",
-            "kitchen",
-            "bathroom",
-            "study",
-        ];
-
-        let lower = input.to_lowercase();
-        let has_explicit = locations.iter().any(|loc| lower.contains(loc));
-
-        // 检查上下文中的位置
-        let has_context = context.current_location.is_some();
-
-        has_explicit || has_context
-    }
-
-    /// 获取可用位置列表
-    fn get_available_locations(&self) -> Vec<String> {
-        let mut locations: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        for device in &self.available_devices {
-            if !device.location.is_empty() {
-                locations.insert(device.location.clone());
-            }
-        }
-
-        let mut result: Vec<String> = locations.into_iter().collect();
-        result.sort();
-        result
-    }
-
     /// 生成降级执行建议
     fn generate_fallback_suggestion(
         &self,
@@ -515,27 +412,6 @@ mod tests {
         ctx
     }
 
-    fn create_manager_with_devices() -> SmartFollowUpManager {
-        let mut manager = SmartFollowUpManager::new();
-        manager.set_available_devices(vec![
-            AvailableDevice {
-                id: "1".to_string(),
-                name: "客厅灯".to_string(),
-                location: "客厅".to_string(),
-                device_type: "light".to_string(),
-                capabilities: vec!["on_off".to_string(), "brightness".to_string()],
-            },
-            AvailableDevice {
-                id: "2".to_string(),
-                name: "卧室空调".to_string(),
-                location: "卧室".to_string(),
-                device_type: "ac".to_string(),
-                capabilities: vec!["on_off".to_string(), "temperature".to_string()],
-            },
-        ]);
-        manager
-    }
-
     #[test]
     fn test_detect_dangerous_operation() {
         let mut manager = SmartFollowUpManager::new();
@@ -550,40 +426,6 @@ mod tests {
             FollowUpType::DangerousOperation
         );
         assert_eq!(analysis.followups[0].priority, FollowUpPriority::Critical);
-    }
-
-    #[test]
-    fn test_context_aware_missing_info() {
-        let mut manager = create_manager_with_devices();
-        let ctx = create_test_context(); // 有上下文位置
-
-        // 有上下文时，"打开灯"应该不追问
-        let analysis = manager.analyze_input("打开灯", &ctx);
-        let location_followups: Vec<_> = analysis
-            .followups
-            .iter()
-            .filter(|f| f.followup_type == FollowUpType::MissingLocation)
-            .collect();
-
-        assert_eq!(location_followups.len(), 0);
-    }
-
-    #[test]
-    fn test_missing_info_without_context() {
-        let mut manager = create_manager_with_devices();
-        let ctx = ConversationContext::new(); // 无上下文
-
-        let analysis = manager.analyze_input("打开灯", &ctx);
-
-        let location_followups: Vec<_> = analysis
-            .followups
-            .iter()
-            .filter(|f| f.followup_type == FollowUpType::MissingLocation)
-            .collect();
-
-        assert!(!location_followups.is_empty());
-        assert!(location_followups[0].question.contains("客厅"));
-        assert!(location_followups[0].question.contains("卧室"));
     }
 
     #[test]
@@ -617,32 +459,5 @@ mod tests {
             .detected_intents
             .iter()
             .any(|i| i.description.contains("查询")));
-    }
-
-    #[test]
-    fn test_followup_priority_ordering() {
-        let mut manager = SmartFollowUpManager::new();
-        let ctx = create_test_context();
-
-        let analysis = manager.analyze_input("打开灯", &ctx);
-
-        // 验证追问按优先级排序（高到低）
-        for i in 1..analysis.followups.len() {
-            assert!(analysis.followups[i - 1].priority >= analysis.followups[i].priority);
-        }
-    }
-
-    #[test]
-    fn test_fallback_suggestion_with_context() {
-        let mut manager = create_manager_with_devices();
-        let mut ctx = ConversationContext::new();
-        ctx.current_location = Some("客厅".to_string());
-
-        let analysis = manager.analyze_input("打开灯", &ctx);
-
-        // 降级建议应该利用上下文位置
-        if let Some(fallback) = analysis.fallback_suggestion {
-            assert!(fallback.contains("客厅"));
-        }
     }
 }

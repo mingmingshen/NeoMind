@@ -845,12 +845,6 @@ impl Agent {
         Self::new(AgentConfig::default(), session_id)
     }
 
-    /// Set custom fallback rules.
-    pub fn with_fallback_rules(mut self, rules: Vec<FallbackRule>) -> Self {
-        self.fallback_rules = rules;
-        self
-    }
-
     /// Configure the LLM backend.
     pub async fn configure_llm(&self, backend: LlmBackend) -> Result<()> {
         tracing::debug!(backend = ?backend, "Agent::configure_llm called");
@@ -3048,25 +3042,6 @@ mod tests {
         }
     }
 
-    /// Simple mock greet tool for testing
-    struct MockGreetTool;
-    #[async_trait::async_trait]
-    impl Tool for MockGreetTool {
-        fn name(&self) -> &str {
-            "greet"
-        }
-        fn description(&self) -> &str {
-            "Greet the user (mock for testing)"
-        }
-        fn parameters(&self) -> serde_json::Value {
-            json!({})
-        }
-        async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
-            let data = json!({"message": "Hello there!"});
-            Ok(ToolOutput::success(data))
-        }
-    }
-
     /// Create a test agent with mock tools registered
     fn create_test_agent_with_mocks(session_id: String) -> Agent {
         use crate::toolkit::ToolRegistryBuilder;
@@ -3076,7 +3051,6 @@ mod tests {
         // Register mock tools
         registry.register(std::sync::Arc::new(MockShellTool));
         registry.register(std::sync::Arc::new(MockListRulesTool));
-        registry.register(std::sync::Arc::new(MockGreetTool));
 
         // Add default agent tools
         use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
@@ -3166,22 +3140,4 @@ mod tests {
         assert!(history.len() >= 2); // user + assistant
     }
 
-    #[tokio::test]
-    async fn test_custom_fallback_rules() {
-        // Test custom rules with mock greet tool
-        // Note: Use a keyword that doesn't match fast-path greetings
-        let custom_rules = vec![FallbackRule::new(vec!["greet", "greeting"], "greet")
-            .with_response_template("Greeting from fallback!")];
-        let agent = create_test_agent_with_mocks("test_session".to_string())
-            .with_fallback_rules(custom_rules);
-
-        // Use "greet me" which won't match fast-path patterns
-        let response = agent.process("greet me").await.unwrap();
-        // The greet tool should be used
-        assert!(
-            response.tools_used.contains(&"greet".to_string()),
-            "Expected 'greet' in tools_used, got: {:?}",
-            response.tools_used
-        );
-    }
 }

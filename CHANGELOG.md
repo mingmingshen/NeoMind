@@ -261,6 +261,25 @@ Removed ~900 lines of dead public API methods, dead registry methods, dead dedup
 - `SessionManager::set_cleanup_config()` — zero callers
 - `SessionManager::cleanup_config()` getter — zero callers
 
+### Dead Code Cleanup (Round 10)
+
+Removed ~220 lines of dead test-only APIs and never-populated device-aware followup infrastructure.
+
+**`Agent::with_fallback_rules()` removed (agent/mod.rs):**
+- Test-only builder method, zero production callers. The `fallback_rules` field and `process_fallback()` remain alive (6 production call sites in streaming code).
+- Removed sole caller `test_custom_fallback_rules` test.
+- Removed `MockGreetTool` struct + `impl Tool` (only invoked by the removed test).
+
+**Dead `available_devices` infrastructure removed (agent/smart_followup.rs, ~180 lines):**
+- `set_available_devices()` — pub method, only test caller. The `available_devices` field was never populated in production.
+- `available_devices` field + initialization.
+- `AvailableDevice` re-export (`pub use crate::smart_conversation::Device as AvailableDevice`).
+- `has_location_info()` private method — sole caller was the removed "设备控制类" branch.
+- `get_available_locations()` private method — sole callers were dead branches in `detect_missing_info_aware()`.
+- Simplified `detect_missing_info_aware()`: removed `context` parameter (no longer needed), removed 2 dead branches that generated `MissingLocation` followups (the guard `!self.available_devices.is_empty()` was always false).
+- Removed `create_manager_with_devices()` test helper.
+- Removed 4 dead/vacuous tests: `test_context_aware_missing_info`, `test_missing_info_without_context`, `test_followup_priority_ordering` (vacuous after cleanup), `test_fallback_suggestion_with_context`.
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor
