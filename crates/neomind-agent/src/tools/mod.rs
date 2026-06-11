@@ -5,4 +5,4 @@ pub mod mapper;
 
 pub use interaction::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
 
-pub use mapper::{map_tool_parameters, resolve_tool_name};
+pub use mapper::resolve_tool_name;

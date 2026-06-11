@@ -8,7 +8,7 @@ pub mod builder;
 
 // Re-export commonly used types
 pub use builder::{
-    PromptBuilder, CONVERSATION_CONTEXT_ZH, CURRENT_TIME_PLACEHOLDER, LANGUAGE_POLICY,
+    PromptBuilder, CURRENT_TIME_PLACEHOLDER, LANGUAGE_POLICY,
     LOCAL_TIME_PLACEHOLDER, TIMEZONE_PLACEHOLDER,
 };
 

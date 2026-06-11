@@ -17,18 +17,14 @@ pub mod vision;
 pub mod web_fetch;
 
 // Re-exports consumed via shortcut path (toolkit::TypeName)
-pub use error::{NeoMindError, Result, ToolError};
-pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult};
-pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
+pub use error::{Result, ToolError};
+pub use registry::{ToolRegistry, ToolRegistryBuilder, ToolResult};
+pub use tool::{Tool, ToolDefinition, ToolExample, ToolOutput};
 
 // Re-exports from core (backward compatibility)
 pub use neomind_core::tools::{
-    array_property, boolean_property, number_property, object_schema, property, string_property,
-    ToolCategory, ToolRelationships, UsageScenario,
+    object_schema, string_property, ToolCategory, ToolRelationships, UsageScenario,
 };
-
-// Extension Tools
-pub use extension_tools::{ExtensionTool, ExtensionToolExecutor};
 
 pub use shell::ShellConfig;
 

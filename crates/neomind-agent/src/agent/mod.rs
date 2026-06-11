@@ -52,7 +52,6 @@ use neomind_core::{config::agent_env_vars, llm::backend::LlmRuntime, Message};
 pub type SharedToolRegistry = Arc<crate::toolkit::ToolRegistry>;
 pub type SharedLlmInterface = Arc<LlmInterface>;
 pub type SharedSessionState = Arc<RwLock<SessionState>>;
-pub type SharedResourceIndex = Arc<RwLock<ResourceIndex>>;
 pub type SharedSmartConversation =
     Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>;
 pub type SharedSemanticMapper = Arc<semantic_mapper::SemanticToolMapper>;

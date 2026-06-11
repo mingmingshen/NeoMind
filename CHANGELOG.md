@@ -241,6 +241,13 @@ Removed ~900 lines of dead public API methods, dead registry methods, dead dedup
 **Dead `Skill` method removed (skills/types.rs):**
 - `estimated_tokens()` — zero callers
 
+**Dead re-exports cleaned from mod.rs files:**
+- `context/mod.rs`: removed 9 unused re-exports (`AccessType`, `AlertChannelResourceData`, `Capability`, `CapabilityType`, `DeviceResourceData`, `DeviceTypeResourceData`, `ResourceData`, `ResourceId`, `SearchResult`) + dead `SharedResourceIndex` type alias + unused `Arc`/`RwLock` imports
+- `agent/mod.rs`: removed dead `SharedResourceIndex` type alias (duplicate, never used)
+- `toolkit/mod.rs`: removed 10 dead re-exports (`NeoMindError`, `ToolCall`, `DynTool`, `Parameter`, `ExtensionTool`, `ExtensionToolExecutor`, `array_property`, `boolean_property`, `number_property`, `property`)
+- `tools/mod.rs`: removed dead `map_tool_parameters` re-export (callers use full path `tools::mapper::map_tool_parameters`)
+- `prompts/mod.rs` + `prompts/builder.rs`: removed dead `CONVERSATION_CONTEXT_ZH` constant + re-export (stale comment said "used by memory.rs" but zero actual references)
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

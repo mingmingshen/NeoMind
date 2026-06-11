@@ -241,24 +241,6 @@ impl Default for PromptBuilder {
     }
 }
 
-// Conversation context reminder for agent executor (both languages kept — used by memory.rs)
-pub const CONVERSATION_CONTEXT_ZH: &str = r#"
-## 对话上下文提醒
-
-你是一个**长期运行的智能体**，会在未来多次执行。请记住：
-
-1. **历史记忆**: 每次执行时，你都能看到之前几次执行的历史记录
-2. **持续关注**: 关注数据的变化趋势，而不仅仅是单次快照
-3. **避免重复**: 记住之前已经报告过的问题，不要重复告警
-4. **累积学习**: 随着时间推移，你应该更好地理解系统状态
-5. **一致性**: 保持分析标准和决策逻辑的一致性
-
-在分析当前情况时，请参考历史记录：
-- 与之前的数据相比，有什么变化？
-- 之前报告的问题是否已经解决？
-- 是否有新的趋势或模式出现？
-"#;
-
 #[cfg(test)]
 mod tests {
     use super::*;

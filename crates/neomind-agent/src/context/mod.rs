@@ -5,15 +5,4 @@
 
 mod resource_index;
 
-pub use resource_index::{
-    AccessType, AlertChannelResourceData, Capability, CapabilityType, DeviceResourceData,
-    DeviceTypeResourceData, Resource, ResourceData, ResourceDataHelper, ResourceId, ResourceIndex,
-    SearchResult,
-};
-
-use std::sync::Arc;
-
-// Type aliases to reduce complexity
-pub type SharedResourceIndex = Arc<RwLock<ResourceIndex>>;
-
-use tokio::sync::RwLock;
+pub use resource_index::{Resource, ResourceDataHelper, ResourceIndex};
