@@ -21,7 +21,7 @@ pub mod web_fetch;
 
 // Re-exports commonly used types
 pub use error::{NeoMindError, Result, ToolError};
-pub use registry::{format_for_llm, ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult};
+pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult};
 pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
 
 // Type aliases to reduce complexity

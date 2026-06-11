@@ -33,16 +33,17 @@ impl ToolNameMapper {
 
     /// 注册内置的工具名称映射
     fn register_builtin_mappings(&mut self) {
-        // ===== 聚合工具 (Aggregated Tools) =====
-        // 新的 action-based 聚合工具，替代原来的独立工具
-        // 这些工具名称直接映射到自身，避免被模糊匹配到旧工具
-        self.register_simplified("device", "device");
-        self.register_simplified("agent", "agent");
-        self.register_alias("agent_history", "agent");
-        self.register_simplified("rule", "rule");
-        self.register_simplified("alert", "message");
-        self.register_simplified("message", "message");
-        self.register_simplified("transform", "transform");
+        // ===== CLI Domain Tools → shell routing =====
+        // These are "virtual" CLI domain tools — the registry only has real tools
+        // (shell, skill, memory, etc.). Route CLI domains to shell so the LLM can
+        // call them as standalone tools (e.g., `message` → `shell` with CLI command).
+        self.register_simplified("device", "shell");
+        self.register_simplified("agent", "shell");
+        self.register_alias("agent_history", "shell");
+        self.register_simplified("rule", "shell");
+        self.register_simplified("alert", "shell");
+        self.register_simplified("message", "shell");
+        self.register_simplified("transform", "shell");
         self.register_simplified("skill", "skill");
         self.register_simplified("shell", "shell");
 
@@ -310,13 +311,111 @@ pub fn resolve_tool_name(input: &str) -> String {
     get_mapper().resolve(input)
 }
 
+/// Resolve a tool name to its domain name (one-step resolution).
+///
+/// Unlike `resolve_tool_name` which follows the full chain (alias → simplified → real),
+/// this stops at the simplified name. E.g., `"设备列表"` → `"device"` (NOT `"shell"`).
+/// This is used by `map_tool_parameters` for domain-specific parameter matching.
+fn resolve_domain_name(input: &str) -> String {
+    let mapper = get_mapper();
+    // First try alias → simplified
+    if let Some(simplified) = mapper.alias_to_real.get(input) {
+        return simplified.clone();
+    }
+    // Then check if it's a simplified name itself — return as-is (the domain name)
+    if mapper.simplified_to_real.contains_key(input) {
+        return input.to_string();
+    }
+    // Unknown name, pass through
+    input.to_string()
+}
+
+/// CLI domain names that should be routed to shell when the registry can't find them.
+pub const CLI_DOMAINS: &[&str] = &[
+    "message",
+    "device",
+    "rule",
+    "agent",
+    "transform",
+    "dashboard",
+    "widget",
+    "llm",
+    "system",
+    "connector",
+    "push",
+];
+
+/// Convert a CLI domain tool call into a `neomind` CLI command for shell execution.
+///
+/// `original_tool_name` is what the LLM called (e.g., `"message"`, `"device"`).
+/// Returns `Some({"command": "neomind <domain> <action> --flag value ..."})` suitable
+/// for passing to `ShellTool::execute`, or `None` if the name is not a CLI domain.
+pub fn build_cli_command(original_tool_name: &str, arguments: &Value) -> Option<Value> {
+    if !CLI_DOMAINS.contains(&original_tool_name) {
+        return None;
+    }
+
+    // Use existing parameter mapping to normalize args (infer action, rename keys, etc.)
+    let mapped = map_tool_parameters(original_tool_name, arguments);
+    let obj = mapped.as_object()?;
+
+    let action = obj
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let mut cmd = format!("neomind {} {}", original_tool_name, action);
+
+    // Special case: device control takes device_id and command as positional args
+    if original_tool_name == "device" && action == "control" {
+        if let Some(id) = obj.get("device_id").and_then(|v| v.as_str()) {
+            cmd.push_str(&format!(" {}", id));
+            if let Some(command) = obj.get("command").and_then(|v| v.as_str()) {
+                cmd.push_str(&format!(" {}", command));
+            }
+            // Add remaining params as flags
+            let skip_keys = ["action", "device_id", "command"];
+            for (k, v) in obj {
+                if skip_keys.contains(&k.as_str()) {
+                    continue;
+                }
+                append_flag(&mut cmd, k, v);
+            }
+            return Some(serde_json::json!({"command": cmd}));
+        }
+    }
+
+    // Generic flag assembly for remaining params (skip action — it's already positional)
+    for (k, v) in obj {
+        if k == "action" {
+            continue;
+        }
+        append_flag(&mut cmd, k, v);
+    }
+
+    Some(serde_json::json!({"command": cmd}))
+}
+
+/// Append a `--key value` flag to the command string.
+fn append_flag(cmd: &mut String, key: &str, value: &Value) {
+    match value {
+        Value::String(s) => cmd.push_str(&format!(" --{} \"{}\"", key, s.replace('"', "\\\""))),
+        Value::Bool(true) => cmd.push_str(&format!(" --{}", key)),
+        Value::Bool(false) => {} // skip false booleans
+        Value::Number(n) => cmd.push_str(&format!(" --{} {}", key, n)),
+        _ => {} // skip null, arrays, objects
+    }
+}
+
 /// 映射工具参数
 ///
 /// 将简化参数名映射到真实参数名
 /// 支持新旧工具名称的向后兼容
 /// 当旧工具名被映射到聚合工具时，自动推断 action 参数
 pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
-    let real_tool_name = resolve_tool_name(tool_name);
+    // Use domain name for parameter key matching (e.g., "device"), NOT the
+    // final routed target ("shell"). The mapper routes CLI domains to shell,
+    // but parameter normalization is domain-specific.
+    let domain_name = resolve_domain_name(tool_name);
 
     if let Some(obj) = arguments.as_object() {
         let mut mapped = serde_json::Map::new();
@@ -430,7 +529,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
         }
 
         for (key, value) in obj {
-            let actual_key = match (real_tool_name.as_str(), key.as_str()) {
+            let actual_key = match (domain_name.as_str(), key.as_str()) {
                 // ===== device tool (aggregated) =====
                 // Backward compatibility for old parameter names
                 ("device", "device") => "device_id",
@@ -588,19 +687,23 @@ mod tests {
     #[test]
     fn test_aggregated_tool_mapping() {
         let mapper = ToolNameMapper::new();
-        // Aggregated tool names map to themselves
-        assert_eq!(mapper.resolve("device"), "device");
-        assert_eq!(mapper.resolve("agent"), "agent");
-        assert_eq!(mapper.resolve("agent_history"), "agent");
-        assert_eq!(mapper.resolve("rule"), "rule");
-        assert_eq!(mapper.resolve("alert"), "message");
-        assert_eq!(mapper.resolve("message"), "message");
+        // CLI domain tools now route to shell
+        assert_eq!(mapper.resolve("device"), "shell");
+        assert_eq!(mapper.resolve("agent"), "shell");
+        assert_eq!(mapper.resolve("agent_history"), "shell");
+        assert_eq!(mapper.resolve("rule"), "shell");
+        assert_eq!(mapper.resolve("alert"), "shell");
+        assert_eq!(mapper.resolve("message"), "shell");
+        // Non-CLI tools still map to themselves
+        assert_eq!(mapper.resolve("skill"), "skill");
+        assert_eq!(mapper.resolve("shell"), "shell");
     }
 
     #[test]
     fn test_legacy_tool_compatibility() {
         let mapper = ToolNameMapper::new();
-        // Old tool names map to new aggregated tools
+        // Old tool names resolve to intermediate simplified names (device/rule/agent/message)
+        // The routing to shell happens in resolve_tool_name's two-step chain for simplified names
         assert_eq!(mapper.resolve("device_discover"), "device");
         assert_eq!(mapper.resolve("device_query"), "device");
         assert_eq!(mapper.resolve("device_control"), "device");
@@ -623,7 +726,8 @@ mod tests {
     #[test]
     fn test_chinese_aliases() {
         let mapper = ToolNameMapper::new();
-        // Chinese aliases map to aggregated tools
+        // Chinese aliases resolve to intermediate simplified names
+        // Routing to shell happens at the registry level (CLI domain fallback)
         assert_eq!(mapper.resolve("设备列表"), "device");
         assert_eq!(mapper.resolve("列出设备"), "device");
         assert_eq!(mapper.resolve("查看设备"), "device");
@@ -650,9 +754,13 @@ mod tests {
     #[test]
     fn test_get_aliases() {
         let mapper = ToolNameMapper::new();
-        let aliases = mapper.get_aliases("device");
-        assert!(aliases.contains(&"设备列表".to_string()));
-        assert!(aliases.contains(&"list_devices".to_string()));
+        // "device" as a simplified name now points to "shell"
+        let aliases = mapper.get_aliases("shell");
+        assert!(aliases.contains(&"device".to_string()));
+        // Chinese aliases point to intermediate "device" key, so they resolve through chain
+        let aliases_device = mapper.get_aliases("device");
+        assert!(aliases_device.contains(&"设备列表".to_string()));
+        assert!(aliases_device.contains(&"list_devices".to_string()));
     }
 
     #[test]
@@ -699,9 +807,11 @@ mod tests {
 
     #[test]
     fn test_global_mapper() {
-        // 测试全局映射器 - 旧名称映射到新聚合工具
+        // 测试全局映射器 - 旧名称解析到中间简化名
         let resolved = resolve_tool_name("device_discover");
         assert_eq!(resolved, "device");
+        // Direct simplified name routes to shell
+        assert_eq!(resolve_tool_name("device"), "shell");
     }
 
     #[test]
@@ -715,7 +825,7 @@ mod tests {
     fn test_all_known_names() {
         let mapper = ToolNameMapper::new();
         let names = mapper.all_known_names();
-        // Should contain aggregated tool names
+        // Should contain CLI domain names (they're simplified names)
         assert!(names.contains(&"device".to_string()));
         assert!(names.contains(&"rule".to_string()));
         assert!(names.contains(&"agent".to_string()));

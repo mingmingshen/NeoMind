@@ -128,8 +128,8 @@ pub(crate) fn build_tool_system_prompt(
     let combined_guidance = if config.is_focused_plus {
         format!(
             "## Guidelines & Exit\n\
-             - The snapshot above shows current values. Use `device(action=\"history\")` with `time_range` for trends.\n\
-             - You can use `device(action=\"control\")` to execute bound commands.\n\
+             - The snapshot above shows current values. Use `shell` with command `neomind device history <device_id>` for trends.\n\
+             - You can use `shell` with command `neomind device control <device_id> <command>` to execute bound commands.\n\
              - Do NOT call the same tool with the same parameters if it already returned results.\n\
              - Max {} rounds. Be efficient.\n\
              - For complex operations, use the `skill` tool to search for guides.\n\

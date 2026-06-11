@@ -120,9 +120,21 @@ impl ToolRegistry {
 
     /// Execute a tool by name.
     pub async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput> {
-        let tool = self
-            .get(name)
-            .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
+        let tool = match self.get(name) {
+            Some(t) => t,
+            None => {
+                // CLI domain fallback: if name looks like a CLI domain that wasn't
+                // caught by the mapper, try routing to shell
+                if let Some(shell_args) = crate::tools::mapper::build_cli_command(name, &args) {
+                    tracing::info!(tool = %name, "CLI domain fallback → shell");
+                    let shell = self
+                        .get("shell")
+                        .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
+                    return shell.execute(shell_args).await;
+                }
+                return Err(ToolError::NotFound(name.to_string()));
+            }
+        };
         tool.execute(args).await
     }
 
@@ -151,6 +163,21 @@ impl ToolRegistry {
                 });
             } else {
                 let name = call.name;
+                let args = call.args;
+                // Try CLI domain fallback before reporting NotFound
+                if let Some(shell_args) = crate::tools::mapper::build_cli_command(&name, &args) {
+                    tracing::info!(tool = %name, "CLI domain fallback → shell (parallel)");
+                    if let Some(shell) = self.get("shell") {
+                        let shell_clone = shell.clone();
+                        join_set.spawn(async move {
+                            ToolResult {
+                                name,
+                                result: shell_clone.execute(shell_args).await,
+                            }
+                        });
+                        continue;
+                    }
+                }
                 join_set.spawn(async move {
                     ToolResult {
                         name: name.clone(),
@@ -389,158 +416,13 @@ impl Default for ToolRegistryBuilder {
     }
 }
 
-/// Helper to format tool definitions for LLM function calling.
-///
-/// This function creates a comprehensive, structured prompt that guides the LLM
-/// on how to use tools effectively, including:
-/// - Tool descriptions
-/// - Usage scenarios with example queries
-/// - Tool relationships (call order, data flow)
-/// - Tool categories for organization
-pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
-    let mut result = String::from("Available Tools\n");
-    result.push_str(&"═".repeat(40));
-    result.push_str("\n\n");
-
-    // Group tools by category
-    let mut grouped: std::collections::HashMap<String, Vec<&ToolDefinition>> =
-        std::collections::HashMap::new();
-    for def in definitions {
-        if def.deprecated {
-            continue; // Skip deprecated tools
-        }
-        let category = def.category.as_str();
-        grouped.entry(category.to_string()).or_default().push(def);
-    }
-
-    // Define category order
-    let category_order = vec![
-        "device", "data", "analysis", "rule", "alert", "agent", "config", "system",
-    ];
-
-    // Output tools by category
-    for category in category_order {
-        if let Some(tools) = grouped.get(category) {
-            let category_name = match category {
-                "device" => "Device Management",
-                "data" => "Data Query",
-                "analysis" => "Data Analysis",
-                "rule" => "Rule Management",
-                "alert" => "Message Management",
-                "message" => "Message Management",
-                "agent" => "Agent Management",
-                "config" => "Configuration",
-                "system" => "System Tools",
-                _ => category,
-            };
-            result.push_str(&format!("### {}\n\n", category_name));
-
-            for def in tools {
-                // Tool name and description
-                result.push_str(&format!("**Tool**: `{}`\n", def.name));
-                result.push_str(&format!("**Description**: {}\n", def.description));
-
-                // Usage scenarios
-                if !def.scenarios.is_empty() {
-                    result.push_str("**Usage Scenarios**:\n");
-                    for (i, scenario) in def.scenarios.iter().enumerate() {
-                        result.push_str(&format!(
-                            "  {}. {} - Example: \"{}\"\n",
-                            i + 1,
-                            scenario.description,
-                            scenario.example_query
-                        ));
-                    }
-                }
-
-                // Tool relationships
-                if !def.relationships.call_after.is_empty()
-                    || !def.relationships.output_to.is_empty()
-                {
-                    result.push_str("**Relationships**:\n");
-                    if !def.relationships.call_after.is_empty() {
-                        result.push_str(&format!(
-                            "  → Call after: {}\n",
-                            def.relationships.call_after.join(", ")
-                        ));
-                    }
-                    if !def.relationships.output_to.is_empty() {
-                        result.push_str(&format!(
-                            "  → Output feeds into: {}\n",
-                            def.relationships.output_to.join(", ")
-                        ));
-                    }
-                }
-
-                // Parameters
-                result.push_str("**Parameters**:\n");
-                if let Some(props) = def.parameters.get("properties") {
-                    if let Some(obj) = props.as_object() {
-                        for (name, prop) in obj {
-                            let desc = prop
-                                .get("description")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("no description");
-                            let type_name = prop
-                                .get("type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("unknown");
-                            result.push_str(&format!("  - `{}`: {} ({})", name, desc, type_name));
-
-                            // Check if required
-                            if let Some(required) = def.parameters.get("required") {
-                                if let Some(arr) = required.as_array() {
-                                    if arr.iter().any(|v| v.as_str() == Some(name)) {
-                                        result.push_str(" **[required]**");
-                                    }
-                                }
-                            }
-                            result.push('\n');
-                        }
-                    }
-                }
-
-                if let Some(required) = def.parameters.get("required") {
-                    if let Some(arr) = required.as_array() {
-                        if !arr.is_empty() {
-                            let required_names: Vec<&str> =
-                                arr.iter().filter_map(|v| v.as_str()).collect();
-                            result.push_str(&format!(
-                                "**Required**: {}\n",
-                                required_names.join(", ")
-                            ));
-                        }
-                    }
-                }
-
-                result.push('\n');
-            }
-        }
-    }
-
-    // Add guidance section
-    result.push_str(&"-".repeat(40));
-    result.push_str("\n**Tool Call Guide**\n\n");
-    result.push_str("1. **List devices** → device(action=\"list\")\n");
-    result.push_str(
-        "2. **Query data** → device(action=\"query\", device_id=\"id\", metric=\"name\")\n",
-    );
-    result.push_str("3. **Control device** → device(action=\"control\", device_id=\"id\", command=\"cmd\", confirm=true)\n\n");
-    result.push_str("**Common Flows**:\n");
-    result.push_str("- Query device data: device(action=\"list\") → device(action=\"query\")\n");
-    result.push_str("- Create rule: device(action=\"list\") → rule(action=\"create\")\n");
-    result.push_str("- Device control: device(action=\"list\") → device(action=\"control\")\n");
-
-    result
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::toolkit::ToolDefinition;
     use crate::toolkit::{Tool, ToolOutput};
     use async_trait::async_trait;
-    use neomind_core::tools::{ToolCategory, ToolRelationships};
+    use neomind_core::tools::ToolCategory;
     use serde_json::Value;
 
     // Simple test tool for registry testing
@@ -652,39 +534,6 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results[0].result.as_ref().unwrap().success);
         assert!(results[1].result.as_ref().unwrap().success);
-    }
-
-    #[test]
-    fn test_format_for_llm() {
-        let definitions = vec![ToolDefinition {
-            name: "test_tool".to_string(),
-            description: "A test tool".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "arg1": {
-                        "type": "string",
-                        "description": "First argument"
-                    }
-                },
-                "required": ["arg1"]
-            }),
-            example: None,
-            examples: vec![],
-            response_format: Some("concise".to_string()),
-            namespace: Some("test".to_string()),
-            category: ToolCategory::System,
-            scenarios: vec![],
-            relationships: ToolRelationships::default(),
-            deprecated: false,
-            replaced_by: None,
-            version: "1.0.0".to_string(),
-        }];
-
-        let formatted = format_for_llm(&definitions);
-        assert!(formatted.contains("test_tool"));
-        assert!(formatted.contains("A test tool"));
-        assert!(formatted.contains("arg1"));
     }
 
     #[test]

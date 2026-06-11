@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-06-11
+
+### Agent Module Architecture Refactor
+
+Major decomposition of two oversized source files into focused, maintainable sub-modules. Pure structural refactoring — zero logic changes, all public APIs preserved via re-exports. 4 rounds of code review, 540/540 tests pass.
+
+**`streaming.rs` (4,231 lines → 12 sub-modules):**
+
+- `intent.rs` — "List-only dead end" detection (action verb matching, read-only tool detection, action hint extraction)
+- `cache.rs` — `ToolResultCache` with TTL, size limits, and key normalization
+- `thinking.rs` — Thinking content cleanup and repetition removal
+- `tool_detect.rs` — JSON tool call detection in LLM response buffer
+- `sanitize.rs` — Base64 stripping, data image URL replacement, UTF-8 safe truncation
+- `dedup.rs` — Cross-round tool result deduplication with entity ID extraction
+- `result_format.rs` — Tool result formatting for shell, device, agent, rule, extension outputs
+- `context.rs` — Context window building with tiered compaction, token estimation, message priority
+- `resolve.rs` — Cached argument resolution, tool name mapping, image auto-injection
+- `tool_exec.rs` — Tool execution with retry and caching
+- `stream_core.rs` — Main text-only streaming loop (ReAct pattern)
+- `stream_multimodal.rs` — Multimodal (text + image) streaming loop
+
+**`executor/mod.rs` (3,169 → 1,450 lines + 4 sub-modules):**
+
+- `tool_loop.rs` — Multi-round tool execution loop with deduplication, duplicate round detection, and Phase 2 summary generation
+- `tool_prompt.rs` — System prompt construction (resource sections, tool messages, knowledge injection)
+- `tool_result.rs` — Tool result processing, Phase 2 summary via LLM, and final decision building
+- `compact.rs` — Message compaction for context window management
+
+### Testing
+
+- **17 new boundary tests** covering cross-module interfaces:
+  - `intent`: 4 tests (Chinese/English action verbs, read-only detection, action hints)
+  - `cache`: 5 tests (key consistency, TTL expiration, insert/get, cacheability)
+  - `dedup`: 4 tests (latest-keep, entity separation, JSON/non-JSON key generation)
+  - `resolve`: 4 tests (passthrough, missing references, HTTP URL handling, tool name resolution)
+
+### CLI Domain Tool Consolidation
+
+Unified all CLI domain tools (device, agent, rule, message, transform, alert) to route through the `shell` tool, eliminating duplicate tool definitions in the registry and simplifying the LLM's tool surface.
+
+- **Mapper routing** — `ToolNameMapper` now maps CLI domains (`device`, `agent`, `rule`, etc.) to `shell` instead of standalone tool names. `build_cli_command()` converts structured arguments into `neomind <domain> <action> --flag value` CLI commands
+- **Registry fallback** — `ToolRegistry::execute()` and `execute_parallel()` detect CLI domain tool names and fall back to shell execution when the tool isn't directly registered
+- **tool_exec integration** — `execute_with_retry_impl()` converts CLI domain calls to shell commands before execution, handling timeout inheritance correctly
+- **Removed `format_for_llm`** — No longer needed; tool descriptions now come from the shell tool's embedded CLI reference
+
+### Fixed
+
+- **Re-export completeness** — Added missing `cleanup_thinking_content` and `format_tool_results` re-exports in `agent/mod.rs`
+- **Focused+ tool guidance** — Updated to use `shell` commands (`neomind device history`, `neomind device control`) instead of removed `device(action=...)` pattern
+
 ## [0.8.10] - 2026-06-11
 
 ### Agent Native Tool Calling

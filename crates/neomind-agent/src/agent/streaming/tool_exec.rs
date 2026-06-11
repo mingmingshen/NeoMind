@@ -54,11 +54,20 @@ pub(crate) async fn execute_with_retry_impl(
     // Map simplified tool name to real tool name
     let real_tool_name = resolve_tool_name(name);
 
+    // If mapper resolved a CLI domain name to "shell", convert the structured args
+    // into a CLI command string that ShellTool expects: {"command": "neomind <domain> ..."}
+    let exec_args = if real_tool_name == "shell" && name != "shell" {
+        crate::tools::mapper::build_cli_command(name, &arguments)
+            .unwrap_or(arguments.clone())
+    } else {
+        arguments.clone()
+    };
+
     // Tool execution timeout: 30s default, but respect shell tool's internal timeout
     const DEFAULT_TIMEOUT_SECS: u64 = 30;
     let timeout_secs = if real_tool_name == "shell" {
         // Shell tool manages its own timeout internally; give it room to breathe
-        let shell_timeout: u64 = arguments
+        let shell_timeout: u64 = exec_args
             .get("timeout")
             .and_then(|v| v.as_u64())
             .unwrap_or(30)
@@ -71,7 +80,7 @@ pub(crate) async fn execute_with_retry_impl(
     for attempt in 0..=max_retries {
         let result = tokio::time::timeout(
             tokio::time::Duration::from_secs(timeout_secs),
-            tools.execute(&real_tool_name, arguments.clone()),
+            tools.execute(&real_tool_name, exec_args.clone()),
         )
         .await
         .unwrap_or(Err(crate::toolkit::ToolError::Execution(format!(
