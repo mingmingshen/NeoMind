@@ -21,7 +21,6 @@
 
 pub mod conversation_context;
 pub mod fallback;
-pub mod scheduler;
 pub mod semantic_mapper;
 pub mod smart_followup;
 pub mod staged;

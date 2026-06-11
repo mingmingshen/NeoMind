@@ -28,6 +28,7 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - `llm.rs`: `context_manager` field, `set_context_manager()`, `build_business_context_section()`.
 - `smart_conversation.rs`: unused `devices`/`rules` fields, `update_devices()`/`update_rules()`, `Rule` struct.
 - `smart_followup.rs`: dead `refresh_devices()` method.
+- **`agent/scheduler.rs`** (~320 lines, Round 11) — "Dependency-Aware Tool Scheduling (P2.1)" feature (`ToolExecutionPlan`, `ExecutionBatch`, `build_execution_plan`, `DependencyNode`, and 4 helper functions). Designed for parallel/sequential tool execution based on `ToolRelationships` metadata, but never wired into any execution path. The production executor uses `tool_loop.rs` (sequential) and `registry::execute_parallel` (parallel) directly. The module was declared `pub mod scheduler;` but had zero callers outside its own file/tests.
 - `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
 - `toolkit/registry.rs`: dead `categories()` method.
 
