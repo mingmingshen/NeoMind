@@ -697,16 +697,6 @@ impl MetricValue {
         Self::Boolean(v)
     }
 
-    /// Create a string metric value.
-    pub fn string(v: impl Into<String>) -> Self {
-        Self::String(v.into())
-    }
-
-    /// Create a JSON metric value.
-    pub fn json(v: serde_json::Value) -> Self {
-        Self::Json(v)
-    }
-
     /// Try to get as f64.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
@@ -809,19 +799,6 @@ pub struct ProposedAction {
 }
 
 impl ProposedAction {
-    /// Create a new proposed action.
-    pub fn new(
-        action_type: impl Into<String>,
-        description: impl Into<String>,
-        parameters: serde_json::Value,
-    ) -> Self {
-        Self {
-            action_type: action_type.into(),
-            description: description.into(),
-            parameters,
-        }
-    }
-
     /// Create a device control action.
     pub fn control_device(
         device_id: impl Into<String>,
@@ -841,34 +818,12 @@ impl ProposedAction {
         }
     }
 
-    /// Create a rule creation action.
-    pub fn create_rule(dsl: impl Into<String>) -> Self {
-        Self {
-            action_type: "create_rule".to_string(),
-            description: "Create a new automation rule".to_string(),
-            parameters: serde_json::json!({ "dsl": dsl.into() }),
-        }
-    }
-
     /// Create a user notification action.
     pub fn notify_user(message: impl Into<String>) -> Self {
         Self {
             action_type: "notify_user".to_string(),
             description: "Notify the user".to_string(),
             parameters: serde_json::json!({ "message": message.into() }),
-        }
-    }
-
-    /// Create a workflow trigger action.
-    pub fn trigger_workflow(workflow_id: impl Into<String>, params: serde_json::Value) -> Self {
-        let workflow_id = workflow_id.into();
-        Self {
-            action_type: "trigger_workflow".to_string(),
-            description: format!("Trigger workflow {}", workflow_id),
-            parameters: serde_json::json!({
-                "workflow_id": workflow_id,
-                "params": params,
-            }),
         }
     }
 }

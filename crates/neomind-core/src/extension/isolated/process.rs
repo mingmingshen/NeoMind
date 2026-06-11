@@ -277,42 +277,6 @@ impl CrashEvent {
     }
 }
 
-/// 🔧 Phase 2: Detailed extension health information
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ExtensionHealthInfo {
-    pub extension_id: String,
-    pub is_alive: bool,
-    pub is_healthy: bool,
-    pub pid: Option<u32>,
-    pub uptime_seconds: Option<u64>,
-    pub active_requests: u64,
-    pub memory_mb: Option<f64>,
-    pub last_error: Option<String>,
-    pub status: ExtensionHealthStatus,
-}
-
-/// 🔧 Phase 2: Extension health status
-#[derive(Debug, Clone, serde::Serialize)]
-pub enum ExtensionHealthStatus {
-    Healthy,
-    Degraded,
-    Unhealthy,
-    Crashed,
-    Unknown,
-}
-
-impl ExtensionHealthStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ExtensionHealthStatus::Healthy => "healthy",
-            ExtensionHealthStatus::Degraded => "degraded",
-            ExtensionHealthStatus::Unhealthy => "unhealthy",
-            ExtensionHealthStatus::Crashed => "crashed",
-            ExtensionHealthStatus::Unknown => "unknown",
-        }
-    }
-}
-
 /// Maximum number of log lines retained per extension.
 const MAX_LOG_LINES: usize = 2000;
 
@@ -1602,58 +1566,6 @@ impl IsolatedExtension {
         {
             Ok(IpcResponse::Health { healthy, .. }) => Ok(healthy),
             _ => Ok(false),
-        }
-    }
-
-    /// 🔧 Phase 2: Get detailed health information for monitoring
-    pub async fn get_health_info(&self) -> ExtensionHealthInfo {
-        let is_alive = self.is_alive();
-        let pid = self.process_id.lock().await.clone();
-        let active_requests = self.active_requests.load(Ordering::SeqCst);
-        let uptime = self.start_time.lock().await.and_then(|start| {
-            SystemTime::now()
-                .duration_since(start)
-                .ok()
-                .map(|d| d.as_secs())
-        });
-
-        // Try to get memory usage
-        // Note: Cross-platform memory reading is complex and requires additional dependencies
-        // For now, we'll return None. In production, this could use:
-        // - sysinfo crate (Linux/Windows/macOS)
-        // - /proc filesystem (Linux)
-        // - task_info API (macOS)
-        let memory_mb = None;
-
-        // Perform health check
-        let is_healthy = if is_alive {
-            self.health_check().await.unwrap_or(false)
-        } else {
-            false
-        };
-
-        // Determine status
-        let status = if !is_alive {
-            ExtensionHealthStatus::Crashed
-        } else if !is_healthy {
-            ExtensionHealthStatus::Unhealthy
-        } else if active_requests > 50 {
-            // Heuristic: high request count might indicate overload
-            ExtensionHealthStatus::Degraded
-        } else {
-            ExtensionHealthStatus::Healthy
-        };
-
-        ExtensionHealthInfo {
-            extension_id: self.extension_id.clone(),
-            is_alive,
-            is_healthy,
-            pid,
-            uptime_seconds: uptime,
-            active_requests: active_requests as u64,
-            memory_mb,
-            last_error: None, // Could be populated from error tracking
-            status,
         }
     }
 
