@@ -5,20 +5,10 @@
 
 use crate::event::{EventMetadata, NeoMindEvent};
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::sync::broadcast;
 
 /// Default channel capacity for the event bus.
 pub const DEFAULT_CHANNEL_CAPACITY: usize = 1000;
-
-/// Event bus error types.
-#[derive(Debug, Error)]
-pub enum EventBusError {
-    #[error("Backpressure exceeded: too many pending events")]
-    BackpressureExceeded,
-    #[error("No subscribers available")]
-    NoSubscribers,
-}
 
 /// Event bus for NeoMind.
 ///
@@ -118,40 +108,6 @@ impl EventBus {
     /// This version can be called from any context, including non-async contexts.
     pub fn publish_with_metadata_sync(&self, event: NeoMindEvent, metadata: EventMetadata) -> bool {
         self.tx.send((event, metadata)).is_ok()
-    }
-
-    /// Publish an event with backpressure control.
-    ///
-    /// Returns an error if there are no subscribers or if the channel is full.
-    /// This prevents memory buildup when consumers are slower than producers.
-    pub async fn publish_with_backpressure(
-        &self,
-        event: NeoMindEvent,
-    ) -> Result<bool, EventBusError> {
-        self.publish_with_backpressure_and_source(event, "system")
-            .await
-    }
-
-    /// Publish with backpressure and custom source.
-    pub async fn publish_with_backpressure_and_source(
-        &self,
-        event: NeoMindEvent,
-        source: impl Into<String>,
-    ) -> Result<bool, EventBusError> {
-        let subscriber_count = self.tx.receiver_count();
-        if subscriber_count == 0 {
-            // No subscribers - discard event to prevent memory buildup
-            return Ok(false);
-        }
-
-        let metadata = EventMetadata::new(source);
-        match self.tx.send((event, metadata)) {
-            Ok(_) => Ok(true),
-            Err(broadcast::error::SendError(_)) => {
-                // Channel is full (all receivers lagged)
-                Err(EventBusError::BackpressureExceeded)
-            }
-        }
     }
 
     /// Subscribe to all events.
@@ -386,55 +342,6 @@ impl FilterBuilder {
 /// This is useful for sharing an event bus across multiple components.
 pub type SharedEventBus = Arc<EventBus>;
 
-/// Trait for event persistence (reserved for future use).
-///
-/// Implementations can store events to disk, database, or external services.
-pub trait EventPersistence: Send + Sync {
-    /// Store an event.
-    fn store(&self, event: &NeoMindEvent, metadata: &EventMetadata) -> Result<(), PersistError>;
-
-    /// Query events by time range.
-    fn query(
-        &self,
-        start: i64,
-        end: i64,
-    ) -> Result<Vec<(NeoMindEvent, EventMetadata)>, PersistError>;
-}
-
-/// Error type for event persistence operations.
-#[derive(Debug, thiserror::Error)]
-pub enum PersistError {
-    /// IO error occurred.
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    /// Serialization error.
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-
-    /// Storage backend error.
-    #[error("Storage error: {0}")]
-    Storage(String),
-}
-
-/// No-op persistence implementation for testing.
-#[derive(Debug, Clone, Default)]
-pub struct NoOpPersistence;
-
-impl EventPersistence for NoOpPersistence {
-    fn store(&self, _event: &NeoMindEvent, _metadata: &EventMetadata) -> Result<(), PersistError> {
-        Ok(())
-    }
-
-    fn query(
-        &self,
-        _start: i64,
-        _end: i64,
-    ) -> Result<Vec<(NeoMindEvent, EventMetadata)>, PersistError> {
-        Ok(Vec::new())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,20 +501,6 @@ mod tests {
         drop(_rx1);
         // Note: count updates when receiver is dropped, but we need to give it time
         // In practice, this is fine for our use case
-    }
-
-    #[tokio::test]
-    async fn test_no_op_persistence() {
-        let persistence = NoOpPersistence;
-        let event = NeoMindEvent::DeviceOnline {
-            device_id: "test".to_string(),
-            device_type: "sensor".to_string(),
-            timestamp: 0,
-        };
-        let metadata = EventMetadata::new("test");
-
-        assert!(persistence.store(&event, &metadata).is_ok());
-        assert!(persistence.query(0, 100).unwrap().is_empty());
     }
 
     #[tokio::test]

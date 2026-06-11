@@ -34,7 +34,7 @@ pub use event::{EventMetadata, MetricValue, NeoMindEvent, ProposedAction};
 
 // Event bus exports
 pub use eventbus::{
-    EventBus, EventBusReceiver, FilterBuilder, FilteredReceiver, NoOpPersistence, PersistError,
+    EventBus, EventBusReceiver, FilterBuilder, FilteredReceiver,
     SharedEventBus, DEFAULT_CHANNEL_CAPACITY,
 };
 
