@@ -40,6 +40,35 @@ Removed ~3000 lines of dead/superseded code across the agent crate. All removals
 - `format_aggregated_tool_result` → `format_cli_tool_result` (result_format.rs)
 - Cleaned up "legacy"/"aggregated"/"virtual" terminology in mapper.rs comments and test names
 
+### Dead Code Cleanup (Round 2)
+
+Removed ~2500 lines of dead modules, functions, and legacy test files.
+
+**Removed dead modules (zero production callers):**
+
+- **`agent/formatter.rs`** (278 lines) — `format_tool_result` / `format_summary`. Production formatting uses `streaming/result_format.rs::format_tool_results` (plural).
+- **`agent/cache.rs`** (311 lines) — A `ToolResultCache` that was never imported. The live caches are in `streaming/cache.rs` and `agent/mod.rs`.
+- **`config/mod.rs`** (329 lines) — `StreamingConfig`, `get_default_config()`, `set_default_config()`. Defined but never called anywhere in the workspace.
+- **`ai_agent/intent_parser.rs`** (294 lines) — `IntentParser` struct. The executor has its own `parse_intent` / `parse_intent_keywords` methods that don't use this type.
+- **`memory_extraction.rs`** (~570 lines) — `MemoryExtractor`. Only referenced by `#[ignore]` integration tests. The production memory system uses `AgentMemory` (scheduled) and `MemorySnapshot` (chat).
+
+**Removed legacy test files (all 100% `#[ignore]`, reference removed tool names):**
+
+- `tests/test_multi_tool_inline.rs` — used `list_devices` / `list_rules`
+- `tests/tool_calling_test.rs` (9 tests) — used `list_devices`
+- `tests/tool_calling_evaluation.rs` — used `list_devices`, `query_data`, `device_discover`
+- `tests/tool_calling_evaluation_real.rs` — used `device_discover`, `query_data`
+- `tests/tool_chain_test.rs` — used `device_discover`, `get_device_data`
+- `tests/memory_extraction_integration.rs` — tested removed `MemoryExtractor`
+- `tests/memory_30rounds.rs` — tested removed `MemoryExtractor`
+
+**Cleaned up dead re-exports in `lib.rs`:**
+
+- `pub use tools::ToolNameMapper` — no external consumers
+- `pub use ai_agent::IntentParser` — removed along with the module
+- `pub use config::{get_default_config, set_default_config, StreamingConfig}` — removed along with the module
+- `pub use memory_extraction::MemoryExtractor` — removed along with the module
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

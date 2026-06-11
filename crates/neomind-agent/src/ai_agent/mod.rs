@@ -11,7 +11,6 @@
 //! - Error recovery for long-running stability
 
 pub mod executor;
-pub mod intent_parser;
 pub mod scheduler;
 
 use neomind_storage::{AgentExecutionRecord, AgentSchedule, AgentStatus, AiAgent, ExecutionStatus};
@@ -20,7 +19,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use executor::{AgentExecutionResult, AgentExecutor, AgentExecutorConfig, ExecutionContext};
-pub use intent_parser::IntentParser;
 pub use scheduler::{
     AgentScheduler, BackendSemaphores, ScheduledTask, SchedulerConfig, SchedulerError,
 };

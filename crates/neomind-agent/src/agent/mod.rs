@@ -19,10 +19,8 @@
 //! └─────────────────────────────────────────────────────┘
 //! ```
 
-pub mod cache;
 pub mod conversation_context;
 pub mod fallback;
-pub mod formatter;
 pub mod scheduler;
 pub mod semantic_mapper;
 pub mod smart_followup;
@@ -70,7 +68,6 @@ pub use conversation_context::{
     ConversationContext, ConversationTopic, EntityReference, EntityType,
 };
 pub use fallback::{default_fallback_rules, process_fallback, FallbackRule};
-pub use formatter::{format_summary, format_tool_result};
 pub use semantic_mapper::{
     DeviceMapping, MappingStats, RuleMapping, SemanticMapping, SemanticMatchType,
     SemanticToolMapper, WorkflowMapping,

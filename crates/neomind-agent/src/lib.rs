@@ -36,7 +36,6 @@
 
 pub mod agent;
 pub mod ai_agent;
-pub mod config;
 pub mod context;
 pub mod context_selector;
 pub mod error;
@@ -44,7 +43,6 @@ pub mod image_utils;
 pub mod llm;
 pub mod llm_backends; // Merged from neomind-llm crate
 pub mod memory;
-pub mod memory_extraction;
 pub mod prompts;
 pub mod session;
 pub mod skills;
@@ -60,23 +58,17 @@ pub use agent::{
 };
 // Re-export staged types
 pub use agent::staged::{IntentCategory, IntentResult};
-// Re-export context selector types for planning tests
+// Re-export commonly used types
 pub use ai_agent::AgentInput;
-pub use ai_agent::IntentParser;
-pub use config::{get_default_config, set_default_config, StreamingConfig};
 pub use context_selector::ContextBundle;
 pub use error::{NeoMindError, Result};
 pub use session::SessionManager;
-pub use tools::ToolNameMapper;
 
 // Re-export llm_backends types for backward compatibility (merged from neomind-llm crate)
 pub use llm_backends::{
     get_instance_manager, BackendTypeDefinition, CloudConfig, CloudProvider, CloudRuntime,
     LlmBackendInstanceManager, OllamaConfig, OllamaRuntime,
 };
-
-// Re-export memory extraction types
-pub use memory_extraction::MemoryExtractor;
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
