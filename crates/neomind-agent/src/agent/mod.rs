@@ -1326,11 +1326,6 @@ impl Agent {
         self.internal_state.write().await.clear_memory();
     }
 
-    /// Get available tools.
-    pub fn available_tools(&self) -> Vec<String> {
-        self.tools.list()
-    }
-
     /// === FAST PATH: Check for simple responses BEFORE acquiring lock ===
     /// This improves latency for common queries like greetings and confirmations.
     fn try_fast_path(&self, user_message: &str) -> Option<AgentResponse> {
@@ -3122,16 +3117,6 @@ mod tests {
         // Clear should work
         agent.clear_history().await;
         assert!(agent.history().await.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_available_tools() {
-        let agent = create_test_agent_with_mocks("test_session".to_string());
-        let tools = agent.available_tools();
-
-        assert!(!tools.is_empty());
-        assert!(tools.contains(&"shell".to_string()));
-        assert!(tools.contains(&"list_rules".to_string()));
     }
 
     #[tokio::test]

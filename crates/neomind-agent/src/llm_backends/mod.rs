@@ -40,4 +40,4 @@ pub use instance_manager::{
 };
 
 // Backend creation utilities
-pub use backends::{available_backends, create_backend};
+pub use backends::create_backend;

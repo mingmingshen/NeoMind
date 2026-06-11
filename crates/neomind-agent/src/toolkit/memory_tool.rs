@@ -79,11 +79,6 @@ impl MemoryTool {
         }
     }
 
-    /// Get a handle to set the session ID (call after registration).
-    pub fn session_id_handle(&self) -> Arc<RwLock<Option<String>>> {
-        self.session_id.clone()
-    }
-
     /// Get a handle to set the agent ID per-execution.
     pub fn agent_id_handle(&self) -> AgentIdHandle {
         self.agent_id.read().clone()

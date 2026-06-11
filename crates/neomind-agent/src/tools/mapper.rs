@@ -234,63 +234,6 @@ impl ToolNameMapper {
         None
     }
 
-    /// 获取工具的所有别名
-    pub fn get_aliases(&self, real_name: &str) -> Vec<String> {
-        let mut aliases = Vec::new();
-
-        // 收集所有指向该真实名称的别名
-        for (alias, real) in &self.alias_to_real {
-            if real == real_name {
-                aliases.push(alias.clone());
-            }
-        }
-
-        // 收集所有指向该真实名称的简化名称
-        for (simplified, real) in &self.simplified_to_real {
-            if real == real_name {
-                aliases.push(simplified.clone());
-            }
-        }
-
-        aliases
-    }
-
-    /// 注册自定义映射
-    ///
-    /// 允许运行时添加新的工具名称映射
-    pub fn register_custom(&mut self, alias: String, real_name: String) {
-        self.alias_to_real.insert(alias, real_name);
-    }
-
-    /// 获取所有已注册的工具名称
-    pub fn all_known_names(&self) -> Vec<String> {
-        let mut names = Vec::new();
-
-        // 真实名称（从映射值中推断）
-        for real in self.simplified_to_real.values() {
-            if !names.contains(real) {
-                names.push(real.clone());
-            }
-        }
-        for real in self.alias_to_real.values() {
-            if !names.contains(real) {
-                names.push(real.clone());
-            }
-        }
-
-        names.sort();
-        names
-    }
-
-    /// 检查是否包含某个别名
-    pub fn has_alias(&self, alias: &str) -> bool {
-        self.alias_to_real.contains_key(alias)
-    }
-
-    /// 检查是否包含某个简化名称
-    pub fn has_simplified(&self, simplified: &str) -> bool {
-        self.simplified_to_real.contains_key(simplified)
-    }
 }
 
 impl Default for ToolNameMapper {
@@ -713,18 +656,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_aliases() {
-        let mapper = ToolNameMapper::new();
-        // "device" as a simplified name now points to "shell"
-        let aliases = mapper.get_aliases("shell");
-        assert!(aliases.contains(&"device".to_string()));
-        // Chinese aliases point to intermediate "device" key, so they resolve through chain
-        let aliases_device = mapper.get_aliases("device");
-        assert!(aliases_device.contains(&"设备列表".to_string()));
-        assert!(aliases_device.contains(&"list_devices".to_string()));
-    }
-
-    #[test]
     fn test_parameter_mapping_device() {
         let args = serde_json::json!({
             "device": "lamp_1",
@@ -773,23 +704,6 @@ mod tests {
         assert_eq!(resolved, "device");
         // Direct simplified name routes to shell
         assert_eq!(resolve_tool_name("device"), "shell");
-    }
-
-    #[test]
-    fn test_custom_registration() {
-        let mut mapper = ToolNameMapper::new();
-        mapper.register_custom("custom_alias".to_string(), "device".to_string());
-        assert_eq!(mapper.resolve("custom_alias"), "device");
-    }
-
-    #[test]
-    fn test_all_known_names() {
-        let mapper = ToolNameMapper::new();
-        let names = mapper.all_known_names();
-        // Should contain CLI domain names (they're simplified names)
-        assert!(names.contains(&"device".to_string()));
-        assert!(names.contains(&"rule".to_string()));
-        assert!(names.contains(&"agent".to_string()));
     }
 
     #[test]

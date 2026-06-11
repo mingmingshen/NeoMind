@@ -133,42 +133,9 @@ pub fn create_backend(
     }
 }
 
-/// Get list of available backend types (based on enabled features).
-pub fn available_backends() -> Vec<&'static str> {
-    vec![
-        #[cfg(feature = "ollama")]
-        "ollama",
-        #[cfg(feature = "llamacpp")]
-        "llamacpp",
-        #[cfg(feature = "cloud")]
-        "openai",
-        #[cfg(feature = "cloud")]
-        "anthropic",
-        #[cfg(feature = "cloud")]
-        "google",
-        #[cfg(feature = "cloud")]
-        "xai",
-        #[cfg(feature = "cloud")]
-        "qwen",
-        #[cfg(feature = "cloud")]
-        "deepseek",
-        #[cfg(feature = "cloud")]
-        "glm",
-        #[cfg(feature = "cloud")]
-        "minimax",
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_available_backends() {
-        let backends = available_backends();
-        // At least ollama should be available (default feature)
-        assert!(!backends.is_empty());
-    }
 
     #[cfg(feature = "ollama")]
     #[test]

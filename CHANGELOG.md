@@ -194,6 +194,31 @@ Removed ~120 lines of dead `LlmInterface` methods, `Agent` methods, and error he
 - `from_memory_err()`, `from_tool_err()`, `from_device_err()` — zero callers
 - `invalid_input()` — last caller (`parse_tool_call_json`) was removed in Round 7
 
+### Dead Code Cleanup (Round 9)
+
+Removed ~250 lines of dead public API methods, dead registry methods, and dead dedup utilities across 8 files. All zero-caller removals verified: workspace builds clean, 418 tests pass.
+
+**Dead `ToolNameMapper` methods removed (tools/mapper.rs):**
+- `get_aliases()`, `has_alias()`, `has_simplified()` — zero callers
+- `register_custom()`, `all_known_names()` — only test callers (runtime mapper is immutable behind `OnceLock`; custom registration was never used)
+
+**Dead `ToolRegistry` methods removed (toolkit/registry.rs):**
+- `definitions_json()` + `cached_definitions_json` field — zero callers (the cached `Vec<ToolDefinition>` via `definitions()` is the live path)
+- `search()`, `search_with_category()` — zero callers
+
+**Dead misc methods removed:**
+- `ConfirmActionTool::requires_confirmation()` — only test caller (production uses `SmartConversationAnalysis.requires_confirmation` field)
+- `Agent::available_tools()` — only test caller
+- `ExtensionTool::command_descriptor()`, `ExtensionTool::extension_id()` — zero callers (field access used directly)
+- `MemoryTool::session_id_handle()` — zero callers
+- `available_backends()` (llm_backends/backends/mod.rs) + re-export — only test caller (the `neomind-storage` crate has its own unrelated `available_backends()`)
+
+**Dead `DedupProcessor` code removed (memory/dedup.rs, ~100 lines + 10 tests):**
+- `with_ngram_size()`, `similarity()`, `jaccard_similarity()` — zero production callers (production only uses `with_defaults()` + `find_similar()`)
+- `dedup()`, `merge()`, `threshold()` — only test callers
+- `DedupResult` struct + `has_duplicates()` — only used by dead `dedup()`
+- Made `jaccard_similarity_with_ngram()` private (only called by `find_similar`)
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

@@ -107,16 +107,6 @@ impl ExtensionTool {
             .collect()
     }
 
-    /// Get the command descriptor.
-    pub fn command_descriptor(&self) -> &ExtensionCommand {
-        &self.command
-    }
-
-    /// Get the extension ID.
-    pub fn extension_id(&self) -> &str {
-        &self.extension_id
-    }
-
     /// Convert ExtensionCommand to ToolDefinition for LLM consumption.
     pub fn to_tool_definition(&self) -> ToolDefinition {
         // Use the pre-computed full_name for consistency

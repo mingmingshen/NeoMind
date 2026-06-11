@@ -194,33 +194,6 @@ impl ConfirmActionTool {
         result
     }
 
-    /// Check if an action requires confirmation.
-    pub fn requires_confirmation(&self, action_name: &str) -> bool {
-        let dangerous_actions = [
-            // English keywords
-            "delete",
-            "remove",
-            "clear",
-            "reset",
-            "format",
-            "close all",
-            "turn off all",
-            "delete all",
-            "batch delete",
-            // Chinese keywords
-            "删除",
-            "移除",
-            "清空",
-            "重置",
-            "格式化",
-            "关闭所有",
-            "删除所有",
-            "批量删除",
-        ];
-        dangerous_actions
-            .iter()
-            .any(|&danger| action_name.to_lowercase().contains(danger))
-    }
 }
 
 impl Default for ConfirmActionTool {
@@ -475,14 +448,6 @@ mod tests {
         assert_eq!(result.data["type"], "confirm_action");
         assert_eq!(result.data["risk_level"], "high");
         assert_eq!(result.data["awaiting_confirmation"], true);
-    }
-
-    #[test]
-    fn test_requires_confirmation() {
-        let tool = ConfirmActionTool::new();
-        assert!(tool.requires_confirmation("delete all rules"));
-        assert!(tool.requires_confirmation("关闭所有设备"));
-        assert!(!tool.requires_confirmation("show temperature"));
     }
 
     #[tokio::test]

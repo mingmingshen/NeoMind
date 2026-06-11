@@ -18,8 +18,6 @@ pub struct ToolRegistry {
     tools: HashMap<String, DynTool>,
     /// Cached tool definitions (rebuilt on register/unregister).
     cached_definitions: RwLock<Option<Vec<ToolDefinition>>>,
-    /// Cached JSON serialization of tool definitions (rebuilt on register/unregister).
-    cached_definitions_json: RwLock<Option<Value>>,
 }
 
 impl ToolRegistry {
@@ -28,14 +26,12 @@ impl ToolRegistry {
         Self {
             tools: HashMap::new(),
             cached_definitions: RwLock::new(None),
-            cached_definitions_json: RwLock::new(None),
         }
     }
 
     /// Invalidate cached definitions (call after any mutation).
     fn invalidate_cache(&self) {
         *self.cached_definitions.write() = None;
-        *self.cached_definitions_json.write() = None;
     }
 
     /// Register a tool.
@@ -97,25 +93,6 @@ impl ToolRegistry {
         let defs: Vec<ToolDefinition> = self.tools.values().map(|t| t.definition()).collect();
         *self.cached_definitions.write() = Some(defs.clone());
         defs
-    }
-
-    /// Get tool definitions as JSON (cached).
-    ///
-    /// The result is cached and only rebuilt when tools are registered/unregistered.
-    pub fn definitions_json(&self) -> Value {
-        if let Some(ref json) = *self.cached_definitions_json.read() {
-            return json.clone();
-        }
-        let defs = self.definitions();
-        let json_defs: Vec<Value> = defs
-            .into_iter()
-            .map(|d| {
-                serde_json::to_value(d).expect("ToolDefinition serialization should never fail")
-            })
-            .collect();
-        let json = serde_json::json!({ "tools": json_defs });
-        *self.cached_definitions_json.write() = Some(json.clone());
-        json
     }
 
     /// Execute a tool by name.
@@ -199,43 +176,6 @@ impl ToolRegistry {
     )> {
         let tool = self.tools.get("memory")?;
         tool.swap_agent_context(agent_id, knowledge_files)
-    }
-
-    /// Search for tools by keyword.
-    ///
-    /// Searches tool names and descriptions for the given keyword.
-    /// Returns a list of tool definitions that match.
-    pub fn search(&self, keyword: &str) -> Vec<ToolDefinition> {
-        let keyword_lower = keyword.to_lowercase();
-        self.tools
-            .values()
-            .filter(|tool| {
-                let name_matches = tool.name().to_lowercase().contains(&keyword_lower);
-                let desc_matches = tool.description().to_lowercase().contains(&keyword_lower);
-                name_matches || desc_matches
-            })
-            .map(|t| t.definition())
-            .collect()
-    }
-
-    /// Search for tools by keyword with category filter.
-    ///
-    /// Allows filtering by tool category prefix (e.g., "device", "rule", "agent").
-    pub fn search_with_category(
-        &self,
-        keyword: &str,
-        category_prefix: Option<&str>,
-    ) -> Vec<ToolDefinition> {
-        let results = self.search(keyword);
-        if let Some(prefix) = category_prefix {
-            let prefix_lower = prefix.to_lowercase();
-            results
-                .into_iter()
-                .filter(|def| def.name.to_lowercase().starts_with(&prefix_lower))
-                .collect()
-        } else {
-            results
-        }
     }
 
 }
