@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub use executor::{AgentExecutionResult, AgentExecutor, AgentExecutorConfig, ExecutionContext};
+pub use executor::{AgentExecutor, AgentExecutorConfig};
 pub use scheduler::{
     AgentScheduler, BackendSemaphores, ScheduledTask, SchedulerConfig, SchedulerError,
 };

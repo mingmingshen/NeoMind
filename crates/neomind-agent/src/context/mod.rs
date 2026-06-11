@@ -6,7 +6,7 @@
 mod device_registry;
 mod resource_index;
 
-pub use device_registry::{DeviceAlias, DeviceCapability, DeviceLocation, DeviceRegistry};
+pub use device_registry::{DeviceCapability, DeviceRegistry};
 pub use resource_index::{
     AccessType, AlertChannelResourceData, Capability, CapabilityType, DeviceResourceData,
     DeviceTypeResourceData, Resource, ResourceData, ResourceDataHelper, ResourceId, ResourceIndex,

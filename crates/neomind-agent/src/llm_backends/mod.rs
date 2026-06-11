@@ -32,21 +32,12 @@ pub use config::{
 };
 
 // Plugin system
-pub use backend_plugin::{BackendRegistry, DynBackendPlugin, LlmBackendPlugin};
+pub use backend_plugin::BackendRegistry;
 
 // Instance manager
 pub use instance_manager::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
-
-#[cfg(feature = "cloud")]
-pub use backend_plugin::register_builtin_backends;
-
-// Factory exports
-#[cfg(feature = "cloud")]
-pub use factories::CloudFactory;
-pub use factories::MockFactory;
-pub use factories::OllamaFactory;
 
 // Backend creation utilities
 pub use backends::{available_backends, create_backend};

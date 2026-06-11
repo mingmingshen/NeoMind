@@ -148,17 +148,6 @@ pub enum CapabilityValues {
     String,
 }
 
-/// Device location for grouping.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeviceLocation {
-    /// Location name
-    pub name: String,
-    /// Location type (room, zone, etc.)
-    pub location_type: String,
-    /// Parent location (for hierarchical locations)
-    pub parent: Option<String>,
-}
-
 /// Device registry for managing device aliases and mappings.
 pub struct DeviceRegistry {
     /// All registered devices
