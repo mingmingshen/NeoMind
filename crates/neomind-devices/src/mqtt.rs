@@ -109,35 +109,6 @@ impl MqttConfig {
         self.password = Some(password.into());
         self
     }
-
-    pub fn with_client_id(mut self, client_id: impl Into<String>) -> Self {
-        self.client_id = Some(client_id.into());
-        self
-    }
-
-    pub fn with_tls(mut self, tls: bool) -> Self {
-        self.tls = tls;
-        self
-    }
-
-    pub fn with_ca_cert(mut self, ca_cert: impl Into<String>) -> Self {
-        self.ca_cert = Some(ca_cert.into());
-        self
-    }
-
-    pub fn with_client_cert(mut self, client_cert: impl Into<String>) -> Self {
-        self.client_cert = Some(client_cert.into());
-        self
-    }
-
-    pub fn with_client_key(mut self, client_key: impl Into<String>) -> Self {
-        self.client_key = Some(client_key.into());
-        self
-    }
-
-    pub fn full_broker_addr(&self) -> String {
-        format!("{}:{}", self.broker, self.port)
-    }
 }
 
 /// MQTT message received from the broker.

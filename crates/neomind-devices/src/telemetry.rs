@@ -588,36 +588,6 @@ impl MetricCache {
         let cache = self.cache.read().await;
         cache.get(source_id)?.get(metric).cloned()
     }
-
-    /// Get all metrics for a device
-    pub async fn get_source(
-        &self,
-        source_id: &str,
-    ) -> std::collections::HashMap<String, (MetricValue, DateTime<Utc>)> {
-        let cache = self.cache.read().await;
-        cache.get(source_id).cloned().unwrap_or_default()
-    }
-
-    /// Clear old values based on timestamp
-    pub async fn clear_before(&self, before: DateTime<Utc>) {
-        let mut cache = self.cache.write().await;
-
-        for source_cache in cache.values_mut() {
-            source_cache.retain(|_, (_, timestamp)| *timestamp > before);
-        }
-    }
-
-    /// Clear all cached values for a device
-    pub async fn clear_source(&self, source_id: &str) {
-        let mut cache = self.cache.write().await;
-        cache.remove(source_id);
-    }
-
-    /// Get the size of the cache (number of devices)
-    pub async fn source_count(&self) -> usize {
-        let cache = self.cache.read().await;
-        cache.len()
-    }
 }
 
 #[cfg(test)]
@@ -643,8 +613,8 @@ mod tests {
             let (temp_value, _) = temp_result.unwrap();
             assert_eq!(temp_value, MetricValue::Float(25.5));
 
-            let device_data = cache.get_source("device1").await;
-            assert_eq!(device_data.len(), 2);
+            let humidity_result = cache.get("device1", "humidity").await;
+            assert!(humidity_result.is_some());
         });
     }
 
