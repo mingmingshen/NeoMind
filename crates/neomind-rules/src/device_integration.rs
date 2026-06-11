@@ -118,16 +118,6 @@ impl RetryConfig {
         }
     }
 
-    /// Create a retry config that doesn't retry.
-    pub fn no_retry() -> Self {
-        Self {
-            max_retries: 0,
-            initial_delay_ms: 0,
-            backoff_multiplier: 1.0,
-            max_delay_ms: 0,
-        }
-    }
-
     /// Calculate the delay for a given retry attempt.
     pub fn delay_for_attempt(&self, attempt: u32) -> std::time::Duration {
         if attempt == 0 {
@@ -139,47 +129,6 @@ impl RetryConfig {
         .min(self.max_delay_ms as f64) as u64;
 
         std::time::Duration::from_millis(delay_ms)
-    }
-}
-
-// ============================================================================
-// Extension Registry Adapter
-// ============================================================================
-
-/// Adapter that implements `extension_integration::ExtensionRegistry`
-/// for `neomind_core::extension::ExtensionRegistry`.
-pub struct CoreExtensionRegistryAdapter {
-    inner: Arc<neomind_core::extension::registry::ExtensionRegistry>,
-}
-
-impl CoreExtensionRegistryAdapter {
-    /// Create a new adapter from a core extension registry.
-    pub fn new(registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) -> Self {
-        Self { inner: registry }
-    }
-
-    /// Get the inner registry.
-    pub fn inner(&self) -> &Arc<neomind_core::extension::registry::ExtensionRegistry> {
-        &self.inner
-    }
-}
-
-#[async_trait::async_trait]
-impl crate::extension_integration::ExtensionRegistry for CoreExtensionRegistryAdapter {
-    async fn execute_command(
-        &self,
-        extension_id: &str,
-        command: &str,
-        args: &serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        self.inner
-            .execute_command(extension_id, command, args)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn has_extension(&self, extension_id: &str) -> bool {
-        self.inner.get(extension_id).await.is_some()
     }
 }
 
@@ -414,17 +363,6 @@ impl DeviceActionExecutor {
         }
     }
 
-    /// Create a new device action executor with custom retry config.
-    pub fn with_retry_config(event_bus: EventBus, retry_config: RetryConfig) -> Self {
-        Self {
-            event_bus,
-            history: Arc::new(CommandResultHistory::new()),
-            device_service: None,
-            extension_registry: None,
-            retry_config,
-        }
-    }
-
     /// Create a new device action executor with device service.
     pub fn with_device_service(event_bus: EventBus, device_service: Arc<DeviceService>) -> Self {
         Self {
@@ -433,21 +371,6 @@ impl DeviceActionExecutor {
             device_service: Some(device_service),
             extension_registry: None,
             retry_config: RetryConfig::default(),
-        }
-    }
-
-    /// Create a new device action executor with device service and custom retry config.
-    pub fn with_device_service_and_retry(
-        event_bus: EventBus,
-        device_service: Arc<DeviceService>,
-        retry_config: RetryConfig,
-    ) -> Self {
-        Self {
-            event_bus,
-            history: Arc::new(CommandResultHistory::new()),
-            device_service: Some(device_service),
-            extension_registry: None,
-            retry_config,
         }
     }
 
@@ -463,47 +386,6 @@ impl DeviceActionExecutor {
             extension_registry: Some(extension_registry),
             retry_config: RetryConfig::default(),
         }
-    }
-
-    /// Create a fully configured device action executor.
-    pub fn with_all(
-        event_bus: EventBus,
-        device_service: Option<Arc<DeviceService>>,
-        extension_registry: Option<Arc<dyn ExtensionRegistry>>,
-        retry_config: RetryConfig,
-    ) -> Self {
-        Self {
-            event_bus,
-            history: Arc::new(CommandResultHistory::new()),
-            device_service,
-            extension_registry,
-            retry_config,
-        }
-    }
-
-    /// Set the device service.
-    pub fn set_device_service(&mut self, device_service: Arc<DeviceService>) {
-        self.device_service = Some(device_service);
-    }
-
-    /// Set the extension registry.
-    pub fn set_extension_registry(&mut self, extension_registry: Arc<dyn ExtensionRegistry>) {
-        self.extension_registry = Some(extension_registry);
-    }
-
-    /// Set the retry configuration.
-    pub fn set_retry_config(&mut self, retry_config: RetryConfig) {
-        self.retry_config = retry_config;
-    }
-
-    /// Get the retry configuration.
-    pub fn retry_config(&self) -> &RetryConfig {
-        &self.retry_config
-    }
-
-    /// Get the command result history.
-    pub fn history(&self) -> &Arc<CommandResultHistory> {
-        &self.history
     }
 
     /// Execute a command with retry logic.
@@ -1060,11 +942,6 @@ impl DeviceIntegratedRuleEngine {
             executor,
             event_bus,
         }
-    }
-
-    /// Get the value provider.
-    pub fn value_provider(&self) -> &Arc<DeviceValueProvider> {
-        &self.value_provider
     }
 
     /// Get the action executor.

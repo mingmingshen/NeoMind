@@ -50,7 +50,7 @@ pub use dependencies::{
 };
 pub use device_integration::{
     CommandActionResult, CommandExecutionStats, CommandResultHistory, CommandResultValue,
-    CoreExtensionRegistryAdapter, DeviceActionExecutor, DeviceIntegratedRuleEngine,
+    DeviceActionExecutor, DeviceIntegratedRuleEngine,
     DeviceIntegrationError, DeviceIntegrationResult, DeviceValueProvider,
 };
 pub use dsl::{ComparisonOperator, LogLevel, ParsedRule, RuleAction, RuleCondition, RuleDslParser, TriggerType};
