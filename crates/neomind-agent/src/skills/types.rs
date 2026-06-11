@@ -91,12 +91,6 @@ pub struct Skill {
 }
 
 impl Skill {
-    /// Estimate token count for the body content.
-    /// Uses the same estimation as the tokenizer: ~4 chars per token for Chinese/mixed text.
-    pub fn estimated_tokens(&self) -> usize {
-        self.body.len() / 4
-    }
-
     /// Truncate body to fit within token budget.
     pub fn body_within_budget(&self) -> String {
         let budget_chars = self.metadata.token_budget * 4;

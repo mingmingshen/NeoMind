@@ -196,7 +196,7 @@ Removed ~120 lines of dead `LlmInterface` methods, `Agent` methods, and error he
 
 ### Dead Code Cleanup (Round 9)
 
-Removed ~250 lines of dead public API methods, dead registry methods, and dead dedup utilities across 8 files. All zero-caller removals verified: workspace builds clean, 418 tests pass.
+Removed ~900 lines of dead public API methods, dead registry methods, dead dedup utilities, dead context modules, and dead skill index infrastructure across 12 files. All zero-caller removals verified: workspace builds clean, 469 tests pass.
 
 **Dead `ToolNameMapper` methods removed (tools/mapper.rs):**
 - `get_aliases()`, `has_alias()`, `has_simplified()` — zero callers
@@ -222,6 +222,24 @@ Removed ~250 lines of dead public API methods, dead registry methods, and dead d
 **Dead memory modules deleted:**
 - `memory/extractor.rs` (~255 lines) — `AgentExtractor`, `MemoryCandidate`, `MemoryAction`, `ExtractResult`, `parse_category()`. All types had zero production callers (only self-tests). The production memory system uses `AgentMemory` (scheduled) and `MemorySnapshot` (chat), not this LLM-based extractor.
 - `memory/security.rs` (~185 lines) — `MemorySecurityScanner`, `SecurityScanResult`. Zero production callers (only self-tests). Memory injection/exfiltration scanning was never wired into the memory write path.
+
+**Dead `context/device_registry.rs` deleted (~460 lines):**
+- Entire module removed: `DeviceRegistry`, `DeviceAlias`, `DeviceCapability`, `SharedDeviceRegistry` type alias. All types had zero production callers (only self-tests). The production device system uses `neomind_devices::DeviceRegistry` (separate crate). `semantic_mapper.rs` uses `ResourceIndex`, not this module.
+
+**Dead `ResourceIndex` methods + types removed (context/resource_index.rs):**
+- `SearchQuery` builder methods (`new`, `with_resource_type`, `with_location`, `with_capability`, `with_min_score`, `with_limit`) — zero callers (only struct literal construction used internally)
+- `SearchQuery` removed from `context/mod.rs` re-export (not used outside the module)
+- `get()` — zero callers
+- `list_channels()` — zero callers
+- `stats()` + `ResourceIndexStats` struct — only test caller
+
+**Dead `SkillRegistry` index infrastructure removed (skills/registry.rs):**
+- `keyword_index` + `tool_action_index` fields + index-building code in `insert()` — built but never queried (the matching happens via `match_skills()` in `matcher.rs`, not registry lookups)
+- `remove_indices()` method — only maintained dead indices
+- `list_by_category()`, `find_by_keyword()`, `find_by_tool_action()` — zero/only-test callers
+
+**Dead `Skill` method removed (skills/types.rs):**
+- `estimated_tokens()` — zero callers
 
 ## [0.8.11] - 2026-06-11
 

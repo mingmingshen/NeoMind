@@ -236,46 +236,6 @@ pub struct SearchQuery {
     pub limit: usize,
 }
 
-impl SearchQuery {
-    /// Create a new search query.
-    pub fn new(terms: Vec<String>) -> Self {
-        Self {
-            terms,
-            ..Default::default()
-        }
-    }
-
-    /// Filter by resource type.
-    pub fn with_resource_type(mut self, resource_type: impl Into<String>) -> Self {
-        self.resource_type = Some(resource_type.into());
-        self
-    }
-
-    /// Filter by location.
-    pub fn with_location(mut self, location: impl Into<String>) -> Self {
-        self.location = Some(location.into());
-        self
-    }
-
-    /// Filter by capability.
-    pub fn with_capability(mut self, capability: impl Into<String>) -> Self {
-        self.capability = Some(capability.into());
-        self
-    }
-
-    /// Set minimum score.
-    pub fn with_min_score(mut self, score: f32) -> Self {
-        self.min_score = score;
-        self
-    }
-
-    /// Set result limit.
-    pub fn with_limit(mut self, limit: usize) -> Self {
-        self.limit = limit;
-        self
-    }
-}
-
 /// Dynamic resource index.
 pub struct ResourceIndex {
     /// All indexed resources
@@ -704,11 +664,6 @@ impl ResourceIndex {
         (score, matched_fields, highlights)
     }
 
-    /// Get a resource by ID.
-    pub async fn get(&self, id: &ResourceId) -> Option<Resource> {
-        self.resources.read().await.get(id).cloned()
-    }
-
     /// List all resources of a given type.
     pub async fn list_by_type(&self, resource_type: &str) -> Vec<Resource> {
         let resources = self.resources.read().await;
@@ -724,61 +679,12 @@ impl ResourceIndex {
         self.list_by_type("device").await
     }
 
-    /// Get all alert channels.
-    pub async fn list_channels(&self) -> Vec<Resource> {
-        self.list_by_type("channel").await
-    }
-
-    /// Get statistics about the index.
-    pub async fn stats(&self) -> ResourceIndexStats {
-        let resources = self.resources.read().await;
-
-        let mut by_type = HashMap::new();
-        for r in resources.values() {
-            *by_type.entry(r.id.resource_type.clone()).or_insert(0) += 1;
-        }
-
-        let mut online_devices = 0;
-        for r in resources.values() {
-            if let ResourceData::Device(d) = &r.data {
-                if d.online {
-                    online_devices += 1;
-                }
-            }
-        }
-
-        ResourceIndexStats {
-            total_resources: resources.len(),
-            by_type,
-            online_devices,
-            indexed_names: self.name_index.read().await.len(),
-            indexed_aliases: self.alias_index.read().await.len(),
-            indexed_keywords: self.keyword_index.read().await.len(),
-        }
-    }
 }
 
 impl Default for ResourceIndex {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Resource index statistics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceIndexStats {
-    /// Total number of resources
-    pub total_resources: usize,
-    /// Resources by type
-    pub by_type: HashMap<String, usize>,
-    /// Number of online devices
-    pub online_devices: usize,
-    /// Indexed names
-    pub indexed_names: usize,
-    /// Indexed aliases
-    pub indexed_aliases: usize,
-    /// Indexed keywords
-    pub indexed_keywords: usize,
 }
 
 /// Helper trait to extract common data from ResourceData.
@@ -947,18 +853,5 @@ mod tests {
         let results = index.search_string("打开客厅灯").await;
         assert!(!results.is_empty());
         assert_eq!(results[0].resource.name, "客厅灯");
-    }
-
-    #[tokio::test]
-    async fn test_stats() {
-        let index = ResourceIndex::new();
-
-        for i in 0..5 {
-            let device = Resource::device(format!("device_{}", i), format!("设备{}", i), "sensor");
-            index.register(device).await.unwrap();
-        }
-
-        let stats = index.stats().await;
-        assert_eq!(stats.total_resources, 5);
     }
 }

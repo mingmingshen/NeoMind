@@ -10,15 +10,11 @@ use tracing;
 use super::parser;
 use super::types::*;
 
-/// Registry holding all loaded skills with indices for fast lookup.
+/// Registry holding all loaded skills.
 #[derive(Debug, Clone)]
 pub struct SkillRegistry {
     /// All skills indexed by ID.
     skills: HashMap<String, Skill>,
-    /// Keyword index: keyword -> set of skill IDs.
-    keyword_index: HashMap<String, Vec<String>>,
-    /// Tool-action index: "tool:action" -> set of skill IDs.
-    tool_action_index: HashMap<String, Vec<String>>,
 }
 
 impl SkillRegistry {
@@ -26,8 +22,6 @@ impl SkillRegistry {
     pub fn new() -> Self {
         Self {
             skills: HashMap::new(),
-            keyword_index: HashMap::new(),
-            tool_action_index: HashMap::new(),
         }
     }
 
@@ -122,36 +116,9 @@ impl SkillRegistry {
         tracing::info!(count, dir = %dir.display(), "Loaded user skills");
     }
 
-    /// Insert a skill and update indices.
+    /// Insert a skill.
     fn insert(&mut self, skill: Skill) {
         let id = skill.metadata.id.clone();
-
-        // Update keyword index
-        for keyword in &skill.metadata.triggers.keywords {
-            let kw_lower = keyword.to_lowercase();
-            self.keyword_index
-                .entry(kw_lower)
-                .or_default()
-                .push(id.clone());
-        }
-
-        // Update tool-action index
-        for target in &skill.metadata.triggers.tool_target {
-            for action in &target.actions {
-                let key = format!("{}:{}", target.tool, action).to_lowercase();
-                self.tool_action_index
-                    .entry(key)
-                    .or_default()
-                    .push(id.clone());
-            }
-            // Also index just the tool name
-            let tool_key = target.tool.to_lowercase();
-            self.tool_action_index
-                .entry(tool_key)
-                .or_default()
-                .push(id.clone());
-        }
-
         self.skills.insert(id, skill);
     }
 
@@ -163,47 +130,6 @@ impl SkillRegistry {
     /// List all skills.
     pub fn list(&self) -> Vec<&Skill> {
         self.skills.values().collect()
-    }
-
-    /// List skills by category.
-    pub fn list_by_category(&self, category: &SkillCategory) -> Vec<&Skill> {
-        self.skills
-            .values()
-            .filter(|s| &s.metadata.category == category)
-            .collect()
-    }
-
-    /// Find skill IDs matching a keyword.
-    pub fn find_by_keyword(&self, keyword: &str) -> Vec<&str> {
-        let kw_lower = keyword.to_lowercase();
-        self.keyword_index
-            .get(&kw_lower)
-            .map(|ids| ids.iter().map(|s| s.as_str()).collect())
-            .unwrap_or_default()
-    }
-
-    /// Find skill IDs matching a tool + action.
-    pub fn find_by_tool_action(&self, tool: &str, action: Option<&str>) -> Vec<&str> {
-        let mut results = Vec::new();
-
-        if let Some(act) = action {
-            let key = format!("{}:{}", tool, act).to_lowercase();
-            if let Some(ids) = self.tool_action_index.get(&key) {
-                results.extend(ids.iter().map(|s| s.as_str()));
-            }
-        }
-
-        // Also match on tool alone
-        let tool_key = tool.to_lowercase();
-        if let Some(ids) = self.tool_action_index.get(&tool_key) {
-            for id in ids {
-                if !results.contains(&id.as_str()) {
-                    results.push(id);
-                }
-            }
-        }
-
-        results
     }
 
     /// Add a user skill.
@@ -230,36 +156,15 @@ impl SkillRegistry {
         new_skill.metadata.id = id.to_string();
         new_skill.metadata.origin = SkillOrigin::User;
 
-        // Remove old indices and re-insert
-        self.remove_indices(id);
         self.insert(new_skill);
         Ok(())
     }
 
     /// Delete a skill by ID.
     pub fn delete_skill(&mut self, id: &str) -> Result<Skill, String> {
-        let skill = self
-            .skills
+        self.skills
             .remove(id)
-            .ok_or_else(|| format!("Skill '{}' not found", id))?;
-
-        self.remove_indices(id);
-        Ok(skill)
-    }
-
-    /// Remove all indices for a skill ID and clean up empty entries.
-    fn remove_indices(&mut self, id: &str) {
-        // Remove from keyword index and clean up empty entries
-        self.keyword_index.retain(|_, ids| {
-            ids.retain(|i| i != id);
-            !ids.is_empty()
-        });
-
-        // Remove from tool-action index and clean up empty entries
-        self.tool_action_index.retain(|_, ids| {
-            ids.retain(|i| i != id);
-            !ids.is_empty()
-        });
+            .ok_or_else(|| format!("Skill '{}' not found", id))
     }
 
     /// Get total count of skills.
@@ -323,24 +228,6 @@ mod tests {
         let id = registry.add_user_skill(&content).unwrap();
         assert_eq!(id, "my-skill");
         assert!(registry.get("my-skill").is_some());
-    }
-
-    #[test]
-    fn test_keyword_matching() {
-        let mut registry = SkillRegistry::new();
-        let content = test_skill_content("test-rule", "Test Rule");
-        registry.add_user_skill(&content).unwrap();
-        let matches = registry.find_by_keyword("删除规则");
-        assert!(!matches.is_empty());
-    }
-
-    #[test]
-    fn test_tool_action_matching() {
-        let mut registry = SkillRegistry::new();
-        let content = test_skill_content("test-rule", "Test Rule");
-        registry.add_user_skill(&content).unwrap();
-        let matches = registry.find_by_tool_action("rule", Some("delete"));
-        assert!(!matches.is_empty());
     }
 
     #[test]
