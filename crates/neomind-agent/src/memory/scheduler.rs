@@ -9,13 +9,10 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
-use super::manager::MemoryManager;
 use neomind_storage::{MarkdownMemoryStore, MemoryConfig};
 
 /// Memory scheduler for background tasks
 pub struct MemoryScheduler {
-    #[allow(dead_code)]
-    manager: Arc<RwLock<MemoryManager>>,
     store: Arc<RwLock<MarkdownMemoryStore>>,
     config: MemoryConfig,
     job_handle: Option<tokio::task::JoinHandle<()>>,
@@ -24,12 +21,10 @@ pub struct MemoryScheduler {
 impl MemoryScheduler {
     /// Create a new scheduler
     pub fn new(
-        manager: Arc<RwLock<MemoryManager>>,
         store: Arc<RwLock<MarkdownMemoryStore>>,
         config: MemoryConfig,
     ) -> Self {
         Self {
-            manager,
             store,
             config,
             job_handle: None,
@@ -179,9 +174,8 @@ mod tests {
         let mut config = MemoryConfig::default();
         config.storage_path = temp.path().to_string_lossy().to_string();
 
-        let manager = Arc::new(RwLock::new(MemoryManager::new(config.clone())));
         let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp.path())));
-        let scheduler = MemoryScheduler::new(manager, store, config);
+        let scheduler = MemoryScheduler::new(store, config);
 
         assert!(!scheduler.is_running());
     }
@@ -192,9 +186,8 @@ mod tests {
         let mut config = MemoryConfig::default();
         config.storage_path = temp.path().to_string_lossy().to_string();
 
-        let manager = Arc::new(RwLock::new(MemoryManager::new(config.clone())));
         let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp.path())));
-        let mut scheduler = MemoryScheduler::new(manager, store, config);
+        let mut scheduler = MemoryScheduler::new(store, config);
 
         scheduler.start();
         assert!(scheduler.is_running());
@@ -210,9 +203,8 @@ mod tests {
         config.storage_path = temp.path().to_string_lossy().to_string();
         config.enabled = false;
 
-        let manager = Arc::new(RwLock::new(MemoryManager::new(config.clone())));
         let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp.path())));
-        let mut scheduler = MemoryScheduler::new(manager, store, config);
+        let mut scheduler = MemoryScheduler::new(store, config);
 
         scheduler.start();
         assert!(!scheduler.is_running()); // Should not start when disabled

@@ -79,11 +79,8 @@ impl AgentState {
         }
 
         let store = Arc::new(RwLock::new((*self.system_memory_store).clone()));
-        let manager = Arc::new(RwLock::new(neomind_agent::memory::MemoryManager::new(
-            config.clone(),
-        )));
 
-        let mut scheduler = MemoryScheduler::new(manager, store, config);
+        let mut scheduler = MemoryScheduler::new(store, config);
 
         scheduler.start();
 

@@ -50,12 +50,7 @@ pub mod toolkit;
 pub mod tools;
 
 // Re-export commonly used types
-pub use agent::{
-    default_fallback_rules, process_fallback, Agent, AgentConfig, AgentEvent, AgentMessage,
-    AgentResponse, FallbackRule, LlmBackend, SessionState, ToolCall,
-};
-// Re-export staged types
-pub use agent::staged::{IntentCategory, IntentResult};
+pub use agent::{Agent, AgentConfig, AgentEvent, AgentMessage, LlmBackend};
 // Re-export commonly used types
 pub use ai_agent::AgentInput;
 pub use error::{NeoMindError, Result};
