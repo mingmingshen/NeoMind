@@ -120,21 +120,9 @@ impl ToolRegistry {
 
     /// Execute a tool by name.
     pub async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput> {
-        let tool = match self.get(name) {
-            Some(t) => t,
-            None => {
-                // CLI domain fallback: if name looks like a CLI domain that wasn't
-                // caught by the mapper, try routing to shell
-                if let Some(shell_args) = crate::tools::mapper::build_cli_command(name, &args) {
-                    tracing::info!(tool = %name, "CLI domain fallback → shell");
-                    let shell = self
-                        .get("shell")
-                        .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
-                    return shell.execute(shell_args).await;
-                }
-                return Err(ToolError::NotFound(name.to_string()));
-            }
-        };
+        let tool = self
+            .get(name)
+            .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
         tool.execute(args).await
     }
 
@@ -163,21 +151,6 @@ impl ToolRegistry {
                 });
             } else {
                 let name = call.name;
-                let args = call.args;
-                // Try CLI domain fallback before reporting NotFound
-                if let Some(shell_args) = crate::tools::mapper::build_cli_command(&name, &args) {
-                    tracing::info!(tool = %name, "CLI domain fallback → shell (parallel)");
-                    if let Some(shell) = self.get("shell") {
-                        let shell_clone = shell.clone();
-                        join_set.spawn(async move {
-                            ToolResult {
-                                name,
-                                result: shell_clone.execute(shell_args).await,
-                            }
-                        });
-                        continue;
-                    }
-                }
                 join_set.spawn(async move {
                     ToolResult {
                         name: name.clone(),
@@ -265,25 +238,6 @@ impl ToolRegistry {
         }
     }
 
-    /// Get tool categories (prefixes).
-    ///
-    /// Returns unique category prefixes from tool names.
-    /// For example, "list_devices", "get_device" -> ["device", "list", "get"]
-    pub fn categories(&self) -> Vec<String> {
-        let mut categories = std::collections::HashSet::new();
-        for tool_name in self.tools.keys() {
-            // Extract common prefixes
-            for (i, _) in tool_name.match_indices('_') {
-                let prefix = &tool_name[..i];
-                if prefix.len() >= 3 {
-                    categories.insert(prefix.to_string());
-                }
-            }
-        }
-        let mut result: Vec<String> = categories.into_iter().collect();
-        result.sort();
-        result
-    }
 }
 
 impl Default for ToolRegistry {
@@ -388,7 +342,7 @@ impl ToolRegistryBuilder {
     }
 
     // ============================================================================
-    // Aggregated Tools (Action-based design for token efficiency)
+    // Domain Tools
     // ============================================================================
 
     /// Add shell tool for system command execution.

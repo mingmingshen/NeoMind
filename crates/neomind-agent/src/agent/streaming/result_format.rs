@@ -16,9 +16,9 @@ pub(crate) fn extract_array(json_value: &serde_json::Value, key: &str) -> Option
     None
 }
 
-/// Format results from aggregated tools (device, agent, rule, alert, extension)
-/// by detecting the JSON structure. This handles both aggregated and legacy tool names.
-pub(crate) fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, response: &mut String) {
+/// Format results from CLI domain tools (device, agent, rule, message, extension)
+/// by detecting the JSON structure. Handles structured JSON results from CLI commands.
+pub(crate) fn format_cli_tool_result(tool_name: &str, json: &serde_json::Value, response: &mut String) {
     // Detect what kind of result this is based on JSON structure
 
     // Agent list: has "agents" key with array or nested object
@@ -549,45 +549,58 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
     for (tool_name, result) in tool_results {
         // Try to parse the result as JSON for better formatting
         if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(result) {
-            match tool_name.as_str() {
-                "shell" => {
-                    let cmd = json_value
-                        .get("command")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("?");
-                    let desc = json_value.get("description").and_then(|d| d.as_str());
-                    if let Some(desc) = desc {
-                        response.push_str(&format!("## Shell: {}\n**Command**: `{}`\n", desc, cmd));
-                    } else {
-                        response.push_str(&format!("## Shell: `{}`\n", cmd));
-                    }
-                    if json_value
-                        .get("timed_out")
-                        .and_then(|t| t.as_bool())
-                        .unwrap_or(false)
-                    {
-                        response.push_str("**Timed out**\n");
-                    }
-                    if let Some(exit_code) = json_value.get("exit_code") {
-                        response.push_str(&format!("**Exit code**: {}\n", exit_code));
-                    }
-                    if let Some(stdout) = json_value.get("stdout").and_then(|s| s.as_str()) {
-                        if !stdout.is_empty() {
-                            response.push_str(&format!("```\n{}\n```\n", stdout));
-                        }
-                    }
-                    if let Some(stderr) = json_value.get("stderr").and_then(|s| s.as_str()) {
-                        if !stderr.is_empty() {
-                            response.push_str(&format!("**stderr:**\n```\n{}\n```\n", stderr));
-                        }
+            // All tool results share the same JSON structure detection.
+            // Shell tool (and CLI domains routed to shell) return CliResponse JSON
+            // with "command"/"stdout"/"exit_code" keys. Other tools return
+            // domain-specific JSON (devices, rules, agents, etc.).
+            if json_value.get("command").is_some()
+                && (json_value.get("stdout").is_some()
+                    || json_value.get("exit_code").is_some())
+            {
+                // Shell/CliResponse format
+                let cmd = json_value
+                    .get("command")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("?");
+                let desc = json_value.get("description").and_then(|d| d.as_str());
+                if let Some(desc) = desc {
+                    response.push_str(&format!(
+                        "## {}: {}\n**Command**: `{}`\n",
+                        tool_name, desc, cmd
+                    ));
+                } else {
+                    response.push_str(&format!("## `{}` ({})\n", tool_name, cmd));
+                }
+                if json_value
+                    .get("timed_out")
+                    .and_then(|t| t.as_bool())
+                    .unwrap_or(false)
+                {
+                    response.push_str("**Timed out**\n");
+                }
+                if let Some(exit_code) = json_value.get("exit_code") {
+                    response.push_str(&format!("**Exit code**: {}\n", exit_code));
+                }
+                if let Some(stdout) = json_value.get("stdout").and_then(|s| s.as_str()) {
+                    if !stdout.is_empty() {
+                        response.push_str(&format!("```\n{}\n```\n", stdout));
                     }
                 }
-                _ => {
-                    // Aggregated tools (device, agent, rule, alert, extension) share the
-                    // same JSON output format as the legacy tools. Detect the format by
-                    // inspecting the JSON structure instead of matching tool names.
-                    format_aggregated_tool_result(tool_name, &json_value, &mut response);
+                if let Some(stderr) = json_value.get("stderr").and_then(|s| s.as_str()) {
+                    if !stderr.is_empty() {
+                        response.push_str(&format!(
+                            "**stderr:**\n```\n{}\n```\n",
+                            stderr
+                        ));
+                    }
                 }
+            } else {
+                // Non-shell JSON — detect structure for formatting
+                format_cli_tool_result(
+                    tool_name,
+                    &json_value,
+                    &mut response,
+                );
             }
         } else {
             // Result is not valid JSON, use as-is

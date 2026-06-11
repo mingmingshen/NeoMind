@@ -121,33 +121,7 @@ impl SmartFollowUpManager {
         }
     }
 
-    /// 从资源索引刷新设备列表
-    pub async fn refresh_devices(&mut self) {
-        let index = self.resource_index.read().await;
-        let resources = index.list_devices().await;
-
-        self.available_devices = resources
-            .into_iter()
-            .filter_map(|r| {
-                // 只处理设备类型的资源
-                let device_data = r.as_device()?;
-
-                Some(AvailableDevice {
-                    id: r.id.id.clone(),
-                    name: r.name.clone(),
-                    location: device_data.location.clone().unwrap_or_default(),
-                    device_type: device_data.device_type.clone(),
-                    capabilities: device_data
-                        .capabilities
-                        .iter()
-                        .map(|c| c.name.clone())
-                        .collect(),
-                })
-            })
-            .collect();
-    }
-
-    /// 设置可用设备列表（保留向后兼容）
+    /// 设置可用设备列表（测试用）
     pub fn set_available_devices(&mut self, devices: Vec<AvailableDevice>) {
         self.available_devices = devices;
     }

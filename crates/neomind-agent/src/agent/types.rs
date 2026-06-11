@@ -80,30 +80,6 @@ pub enum AgentEvent {
         /// Stage name
         stage: String,
     },
-    /// Execution plan created — full plan with all steps (richer replacement for Plan in multi-step scenarios)
-    ExecutionPlanCreated {
-        /// The execution plan with all steps
-        plan: crate::agent::planner::types::ExecutionPlan,
-        /// Session ID (optional, set by streaming layer)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        session_id: Option<String>,
-    },
-    /// A single step in the execution plan has started
-    PlanStepStarted {
-        /// Step index in the plan
-        step_id: crate::agent::planner::types::StepId,
-        /// Human-readable step description
-        description: String,
-    },
-    /// A single step in the execution plan has completed
-    PlanStepCompleted {
-        /// Step index in the plan
-        step_id: crate::agent::planner::types::StepId,
-        /// Whether the step succeeded
-        success: bool,
-        /// Brief result summary
-        summary: String,
-    },
     /// Heartbeat to keep connection alive
     Heartbeat {
         /// Timestamp when heartbeat was sent
@@ -240,31 +216,6 @@ impl AgentEvent {
         }
     }
 
-    /// Create an execution plan created event.
-    pub fn execution_plan_created(plan: crate::agent::planner::types::ExecutionPlan) -> Self {
-        Self::ExecutionPlanCreated {
-            plan,
-            session_id: None,
-        }
-    }
-
-    /// Create a plan step started event.
-    pub fn plan_step_started(step_id: usize, description: impl Into<String>) -> Self {
-        Self::PlanStepStarted {
-            step_id,
-            description: description.into(),
-        }
-    }
-
-    /// Create a plan step completed event.
-    pub fn plan_step_completed(step_id: usize, success: bool, summary: impl Into<String>) -> Self {
-        Self::PlanStepCompleted {
-            step_id,
-            success,
-            summary: summary.into(),
-        }
-    }
-
     /// Create a heartbeat event.
     pub fn heartbeat() -> Self {
         Self::Heartbeat {
@@ -324,9 +275,6 @@ pub struct AgentConfig {
     /// Number of recent tool results to keep intact (default: 2)
     #[serde(default = "default_keep_tool_results")]
     pub keep_recent_tool_results: usize,
-    /// Planning configuration
-    #[serde(default)]
-    pub planning: crate::agent::planner::types::PlanningConfig,
 }
 
 /// Default value for max tool calls per request.
@@ -366,7 +314,6 @@ impl Default for AgentConfig {
             api_key: std::env::var("OPENAI_API_KEY").ok(),
             max_tool_calls: default_max_tool_calls(),
             keep_recent_tool_results: default_keep_tool_results(),
-            planning: crate::agent::planner::types::PlanningConfig::default(),
         }
     }
 }

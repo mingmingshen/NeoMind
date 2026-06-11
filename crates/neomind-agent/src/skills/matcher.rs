@@ -126,24 +126,6 @@ fn truncate_at_boundary(text: &str, max_chars: usize) -> String {
     }
 }
 
-/// Format matched skills into a prompt section for injection.
-pub fn format_skill_matches(matches: &[SkillMatch]) -> String {
-    if matches.is_empty() {
-        return String::new();
-    }
-
-    let mut output = String::from("\n## Skill Guides\n");
-    output.push_str("Follow these guides when performing the relevant operations:\n\n");
-
-    for m in matches {
-        output.push_str(&format!("### {}\n", m.skill_name));
-        output.push_str(&m.body);
-        output.push_str("\n\n");
-    }
-
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,27 +196,6 @@ Step 2: ONE action (delete/update/enable)"#;
         let matches = match_skills(&registry, "删除规则", budget);
         let total_tokens: usize = matches.iter().map(|m| m.token_count).sum();
         assert!(total_tokens <= 100, "Total tokens should respect budget");
-    }
-
-    #[test]
-    fn test_format_skill_matches() {
-        let matches = vec![SkillMatch {
-            skill_id: "test".into(),
-            skill_name: "Test Skill".into(),
-            score: 0.5,
-            body: "Do this thing.".into(),
-            token_count: 4,
-        }];
-        let formatted = format_skill_matches(&matches);
-        assert!(formatted.contains("## Skill Guides"));
-        assert!(formatted.contains("### Test Skill"));
-        assert!(formatted.contains("Do this thing."));
-    }
-
-    #[test]
-    fn test_empty_match_returns_empty_string() {
-        let formatted = format_skill_matches(&[]);
-        assert!(formatted.is_empty());
     }
 
     #[test]

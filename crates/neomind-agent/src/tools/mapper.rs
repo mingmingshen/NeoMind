@@ -34,21 +34,25 @@ impl ToolNameMapper {
     /// 注册内置的工具名称映射
     fn register_builtin_mappings(&mut self) {
         // ===== CLI Domain Tools → shell routing =====
-        // These are "virtual" CLI domain tools — the registry only has real tools
-        // (shell, skill, memory, etc.). Route CLI domains to shell so the LLM can
-        // call them as standalone tools (e.g., `message` → `shell` with CLI command).
+        // CLI domain names (device, rule, etc.) are not registered in ToolRegistry.
+        // Route them to the shell tool, which executes `neomind <domain> <action>` commands.
         self.register_simplified("device", "shell");
         self.register_simplified("agent", "shell");
-        self.register_alias("agent_history", "shell");
         self.register_simplified("rule", "shell");
-        self.register_simplified("alert", "shell");
         self.register_simplified("message", "shell");
         self.register_simplified("transform", "shell");
+        self.register_simplified("extension", "shell");
         self.register_simplified("skill", "skill");
         self.register_simplified("shell", "shell");
 
+        // Aliases that point to intermediate domain names (not directly to shell).
+        // This ensures resolve_domain_name() returns the domain name for
+        // parameter mapping and semantic mapping.
+        self.register_alias("agent_history", "agent");
+        self.register_alias("alert", "message");
+
         // ===== 设备工具别名 =====
-        // 设备工具别名 - 指向聚合工具
+        // 设备工具别名 - 指向 CLI domain，最终路由到 shell
         self.register_alias("设备列表", "device");
         self.register_alias("列出设备", "device");
         self.register_alias("查看设备", "device");
@@ -103,8 +107,8 @@ impl ToolNameMapper {
         self.register_alias("update_transform", "transform");
         self.register_alias("test_transform", "transform");
 
-        // ===== 旧工具名称兼容映射 =====
-        // 将旧工具名称映射到新的聚合工具
+        // ===== Composite tool name aliases =====
+        // Map compound names (list_devices, create_rule) to their CLI domain.
         self.register_alias("device_discover", "device");
         self.register_alias("device_query", "device");
         self.register_alias("device_control", "device");
@@ -129,9 +133,8 @@ impl ToolNameMapper {
         self.register_alias("create_alert", "message");
         self.register_alias("acknowledge_alert", "message");
 
-        // ===== 旧工具名称兼容映射 =====
-        // 将旧工具名称映射到新的聚合工具
-        self.register_alias("list_workflows", "rule"); // 工作流暂用rule
+        // ===== Workflow / scenario aliases → rule domain =====
+        self.register_alias("list_workflows", "rule");
         self.register_alias("create_workflow", "rule");
         self.register_alias("trigger_workflow", "rule");
 
@@ -316,7 +319,7 @@ pub fn resolve_tool_name(input: &str) -> String {
 /// Unlike `resolve_tool_name` which follows the full chain (alias → simplified → real),
 /// this stops at the simplified name. E.g., `"设备列表"` → `"device"` (NOT `"shell"`).
 /// This is used by `map_tool_parameters` for domain-specific parameter matching.
-fn resolve_domain_name(input: &str) -> String {
+pub fn resolve_domain_name(input: &str) -> String {
     let mapper = get_mapper();
     // First try alias → simplified
     if let Some(simplified) = mapper.alias_to_real.get(input) {
@@ -341,6 +344,7 @@ pub const CLI_DOMAINS: &[&str] = &[
     "widget",
     "llm",
     "system",
+    "extension",
     "connector",
     "push",
 ];
@@ -409,8 +413,8 @@ fn append_flag(cmd: &mut String, key: &str, value: &Value) {
 /// 映射工具参数
 ///
 /// 将简化参数名映射到真实参数名
-/// 支持新旧工具名称的向后兼容
-/// 当旧工具名被映射到聚合工具时，自动推断 action 参数
+/// 支持别名工具名称的参数推断
+/// 当别名工具名被映射到 CLI domain 时，自动推断 action 参数
 pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
     // Use domain name for parameter key matching (e.g., "device"), NOT the
     // final routed target ("shell"). The mapper routes CLI domains to shell,
@@ -420,30 +424,30 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
     if let Some(obj) = arguments.as_object() {
         let mut mapped = serde_json::Map::new();
 
-        // Auto-infer action when old tool names are mapped to aggregated tools
-        // OR when the LLM calls an aggregated tool without specifying action
+        // Auto-infer action when old tool names are mapped to CLI domains
+        // OR when the LLM calls a CLI domain tool without specifying action
         if !obj.contains_key("action") {
             let inferred_action = match tool_name {
-                // Device aliases (legacy)
+                // Device aliases
                 "device_discover" | "list_devices" | "get_device_data" | "device_query" => {
                     Some("list")
                 }
                 "device_analyze" => Some("latest"),
                 "device_control" | "control_device" => Some("control"),
                 "query_data" => Some("history"),
-                // Rule aliases (legacy)
+                // Rule aliases
                 "list_rules" | "get_rule" => Some("list"),
                 "create_rule" => Some("create"),
                 "delete_rule" => Some("delete"),
-                // Agent aliases (legacy)
+                // Agent aliases
                 "list_agents" | "get_agent" => Some("list"),
                 "create_agent" => Some("create"),
                 "execute_agent" | "control_agent" => Some("control"),
-                // Message/Alert aliases (legacy)
+                // Message/Alert aliases
                 "list_alerts" => Some("list"),
                 "create_alert" => Some("send"),
                 "acknowledge_alert" => Some("read"),
-                // Transform aliases (legacy)
+                // Transform aliases
                 "list_transforms" | "data_transforms" | "data_transform" | "get_transform" => {
                     Some("list")
                 }
@@ -452,7 +456,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 "update_transform" => Some("update"),
                 "test_transform" => Some("test"),
 
-                // Default actions for aggregated tools when LLM omits action
+                // Default actions for CLI domain tools when LLM omits action
                 // Infer from other parameters present
                 "device" => {
                     if obj.contains_key("command")
@@ -530,8 +534,8 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
 
         for (key, value) in obj {
             let actual_key = match (domain_name.as_str(), key.as_str()) {
-                // ===== device tool (aggregated) =====
-                // Backward compatibility for old parameter names
+                // ===== device domain =====
+                // Normalize parameter names for CLI command building
                 ("device", "device") => "device_id",
                 ("device", "action") => {
                     // If action looks like a control command (on/off/set), map to command
@@ -582,7 +586,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 ("device", "status") => "status", // keep as-is for list action
                 ("device", other) => other,
 
-                // ===== rule tool (aggregated) =====
+                // ===== rule domain =====
                 ("rule", "rule") => "rule_id",
                 ("rule", "dsl") => "dsl",
                 ("rule", "action") => {
@@ -614,58 +618,14 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 }
                 ("rule", other) => other,
 
-                // ===== agent tool (aggregated) =====
+                // ===== agent domain =====
                 ("agent", "agent") => "agent_id",
                 ("agent", other) => other,
 
-                // ===== message tool (aggregated) =====
+                // ===== message domain =====
                 ("message", "message_id") => "message_id",
                 ("message", "alert_id") => "message_id", // backward compat
                 ("message", other) => other,
-
-                // ===== Legacy tool names (now map to aggregated) =====
-                // These are kept for backward compatibility if old names are used directly
-
-                // query_data -> device (with action=query)
-                ("query_data", "device") => "device_id",
-                ("query_data", "hours") => {
-                    if let Some(hours) = value.as_i64() {
-                        let end_time = chrono::Utc::now().timestamp();
-                        let start_time = end_time.saturating_sub(hours.saturating_mul(3600));
-                        mapped.insert("end_time".to_string(), serde_json::json!(end_time));
-                        mapped.insert("start_time".to_string(), serde_json::json!(start_time));
-                        continue;
-                    }
-                    "start_time"
-                }
-                ("query_data", other) => other,
-
-                // control_device -> device (with action=control)
-                ("control_device", "device") => "device_id",
-                ("control_device", "action") => "command",
-                ("control_device", "value") => "params",
-                ("control_device", other) => other,
-
-                // device_control -> device (with action=control)
-                ("device_control", "device") => "device_id",
-                ("device_control", "action") => "command",
-                ("device_control", "value") => "params",
-                ("device_control", other) => other,
-
-                // create_rule -> rule (with action=create)
-                ("create_rule", other) => other,
-
-                // disable_rule / enable_rule -> rule
-                ("disable_rule", "rule") | ("enable_rule", "rule") => "rule_id",
-                ("disable_rule", other) | ("enable_rule", other) => other,
-
-                // list_devices -> device (with action=list)
-                ("list_devices", "type") => "device_type",
-                ("list_devices", other) => other,
-
-                // device_discover -> device (with action=list)
-                ("device_discover", "type") => "device_type",
-                ("device_discover", other) => other,
 
                 // Default: keep original key
                 _ => key.as_str(),
@@ -685,25 +645,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_aggregated_tool_mapping() {
+    fn test_cli_domain_routing() {
         let mapper = ToolNameMapper::new();
-        // CLI domain tools now route to shell
+        // Direct CLI domain simplified names route to shell
         assert_eq!(mapper.resolve("device"), "shell");
         assert_eq!(mapper.resolve("agent"), "shell");
-        assert_eq!(mapper.resolve("agent_history"), "shell");
         assert_eq!(mapper.resolve("rule"), "shell");
-        assert_eq!(mapper.resolve("alert"), "shell");
         assert_eq!(mapper.resolve("message"), "shell");
+        // Aliases resolve to intermediate domain names (one step)
+        assert_eq!(mapper.resolve("agent_history"), "agent");
+        assert_eq!(mapper.resolve("alert"), "message");
         // Non-CLI tools still map to themselves
         assert_eq!(mapper.resolve("skill"), "skill");
         assert_eq!(mapper.resolve("shell"), "shell");
     }
 
     #[test]
-    fn test_legacy_tool_compatibility() {
+    fn test_alias_tool_compatibility() {
         let mapper = ToolNameMapper::new();
-        // Old tool names resolve to intermediate simplified names (device/rule/agent/message)
-        // The routing to shell happens in resolve_tool_name's two-step chain for simplified names
+        // Alias names resolve to intermediate domain names (device/rule/agent/message)
+        // The routing to shell happens in resolve_tool_name's two-step chain
         assert_eq!(mapper.resolve("device_discover"), "device");
         assert_eq!(mapper.resolve("device_query"), "device");
         assert_eq!(mapper.resolve("device_control"), "device");
@@ -726,8 +687,8 @@ mod tests {
     #[test]
     fn test_chinese_aliases() {
         let mapper = ToolNameMapper::new();
-        // Chinese aliases resolve to intermediate simplified names
-        // Routing to shell happens at the registry level (CLI domain fallback)
+        // Chinese aliases resolve to intermediate domain names
+        // Routing to shell happens at caller level (tool_exec.rs / agent/mod.rs)
         assert_eq!(mapper.resolve("设备列表"), "device");
         assert_eq!(mapper.resolve("列出设备"), "device");
         assert_eq!(mapper.resolve("查看设备"), "device");
@@ -772,13 +733,13 @@ mod tests {
             "value": "100"
         });
 
-        // New aggregated device tool mapping
+        // CLI domain device tool mapping
         let mapped = map_tool_parameters("device", &args);
         assert_eq!(mapped.get("device_id").unwrap(), "lamp_1");
         assert_eq!(mapped.get("command").unwrap(), "on");
         assert_eq!(mapped.get("params").unwrap(), "100");
 
-        // Legacy control_device still works (maps to device tool)
+        // Alias control_device works (maps to device domain)
         let mapped = map_tool_parameters("control_device", &args);
         assert_eq!(mapped.get("device_id").unwrap(), "lamp_1");
         assert_eq!(mapped.get("command").unwrap(), "on");
@@ -791,14 +752,14 @@ mod tests {
             "hours": 24
         });
 
-        // New aggregated device tool with query action
+        // CLI domain device tool with query action
         let mapped = map_tool_parameters("device", &args);
         assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
         // hours should be converted to start_time and end_time
         assert!(mapped.get("start_time").is_some());
         assert!(mapped.get("end_time").is_some());
 
-        // Legacy query_data still works
+        // Alias query_data still works
         let mapped = map_tool_parameters("query_data", &args);
         assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
         assert!(mapped.get("start_time").is_some());
@@ -807,7 +768,7 @@ mod tests {
 
     #[test]
     fn test_global_mapper() {
-        // 测试全局映射器 - 旧名称解析到中间简化名
+        // 测试全局映射器 - 别名解析到中间域名
         let resolved = resolve_tool_name("device_discover");
         assert_eq!(resolved, "device");
         // Direct simplified name routes to shell
@@ -833,7 +794,7 @@ mod tests {
 
     #[test]
     fn test_parameter_mapping_device_discover_filter() {
-        // Test that type/status are mapped to flat parameters for new aggregated tool
+        // Test that type/status are mapped to flat parameters for CLI domain tool
         let args = serde_json::json!({
             "type": "sensor",
             "status": "online"
@@ -841,7 +802,7 @@ mod tests {
 
         let mapped = map_tool_parameters("device_discover", &args);
 
-        // Should have flat device_type parameter (new aggregated format)
+        // Should have flat device_type parameter (CLI domain format)
         assert_eq!(mapped.get("device_type").unwrap(), "sensor");
         assert_eq!(mapped.get("status").unwrap(), "online");
     }
@@ -863,8 +824,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parameter_mapping_list_devices_legacy() {
-        // Test that legacy list_devices maps to flat parameters
+    fn test_parameter_mapping_list_devices_alias() {
+        // Test that alias list_devices maps to flat parameters
         let args = serde_json::json!({
             "type": "sensor",
             "status": "online"
@@ -1218,27 +1179,27 @@ mod tests {
         assert_eq!(mapped.get("dry_run").unwrap(), false);
     }
 
-    // ===== Legacy Tool Action Inference =====
+    // ===== Alias Tool Action Inference =====
 
     #[test]
-    fn test_legacy_tool_action_inference() {
-        // Test that legacy tool names get correct action inferred
+    fn test_alias_tool_action_inference() {
+        // Test that composite tool names get correct action inferred
         let args = serde_json::json!({"device": "sensor_1"});
 
-        let legacy_names = vec![
+        let alias_names = vec![
             "device_discover",
             "list_devices",
             "get_device_data",
             "device_query",
         ];
 
-        for legacy_name in legacy_names {
-            let mapped = map_tool_parameters(legacy_name, &args);
+        for alias_name in alias_names {
+            let mapped = map_tool_parameters(alias_name, &args);
             assert_eq!(
                 mapped.get("action").unwrap(),
                 "list",
-                "Legacy tool {} should infer action=list",
-                legacy_name
+                "Alias tool {} should infer action=list",
+                alias_name
             );
         }
 
@@ -1253,8 +1214,8 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_rule_tool_action_inference() {
-        // Test legacy rule tool action inference
+    fn test_alias_rule_tool_action_inference() {
+        // Test rule alias action inference
         let args = serde_json::json!({});
 
         let mapped = map_tool_parameters("list_rules", &args);
@@ -1271,8 +1232,8 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_agent_tool_action_inference() {
-        // Test legacy agent tool action inference
+    fn test_alias_agent_tool_action_inference() {
+        // Test agent alias action inference
         let args = serde_json::json!({});
 
         let mapped = map_tool_parameters("list_agents", &args);
@@ -1292,8 +1253,8 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_alert_tool_action_inference() {
-        // Test legacy alert tool action inference
+    fn test_alias_alert_tool_action_inference() {
+        // Test alert alias action inference
         let args = serde_json::json!({});
 
         let mapped = map_tool_parameters("list_alerts", &args);
@@ -1307,8 +1268,8 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_transform_tool_action_inference() {
-        // Test legacy transform tool action inference
+    fn test_alias_transform_tool_action_inference() {
+        // Test transform alias action inference
         let args = serde_json::json!({});
 
         let mapped = map_tool_parameters("list_transforms", &args);

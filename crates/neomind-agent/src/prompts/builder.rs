@@ -121,15 +121,6 @@ impl PromptBuilder {
         Self::PRINCIPLES.to_string()
     }
 
-    /// Build the tool calling system prompt section.
-    /// Returns empty — tool names, descriptions, and parameters are provided
-    /// via tool JSON definitions in the API request. For non-native text calling,
-    /// ollama.rs has its own `format_tools_for_text_calling()`.
-    #[deprecated(note = "Tool calling instructions are now provided via tool JSON definitions")]
-    pub fn build_tool_calling_section() -> String {
-        String::new()
-    }
-
     /// Get the tool usage strategy section.
     pub fn tool_strategy(&self) -> String {
         Self::TOOL_STRATEGY.to_string()
@@ -257,13 +248,6 @@ You have a `memory` tool for persistent cross-conversation storage.
 3. **Execute**: Output tool call JSON directly — don't describe!
 
 Key: Get device_id from `neomind device list`, never guess. Device control executes immediately."#;
-
-    // === Legacy Methods ===
-
-    /// Build a basic system prompt (legacy, for backward compatibility).
-    pub fn build_base_prompt(&self) -> String {
-        self.build_system_prompt()
-    }
 
     /// Get intent-specific system prompt addon.
     pub fn get_intent_prompt_addon(&self, intent: &str) -> String {

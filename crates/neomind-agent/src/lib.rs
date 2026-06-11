@@ -58,11 +58,6 @@ pub use agent::{
     default_fallback_rules, process_fallback, Agent, AgentConfig, AgentEvent, AgentMessage,
     AgentResponse, FallbackRule, LlmBackend, SessionState, ToolCall,
 };
-// Re-export planner types
-pub use agent::planner::{
-    ExecutionPlan, KeywordPlanner, LLMPlanner, PlanStep, PlanningConfig, PlanningCoordinator,
-    PlanningMode, StepId,
-};
 // Re-export staged types
 pub use agent::staged::{IntentCategory, IntentResult};
 // Re-export context selector types for planning tests
@@ -72,10 +67,7 @@ pub use config::{get_default_config, set_default_config, StreamingConfig};
 pub use context_selector::ContextBundle;
 pub use error::{NeoMindError, Result};
 pub use session::SessionManager;
-pub use tools::{
-    resolve_tool_name as map_tool_name, EventIntegratedToolRegistry, ToolExecutionHistory,
-    ToolExecutionRecord, ToolExecutionStats, ToolNameMapper,
-};
+pub use tools::ToolNameMapper;
 
 // Re-export llm_backends types for backward compatibility (merged from neomind-llm crate)
 pub use llm_backends::{

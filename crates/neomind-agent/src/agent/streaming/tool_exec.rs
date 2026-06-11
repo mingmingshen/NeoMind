@@ -13,7 +13,7 @@ pub(crate) async fn execute_tool_with_retry(
     arguments: serde_json::Value,
 ) -> std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError> {
     // Check cache for read-only tools
-    if is_tool_cacheable(name) {
+    if is_tool_cacheable(name, &arguments) {
         let cache_key = ToolResultCache::make_key(name, &arguments);
         {
             let cache_read = cache.read().await;
@@ -29,7 +29,7 @@ pub(crate) async fn execute_tool_with_retry(
     let result = execute_with_retry_impl(tools, name, arguments.clone(), max_retries).await;
 
     // Cache successful results for cacheable tools
-    if is_tool_cacheable(name) {
+    if is_tool_cacheable(name, &arguments) {
         if let Ok(ref output) = result {
             if output.success {
                 let cache_key = ToolResultCache::make_key(name, &arguments);

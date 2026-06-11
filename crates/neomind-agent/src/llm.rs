@@ -259,8 +259,6 @@ pub struct LlmInterface {
     last_prompt_tokens: Arc<tokio::sync::Mutex<Option<u32>>>,
     /// Intent classifier for staged processing.
     intent_classifier: IntentClassifier,
-    /// Business context manager for dynamic context injection.
-    context_manager: Option<crate::context::ContextManager>,
     /// Global timezone for time-aware prompts (IANA format, e.g., "Asia/Shanghai").
     /// Loaded from settings and used for all time-related context.
     global_timezone: Arc<RwLock<Option<String>>>,
@@ -295,7 +293,6 @@ impl LlmInterface {
             thinking_enabled: Arc::new(RwLock::new(None)), // Use backend default (from storage)
             last_prompt_tokens: Arc::new(tokio::sync::Mutex::new(None)),
             intent_classifier: IntentClassifier::default(),
-            context_manager: None,
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
             skill_registry: Arc::new(RwLock::new(None)),
             skill_context: Arc::new(RwLock::new(None)),
@@ -326,7 +323,6 @@ impl LlmInterface {
             thinking_enabled: Arc::new(RwLock::new(None)), // Will use instance manager setting
             last_prompt_tokens: Arc::new(tokio::sync::Mutex::new(None)),
             intent_classifier: IntentClassifier::default(),
-            context_manager: None,
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
             skill_registry: Arc::new(RwLock::new(None)),
             skill_context: Arc::new(RwLock::new(None)),
@@ -771,11 +767,6 @@ impl LlmInterface {
         self.tool_definitions.read().await.clone()
     }
 
-    /// Set the business context manager.
-    pub fn set_context_manager(&mut self, manager: crate::context::ContextManager) {
-        self.context_manager = Some(manager);
-    }
-
     /// Set the skill registry for scenario-driven prompt injection.
     pub async fn set_skill_registry(&self, registry: crate::skills::SharedSkillRegistry) {
         *self.skill_registry.write().await = Some(registry);
@@ -817,15 +808,6 @@ impl LlmInterface {
     /// Get pinned skill IDs for this session.
     pub async fn get_pinned_skills(&self) -> Vec<String> {
         self.pinned_skills.read().await.clone()
-    }
-
-    /// Get context builder section for system prompt.
-    async fn build_business_context_section(&self, query: &str) -> String {
-        if let Some(ref cm) = self.context_manager {
-            cm.format_for_prompt(query).await
-        } else {
-            String::new()
-        }
     }
 
     /// Invalidate the system prompt cache.
@@ -986,15 +968,6 @@ impl LlmInterface {
 
             if !addon.is_empty() {
                 prompt.push_str(&addon);
-            }
-        }
-
-        // Add business context section if available
-        if let Some(query) = user_message {
-            let context_section = self.build_business_context_section(query).await;
-            if !context_section.is_empty() {
-                prompt.push_str(&context_section);
-                prompt.push_str("\n\n");
             }
         }
 

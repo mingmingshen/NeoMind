@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dead Code Cleanup
+
+Removed ~3000 lines of dead/superseded code across the agent crate. All removals verified: workspace builds clean, all tests pass.
+
+**Removed subsystems:**
+
+- **`agent/planner/`** (5 files, ~900 lines) — `KeywordPlanner`, `LLMPlanner`, `PlanningCoordinator` and their types. Designed for upfront multi-step plan generation before LLM tool-calling, but never wired into the execution pipeline. Superseded by the streaming tool-calling architecture (LLM picks tools at runtime) + Skills system (on-demand scenario guides). The associated `AgentEvent` variants (`ExecutionPlanCreated`, `PlanStepStarted`, `PlanStepCompleted`) were also removed from the enum, CLI handler, and API SSE handler — they were matched but never emitted.
+- **`context/`** dead modules (5 files, ~2000 lines) — `business_context.rs`, `health.rs`, `meta_tools.rs`, `resource_resolver.rs`, `state_provider.rs`. These referenced old tool names (`list_devices`, `query_data`, `control_device`) and had zero production callers. `context/mod.rs` simplified from ~200 lines to ~25 (only `DeviceRegistry` and `ResourceIndex` remain).
+- **`tools/event_integration.rs`** (~1030 lines) — `EventIntegratedToolRegistry` with zero references.
+
+**Removed dead functions/fields:**
+
+- `format_skill_matches()` from `skills/matcher.rs` — Skills are injected via the `skill` tool at runtime, not via prompt formatting. `match_skills()` retained (used by `/api/skills/match`).
+- `AgentConfig.planning` field — serde-safe removal (unknown fields ignored on load).
+- `AgentEvent::{ExecutionPlanCreated, PlanStepStarted, PlanStepCompleted}` variants + constructors.
+- Dead semantic/smart wrapper methods in `agent/mod.rs` (6 methods).
+- `llm.rs`: `context_manager` field, `set_context_manager()`, `build_business_context_section()`.
+- `smart_conversation.rs`: unused `devices`/`rules` fields, `update_devices()`/`update_rules()`, `Rule` struct.
+- `smart_followup.rs`: dead `refresh_devices()` method.
+- `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
+- `toolkit/registry.rs`: dead `categories()` method.
+
+**Critical bug fix (cache.rs):**
+
+- `is_tool_cacheable()` now inspects shell command contents using a read-only action whitelist (`list`, `get`, `history`, etc.) instead of matching stale tool name aliases. Previously, mutation commands routed through `shell` (delete, control, send) were silently cached for 5 minutes.
+
+**Renamed for clarity:**
+
+- `format_aggregated_tool_result` → `format_cli_tool_result` (result_format.rs)
+- Cleaned up "legacy"/"aggregated"/"virtual" terminology in mapper.rs comments and test names
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

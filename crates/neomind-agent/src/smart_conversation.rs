@@ -35,10 +35,6 @@ pub struct IntentAnalysis {
 pub struct SmartConversationManager {
     /// 当前对话状态
     state: ConversationState,
-    /// 设备缓存
-    devices: Vec<Device>,
-    /// 规则缓存
-    rules: Vec<Rule>,
 }
 
 /// Device information for smart conversation and followup.
@@ -54,19 +50,10 @@ pub struct Device {
     pub capabilities: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Rule {
-    pub id: String,
-    pub name: String,
-    pub enabled: bool,
-}
-
 impl SmartConversationManager {
     pub fn new() -> Self {
         Self {
             state: ConversationState::Normal,
-            devices: Vec::new(),
-            rules: Vec::new(),
         }
     }
 
@@ -191,16 +178,6 @@ impl SmartConversationManager {
         }
 
         None
-    }
-
-    /// 更新设备列表
-    pub fn update_devices(&mut self, devices: Vec<Device>) {
-        self.devices = devices;
-    }
-
-    /// 更新规则列表
-    pub fn update_rules(&mut self, rules: Vec<Rule>) {
-        self.rules = rules;
     }
 
     /// 获取当前状态

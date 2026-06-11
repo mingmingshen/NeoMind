@@ -23,7 +23,6 @@ pub mod cache;
 pub mod conversation_context;
 pub mod fallback;
 pub mod formatter;
-pub mod planner;
 pub mod scheduler;
 pub mod semantic_mapper;
 pub mod smart_followup;
@@ -1370,38 +1369,6 @@ impl Agent {
         self.tools.definitions_json()
     }
 
-    /// Update the smart conversation manager with current devices.
-    /// This enables better intent analysis based on available devices.
-    pub async fn update_smart_context_devices(
-        &self,
-        devices: Vec<crate::smart_conversation::Device>,
-    ) {
-        let mut smart_conv = self.smart_conversation.write().await;
-        smart_conv.update_devices(devices);
-    }
-
-    /// Update the smart conversation manager with current rules.
-    /// This enables better intent analysis based on available rules.
-    pub async fn update_smart_context_rules(&self, rules: Vec<crate::smart_conversation::Rule>) {
-        let mut smart_conv = self.smart_conversation.write().await;
-        smart_conv.update_rules(rules);
-    }
-
-    // === SMART FOLLOWUP METHODS ===
-
-    /// Update smart followup manager with current devices.
-    /// This enables intelligent followup questions based on available devices.
-    pub async fn update_followup_devices(&self, devices: Vec<AvailableDevice>) {
-        let mut state = self.shared_state.write().await;
-        state.smart_followup.set_available_devices(devices);
-    }
-
-    /// Refresh smart followup devices from resource index.
-    pub async fn refresh_followup_devices(&self) {
-        let mut state = self.shared_state.write().await;
-        state.smart_followup.refresh_devices().await;
-    }
-
     // === CONTEXT SELECTOR METHODS ===
 
     /// Get the context selector reference.
@@ -1435,47 +1402,10 @@ impl Agent {
 
     // === SEMANTIC MAPPING METHODS ===
 
-    /// Register a device in the semantic mapper for natural language resolution.
-    /// This allows LLM to reference devices by name instead of technical ID.
-    pub async fn register_semantic_device(&self, device: crate::context::Resource) {
-        let _ = self.semantic_mapper.register_device(device).await;
-    }
+    // Semantic resource registration is performed by the executor pipeline
+    // directly on `self.semantic_mapper`. No public Agent-level wrapper is
+    // needed since callers register via the smart conversation pipeline.
 
-    /// Update devices in the semantic mapper from smart conversation devices.
-    pub async fn update_semantic_devices(&self, devices: Vec<crate::smart_conversation::Device>) {
-        for device in devices {
-            let resource =
-                crate::context::Resource::device(&device.id, &device.name, &device.device_type)
-                    .with_location(&device.location);
-
-            let _ = self.semantic_mapper.register_device(resource).await;
-        }
-    }
-
-    /// Register rules in the semantic mapper.
-    pub async fn register_semantic_rules(&self, rules: Vec<(String, String, bool)>) {
-        self.semantic_mapper.register_rules(rules).await;
-    }
-
-    /// Update rules in the semantic mapper from smart conversation rules.
-    pub async fn update_semantic_rules(&self, rules: Vec<crate::smart_conversation::Rule>) {
-        let rules_data: Vec<(String, String, bool)> = rules
-            .into_iter()
-            .map(|r| (r.id, r.name, r.enabled))
-            .collect();
-        self.semantic_mapper.register_rules(rules_data).await;
-    }
-
-    /// Register workflows in the semantic mapper.
-    pub async fn register_semantic_workflows(&self, workflows: Vec<(String, String, bool)>) {
-        self.semantic_mapper.register_workflows(workflows).await;
-    }
-
-    /// Get semantic context for inclusion in LLM prompt.
-    /// This provides LLM with available resource names without technical IDs.
-    pub async fn get_semantic_context(&self) -> String {
-        self.semantic_mapper.get_semantic_context().await
-    }
 
     /// Get semantic mapper statistics.
     pub async fn get_semantic_mapping_stats(&self) -> semantic_mapper::MappingStats {
@@ -2849,17 +2779,20 @@ END"#
             return Ok(cached_result);
         }
 
-        // Map simplified tool name to real tool name
+        // Map simplified tool name to real tool name (for execution routing)
         let real_tool_name = self.resolve_tool_name(name);
 
-        // Convert simplified parameter names to actual tool parameters
+        // Convert simplified parameter names to actual tool parameters.
+        // Pass original name (not resolved) so domain-specific mapping works.
         let mapped_arguments = self.map_simplified_parameters(name, arguments);
 
         // === SEMANTIC MAPPING: Convert natural language to technical IDs ===
-        // This maps "客厅灯" -> "light_living_main" for device_id parameters
+        // This maps "客厅灯" -> "light_living_main" for device_id parameters.
+        // Use original name for domain matching (semantic_mapper expects "device", not "shell").
+        let domain_name = crate::tools::mapper::resolve_domain_name(name);
         let semantically_mapped = self
             .semantic_mapper
-            .map_tool_parameters(&real_tool_name, mapped_arguments.clone())
+            .map_tool_parameters(&domain_name, mapped_arguments.clone())
             .await
             .unwrap_or(mapped_arguments);
 
@@ -2884,13 +2817,22 @@ END"#
             "Executing tool"
         );
 
+        // If mapper resolved a CLI domain name to "shell", convert structured args
+        // to a CLI command string that ShellTool expects: {"command": "neomind <domain> ..."}
+        let exec_args = if real_tool_name == "shell" && name != "shell" {
+            crate::tools::mapper::build_cli_command(name, &semantically_mapped)
+                .unwrap_or(semantically_mapped.clone())
+        } else {
+            semantically_mapped.clone()
+        };
+
         let mut last_error = String::new();
         let mut last_attempt = 0u32;
 
         for attempt in 0..=MAX_RETRIES {
             match self
                 .tools
-                .execute(&real_tool_name, semantically_mapped.clone())
+                .execute(&real_tool_name, exec_args.clone())
                 .await
             {
                 Ok(output) => {
@@ -3119,7 +3061,7 @@ END"#
         }
     }
 
-    /// Process a user message with streaming response (legacy, returns String stream).
+    /// Process a user message with streaming response (returns String stream).
     pub async fn process_stream(
         &self,
         user_message: &str,

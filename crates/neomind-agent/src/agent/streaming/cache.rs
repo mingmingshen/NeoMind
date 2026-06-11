@@ -78,17 +78,70 @@ impl ToolResultCache {
     }
 }
 
-/// Tools that should NOT be cached (e.g., commands that change state)
-const NON_CACHEABLE_TOOLS: &[&str] = &[
-    "send_command",
-    "execute_command",
-    "set_device_state",
-    "toggle_device",
-    "delete_device",
+/// Check whether a tool call is safe to cache.
+///
+/// A call is cacheable when:
+///   * the resolved tool name is not a known mutating tool, AND
+///   * for shell calls, the underlying `neomind` CLI command is read-only
+///     (list/get/history/etc.) — mutating actions (create/delete/control/...)
+///     bypass the cache so their effects are always re-fetched.
+pub(crate) fn is_tool_cacheable(name: &str, arguments: &Value) -> bool {
+    // Resolve through the mapper so CLI domains (device, rule, ...) report as "shell".
+    let resolved = super::resolve::resolve_tool_name(name);
+
+    if resolved == "shell" {
+        // Inspect the command string for mutation actions.
+        let cmd = arguments
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        return is_read_only_cli_command(cmd);
+    }
+
+    // Other tools (skill, memory, web_fetch, vision, ...) are read-only by default.
+    true
+}
+
+/// Read-only `neomind` CLI action verbs. Anything else mutates state.
+const READ_ONLY_ACTIONS: &[&str] = &[
+    "list",
+    "get",
+    "history",
+    "latest",
+    "types",
+    "models",
+    "status",
+    "logs",
+    "memory",
+    "executions",
+    "latest-execution",
+    "conversation",
+    "data-sources",
+    "metrics",
+    "webhook-url",
+    "channel-list",
+    "channel-get",
+    "channel-types",
+    "test-code",
+    "market-list",
 ];
 
-pub(crate) fn is_tool_cacheable(name: &str) -> bool {
-    !NON_CACHEABLE_TOOLS.contains(&name)
+/// Determine whether a `neomind <domain> <action> ...` command is read-only.
+/// Returns `false` (not cacheable) for any unrecognized shape so that
+/// unknown mutation commands are never cached.
+fn is_read_only_cli_command(command: &str) -> bool {
+    let trimmed = command.trim();
+    if !trimmed.starts_with("neomind ") {
+        // Non-neomind shell commands: never cache (could be `rm`, `mv`, etc.).
+        return false;
+    }
+    // `neomind <domain> <action> ...`
+    let parts: Vec<&str> = trimmed.splitn(3, ' ').collect();
+    let action = parts.get(2).map(|s| s.split_whitespace().next().unwrap_or(""));
+    match action {
+        Some(act) => READ_ONLY_ACTIONS.contains(&act),
+        None => true, // `neomind <domain>` with no action defaults to list
+    }
 }
 
 /// Minimum size (bytes) for a result to be considered large enough to strip base64 from.
@@ -115,10 +168,29 @@ mod tests {
 
     #[test]
     fn test_is_tool_cacheable() {
-        assert!(is_tool_cacheable("shell"));
-        assert!(is_tool_cacheable("device"));
-        assert!(!is_tool_cacheable("send_command"));
-        assert!(!is_tool_cacheable("delete_device"));
+        // Read-only shell commands are cacheable
+        let list_args = serde_json::json!({"command": "neomind device list"});
+        assert!(is_tool_cacheable("shell", &list_args));
+        assert!(is_tool_cacheable("device", &list_args));
+
+        // Mutating shell commands bypass cache
+        let delete_args = serde_json::json!({"command": "neomind device delete abc123"});
+        assert!(!is_tool_cacheable("shell", &delete_args));
+        assert!(!is_tool_cacheable("device", &delete_args));
+
+        let control_args = serde_json::json!({"command": "neomind device control abc123 on"});
+        assert!(!is_tool_cacheable("device", &control_args));
+
+        let send_args = serde_json::json!({"command": "neomind message send --title x"});
+        assert!(!is_tool_cacheable("message", &send_args));
+
+        // Non-neomind shell commands bypass cache
+        let rm_args = serde_json::json!({"command": "rm -rf /tmp/foo"});
+        assert!(!is_tool_cacheable("shell", &rm_args));
+
+        // Non-shell tools are cacheable
+        assert!(is_tool_cacheable("skill", &serde_json::json!({})));
+        assert!(is_tool_cacheable("memory", &serde_json::json!({})));
     }
 
     #[test]
