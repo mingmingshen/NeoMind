@@ -97,35 +97,6 @@ impl PromptBuilder {
         prompt
     }
 
-    /// Build the enhanced system prompt with time placeholders replaced.
-    pub fn build_system_prompt_with_time(
-        &self,
-        current_time_utc: &str,
-        local_time: &str,
-        timezone: &str,
-    ) -> String {
-        let prompt = self.build_system_prompt();
-        prompt
-            .replace(CURRENT_TIME_PLACEHOLDER, current_time_utc)
-            .replace(LOCAL_TIME_PLACEHOLDER, local_time)
-            .replace(TIMEZONE_PLACEHOLDER, timezone)
-    }
-
-    /// Get the core identity section.
-    pub fn core_identity(&self) -> String {
-        Self::IDENTITY.to_string()
-    }
-
-    /// Get the interaction principles section.
-    pub fn interaction_principles(&self) -> String {
-        Self::PRINCIPLES.to_string()
-    }
-
-    /// Get the tool usage strategy section.
-    pub fn tool_strategy(&self) -> String {
-        Self::TOOL_STRATEGY.to_string()
-    }
-
     // === Static content constants ===
 
     const IDENTITY: &str = r#"## Core Identity
@@ -288,23 +259,6 @@ pub const CONVERSATION_CONTEXT_ZH: &str = r#"
 - 是否有新的趋势或模式出现？
 "#;
 
-pub const CONVERSATION_CONTEXT_EN: &str = r#"
-## Conversation Context Reminder
-
-You are a **long-running agent** that will execute multiple times. Remember:
-
-1. **Historical Memory**: Each execution, you can see history from previous runs
-2. **Trend Focus**: Focus on data trends, not just single snapshots
-3. **Avoid Duplication**: Remember previously reported issues, don't repeat alerts
-4. **Cumulative Learning**: Over time, you should better understand the system
-5. **Consistency**: Maintain consistent analysis standards and decision logic
-
-When analyzing the current situation, reference history:
-- What changed compared to previous data?
-- Have previously reported issues been resolved?
-- Are there new trends or patterns emerging?
-"#;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,31 +287,6 @@ mod tests {
         let prompt = builder.build_system_prompt();
         assert!(prompt.contains("Principles"));
         assert!(!prompt.contains("Thinking Mode"));
-    }
-
-    #[test]
-    fn test_core_identity() {
-        let builder = PromptBuilder::new();
-        let identity = builder.core_identity();
-        assert!(identity.contains("Core Identity"));
-        assert!(identity.contains("NeoMind"));
-    }
-
-    #[test]
-    fn test_interaction_principles() {
-        let builder = PromptBuilder::new();
-        let principles = builder.interaction_principles();
-        assert!(principles.contains("Principles"));
-        assert!(principles.contains("Concise"));
-    }
-
-    #[test]
-    fn test_tool_strategy() {
-        let builder = PromptBuilder::new();
-        let strategy = builder.tool_strategy();
-        assert!(strategy.contains("Tool Strategy"));
-        assert!(strategy.contains("device"));
-        assert!(strategy.contains("--help"));
     }
 
     #[test]

@@ -568,11 +568,6 @@ impl ConversationContext {
 
         None
     }
-
-    /// 重置上下文（开始新会话时）
-    pub fn reset(&mut self) {
-        *self = Self::new();
-    }
 }
 
 #[cfg(test)]
