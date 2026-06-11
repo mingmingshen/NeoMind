@@ -38,8 +38,7 @@ use tokio::sync::Semaphore;
 use futures::Stream;
 use tokio::sync::RwLock;
 
-// Re-export error types
-pub use crate::error::NeoMindError;
+use crate::error::NeoMindError;
 use serde_json::Value;
 
 use super::error::Result;
@@ -60,16 +59,12 @@ pub type SharedSemanticMapper = Arc<semantic_mapper::SemanticToolMapper>;
 pub type EventStream = Pin<Box<dyn Stream<Item = AgentEvent> + Send>>;
 pub type MessageStream = Pin<Box<dyn Stream<Item = (String, bool)> + Send>>;
 
-pub use conversation_context::{
-    ConversationContext, ConversationTopic, EntityReference, EntityType,
-};
+pub use conversation_context::ConversationContext;
 pub use fallback::{default_fallback_rules, process_fallback, FallbackRule};
-pub use semantic_mapper::{SemanticToolMapper, DeviceMapping, SemanticMatchType};
 pub use smart_followup::SmartFollowUpManager;
 pub use streaming::{
-    cleanup_thinking_content, events_to_string_stream, format_tool_results,
-    process_multimodal_stream_events, process_multimodal_stream_events_with_safeguards,
-    process_stream_events, process_stream_events_with_safeguards, StreamSafeguards,
+    events_to_string_stream, process_multimodal_stream_events_with_safeguards,
+    process_stream_events_with_safeguards, StreamSafeguards,
 };
 pub use types::{
     AgentConfig, AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, AgentResponse,
