@@ -53,27 +53,27 @@ pub(crate) enum ImageContent {
 }
 
 /// Intermediate data from the tool execution loop, passed to result construction.
-struct ToolCallRecord {
-    name: String,
-    input: serde_json::Value,
-    result: crate::toolkit::ToolResult,
+pub(crate) struct ToolCallRecord {
+    pub(crate) name: String,
+    pub(crate) input: serde_json::Value,
+    pub(crate) result: crate::toolkit::ToolResult,
 }
 
-struct RoundData {
-    thought: Option<String>,
-    tool_calls: Vec<ToolCallRecord>,
+pub(crate) struct RoundData {
+    pub(crate) thought: Option<String>,
+    pub(crate) tool_calls: Vec<ToolCallRecord>,
 }
 
-struct ToolLoopOutput {
-    final_text: String,
-    all_tool_results: Vec<crate::toolkit::ToolResult>,
+pub(crate) struct ToolLoopOutput {
+    pub(crate) final_text: String,
+    pub(crate) all_tool_results: Vec<crate::toolkit::ToolResult>,
     /// (thought, tool_calls) per round
-    round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
+    pub(crate) round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
 }
 
 /// Outcome of intra-round + cross-round deduplication.
 #[derive(PartialEq)]
-enum DedupOutcome {
+pub(crate) enum DedupOutcome {
     /// Some tool calls survived deduplication.
     /// Contains the count and signatures of cross-round duplicates that were dropped.
     HasNew {
@@ -85,17 +85,17 @@ enum DedupOutcome {
 
 /// Hard limit for a single tool result (128 KB).
 /// Applied both during tool-loop message construction and Phase 2 summary.
-const TOOL_RESULT_MAX_LEN: usize = 131_072;
+pub(crate) const TOOL_RESULT_MAX_LEN: usize = 131_072;
 
 /// Configuration for the tool loop, varying by execution mode.
-struct ToolLoopConfig {
+pub(crate) struct ToolLoopConfig {
     /// Maximum LLM call rounds
-    max_rounds: usize,
+    pub(crate) max_rounds: usize,
     /// Recommended tool names (None = no recommendation, all tools available).
     /// Not a whitelist — just prompt guidance for the LLM.
-    recommended_tools: Option<Vec<String>>,
+    pub(crate) recommended_tools: Option<Vec<String>>,
     /// Whether this is Focused+ mode (Focused with tool chaining enabled)
-    is_focused_plus: bool,
+    pub(crate) is_focused_plus: bool,
 }
 
 impl ToolLoopConfig {
@@ -370,40 +370,40 @@ pub struct AgentExecutionResult {
 /// AI Agent executor - handles execution of user-defined agents.
 pub struct AgentExecutor {
     /// Agent store
-    store: Arc<AgentStore>,
+    pub(crate) store: Arc<AgentStore>,
     /// Time series storage for data collection
-    time_series_storage: Option<Arc<neomind_storage::TimeSeriesStore>>,
+    pub(crate) time_series_storage: Option<Arc<neomind_storage::TimeSeriesStore>>,
     /// Device service for command execution
-    device_service: Option<Arc<DeviceService>>,
+    pub(crate) device_service: Option<Arc<DeviceService>>,
     /// Event bus for publishing events
-    event_bus: Option<Arc<EventBus>>,
+    pub(crate) event_bus: Option<Arc<EventBus>>,
     /// Message manager for sending notifications (replaces AlertManager)
-    message_manager: Option<Arc<MessageManager>>,
+    pub(crate) message_manager: Option<Arc<MessageManager>>,
     /// Configuration
-    _config: AgentExecutorConfig,
+    pub(crate) _config: AgentExecutorConfig,
     /// LLM runtime (default)
-    llm_runtime: Option<Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>,
+    pub(crate) llm_runtime: Option<Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>,
     /// LLM backend store for per-agent backend lookup
-    llm_backend_store: Option<Arc<LlmBackendStore>>,
+    pub(crate) llm_backend_store: Option<Arc<LlmBackendStore>>,
     /// Event-triggered agents cache
-    event_agents: Arc<RwLock<HashMap<String, AiAgent>>>,
+    pub(crate) event_agents: Arc<RwLock<HashMap<String, AiAgent>>>,
     /// Track recent executions to prevent duplicates (agent_id, device_id -> timestamp)
     /// Deduplicates by device only, not by individual metrics
-    recent_executions: Arc<RwLock<HashMap<String, i64>>>,
+    pub(crate) recent_executions: Arc<RwLock<HashMap<String, i64>>>,
     /// LLM runtime cache: backend_id -> runtime
     /// Key format: "{backend_type}:{endpoint}:{model}" for cache invalidation
-    llm_runtime_cache:
+    pub(crate) llm_runtime_cache:
         Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
     /// Phase 3.3: Extension registry for dynamic tool loading
-    extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    pub(crate) extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     /// Tool registry for function calling mode (wrapped for late initialization)
-    tool_registry: parking_lot::RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>,
+    pub(crate) tool_registry: parking_lot::RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>,
     /// Memory store for extracting learned patterns
-    memory_store: Option<Arc<MarkdownMemoryStore>>,
+    pub(crate) memory_store: Option<Arc<MarkdownMemoryStore>>,
     /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
-    backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
+    pub(crate) backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
     /// Semaphore limiting concurrent tool executions (default: 6)
-    tool_concurrency: Arc<Semaphore>,
+    pub(crate) tool_concurrency: Arc<Semaphore>,
 }
 
 /// Parse the LLM's final text response to extract situation_analysis, conclusion, and confidence.
