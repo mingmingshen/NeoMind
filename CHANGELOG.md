@@ -90,6 +90,18 @@ Removed ~1540 lines of dead code from `semantic_mapper.rs`, `translation.rs`, an
 
 - `context_selector()`, `update_context_device_types()`, `update_context_rule_engine()`, `get_semantic_mapping_stats()` — zero callers
 
+### Dead Code Cleanup (Round 4)
+
+Removed ~770 lines of dead code from `context_selector.rs` and `smart_conversation.rs`.
+
+**Removed dead module:**
+
+- **`context_selector.rs`** (717 lines) — `IntentAnalyzer`, `ContextSelector`, `ContextBundle`, and all associated types. The entire module existed solely to produce a debug log: `analyze_intent()` was called via `tokio::join!` in the non-streaming `process_message` path, but `ContextBundle` was discarded (`_context_bundle`) and `IntentAnalysis` was only consumed by `tracing::debug!`. Removed the `context_selector` field from `Agent`, its initialization, the `analyze_intent()` method, all re-exports, and simplified the `tokio::join!` to a plain expression.
+
+**Removed dead SmartConversationManager state:**
+
+- `ConversationState` enum, `state` field, `state()` / `set_state()` methods — all had zero callers. The manager is now a unit struct (stateless interceptor for dangerous-operation detection and missing-info detection).
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor

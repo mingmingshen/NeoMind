@@ -7,17 +7,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 对话状态
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConversationState {
-    /// 正常状态 - 直接处理
-    Normal,
-    /// 等待用户信息
-    AwaitingInfo { question: String, context: String },
-    /// 等待用户确认
-    AwaitingConfirmation { action: String, description: String },
-}
-
 /// 用户意图分析结果
 #[derive(Debug, Clone)]
 pub struct IntentAnalysis {
@@ -32,10 +21,7 @@ pub struct IntentAnalysis {
 }
 
 /// 智能对话管理器
-pub struct SmartConversationManager {
-    /// 当前对话状态
-    state: ConversationState,
-}
+pub struct SmartConversationManager;
 
 /// Device information for smart conversation and followup.
 /// Shared between smart_conversation and smart_followup modules.
@@ -52,9 +38,7 @@ pub struct Device {
 
 impl SmartConversationManager {
     pub fn new() -> Self {
-        Self {
-            state: ConversationState::Normal,
-        }
+        Self
     }
 
     /// 分析用户输入，判断是否需要拦截
@@ -178,16 +162,6 @@ impl SmartConversationManager {
         }
 
         None
-    }
-
-    /// 获取当前状态
-    pub fn state(&self) -> &ConversationState {
-        &self.state
-    }
-
-    /// 设置状态
-    pub fn set_state(&mut self, state: ConversationState) {
-        self.state = state;
     }
 }
 

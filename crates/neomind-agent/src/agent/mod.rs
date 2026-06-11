@@ -60,10 +60,6 @@ pub type SharedSemanticMapper = Arc<semantic_mapper::SemanticToolMapper>;
 pub type EventStream = Pin<Box<dyn Stream<Item = AgentEvent> + Send>>;
 pub type MessageStream = Pin<Box<dyn Stream<Item = (String, bool)> + Send>>;
 
-pub use crate::context_selector::{
-    CommandReference, ContextBundle, ContextScope, ContextSelector, DeviceTypeReference, Entity,
-    IntentAnalysis, IntentAnalyzer, IntentType, RuleReference,
-};
 pub use conversation_context::{
     ConversationContext, ConversationTopic, EntityReference, EntityType,
 };
@@ -757,8 +753,6 @@ pub struct Agent {
     semantic_mapper: Arc<semantic_mapper::SemanticToolMapper>,
     /// Shared conversation state (merged: context + followup + hash)
     shared_state: Arc<tokio::sync::RwLock<AgentSharedState>>,
-    /// Context selector - intelligent context selection based on intent analysis
-    context_selector: Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>>,
     /// Tool result cache - caches recent tool executions to avoid redundant calls
     tool_result_cache: Arc<tokio::sync::RwLock<ToolResultCache>>,
     /// Frozen memory snapshot for this session (loaded once, never changes)
@@ -814,9 +808,6 @@ impl Agent {
                 smart_followup: SmartFollowUpManager::with_resource_index(resource_index.clone()),
                 last_injected_context_hash: 0,
             })),
-            context_selector: Arc::new(tokio::sync::RwLock::new(
-                crate::context_selector::ContextSelector::new(),
-            )),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
             memory_snapshot: std::sync::OnceLock::new(),
             tool_concurrency_limit: Arc::new(Semaphore::new(5)),
@@ -1363,14 +1354,6 @@ impl Agent {
         self.tools.definitions_json()
     }
 
-    // === CONTEXT SELECTOR METHODS ===
-
-    /// Analyze query intent and get suggested context bundle.
-    pub async fn analyze_intent(&self, query: &str) -> (IntentAnalysis, ContextBundle) {
-        let selector = self.context_selector.read().await;
-        selector.select_context(query).await
-    }
-
     /// === FAST PATH: Check for simple responses BEFORE acquiring lock ===
     /// This improves latency for common queries like greetings and confirmations.
     fn try_fast_path(&self, user_message: &str) -> Option<AgentResponse> {
@@ -1556,26 +1539,18 @@ impl Agent {
             });
         }
 
-        // === INTENT ANALYSIS + CONVERSATION CONTEXT: Run in parallel ===
-        let ((intent_analysis, _context_bundle), enhanced_input) =
-            tokio::join!(self.analyze_intent(user_message), async {
-                let shared = self.shared_state.read().await;
-                if let Some(resolved) = shared
-                    .conversation_context
-                    .resolve_ambiguous_command(user_message)
-                {
-                    resolved
-                } else {
-                    shared.conversation_context.enhance_input(user_message)
-                }
-            });
-        tracing::debug!(
-            intent = ?intent_analysis.intent_type,
-            confidence = intent_analysis.confidence,
-            entities = intent_analysis.entities.len(),
-            scope = ?intent_analysis.context_scope,
-            "Intent analysis completed"
-        );
+        // === CONVERSATION CONTEXT: Enhance input with conversation state ===
+        let enhanced_input = {
+            let shared = self.shared_state.read().await;
+            if let Some(resolved) = shared
+                .conversation_context
+                .resolve_ambiguous_command(user_message)
+            {
+                resolved
+            } else {
+                shared.conversation_context.enhance_input(user_message)
+            }
+        };
 
         // Add user message to history (use enhanced version for processing, but save original)
         let user_msg = AgentMessage::user(user_message);

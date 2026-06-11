@@ -37,7 +37,6 @@
 pub mod agent;
 pub mod ai_agent;
 pub mod context;
-pub mod context_selector;
 pub mod error;
 pub mod image_utils;
 pub mod llm;
@@ -59,7 +58,6 @@ pub use agent::{
 pub use agent::staged::{IntentCategory, IntentResult};
 // Re-export commonly used types
 pub use ai_agent::AgentInput;
-pub use context_selector::ContextBundle;
 pub use error::{NeoMindError, Result};
 pub use session::SessionManager;
 
