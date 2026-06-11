@@ -102,6 +102,24 @@ Removed ~770 lines of dead code from `context_selector.rs` and `smart_conversati
 
 - `ConversationState` enum, `state` field, `state()` / `set_state()` methods — all had zero callers. The manager is now a unit struct (stateless interceptor for dangerous-operation detection and missing-info detection).
 
+### Dead Code Cleanup (Round 5)
+
+Removed ~76 lines of dead helpers from `prompts/builder.rs` and `conversation_context.rs`.
+
+- 4 dead `PromptBuilder` methods: `build_system_prompt_with_time()`, `core_identity()`, `interaction_principles()`, `tool_strategy()` — superseded by the static `IDENTITY` / `PRINCIPLES` / `TOOL_STRATEGY` constants used by `build_system_prompt()`.
+- Dead `CONVERSATION_CONTEXT_EN` constant and its re-export in `prompts/mod.rs` — only `CONVERSATION_CONTEXT_ZH` is consumed.
+- Dead `ConversationContext::reset()` method — zero callers.
+- 3 dead test functions that asserted on removed methods.
+
+### Dead Code Cleanup (Round 5b)
+
+Removed ~100 lines of dead methods, fields, and re-exports from `smart_followup.rs` and `agent/mod.rs`.
+
+- 5 dead `SmartFollowUpManager` methods: `get_device_suggestions()`, `get_location_suggestions()`, `analyze_input_with_search()`, `clear_history()`, `record_asked()`.
+- 2 dead struct fields: `asked_questions` (write-only, never read), `resource_index` (only readers were the removed methods above). `with_resource_index()` merged into `new()`.
+- Dead `Default` impl (construction always uses `new()`).
+- Trimmed 6 dead re-exports from `agent/mod.rs` (`FollowUpAnalysis`, `FollowUpItem`, `FollowUpPriority`, `FollowUpType`, `DetectedIntent`, `AvailableDevice`) — no code outside the module consumes them.
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor
