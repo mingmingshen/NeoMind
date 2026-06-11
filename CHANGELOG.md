@@ -120,6 +120,28 @@ Removed ~100 lines of dead methods, fields, and re-exports from `smart_followup.
 - Dead `Default` impl (construction always uses `new()`).
 - Trimmed 6 dead re-exports from `agent/mod.rs` (`FollowUpAnalysis`, `FollowUpItem`, `FollowUpPriority`, `FollowUpType`, `DetectedIntent`, `AvailableDevice`) — no code outside the module consumes them.
 
+### Dead Code Cleanup (Round 6)
+
+Removed ~250 lines of dead re-exports and dead types across 8 module files. All callers use full module paths (e.g., `memory::compressor::evict_to_limit`) rather than shortcut re-exports (e.g., `memory::evict_to_limit`); the shortcuts were dead.
+
+**Deleted `memory/manager.rs` (186 lines):**
+- `MemoryManager` was a dead abstraction wrapping `MarkdownMemoryStore`. Zero production callers — all code uses `MarkdownMemoryStore` directly. Removed after the `MemoryScheduler.manager` field (its last consumer) was cleaned up.
+
+**Dead re-export trimming (37 re-exports removed):**
+
+- `lib.rs` (8): `default_fallback_rules`, `process_fallback`, `AgentResponse`, `FallbackRule`, `SessionState`, `ToolCall`, `IntentCategory`, `IntentResult`
+- `agent/mod.rs` (12): `NeoMindError` (pub use → private use), 3 conversation_context types, 3 semantic_mapper types, 4 streaming functions (shadowed or called via full path), 1 NeoMindError pub use
+- `tools/mod.rs` (2): `get_mapper`, `ToolNameMapper`
+- `toolkit/mod.rs` (5): `SharedToolRegistry`, `ToolResultList`, `ToolCallList`, `ExtensionFilter`, `ExtensionToolGenerator` + unused `Arc` import
+- `memory/mod.rs` (12): `MemoryManager`, error types, compressor/dedup/extractor/security types
+- `ai_agent/mod.rs` (2): `AgentExecutionResult`, `ExecutionContext`
+- `skills/mod.rs` (3): `SkillMatch`, `SkillMetadata`, `SkillOrigin`
+- `llm_backends/mod.rs` (6): `DynBackendPlugin`, `LlmBackendPlugin`, `register_builtin_backends`, `CloudFactory`, `MockFactory`, `OllamaFactory`
+- `context/mod.rs` + `device_registry.rs` (2): `DeviceLocation` struct deleted (zero consumers), re-export removed
+
+**Other dead code removed:**
+- `MemoryScheduler.manager` field — stored but never read (also updated 3 tests + 1 production caller in `agent_state.rs`)
+
 ## [0.8.11] - 2026-06-11
 
 ### Agent Module Architecture Refactor
