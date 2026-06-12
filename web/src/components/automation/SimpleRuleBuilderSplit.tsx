@@ -38,6 +38,7 @@ import {
   Puzzle,
   Calendar,
   Play,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { cardPadded } from '@/design-system/tokens/size'
@@ -45,16 +46,11 @@ import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from '@/hooks/useMobile'
 import type { Rule, RuleTrigger, RuleCondition, RuleAction, DeviceType, Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor } from '@/types'
 // Unified dialog components
-import {
-  FullScreenDialog,
-  FullScreenDialogHeader,
-  FullScreenDialogContent,
-  FullScreenDialogFooter,
-  FullScreenDialogSidebar,
-  FullScreenDialogMain,
-  VerticalStepper,
-  type Step as StepperStep,
-} from '@/components/automation/dialog'
+import { BuilderShell } from './dialog/BuilderShell'
+import { WorkspaceSegmentedControl } from './dialog/WorkspaceSegmentedControl'
+import { Field, FieldLabel, FieldMessage } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 
 // ============================================================================
 // Utility Functions
@@ -200,8 +196,6 @@ interface RuleBuilderProps {
     messageChannels?: Array<{ name: string; type: string; enabled: boolean }>
   }
 }
-
-type Step = 'basic' | 'condition' | 'action' | 'review'
 
 // ============================================================================
 // UI Condition Types
@@ -989,393 +983,523 @@ function actionToDSL(
 }
 
 // ============================================================================
-// Right Preview Panel Component
+// Local Canvas Components for RuleWorkspace
 // ============================================================================
 
-interface RulePreviewPanelProps {
-  name: string
-  description: string
-  enabled: boolean
+interface ConditionCanvasProps {
   triggerType: TriggerType
   cronExpression: string
+  onCronExpressionChange: (v: string) => void
+  selectedCronTemplate: string
+  onSelectedCronTemplateChange: (v: string) => void
   condition: UICondition | null
-  actions: RuleAction[]
-  forDuration: number
-  forUnit: 'seconds' | 'minutes' | 'hours'
-  previewDSL: string
-  devices: Array<{ id: string; name: string }>
+  onConditionChange: (c: UICondition) => void
+  onAddCondition: () => UICondition
+  devices: Array<{
+    id: string
+    name: string
+    device_type: string
+    metrics?: Array<{ name: string; data_type: string; unit?: string | null }>
+  }>
+  deviceTypes?: DeviceType[]
   extensions?: Extension[]
   extensionDataSources?: ExtensionDataSourceInfo[]
+  forDuration: number
+  onForDurationChange: (v: number) => void
+  forUnit: 'seconds' | 'minutes' | 'hours'
+  onForUnitChange: (v: 'seconds' | 'minutes' | 'hours') => void
+  errors: FormErrors
   t: (key: string) => string
   tBuilder: (key: string) => string
 }
 
-function RulePreviewPanel({
-  name,
-  description,
-  enabled,
+function ConditionCanvas({
   triggerType,
   cronExpression,
+  onCronExpressionChange,
+  selectedCronTemplate,
+  onSelectedCronTemplateChange,
   condition,
-  actions,
-  forDuration,
-  forUnit,
-  previewDSL,
+  onConditionChange,
+  onAddCondition,
   devices,
+  deviceTypes,
   extensions,
   extensionDataSources,
+  forDuration,
+  onForDurationChange,
+  forUnit,
+  onForUnitChange,
+  errors,
   t,
-  tBuilder
-}: RulePreviewPanelProps) {
-  const [showDSL, setShowDSL] = React.useState(false)
+  tBuilder,
+}: ConditionCanvasProps) {
+  const [showCustomCron, setShowCustomCron] = useState(false)
 
-  // Get next execution time for schedule
-  const nextExecution = React.useMemo(() => {
-    if (triggerType !== 'schedule') return null
-    return getNextExecutionTime(cronExpression)
+  const handleCronTemplateSelect = (templateId: string) => {
+    if (templateId === 'custom') {
+      setShowCustomCron(true)
+      onSelectedCronTemplateChange('custom')
+    } else {
+      setShowCustomCron(false)
+      const template = CRON_TEMPLATES.find(t => t.id === templateId)
+      if (template) {
+        onCronExpressionChange(template.expression)
+        onSelectedCronTemplateChange(templateId)
+      }
+    }
+  }
+
+  const nextExecution = useMemo(() => {
+    if (triggerType === 'schedule') {
+      return getNextExecutionTime(cronExpression)
+    }
+    return null
   }, [triggerType, cronExpression])
 
-  // Get device/extension name by ID
-  const getResourceName = (id: string, isExtension: boolean): string => {
-    if (isExtension) {
-      const ext = extensions?.find(e => e.id === id)
-      return ext?.name || id
-    }
-    const device = devices.find(d => d.id === id)
-    return device?.name || id
-  }
-
-  // Render condition preview
-  const renderConditionPreview = () => {
-    if (!condition) {
-      return (
-        <div className="text-center py-8 text-muted-foreground">
-          <Lightbulb className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p className="text-sm">{tBuilder('noCondition') || '暂无触发条件'}</p>
-        </div>
-      )
-    }
-
-    const renderConditionNode = (cond: UICondition, level = 0) => {
-      const indent = level * 12
-
-      if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
-        return (
-          <div key={cond.id} className="mb-2">
-            <div className="flex items-center gap-2 py-1 px-2 rounded bg-muted-30" style={{ marginLeft: `${indent}px` }}>
-              <Badge variant="outline" className={cn(
-                "text-xs",
-                cond.type === 'and' ? "bg-success-light text-success border-success-light" :
-                cond.type === 'or' ? "bg-warning-light text-warning border-warning" :
-                "bg-error-light text-error border-error"
-              )}>
-                {cond.type.toUpperCase()}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
-                {cond.conditions?.length || 0} {tBuilder('conditions') || '条件'}
-              </span>
+  return (
+    <div className="space-y-4 p-4 rounded-lg border border-border bg-background">
+      {triggerType === 'device_state' && (
+        <>
+          <div className="flex items-center gap-2 pb-4 border-b">
+            <div className="p-2 rounded-full bg-accent-indigo-light">
+              <Lightbulb className="h-5 w-5 text-accent-indigo" />
             </div>
-            {cond.conditions?.map(c => renderConditionNode(c, level + 1))}
-          </div>
-        )
-      }
-
-      const isExtension = cond.source_type === 'extension'
-      const resourceName = isExtension
-        ? (extensions?.find(e => e.id === cond.extension_id)?.name || cond.extension_id || '')
-        : (devices.find(d => d.id === cond.device_id)?.name || cond.device_id || '')
-
-      return (
-        <div key={cond.id} className="flex items-center gap-2 py-1.5 px-2 rounded bg-muted-30 mb-1" style={{ marginLeft: `${indent}px` }}>
-          <div className={cn(
-            "w-6 h-6 rounded flex items-center justify-center text-xs",
-            isExtension ? "bg-accent-purple-light text-accent-purple" : "bg-info-light text-info"
-          )}>
-            {isExtension ? <Puzzle className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium truncate">{resourceName}</div>
-            <div className={cn(textNano, "text-muted-foreground truncate")}>{cond.metric}</div>
-          </div>
-          <div className="text-xs font-mono">
-            {cond.operator} {cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div className="p-3 space-y-1">
-        {renderConditionNode(condition)}
-        {forDuration > 0 && (
-          <div className="mt-3 pt-3 border-t border-border">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
+            <div>
+              <h4 className="text-sm font-medium">{tBuilder('triggerDevice') || 'Device Trigger'}</h4>
+              <p className="text-xs text-muted-foreground">{tBuilder('deviceTriggerDesc') || 'Trigger when device state meets conditions'}</p>
             </div>
           </div>
-        )}
-      </div>
-    )
-  }
 
-  // Render actions preview
-  const renderActionsPreview = () => {
-    if (actions.length === 0) {
-      return (
-        <div className="text-center py-8 text-muted-foreground">
-          <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p className="text-sm">{tBuilder('noActions') || '暂无执行动作'}</p>
-        </div>
-      )
-    }
-
-    const getActionIcon = (type: string) => {
-      switch (type) {
-        case 'Execute': return <Zap className="h-4 w-4" />
-        case 'Notify': return <Bell className="h-4 w-4" />
-        case 'Log': return <FileText className="h-4 w-4" />
-        case 'Set': return <Settings className="h-4 w-4" />
-        case 'Delay': return <Clock className="h-4 w-4" />
-        case 'CreateAlert': return <AlertTriangle className="h-4 w-4" />
-        case 'HttpRequest': return <Globe className="h-4 w-4" />
-        default: return <Zap className="h-4 w-4" />
-      }
-    }
-
-    const getActionColor = (type: string) => {
-      switch (type) {
-        case 'Execute': return 'bg-accent-purple-light text-accent-purple'
-        case 'Notify': return 'bg-info-light text-info'
-        case 'Log': return 'bg-muted text-muted-foreground'
-        case 'Set': return 'bg-accent-orange-light text-accent-orange'
-        case 'Delay': return 'bg-warning-light text-warning'
-        case 'CreateAlert': return 'bg-error-light text-error'
-        case 'HttpRequest': return 'bg-success-light text-success'
-        default: return 'bg-muted'
-      }
-    }
-
-    return (
-      <div className="p-3 space-y-2">
-        {actions.map((action, index) => (
-          <div key={index} className="flex items-start gap-2 p-2 rounded bg-muted-30">
-            <div className={cn("w-6 h-6 rounded flex items-center justify-center shrink-0", getActionColor(action.type))}>
-              {getActionIcon(action.type)}
+          {!condition && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <ConditionTypeButton
+                label={tBuilder('simpleCondition')}
+                icon={<Lightbulb className="h-5 w-5" />}
+                onClick={() => onConditionChange(onAddCondition())}
+              />
+              <ConditionTypeButton
+                label={tBuilder('rangeCondition')}
+                icon={<Globe className="h-5 w-5" />}
+                onClick={() => {
+                  const c = onAddCondition()
+                  c.type = 'range'
+                  c.range_min = 0
+                  c.range_max = 100
+                  onConditionChange(c)
+                }}
+              />
+              <ConditionTypeButton
+                label={tBuilder('andCombination')}
+                icon={<Check className="h-5 w-5" />}
+                onClick={() => {
+                  const c = onAddCondition()
+                  c.type = 'and'
+                  c.conditions = [onAddCondition(), onAddCondition()]
+                  onConditionChange(c)
+                }}
+              />
+              <ConditionTypeButton
+                label={tBuilder('orCombination')}
+                icon={<AlertTriangle className="h-5 w-5" />}
+                onClick={() => {
+                  const c = onAddCondition()
+                  c.type = 'or'
+                  c.conditions = [onAddCondition(), onAddCondition()]
+                  onConditionChange(c)
+                }}
+              />
+              <ConditionTypeButton
+                label={tBuilder('notCondition') || 'NOT'}
+                icon={<X className="h-5 w-5" />}
+                onClick={() => {
+                  const c = onAddCondition()
+                  c.type = 'not'
+                  c.conditions = [onAddCondition()]
+                  onConditionChange(c)
+                }}
+              />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium">{action.type}</div>
-              <div className={cn(textNano, "text-muted-foreground truncate")}>
-                {action.type === 'Execute' ? `${action.command}` :
-                 action.type === 'Notify' ? action.message :
-                 action.type === 'Log' ? `${action.level}: ${action.message}` :
-                 action.type === 'Set' ? `${action.property} = ${action.value}` :
-                 action.type === 'Delay' ? `${action.duration}ms` :
-                 action.type === 'CreateAlert' ? action.title :
-                 action.type}
+          )}
+
+          {condition && (
+            <div className="space-y-4">
+              <ConditionEditor
+                condition={condition}
+                onChange={onConditionChange}
+                devices={devices}
+                deviceTypes={deviceTypes}
+                extensions={extensions}
+                extensionDataSources={extensionDataSources}
+                t={t}
+                tBuilder={tBuilder}
+              />
+
+              <div className="flex items-center gap-3 p-4 bg-muted-30 rounded-lg border">
+                <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Label className="text-sm font-medium">{tBuilder('duration')}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={forDuration}
+                  onChange={e => onForDurationChange(parseInt(e.target.value) || 0)}
+                  className="w-24 h-9"
+                />
+                <Select value={forUnit} onValueChange={(v: any) => onForUnitChange(v)}>
+                  <SelectTrigger className="w-28 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="seconds">{tBuilder('seconds')}</SelectItem>
+                    <SelectItem value="minutes">{tBuilder('minutes')}</SelectItem>
+                    <SelectItem value="hours">{tBuilder('hours')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {errors.condition && errors.condition.length > 0 && (
+                <div className="p-3 bg-error-light border border-destructive rounded-lg">
+                  {errors.condition.map((err, i) => (
+                    <p key={i} className="text-sm text-destructive">• {err}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {triggerType === 'schedule' && (
+        <>
+          <div className="flex items-center gap-2 pb-4 border-b">
+            <div className="p-2 rounded-full bg-accent-indigo-light">
+              <Clock className="h-5 w-5 text-accent-indigo" />
+            </div>
+            <div>
+              <h4 className="text-sm font-medium">{tBuilder('triggerSchedule') || 'Schedule Trigger'}</h4>
+              <p className="text-xs text-muted-foreground">{tBuilder('scheduleTriggerDesc') || 'Execute on a schedule'}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs text-muted-foreground">{tBuilder('cronTemplate') || 'Cron Template'}</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                {CRON_TEMPLATES.slice(0, 8).map(template => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => handleCronTemplateSelect(template.id)}
+                    className={cn(
+                      "flex flex-col items-center gap-1 p-2 rounded-md border text-xs transition-all",
+                      selectedCronTemplate === template.id
+                        ? "border-accent-indigo bg-accent-indigo-light text-accent-indigo"
+                        : "border-border hover:border-accent-indigo"
+                    )}
+                  >
+                    {template.icon}
+                    <span>{template.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
-            <div className={cn(textNano, "text-muted-foreground")}>#{index + 1}</div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-xs text-muted-foreground">
+                  {tBuilder('cronExpression') || 'Cron Expression'}
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCustomCron(!showCustomCron)
+                    if (showCustomCron) {
+                      const template = CRON_TEMPLATES.find(t => t.expression === cronExpression)
+                      if (template) {
+                        onSelectedCronTemplateChange(template.id)
+                      } else {
+                        onSelectedCronTemplateChange('custom')
+                      }
+                    } else {
+                      onSelectedCronTemplateChange('custom')
+                    }
+                  }}
+                  className="text-xs text-accent-indigo hover:text-accent-indigo"
+                >
+                  {showCustomCron ? (tBuilder('useTemplate') || 'Use Template') : (tBuilder('customCron') || 'Custom')}
+                </button>
+              </div>
+              {showCustomCron ? (
+                <Input
+                  type="text"
+                  value={cronExpression}
+                  onChange={e => onCronExpressionChange(e.target.value)}
+                  placeholder="* * * * *"
+                  className={cn(
+                    "font-mono text-sm h-9",
+                    errors.cron && "border-destructive"
+                  )}
+                />
+              ) : (
+                <div className="p-3 bg-muted-30 rounded-lg border">
+                  <code className="text-sm font-mono">{cronExpression}</code>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                {tBuilder('cronFormat') || 'Format: minute hour day month weekday'}
+              </p>
+            </div>
+
+            {nextExecution && (
+              <div className="flex items-center gap-2 p-3 bg-muted-30 rounded-lg border">
+                <Calendar className="h-4 w-4 text-success" />
+                <span className="text-xs text-muted-foreground">
+                  {tBuilder('nextExecution') || 'Next execution'}: {nextExecution.toLocaleString('zh-CN', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-    )
-  }
+        </>
+      )}
 
-  // Render DSL preview
-  const renderDSLPreview = () => {
-    return (
-      <div className="p-3">
-        <pre className={cn(textNano, "font-mono bg-muted-50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all")}>
-          {previewDSL || '// No DSL generated'}
-        </pre>
-      </div>
-    )
-  }
+      {triggerType === 'manual' && (
+        <>
+          <div className="flex items-center gap-2 pb-4 border-b">
+            <div className="p-2 rounded-full bg-accent-indigo-light">
+              <Play className="h-5 w-5 text-accent-indigo" />
+            </div>
+            <div>
+              <h4 className="text-sm font-medium">{tBuilder('triggerManual') || 'Manual Trigger'}</h4>
+              <p className="text-xs text-muted-foreground">{tBuilder('manualTriggerDesc') || 'This rule must be triggered manually'}</p>
+            </div>
+          </div>
 
-  // Render compact condition for preview card
-  const renderCompactCondition = (cond: UICondition): React.ReactNode => {
-    if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
-      return (
-        <div className="space-y-1">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted-50">
-            <span className="font-medium">{cond.type.toUpperCase()}</span>
-            <span className="text-muted-foreground">({cond.conditions?.length || 0})</span>
-          </span>
-        </div>
-      )
-    }
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-muted-30 rounded-lg border">
+              <div className="w-6 h-6 shrink-0 rounded-full bg-success-light flex items-center justify-center">
+                <span className="text-xs font-medium text-success">1</span>
+              </div>
+              <p className="text-sm text-muted-foreground">{tBuilder('manualStep1') || 'Click execute button in rule list'}</p>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-muted-30 rounded-lg border">
+              <div className="w-6 h-6 shrink-0 rounded-full bg-success-light flex items-center justify-center">
+                <span className="text-xs font-medium text-success">2</span>
+              </div>
+              <p className="text-sm text-muted-foreground">{tBuilder('manualStep2') || 'Or call execution API'}</p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
-    const isExtension = cond.source_type === 'extension'
-    const resourceName = isExtension
-      ? (extensions?.find(e => e.id === cond.extension_id)?.name || cond.extension_id || '')
-      : (devices.find(d => d.id === cond.device_id)?.name || cond.device_id || '')
+interface ActionCanvasProps {
+  actions: RuleAction[]
+  onActionsChange: (actions: RuleAction[]) => void
+  devices: Array<{
+    id: string
+    name: string
+    device_type: string
+    commands?: Array<{ name: string; description: string }>
+    metrics?: Array<{ name: string; data_type: string; unit?: string | null }>
+  }>
+  deviceTypes?: DeviceType[]
+  extensions?: Extension[]
+  messageChannels?: Array<{ name: string; type: string; enabled: boolean }>
+  t: (key: string) => string
+  tBuilder: (key: string) => string
+}
 
-    return (
-      <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-        {isExtension ? <Puzzle className="h-4 w-4 text-accent-purple" /> : <Lightbulb className="h-4 w-4 text-info" />}
-        <span className="truncate">{resourceName}</span>
-        <span className={cn("font-mono", textNano)}>{cond.operator}</span>
-        <span>{cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}</span>
-      </div>
-    )
-  }
-
+function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensions, messageChannels, t, tBuilder }: ActionCanvasProps) {
   return (
-    <div className="h-full flex flex-col bg-muted-30 rounded-lg p-4">
-      {/* Header with toggle */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b">
-        <div className="flex items-center gap-2">
-          <Eye className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold">{tBuilder('preview') || '实时预览'}</h3>
-        </div>
-        <button
-          onClick={() => setShowDSL(!showDSL)}
-          className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
-            showDSL
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted hover:bg-muted"
-          )}
-        >
-          <Code className="h-4 w-4" />
-          {showDSL ? 'DSL' : (tBuilder('overview') || '预览')}
-        </button>
+    <div className="space-y-4">
+      {/* Action type buttons */}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => {
+          const newAction: RuleAction = { type: 'Log', level: 'info', message: '' }
+          onActionsChange([...actions, newAction])
+        }}>
+          <FileText className="h-4 w-4 mr-1" />
+          {tBuilder('logRecord') || 'Log'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => {
+          const newAction: RuleAction = { type: 'Notify', message: '', channels: [] }
+          onActionsChange([...actions, newAction])
+        }}>
+          <Bell className="h-4 w-4 mr-1" />
+          {tBuilder('sendNotification') || 'Notify'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => {
+          const firstDevice = devices[0]
+          const commands = firstDevice ? getCommandsForResource(firstDevice.id, devices, deviceTypes, extensions) : []
+          const newAction: RuleAction = {
+            type: 'Execute',
+            device_id: firstDevice?.id || '',
+            command: commands[0]?.name || 'turn_on',
+            params: {},
+          }
+          onActionsChange([...actions, newAction])
+        }}>
+          <Zap className="h-4 w-4 mr-1" />
+          {tBuilder('executeCommand') || 'Execute'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => {
+          const newAction: RuleAction = { type: 'Delay', duration: 5000 }
+          onActionsChange([...actions, newAction])
+        }}>
+          <Clock className="h-4 w-4 mr-1" />
+          {tBuilder('delay') || 'Delay'}
+        </Button>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto">
-        {showDSL ? (
-          <div className="p-3 bg-background rounded-lg border max-h-full overflow-y-auto">
-            {renderDSLPreview()}
+      {/* Actions list */}
+      <div className="space-y-2">
+        {actions.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">{tBuilder('noActionsHint') || 'No actions yet, click buttons above to add'}</p>
           </div>
         ) : (
-          <div className="space-y-3">
-        {/* Trigger Card */}
-        <div className={cn(
-          "rounded-lg p-4 border",
-          triggerType === 'device_state' && "bg-gradient-to-br from-info-light to-accent-indigo-light border-info",
-          triggerType === 'schedule' && "bg-gradient-to-br from-success-light to-accent-emerald-light border-success-light dark:border-success-light",
-          triggerType === 'manual' && "bg-gradient-to-br from-accent-orange-light to-amber-50 dark:to-amber-950/30 border-accent-orange-light"
-        )}>
-          <div className="flex items-center gap-2 mb-2">
-            {triggerType === 'device_state' ? <Lightbulb className="h-4 w-4 text-info" /> :
-             triggerType === 'schedule' ? <Clock className="h-4 w-4 text-success dark:text-success" /> :
-             <Play className="h-4 w-4 text-accent-orange" />}
-            <span className={cn(
-              "text-sm font-medium",
-              triggerType === 'device_state' && "text-info",
-              triggerType === 'schedule' && "text-success dark:text-success",
-              triggerType === 'manual' && "text-accent-orange"
-            )}>
-              {tBuilder('triggerType') || '触发类型'}
-            </span>
-          </div>
-          <p className={cn(
-            "text-sm",
-            triggerType === 'device_state' && "text-info",
-            triggerType === 'schedule' && "text-success dark:text-success",
-            triggerType === 'manual' && "text-accent-orange"
-          )}>
-            {triggerType === 'device_state' ? (tBuilder('triggerDevice') || '设备状态触发') :
-             triggerType === 'schedule' ? (tBuilder('triggerSchedule') || '定时触发') :
-             (tBuilder('triggerManual') || '手动触发')}
-          </p>
-          {triggerType === 'schedule' && nextExecution && (
-            <div className="mt-2 flex items-center gap-2 text-xs opacity-80">
-              <Calendar className="h-4 w-4" />
-              <span>{nextExecution.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Arrow */}
-        <div className="flex justify-center py-1">
-          <ChevronDown className="h-5 w-5 text-muted-foreground" />
-        </div>
-
-        {/* Condition Card */}
-        <div className="bg-gradient-to-br from-accent-purple-light to-violet-50 dark:to-violet-950/30 rounded-lg p-4 border border-accent-purple-light">
-          <div className="flex items-center gap-2 mb-3">
-            <FileText className="h-4 w-4 text-accent-purple" />
-            <span className="text-sm font-medium text-accent-purple">
-              {tBuilder('conditions') || '条件'}
-            </span>
-            <Badge variant="secondary" className="ml-auto text-xs">
-              {condition ? 1 : 0}
-            </Badge>
-          </div>
-          {condition ? (
-            <div className="text-xs text-accent-purple space-y-1">
-              {renderCompactCondition(condition)}
-              {forDuration > 0 && (
-                <div className={cn("flex items-center gap-2", textNano, "mt-2 pt-2 border-t border-accent-purple-light")}>
-                  <Clock className="h-4 w-4" />
-                  <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-accent-purple">
-              {tBuilder('noCondition') || '暂无触发条件'}
-            </p>
-          )}
-        </div>
-
-        {/* Arrow */}
-        <div className="flex justify-center py-1">
-          <ChevronDown className="h-5 w-5 text-muted-foreground" />
-        </div>
-
-        {/* Actions Card */}
-        <div className="bg-gradient-to-br from-success-light to-accent-emerald-light rounded-lg p-4 border border-success-light dark:border-success-light">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap className="h-4 w-4 text-success dark:text-success" />
-            <span className="text-sm font-medium text-success dark:text-success">
-              {tBuilder('actions') || '动作'}
-            </span>
-            <Badge variant="secondary" className="ml-auto text-xs">
-              {actions.length}
-            </Badge>
-          </div>
-          {actions.length > 0 ? (
-            <div className="space-y-1.5">
-              {actions.slice(0, 4).map((action, index) => {
-                const getActionIcon = (type: string) => {
-                  switch (type) {
-                    case 'Execute': return <Zap className="h-4 w-4" />
-                    case 'Notify': return <Bell className="h-4 w-4" />
-                    case 'Log': return <FileText className="h-4 w-4" />
-                    case 'Set': return <Settings className="h-4 w-4" />
-                    case 'Delay': return <Clock className="h-4 w-4" />
-                    case 'CreateAlert': return <AlertTriangle className="h-4 w-4" />
-                    case 'HttpRequest': return <Globe className="h-4 w-4" />
-                    default: return <Zap className="h-4 w-4" />
-                  }
-                }
-                return (
-                  <div key={index} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                    <div className="text-success">{getActionIcon(action.type)}</div>
-                    <span className="text-xs font-medium truncate">{action.type}</span>
+          actions.map((action, index) => (
+            <div key={index} className="p-4 rounded-lg border border-border bg-background">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded bg-accent-indigo-light flex items-center justify-center text-xs font-medium text-accent-indigo">
+                    {index + 1}
                   </div>
-                )
-              })}
-              {actions.length > 4 && (
-                <div className="text-xs text-center text-success dark:text-success">
-                  +{actions.length - 4} {tBuilder('more') || '更多'}
+                  <span className="text-sm font-medium">{action.type}</span>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => onActionsChange(actions.filter((_, i) => i !== index))}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* Action editor based on type */}
+              {action.type === 'Log' && (
+                <div className="space-y-2">
+                  <Select value={(action as any).level || 'info'} onValueChange={(v) => {
+                    onActionsChange(actions.map((a, i) => i === index ? { ...a, level: v } : a))
+                  }}>
+                    <SelectTrigger className="w-32 h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="info">Info</SelectItem>
+                      <SelectItem value="warning">Warning</SelectItem>
+                      <SelectItem value="error">Error</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={(action as any).message || ''}
+                    onChange={e => onActionsChange(actions.map((a, i) => i === index ? { ...a, message: e.target.value } : a))}
+                    placeholder={tBuilder('logMessage') || 'Log message'}
+                  />
                 </div>
               )}
+
+              {action.type === 'Notify' && (
+                <div className="space-y-2">
+                  <Input
+                    value={(action as any).message || ''}
+                    onChange={e => onActionsChange(actions.map((a, i) => i === index ? { ...a, message: e.target.value } : a))}
+                    placeholder={tBuilder('enterNotificationMessage') || 'Notification message'}
+                  />
+                </div>
+              )}
+
+              {action.type === 'Execute' && (
+                <div className="space-y-2">
+                  <Select value={(action as any).device_id || ''} onValueChange={(v) => {
+                    onActionsChange(actions.map((a, i) => i === index ? { ...a, device_id: v, command: getCommandsForResource(v, devices, deviceTypes, extensions)[0]?.name || 'turn_on' } : a))
+                  }}>
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue placeholder={tBuilder('selectDeviceForAction') || 'Select device'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={(action as any).command || ''} onValueChange={(v) => {
+                    onActionsChange(actions.map((a, i) => i === index ? { ...a, command: v } : a))
+                  }}>
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue placeholder={tBuilder('enterCommandName') || 'Command name'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getCommandsForResource((action as any).device_id || '', devices, deviceTypes, extensions).map(c => (
+                        <SelectItem key={c.name} value={c.name}>{c.display_name || c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {action.type === 'Delay' && (
+                <Input
+                  type="number"
+                  value={(action as any).duration || 5000}
+                  onChange={e => onActionsChange(actions.map((a, i) => i === index ? { ...a, duration: parseInt(e.target.value) || 5000 } : a))}
+                  placeholder={tBuilder('enterDelayDuration') || 'Delay duration (ms)'}
+                />
+              )}
             </div>
-          ) : (
-            <p className="text-xs text-success dark:text-success">
-              {tBuilder('noActions') || '暂无执行动作'}
-            </p>
-          )}
-        </div>
-      </div>
+          ))
         )}
       </div>
     </div>
+  )
+}
+
+interface DslPreviewStripProps {
+  previewDSL: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+function DslPreviewStrip({ previewDSL, open, onOpenChange }: DslPreviewStripProps) {
+  return (
+    <div className="border-t border-border">
+      <button
+        type="button"
+        onClick={() => onOpenChange(!open)}
+        className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-muted-30 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Code className="h-4 w-4" />
+          {open ? 'Hide DSL' : 'Show DSL'}
+        </span>
+        <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="p-4 bg-muted-30 border-t">
+          <pre className={cn(textNano, "font-mono overflow-x-auto whitespace-pre-wrap break-all")}>
+            {previewDSL || '// No DSL generated'}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ConditionTypeButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="p-4 rounded-lg border-2 border-border hover:border-accent-indigo hover:bg-muted-30 transition-all text-left"
+    >
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-muted-30">{icon}</div>
+        <span className="font-medium">{label}</span>
+      </div>
+    </button>
   )
 }
 
@@ -1395,9 +1519,9 @@ export function SimpleRuleBuilderSplit({
   const isEditMode = !!rule
   const isMobile = useIsMobile()
 
-  // Step state
-  const [currentStep, setCurrentStep] = useState<Step>('basic')
-  const [completedSteps, setCompletedSteps] = useState<Set<Step>>(new Set())
+  // Workspace state
+  const [workspaceTab, setWorkspaceTab] = useState<'condition' | 'action'>('condition')
+  const [dslPreviewOpen, setDslPreviewOpen] = useState(false)
 
   // Form data
   const [name, setName] = useState('')
@@ -1414,14 +1538,10 @@ export function SimpleRuleBuilderSplit({
   const [actions, setActions] = useState<RuleAction[]>([])
   const [saving, setSaving] = useState(false)
   const [formErrors, setFormErrors] = useState<FormErrors>({})
-  const [expandedActionHeaders, setExpandedActionHeaders] = useState<Set<number>>(new Set())
 
   // Reset when dialog opens or rule changes
   useEffect(() => {
     if (open) {
-      setCurrentStep('basic')
-      setCompletedSteps(new Set())
-
       if (rule) {
         setName(rule.name || '')
         setDescription(rule.description || '')
@@ -1578,53 +1698,44 @@ export function SimpleRuleBuilderSplit({
     }
   }, [resources.devices, resources.deviceTypes, resources.extensions, resources.extensionDataSources])
 
-  // Validate current step
-  const validateStep = (step: Step): boolean => {
+  // Validate form
+  const validate = (): boolean => {
     const errors: FormErrors = {}
 
-    if (step === 'basic') {
-      if (!name.trim()) {
-        errors.name = tBuilder('ruleNameRequired')
-      }
+    if (!name.trim()) {
+      errors.name = tBuilder('ruleNameRequired')
     }
 
-    if (step === 'condition') {
-      // Only validate condition for device_state trigger type
-      // Schedule and manual triggers don't need a condition
-      if (triggerType === 'device_state') {
-        if (!condition) {
-          errors.condition = [tBuilder('addTriggerCondition')]
-        } else {
-          const validateCondition = (cond: UICondition): string[] => {
-            const errs: string[] = []
-            if (cond.type === 'simple' || cond.type === 'range') {
-              const hasSourceId = cond.source_type === 'extension' ? !!cond.extension_id : !!cond.device_id
-              if (!hasSourceId) errs.push(cond.source_type === 'extension' ? (tBuilder('selectExtension') || 'Select extension') : tBuilder('selectDevice'))
-              if (!cond.metric) errs.push(tBuilder('selectMetric'))
-              if (cond.type === 'simple') {
-                const hasValue = cond.threshold !== undefined || cond.threshold_value !== undefined
-                if (!hasValue) errs.push(tBuilder('enterThreshold'))
-              }
-            } else if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
-              if (!cond.conditions || cond.conditions.length === 0) {
-                errs.push(tBuilder('addSubConditions'))
-              } else {
-                cond.conditions.forEach((sub) => {
-                  errs.push(...validateCondition(sub))
-                })
-              }
+    // Only validate condition for device_state trigger type
+    if (triggerType === 'device_state') {
+      if (!condition) {
+        errors.condition = [tBuilder('addTriggerCondition')]
+      } else {
+        const validateCondition = (cond: UICondition): string[] => {
+          const errs: string[] = []
+          if (cond.type === 'simple' || cond.type === 'range') {
+            const hasSourceId = cond.source_type === 'extension' ? !!cond.extension_id : !!cond.device_id
+            if (!hasSourceId) errs.push(cond.source_type === 'extension' ? (tBuilder('selectExtension') || 'Select extension') : tBuilder('selectDevice'))
+            if (!cond.metric) errs.push(tBuilder('selectMetric'))
+            if (cond.type === 'simple') {
+              const hasValue = cond.threshold !== undefined || cond.threshold_value !== undefined
+              if (!hasValue) errs.push(tBuilder('enterThreshold'))
             }
-            return errs
+          } else if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
+            if (!cond.conditions || cond.conditions.length === 0) {
+              errs.push(tBuilder('addSubConditions'))
+            } else {
+              cond.conditions.forEach((sub) => {
+                errs.push(...validateCondition(sub))
+              })
+            }
           }
-          const conditionErrors = validateCondition(condition)
-          if (conditionErrors.length > 0) {
-            errors.condition = conditionErrors
-          }
+          return errs
         }
-      }
-      // For schedule trigger, validate cron expression
-      if (triggerType === 'schedule' && !cronExpression.trim()) {
-        errors.cron = tBuilder('cronExpression') || 'Cron expression is required'
+        const conditionErrors = validateCondition(condition)
+        if (conditionErrors.length > 0) {
+          errors.condition = conditionErrors
+        }
       }
     }
 
@@ -1632,35 +1743,9 @@ export function SimpleRuleBuilderSplit({
     return Object.keys(errors).length === 0
   }
 
-  // Navigate to next step
-  const handleNext = () => {
-    if (!validateStep(currentStep)) return
-
-    const newCompleted = new Set(completedSteps)
-    newCompleted.add(currentStep)
-    setCompletedSteps(newCompleted)
-
-    const steps: Step[] = ['basic', 'condition', 'action', 'review']
-    const currentIndex = steps.indexOf(currentStep)
-    if (currentIndex < steps.length - 1) {
-      setCurrentStep(steps[currentIndex + 1])
-    }
-  }
-
-  // Navigate to previous step
-  const handlePrevious = () => {
-    const steps: Step[] = ['basic', 'condition', 'action', 'review']
-    const currentIndex = steps.indexOf(currentStep)
-    if (currentIndex > 0) {
-      setCurrentStep(steps[currentIndex - 1])
-    }
-  }
-
   // Save
   const handleSave = async () => {
-    if (!name.trim()) return
-    // For device_state trigger, condition is required
-    if (triggerType === 'device_state' && !condition) return
+    if (!validate()) return
 
     setSaving(true)
     try {
@@ -1708,17 +1793,6 @@ export function SimpleRuleBuilderSplit({
     }
   }
 
-  // Step config - always show all 4 steps, content varies by trigger type
-  const steps: { key: Step; label: string; shortLabel: string; icon: React.ReactNode }[] = [
-    { key: 'basic', label: tBuilder('steps.basic'), shortLabel: tBuilder('steps.basicShort') || '基本信息', icon: <Settings className="h-4 w-4" /> },
-    { key: 'condition', label: tBuilder('triggerType') || '触发配置', shortLabel: tBuilder('steps.conditionShort') || '触发', icon: <Lightbulb className="h-4 w-4" /> },
-    { key: 'action', label: tBuilder('steps.action'), shortLabel: tBuilder('steps.actionShort') || '动作', icon: <Zap className="h-4 w-4" /> },
-    { key: 'review', label: tBuilder('steps.review'), shortLabel: tBuilder('steps.reviewShort') || '预览', icon: <Eye className="h-4 w-4" /> },
-  ]
-
-  const stepIndex = steps.findIndex(s => s.key === currentStep)
-  const isFirstStep = currentStep === 'basic'
-
   // Generate preview DSL
   const previewDSL = useMemo(() => {
   const finalCondition = triggerType === 'device_state' && condition ? uiConditionToRuleCondition(condition) : null
@@ -1736,301 +1810,184 @@ export function SimpleRuleBuilderSplit({
   )
 }, [name, condition, actions, resources.devices, resources.extensions, forDuration, forUnit, tags, triggerType, cronExpression, tBuilder])
 
-  // Convert steps to VerticalStepper format
-  const stepperSteps: StepperStep[] = steps.map(step => ({
-    id: step.key,
-    label: step.label,
-    shortLabel: step.shortLabel,
-    icon: step.icon,
-  }))
+  // Local RuleWorkspace component
+  function RuleWorkspace() {
+    return (
+      <div className="space-y-4">
+        <WorkspaceSegmentedControl
+          accent="indigo"
+          segments={[
+            {
+              value: 'condition',
+              label: tBuilder('conditions') || 'Conditions',
+              count: triggerType === 'device_state' ? (condition ? 1 : 0) : undefined,
+            },
+            {
+              value: 'action',
+              label: tBuilder('actions') || 'Actions',
+              count: actions.length,
+            },
+          ]}
+          value={workspaceTab}
+          onChange={(v) => setWorkspaceTab(v as 'condition' | 'action')}
+        />
+
+        {workspaceTab === 'condition' && (
+          <ConditionCanvas
+            triggerType={triggerType}
+            cronExpression={cronExpression}
+            onCronExpressionChange={setCronExpression}
+            selectedCronTemplate={selectedCronTemplate}
+            onSelectedCronTemplateChange={setSelectedCronTemplate}
+            condition={condition}
+            onConditionChange={setCondition}
+            onAddCondition={createDefaultCondition}
+            devices={resources.devices}
+            deviceTypes={resources.deviceTypes}
+            extensions={resources.extensions}
+            extensionDataSources={resources.extensionDataSources}
+            forDuration={forDuration}
+            onForDurationChange={setForDuration}
+            forUnit={forUnit}
+            onForUnitChange={setForUnit}
+            errors={formErrors}
+            t={t}
+            tBuilder={tBuilder}
+          />
+        )}
+
+        {workspaceTab === 'action' && (
+          <ActionCanvas
+            actions={actions}
+            onActionsChange={setActions}
+            devices={resources.devices}
+            deviceTypes={resources.deviceTypes}
+            extensions={resources.extensions}
+            messageChannels={resources.messageChannels}
+            t={t}
+            tBuilder={tBuilder}
+          />
+        )}
+
+        <DslPreviewStrip
+          previewDSL={previewDSL}
+          open={dslPreviewOpen}
+          onOpenChange={setDslPreviewOpen}
+        />
+      </div>
+    )
+  }
 
   return (
-    <FullScreenDialog
+    <BuilderShell
       open={open}
       onOpenChange={onOpenChange}
-    >
-      {/* Header */}
-      <FullScreenDialogHeader
-        icon={<Zap className="h-5 w-5" />}
-        iconBg="bg-accent-purple-light"
-        iconColor="text-accent-purple"
-        title={isEditMode ? t('automation:edit') : t('automation:createRule')}
-        onClose={() => onOpenChange(false)}
-      />
+      accent="indigo"
+      mobileConfigLabel={t('automation:ruleBuilder.config')}
+      title={rule ? t('automation:ruleBuilder.editRule') : t('automation:newRule')}
+      subtitle={t('automation:ruleBuilder.subtitle')}
+      icon={<Zap className="h-5 w-5" />}
+      statusIndicator={
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className={cn('h-1.5 w-1.5 rounded-full', enabled ? 'bg-success' : 'bg-muted-foreground/40')} />
+          {enabled ? t('automation:ruleBuilder.enabled') : t('automation:ruleBuilder.disabled')}
+        </span>
+      }
+      config={
+        <div className="space-y-3.5">
+          {/* Name */}
+          <Field>
+            <FieldLabel htmlFor="rule-name">{t('automation:ruleBuilder.ruleName')}</FieldLabel>
+            <Input id="rule-name" value={name} onChange={(e) => setName(e.target.value)} />
+            {formErrors.name && <FieldMessage>{formErrors.name}</FieldMessage>}
+          </Field>
 
-      {/* Content with Sidebar */}
-      <FullScreenDialogContent>
-        {/* Left Sidebar - Vertical Steps - Hide on mobile */}
-        <FullScreenDialogSidebar>
-          <VerticalStepper
-            steps={stepperSteps}
-            currentStep={currentStep}
-            completedSteps={Array.from(completedSteps)}
-            onStepClick={(stepId) => {
-              const clickedIndex = steps.findIndex(s => s.key === stepId)
-              if (completedSteps.has(stepId as Step) || clickedIndex < stepIndex) {
-                setCurrentStep(stepId as Step)
-              }
-            }}
-          />
-        </FullScreenDialogSidebar>
+          {/* Description */}
+          <Field>
+            <FieldLabel htmlFor="rule-desc">{t('automation:ruleBuilder.description')}</FieldLabel>
+            <Textarea id="rule-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+          </Field>
 
-        {/* Main Content */}
-        <FullScreenDialogMain>
-          <div className={cn(
-            "max-w-4xl mx-auto",
-            isMobile ? "px-4 py-4" : "px-4 py-6"
-          )}>
-              {/* Step 1: Basic Info */}
-          {currentStep === 'basic' && (
-            <BasicInfoStep
-              name={name}
-              onNameChange={setName}
-              description={description}
-              onDescriptionChange={setDescription}
-              tags={tags}
-              onTagsChange={setTags}
-              enabled={enabled}
-              onEnabledChange={setEnabled}
-              errors={formErrors}
-              t={t}
-              tBuilder={tBuilder}
-            />
-          )}
+          {/* Trigger type select */}
+          <Field>
+            <FieldLabel>{t('automation:ruleBuilder.triggerType')}</FieldLabel>
+            <Select value={triggerType} onValueChange={(v) => setTriggerType(v as typeof triggerType)}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="device_state">{t('automation:ruleBuilder.triggerDevice')}</SelectItem>
+                <SelectItem value="schedule">{t('automation:ruleBuilder.triggerSchedule')}</SelectItem>
+                <SelectItem value="manual">{t('automation:ruleBuilder.triggerManual')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
 
-          {/* Step 2: Condition / Trigger Configuration */}
-          {currentStep === 'condition' && (
-            <ConditionStep
-              triggerType={triggerType}
-              onTriggerTypeChange={setTriggerType}
-              cronExpression={cronExpression}
-              onCronExpressionChange={setCronExpression}
-              selectedCronTemplate={selectedCronTemplate}
-              onSelectedCronTemplateChange={setSelectedCronTemplate}
-              condition={condition}
-              onConditionChange={setCondition}
-              onAddCondition={createDefaultCondition}
-              devices={resources.devices}
-              deviceTypes={resources.deviceTypes}
-              extensions={resources.extensions}
-              extensionDataSources={resources.extensionDataSources}
-              forDuration={forDuration}
-              onForDurationChange={setForDuration}
-              forUnit={forUnit}
-              onForUnitChange={setForUnit}
-              errors={formErrors}
-              t={t}
-              tBuilder={tBuilder}
-            />
-          )}
-
-          {/* Step 3: Actions */}
-          {currentStep === 'action' && (
-            <ActionStep
-              actions={actions}
-              onActionsChange={setActions}
-              devices={resources.devices}
-              deviceTypes={resources.deviceTypes}
-              extensions={resources.extensions}
-              messageChannels={resources.messageChannels}
-              t={t}
-              tBuilder={tBuilder}
-            />
-          )}
-
-          {/* Step 4: Review */}
-          {currentStep === 'review' && (
-            <ReviewStep
-              name={name}
-              description={description}
-              enabled={enabled}
-              condition={condition}
-              actions={actions}
-              forDuration={forDuration}
-              forUnit={forUnit}
-              previewDSL={previewDSL}
-              t={t}
-              tBuilder={tBuilder}
-            />
-          )}
+          {/* Tags editor - lifted from BasicInfoStep */}
+          <Field>
+            <FieldLabel>{t('automation:ruleBuilder.tags') || 'Tags'}</FieldLabel>
+            <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-background min-h-[42px]">
+              {tags.map(tag => (
+                <Badge key={tag} variant="secondary" className="gap-1 pl-2">
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => setTags(tags.filter(t => t !== tag))}
+                    className="rounded-full p-0 hover:bg-muted"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+              <input
+                type="text"
+                value={tagInput}
+                onChange={e => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const trimmed = tagInput.trim()
+                    if (trimmed && !tags.includes(trimmed)) {
+                      setTags([...tags, trimmed])
+                      setTagInput('')
+                    }
+                  } else if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
+                    setTags(tags.slice(0, -1))
+                  }
+                }}
+                placeholder={tags.length === 0 ? (tBuilder('addTag') || 'Add tag...') : ''}
+                className="flex-1 min-w-[80px] outline-none bg-transparent text-sm"
+              />
             </div>
-        </FullScreenDialogMain>
+          </Field>
 
-        {/* Right Preview Panel - Hide on mobile */}
-        {!isMobile && (
-          <aside className={cn(
-            "w-[360px] border-l shrink-0 overflow-y-auto",
-            "bg-black/[0.02] dark:bg-white/[0.02]"
-          )}>
-            <RulePreviewPanel
-              name={name}
-              description={description}
-              enabled={enabled}
-              triggerType={triggerType}
-              cronExpression={cronExpression}
-              condition={condition}
-              actions={actions}
-              forDuration={forDuration}
-              forUnit={forUnit}
-              previewDSL={previewDSL}
-              devices={resources.devices}
-              extensions={resources.extensions}
-              extensionDataSources={resources.extensionDataSources}
-              t={t}
-              tBuilder={tBuilder}
+          {/* Enabled switch */}
+          <div className="flex items-center gap-3">
+            <Switch
+              id="rule-enabled"
+              checked={enabled}
+              onCheckedChange={(checked) => setEnabled(!!checked)}
             />
-          </aside>
-        )}
-      </FullScreenDialogContent>
-
-      {/* Step Navigation Footer */}
-      <FullScreenDialogFooter>
-        {!isFirstStep && (
-          <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} disabled={saving} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
-            {tBuilder('previous')}
-          </Button>
-        )}
-
-        <div className="flex-1" />
-
-        {currentStep === 'review' ? (
-          <Button size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={saving || !name.trim()} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-            {saving ? tBuilder('saving') : tBuilder('save')}
-          </Button>
-        ) : (
-          <Button size={isMobile ? "default" : "sm"} onClick={handleNext} disabled={!name.trim() && currentStep === 'basic'} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-            {tBuilder('next')}
-            <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "ml-1")} />
-          </Button>
-        )}
-      </FullScreenDialogFooter>
-    </FullScreenDialog>
-  )
-}
-
-// ============================================================================
-// Step 1: Basic Info
-// ============================================================================
-
-interface BasicInfoStepProps {
-  name: string
-  onNameChange: (v: string) => void
-  description: string
-  onDescriptionChange: (v: string) => void
-  tags: string[]
-  onTagsChange: (v: string[]) => void
-  enabled: boolean
-  onEnabledChange: (v: boolean) => void
-  errors: FormErrors
-  t: (key: string) => string
-  tBuilder: (key: string) => string
-  _t?: (key: string) => string
-}
-
-function BasicInfoStep({
-  name,
-  onNameChange,
-  description,
-  onDescriptionChange,
-  tags,
-  onTagsChange,
-  enabled,
-  onEnabledChange,
-  errors,
-  t,
-  tBuilder,
-  _t
-}: BasicInfoStepProps) {
-  const [tagInput, setTagInput] = useState('')
-
-  const addTag = () => {
-    const trimmed = tagInput.trim()
-    if (trimmed && !tags.includes(trimmed)) {
-      onTagsChange([...tags, trimmed])
-      setTagInput('')
-    }
-  }
-
-  const removeTag = (tagToRemove: string) => {
-    onTagsChange(tags.filter(t => t !== tagToRemove))
-  }
-
-  const handleTagInputKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      addTag()
-    } else if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
-      removeTag(tags[tags.length - 1])
-    }
-  }
-
-  return (
-    <div className="space-y-6 py-4">
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">
-          {tBuilder('ruleName')} <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          value={name}
-          onChange={e => onNameChange(e.target.value)}
-          placeholder={tBuilder('ruleNamePlaceholder')}
-          className={cn(errors.name && "border-destructive")}
-          autoFocus
-        />
-        {errors.name && (
-          <p className="text-xs text-destructive">{errors.name}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">{tBuilder('description')}</Label>
-        <Input
-          value={description}
-          onChange={e => onDescriptionChange(e.target.value)}
-          placeholder={tBuilder('descriptionPlaceholder')}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">{tBuilder('tags') || 'Tags'}</Label>
-        <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-background min-h-[42px]">
-          {tags.map(tag => (
-            <Badge key={tag} variant="secondary" className="gap-1 pl-2">
-              {tag}
-              <button
-                type="button"
-                onClick={() => removeTag(tag)}
-                className="rounded-full p-0 hover:bg-muted"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </Badge>
-          ))}
-          <input
-            type="text"
-            value={tagInput}
-            onChange={e => setTagInput(e.target.value)}
-            onKeyDown={handleTagInputKeyDown}
-            onBlur={addTag}
-            placeholder={tags.length === 0 ? (tBuilder('addTag') || 'Add tag...') : ''}
-            className="flex-1 min-w-[80px] outline-none bg-transparent text-sm"
-          />
+            <Label htmlFor="rule-enabled" className="text-sm font-medium cursor-pointer">
+              {tBuilder('enabled')}
+            </Label>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground">{tBuilder('tagsHint') || 'Press Enter to add a tag'}</p>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <Checkbox
-          id="rule-enabled"
-          checked={enabled}
-          onCheckedChange={(checked) => onEnabledChange(!!checked)}
-        />
-        <Label htmlFor="rule-enabled" className="text-sm font-medium cursor-pointer">
-          {tBuilder('enabled')}
-        </Label>
-      </div>
-    </div>
+      }
+      workspace={<RuleWorkspace />}
+      footer={
+        <>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>{t('automation:ruleBuilder.cancel')}</Button>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setDslPreviewOpen(v => !v)}>{t('automation:ruleBuilder.previewDSL')}</Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('automation:ruleBuilder.save')}
+            </Button>
+          </div>
+        </>
+      }
+    />
   )
 }
 
@@ -2412,241 +2369,6 @@ function ConditionStep({
   )
 }
 
-function ConditionTypeButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="p-4 rounded-lg border-2 border-muted hover:border-border hover:bg-muted transition-all text-left"
-    >
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-muted">{icon}</div>
-        <span className="font-medium">{label}</span>
-      </div>
-    </button>
-  )
-}
-
-// ============================================================================
-// Step 3: Actions
-// ============================================================================
-
-interface ActionStepProps {
-  actions: RuleAction[]
-  onActionsChange: (actions: RuleAction[]) => void
-  devices: Array<{
-    id: string
-    name: string
-    device_type: string
-    commands?: Array<{ name: string; description: string }>
-    metrics?: Array<{ name: string; data_type: string; unit?: string | null }>
-  }>
-  deviceTypes?: DeviceType[]
-  extensions?: Extension[]
-  messageChannels?: Array<{ name: string; type: string; enabled: boolean }>
-  t: (key: string) => string
-  tBuilder: (key: string) => string
-}
-
-function ActionStep({ actions, onActionsChange, devices, deviceTypes, extensions, messageChannels, t, tBuilder }: ActionStepProps) {
-  const addAction = useCallback((type: 'Notify' | 'Execute' | 'Log' | 'Set' | 'Delay' | 'CreateAlert' | 'HttpRequest') => {
-    // Create a properly typed action based on the type
-    let newAction: RuleAction
-    switch (type) {
-      case 'Notify':
-        newAction = { type: 'Notify', message: '', channels: [] }
-        break
-      case 'Execute': {
-        // Try to get commands from first available resource (device or extension)
-        const firstDevice = devices[0]
-        const commands = firstDevice ? getCommandsForResource(firstDevice.id, devices, deviceTypes, extensions) : []
-        newAction = {
-          type: 'Execute',
-          device_id: firstDevice?.id || '',
-          command: commands[0]?.name || 'turn_on',
-          params: {},
-        }
-        break
-      }
-      case 'Set':
-        newAction = {
-          type: 'Set',
-          device_id: devices[0]?.id || '',
-          property: 'state',
-          value: true,
-        }
-        break
-      case 'Delay':
-        newAction = { type: 'Delay', duration: 5000 }
-        break
-      case 'CreateAlert':
-        newAction = { type: 'CreateAlert', title: '', message: '', severity: 'info' }
-        break
-      case 'HttpRequest':
-        newAction = { type: 'HttpRequest', method: 'GET', url: '', headers: {}, body: '' }
-        break
-      case 'Log':
-      default:
-        newAction = { type: 'Log', level: 'info', message: '', severity: undefined }
-        break
-    }
-    onActionsChange([...actions, newAction])
-  }, [actions, devices, deviceTypes, extensions, onActionsChange])
-
-  const updateAction = useCallback((index: number, data: Partial<RuleAction>) => {
-    onActionsChange(actions.map((a, i) => {
-      if (i !== index) return a
-
-      // Ensure type integrity - only allow updates to fields that belong to this action type
-      const updated = { ...a, ...data } as RuleAction
-
-      // Verify the action maintains its correct structure based on type
-      switch (updated.type) {
-        case 'Log':
-          return { type: 'Log', level: (updated as any).level || 'info', message: (updated as any).message || '', severity: (updated as any).severity }
-        case 'Notify':
-          return { type: 'Notify', message: (updated as any).message || '', channels: (updated as any).channels || [] }
-        case 'Execute':
-          return { type: 'Execute', device_id: (updated as any).device_id || '', command: (updated as any).command || '', params: (updated as any).params || {} }
-        case 'CreateAlert':
-          return { type: 'CreateAlert', title: (updated as any).title || '', message: (updated as any).message || '', severity: (updated as any).severity || 'info' }
-        case 'Set':
-          return { type: 'Set', device_id: (updated as any).device_id || '', property: (updated as any).property || '', value: (updated as any).value ?? true }
-        case 'Delay':
-          return { type: 'Delay', duration: (updated as any).duration || 1000 }
-        case 'HttpRequest':
-          return { type: 'HttpRequest', method: (updated as any).method || 'GET', url: (updated as any).url || '', headers: (updated as any).headers || {}, body: (updated as any).body || '' }
-        default:
-          return updated
-      }
-    }))
-  }, [actions, onActionsChange])
-
-  const removeAction = useCallback((index: number) => {
-    onActionsChange(actions.filter((_, i) => i !== index))
-  }, [actions, onActionsChange])
-
-  return (
-    <div className="space-y-4 py-4">
-      {/* Action Type Buttons */}
-      <div className="flex flex-wrap justify-center gap-2 mb-4">
-        <ActionTypeButton label={tBuilder('executeCommand')} icon={<Zap className="h-4 w-4" />} onClick={() => addAction('Execute')} />
-        <ActionTypeButton label={tBuilder('sendNotification')} icon={<Bell className="h-4 w-4" />} onClick={() => addAction('Notify')} />
-        <ActionTypeButton label={tBuilder('logRecord')} icon={<FileText className="h-4 w-4" />} onClick={() => addAction('Log')} />
-        <ActionTypeButton label={tBuilder('writeValue')} icon={<Globe className="h-4 w-4" />} onClick={() => addAction('Set')} />
-        <ActionTypeButton label={tBuilder('delay')} icon={<Timer className="h-4 w-4" />} onClick={() => addAction('Delay')} />
-        <ActionTypeButton label={tBuilder('createAlert')} icon={<AlertTriangle className="h-4 w-4" />} onClick={() => addAction('CreateAlert')} />
-        <ActionTypeButton label={tBuilder('httpRequest')} icon={<Globe className="h-4 w-4" />} onClick={() => addAction('HttpRequest')} />
-      </div>
-
-      {/* Actions List */}
-      <div className="max-w-3xl mx-auto space-y-2">
-        {actions.map((action, i) => (
-          <ActionEditorCompact
-            key={i}
-            action={action}
-            index={i}
-            devices={devices}
-            deviceTypes={deviceTypes}
-            extensions={extensions}
-            messageChannels={messageChannels}
-            t={t}
-            tBuilder={tBuilder}
-            onUpdate={(data) => updateAction(i, data)}
-            onRemove={() => removeAction(i)}
-          />
-        ))}
-        {actions.length === 0 && (
-          <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted-20">
-            <Zap className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">{tBuilder('noActionsHint')}</p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ActionTypeButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
-  return (
-    <Button variant="outline" size="sm" onClick={onClick} className="gap-1.5">
-      {icon}
-      {label}
-    </Button>
-  )
-}
-
-// ============================================================================
-// Step 4: Review
-// ============================================================================
-
-interface ReviewStepProps {
-  name: string
-  description: string
-  enabled: boolean
-  condition: UICondition | null
-  actions: RuleAction[]
-  forDuration: number
-  forUnit: 'seconds' | 'minutes' | 'hours'
-  previewDSL: string
-  t: (key: string) => string
-  tBuilder: (key: string) => string
-}
-
-function ReviewStep({ name, description, enabled, condition, actions, forDuration, forUnit, previewDSL, t, tBuilder }: ReviewStepProps) {
-  return (
-    <div className="space-y-6 max-w-3xl mx-auto py-4">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className={cn(cardPadded, "text-center")}>
-          <div className="text-2xl font-bold text-accent-purple">{condition ? 1 : 0}</div>
-          <div className="text-xs text-muted-foreground">{tBuilder('review.triggerCondition')}</div>
-        </div>
-        <div className={cn(cardPadded, "text-center")}>
-          <div className="text-2xl font-bold text-success">{actions.length}</div>
-          <div className="text-xs text-muted-foreground">{tBuilder('review.executeAction')}</div>
-        </div>
-        <div className={cn(cardPadded, "text-center")}>
-          <div className="text-2xl font-bold">{enabled ? tBuilder('review.enabled') : tBuilder('review.disabled')}</div>
-          <div className="text-xs text-muted-foreground">{tBuilder('review.status')}</div>
-        </div>
-      </div>
-
-      {/* Basic Info */}
-      <div className={cn(cardPadded)}>
-        <h4 className="font-medium flex items-center gap-2 mb-3">
-          <Settings className="h-4 w-4" />
-          {tBuilder('review.basicInfo')}
-        </h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground">{tBuilder('review.name')}:</span>
-            <span className="ml-2 font-medium">{name || '-'}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">{tBuilder('review.status')}:</span>
-            <span className="ml-2 font-medium">{enabled ? tBuilder('review.enabled') : tBuilder('review.disabled')}</span>
-          </div>
-          <div className="col-span-2">
-            <span className="text-muted-foreground">{tBuilder('review.desc')}:</span>
-            <span className="ml-2">{description || '-'}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* DSL Preview */}
-      <div className={cn(cardPadded)}>
-        <h4 className="font-medium flex items-center gap-2 mb-3">
-          <Code className="h-4 w-4" />
-          {tBuilder('review.ruleDSL')}
-        </h4>
-        <pre className="text-sm font-mono bg-muted-30 p-3 rounded overflow-x-auto whitespace-pre-wrap">
-          {previewDSL || '// No DSL generated'}
-        </pre>
-      </div>
-    </div>
-  )
-}
-
 // ============================================================================
 // Condition Editor Component
 // ============================================================================
@@ -2767,7 +2489,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
     }
 
     return (
-      <div className="p-3 bg-gradient-to-r from-accent-purple-light to-transparent rounded-lg border border-accent-purple-light">
+      <div className="p-3 bg-accent-purple-light rounded-lg border border-accent-purple">
         <div className="flex flex-wrap items-center gap-2">
           {/* Source Type Selector */}
           <Select
@@ -2864,7 +2586,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
     const hasValidId = (cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'device' && cond.device_id)
 
     return (
-      <div className="p-3 bg-gradient-to-r from-info-light to-transparent rounded-lg border border-info">
+      <div className="p-3 bg-info-light rounded-lg border border-info">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="text-xs bg-info-light text-info border-info">BETWEEN</Badge>
 
