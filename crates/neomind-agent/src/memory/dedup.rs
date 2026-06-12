@@ -61,6 +61,12 @@ impl DedupProcessor {
         intersection as f32 / union as f32
     }
 
+    /// Compute raw Jaccard similarity between two strings (0.0–1.0).
+    /// Public so callers can do block-vs-block comparisons directly.
+    pub fn similarity(&self, a: &str, b: &str) -> f32 {
+        Self::jaccard_similarity_with_ngram(a, b, self.ngram_size)
+    }
+
     /// Find similar entry in existing list
     pub fn find_similar(&self, content: &str, existing: &[String]) -> Option<(usize, f32)> {
         for (i, entry) in existing.iter().enumerate() {

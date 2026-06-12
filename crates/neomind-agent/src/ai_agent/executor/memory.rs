@@ -121,25 +121,20 @@ impl AgentExecutor {
         let content = format!(
             "# Task Understanding\n\
              \n\
-             ## Identity & Role\n\
+             ## Role\n\
              {}\n\
              \n\
              ## Mission\n\
              {}\n\
              \n\
-             ## Bound Resources\n\
+             ## Resources\n\
              {}\n\
              \n\
              ## Schedule\n\
              {}\n\
              \n\
-             ## Memory Commands\n\
-             - Read this file: `memory(action='read', target='custom:task-understanding')`\n\
-             - Update this file: `memory(action='add', target='custom:task-understanding', content='## New Section\\n...')`\n\
-             - Create new knowledge file: `memory(action='create', target='custom:{{{{name}}}}', content='...')`\n\
-             \n\
-             ## Notes\n\
-             This file was auto-created with static config. Update it as you discover patterns, thresholds, and device quirks.",
+             ---\n\
+             Update this file as you discover thresholds, patterns, and device quirks. Append only NEW findings — never re-list previous entries.",
             identity_section,
             agent.user_prompt,
             resources_summary,

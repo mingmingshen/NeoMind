@@ -16,7 +16,59 @@ use super::{
 
 use super::super::AgentExecutor;
 
+/// Targeted guidance when the LLM hallucinates a tool name that doesn't exist.
+///
+/// LLMs trained on many agent frameworks often invent a `message`/`notify`/`alert`
+/// tool, or try to call a neomind CLI *domain* (`device`, `dashboard`, ...) as if
+/// it were a standalone tool. Rather than returning a bare "not found", redirect
+/// them to the real mechanism (`shell` → `neomind <domain> ...`) so they
+/// self-correct next round. Returns None for names with no specific hint
+/// (caller falls back to listing the actually-available tools).
+fn hallucinated_tool_hint(tool_name: &str) -> Option<String> {
+    let lower = tool_name.to_lowercase();
+    // 1. Message/alert family — give the exact send syntax (most common hallucination).
+    if matches!(
+        lower.as_str(),
+        "message" | "notify" | "notification" | "alert" | "send_message"
+            | "send_notification" | "send_alert"
+    ) {
+        return Some(format!(
+            " There is NO `{}` tool. To send notifications or alerts, use the `shell` tool with: \
+             `neomind message send --title \"<title>\" --body \"<body>\" --severity \
+             <info|warning|error|critical>`.",
+            tool_name
+        ));
+    }
+    // 2. neomind CLI domains used as tool names — redirect to shell.
+    //    (Reuses the canonical domain list from the mapper to stay in sync.)
+    if crate::tools::mapper::CLI_DOMAINS.contains(&lower.as_str()) {
+        return Some(format!(
+            " There is NO `{}` tool — `{}` is a neomind CLI domain. Use the `shell` tool: \
+             `neomind {} <action>` (e.g. `neomind {} list`, or `neomind {} --help` for all actions).",
+            tool_name, tool_name, lower, lower, lower
+        ));
+    }
+    None
+}
+
 impl AgentExecutor {
+    /// List the names of tools actually registered, for inclusion in NotFound hints.
+    ///
+    /// This is the universal safety net ("保底"): when the LLM hallucinates any tool
+    /// name that has no targeted redirect, it still learns what *does* exist —
+    /// including dynamically-registered extension tools.
+    fn available_tool_names(&self) -> String {
+        if let Some(reg) = self.tool_registry.read().as_ref() {
+            let mut names: Vec<String> = reg.list();
+            names.sort();
+            if !names.is_empty() {
+                return names.join(", ");
+            }
+        }
+        // Static fallback if the registry isn't initialized yet.
+        "shell, memory, skill".to_string()
+    }
+
     /// Process tool results: append to all_tool_results, build messages, handle skill results.
     ///
     /// Returns the updated step number after emitting thinking events.
@@ -46,19 +98,29 @@ impl AgentExecutor {
                 }
                 Err(e) => {
                     let err_msg = format!("Error: {}", e);
-                    // Add actionable hint so the LLM can adjust its strategy
+                    // Add actionable hint so the LLM can adjust its strategy.
+                    // NotFound gets the strongest guidance: a targeted redirect for
+                    // known hallucinations, else a dynamic list of the tools that
+                    // actually exist so the LLM never gets stuck.
                     let hint = if e.to_string().contains("not found") {
-                        " Check available tools and spelling."
+                        hallucinated_tool_hint(&result.name).unwrap_or_else(|| {
+                            let available = self.available_tool_names();
+                            format!(
+                                " Tool '{}' does not exist. Available tools: {}. \
+                                 Use `shell` for any neomind CLI command.",
+                                result.name, available
+                            )
+                        })
                     } else if e.to_string().contains("Invalid arguments")
                         || e.to_string().contains("missing")
                     {
-                        " Check parameter names and types."
+                        " Check parameter names and types.".to_string()
                     } else if e.to_string().contains("timed out") {
-                        " The operation took too long. Try a simpler query."
+                        " The operation took too long. Try a simpler query.".to_string()
                     } else if e.to_string().contains("Permission denied") {
-                        " This action is not allowed. Try an alternative approach."
+                        " This action is not allowed. Try an alternative approach.".to_string()
                     } else {
-                        ""
+                        String::new()
                     };
                     format!("{}{}", err_msg, hint)
                 }
@@ -417,3 +479,51 @@ pub(crate) fn build_tool_result(
 
     (decision_process, execution_result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hallucinated_tool_hint_redirects_message_aliases() {
+        // Common hallucinated names should all redirect to shell.
+        for name in &[
+            "message",
+            "notify",
+            "notification",
+            "alert",
+            "send_message",
+            "send_notification",
+            "send_alert",
+            "MESSAGE", // case-insensitive
+        ] {
+            let hint = hallucinated_tool_hint(name);
+            assert!(hint.is_some(), "{:?} should be redirected", name);
+            assert!(
+                hint.unwrap().contains("neomind message send"),
+                "hint must show the correct shell command"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hallucinated_tool_hint_unknown_name_is_none() {
+        // Genuinely unknown tool names fall back to the generic hint (None here).
+        assert!(hallucinated_tool_hint("device_list").is_none());
+        assert!(hallucinated_tool_hint("shell").is_none());
+        assert!(hallucinated_tool_hint("").is_none());
+    }
+
+    #[test]
+    fn test_hallucinated_tool_hint_redirects_cli_domains() {
+        // CLI domains used as tool names redirect to the shell tool.
+        for name in &["device", "dashboard", "rule", "agent", "widget", "system"] {
+            let hint = hallucinated_tool_hint(name);
+            assert!(hint.is_some(), "{:?} should be redirected as a CLI domain", name);
+            let h = hint.unwrap();
+            assert!(h.contains("shell"), "must point to shell: {}", h);
+            assert!(h.contains("neomind"), "must reference the neomind CLI: {}", h);
+        }
+    }
+}
+

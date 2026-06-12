@@ -126,6 +126,141 @@ impl MemoryTool {
         }
     }
 
+    /// Parse markdown content into a leading preamble and ordered `(header_line, body_lines)` sections.
+    ///
+    /// `body_lines` excludes the header line itself. Lines before the first `##`/`###`
+    /// header accumulate into the preamble.
+    fn parse_sections(content: &str) -> (String, Vec<(String, Vec<String>)>) {
+        let mut preamble = String::new();
+        let mut sections: Vec<(String, Vec<String>)> = Vec::new();
+        let mut current: Option<(String, Vec<String>)> = None;
+        for line in content.lines() {
+            if line.starts_with("## ") || line.starts_with("### ") {
+                if let Some((h, b)) = current.take() {
+                    sections.push((h, b));
+                }
+                current = Some((line.to_string(), Vec::new()));
+            } else if let Some((_, body)) = current.as_mut() {
+                body.push(line.to_string());
+            } else {
+                preamble.push_str(line);
+                preamble.push('\n');
+            }
+        }
+        if let Some((h, b)) = current.take() {
+            sections.push((h, b));
+        }
+        (preamble, sections)
+    }
+
+    /// Strip leading `#` and whitespace from a header line for equality comparison.
+    fn clean_header(header_line: &str) -> String {
+        header_line.trim_start_matches('#').trim().to_string()
+    }
+
+    /// Merge `new_content` into `existing`, returning the full resulting file.
+    ///
+    /// Sections split on `##`/`###` headers. For each section in `new_content`:
+    /// - **Header matches an existing section** → only the body lines NOT already
+    ///   present are appended in place to that section. If every line is already
+    ///   there, the section is unchanged (exact duplicate dropped).
+    /// - **Header is new** → appended as a new section, unless it's a near-identical
+    ///   duplicate (similarity ≥ 0.9) of any existing block.
+    /// - **Header-less leading text** → novel non-blank lines appended to the file.
+    ///
+    /// This stops the quadratic blowup where an agent re-sends an entire growing
+    /// section (e.g. "Pattern Tracking") on every analysis: only the new timestamp
+    /// line lands inside its section, instead of the full history being appended again.
+    fn merge_custom_content(existing: &str, new_content: &str, dedup: &DedupProcessor) -> String {
+        let (existing_preamble, existing_sections) = Self::parse_sections(existing);
+        let (new_preamble, new_sections) = Self::parse_sections(new_content);
+
+        // Working copy: (header_line, body_lines)
+        let mut sections: Vec<(String, Vec<String>)> = existing_sections.clone();
+        let mut appended_loose: Vec<String> = Vec::new();
+
+        // Collect every existing non-blank line for novel-line checks on loose text.
+        let existing_all_lines: Vec<String> = {
+            let mut v: Vec<String> = existing_preamble
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            for (_, b) in &sections {
+                v.extend(b.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()));
+            }
+            v
+        };
+
+        // Header-less leading text in the new content: append each novel line.
+        for line in new_preamble.lines() {
+            let t = line.trim();
+            if t.is_empty() {
+                continue;
+            }
+            let already = existing_all_lines.iter().any(|l| *l == t)
+                || appended_loose.iter().any(|l| l.trim() == t);
+            if !already {
+                appended_loose.push(line.to_string());
+            }
+        }
+
+        for (nheader, nbody) in &new_sections {
+            let nhead_clean = Self::clean_header(nheader);
+            if nhead_clean.is_empty() {
+                continue;
+            }
+            let idx = sections.iter().position(|(h, _)| Self::clean_header(h) == nhead_clean);
+            match idx {
+                Some(i) => {
+                    // Same section: append only novel body lines in place.
+                    for line in nbody {
+                        let t = line.trim();
+                        if t.is_empty() {
+                            continue;
+                        }
+                        let already = sections[i].1.iter().any(|l| l.trim() == t);
+                        if !already {
+                            sections[i].1.push(line.clone());
+                        }
+                    }
+                }
+                None => {
+                    // New section — guard against near-duplicate of an existing block.
+                    let nb_full = format!("{}\n{}", nheader, nbody.join("\n"));
+                    let is_near_dup = sections.iter().any(|(h, b)| {
+                        let eb_full = format!("{}\n{}", h, b.join("\n"));
+                        dedup.similarity(&nb_full, &eb_full) >= 0.9
+                    });
+                    if !is_near_dup {
+                        sections.push((nheader.clone(), nbody.clone()));
+                    }
+                }
+            }
+        }
+
+        // Reassemble.
+        let mut out = String::new();
+        if !existing_preamble.trim().is_empty() {
+            out.push_str(&existing_preamble);
+        }
+        for (h, b) in &sections {
+            out.push_str(h);
+            out.push('\n');
+            for line in b {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        for line in &appended_loose {
+            out.push_str(line);
+            out.push('\n');
+        }
+        // Normalize trailing newlines to exactly one.
+        let trimmed = out.trim_end_matches('\n');
+        format!("{}\n", trimmed)
+    }
+
     /// Find and replace text in content (first occurrence only).
     fn replace_in_content(content: &str, old_text: &str, new_text: &str) -> Result<String> {
         if !content.contains(old_text) {
@@ -390,12 +525,24 @@ Examples:
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
                     let existing = self.read_custom(&store, agent_id.as_deref(), custom_name)?;
-                    let new_content = Self::append_content(&existing, content);
-                    self.write_custom(&store, agent_id.as_deref(), custom_name, &new_content)?;
+                    // Merge new content into existing, deduplicating at the section level.
+                    // Without this, custom files grow quadratically (agent re-sends the
+                    // full pattern history every analysis) — user/knowledge targets are
+                    // protected by line-level dedup below, but custom files weren't.
+                    let merged = Self::merge_custom_content(&existing, content, &dedup);
+                    if merged.trim() == existing.trim() {
+                        return Ok(ToolOutput::success(serde_json::json!({
+                            "message": format!(
+                                "Skipped: content duplicates existing sections in custom:{}",
+                                custom_name
+                            )
+                        })));
+                    }
+                    self.write_custom(&store, agent_id.as_deref(), custom_name, &merged)?;
                     format!(
                         "Added to custom:{} ({} chars)",
                         custom_name,
-                        new_content.chars().count()
+                        merged.chars().count()
                     )
                 } else {
                     match target {
@@ -652,3 +799,64 @@ Examples:
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::dedup::DedupProcessor;
+
+    #[test]
+    fn test_merge_exact_duplicate_section_is_noop() {
+        let existing = "# Task\n\n## Role\nYou are an agent.\n\n## 2026-06-11 22:00 Analysis\n- temp 25C\n- ok\n";
+        let dedup = DedupProcessor::with_defaults();
+        let merged = MemoryTool::merge_custom_content(existing, existing, &dedup);
+        assert_eq!(merged.trim(), existing.trim(), "re-merging identical content must be a no-op");
+    }
+
+    #[test]
+    fn test_merge_pattern_tracking_superset_grows_by_one_line() {
+        // The real-world quadratic blowup: agent re-sends the full Pattern Tracking
+        // history plus one new timestamp line on every analysis.
+        let existing = "## Pattern Tracking\n- 22:00: temp 25C\n- 21:00: temp 24C\n";
+        let resent = "## Pattern Tracking\n- 22:00: temp 25C\n- 21:00: temp 24C\n- 23:00: temp 26C\n";
+        let dedup = DedupProcessor::with_defaults();
+        let merged = MemoryTool::merge_custom_content(existing, resent, &dedup);
+        // Only the genuinely-new line should land — NOT the full resent block.
+        assert!(merged.contains("- 23:00: temp 26C"), "new line must be present");
+        // The two old lines must appear exactly ONCE (not duplicated).
+        assert_eq!(
+            merged.matches("- 22:00: temp 25C").count(),
+            1,
+            "old lines must not be duplicated"
+        );
+        assert_eq!(
+            merged.matches("- 21:00: temp 24C").count(),
+            1,
+            "old lines must not be duplicated"
+        );
+    }
+
+    #[test]
+    fn test_merge_genuinely_new_section_appended() {
+        let existing = "## Role\nYou are an agent.\n";
+        let new = "## Thresholds\n- CPU alert: >85%\n- Temp alert: >40C\n";
+        let dedup = DedupProcessor::with_defaults();
+        let merged = MemoryTool::merge_custom_content(existing, new, &dedup);
+        assert!(merged.contains("## Thresholds"));
+        assert!(merged.contains("- CPU alert: >85%"));
+        assert!(merged.contains("## Role"), "existing section preserved");
+    }
+
+    #[test]
+    fn test_merge_near_duplicate_whole_block_dropped() {
+        // Two near-identical timestamped analyses with different headers are kept
+        // (distinct events), but a near-identical block under a NEW header is dropped.
+        let existing = "## 2026-06-11 22:00 Analysis\nThe temperature sensor reported 25C and everything is within normal range.\n";
+        // Same body, different (new) header — near-duplicate of the existing block.
+        let dup = "## 2026-06-11 22:00 Analysis 2\nThe temperature sensor reported 25C and everything is within normal range.\n";
+        let dedup = DedupProcessor::with_defaults();
+        let merged = MemoryTool::merge_custom_content(existing, dup, &dedup);
+        assert_eq!(merged.trim(), existing.trim(), "near-duplicate block must be dropped");
+    }
+}
+

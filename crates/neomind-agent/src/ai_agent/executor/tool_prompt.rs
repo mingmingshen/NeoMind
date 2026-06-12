@@ -136,6 +136,7 @@ pub(crate) fn build_tool_system_prompt(
          - Knowledge file format: one topic per file, bullet points, concise. Example:\n\
            `memory(action='create', target='custom:thresholds', content='# Thresholds\\n- CPU alert: >85%\\n- Temp normal: 22-28°C\\n- Temp alert: >40°C')`\n\
          - Do NOT store temporary data, raw metrics, or information that changes every execution.\n\
+         - When appending (`add`) to an existing file, append ONLY the new data point — never re-list previous entries or resend the full section. For time-series notes, add just the new timestamp line.\n\
          - Update existing files with `add`/`replace` rather than creating duplicates.";
 
     let action_guidance = "\
