@@ -99,10 +99,14 @@ impl AgentExecutor {
                 Err(e) => {
                     let err_msg = format!("Error: {}", e);
                     // Add actionable hint so the LLM can adjust its strategy.
-                    // NotFound gets the strongest guidance: a targeted redirect for
-                    // known hallucinations, else a dynamic list of the tools that
-                    // actually exist so the LLM never gets stuck.
-                    let hint = if e.to_string().contains("not found") {
+                    // Match on the NotFound *variant* (not a substring) so that an
+                    // Execution error whose message happens to contain "not found"
+                    // (e.g. "Device 'abc' not found") doesn't falsely trigger the
+                    // hallucinated-tool redirect.
+                    let hint = if matches!(
+                        e,
+                        crate::toolkit::ToolError::NotFound(_)
+                    ) {
                         hallucinated_tool_hint(&result.name).unwrap_or_else(|| {
                             let available = self.available_tool_names();
                             format!(
