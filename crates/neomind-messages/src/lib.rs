@@ -46,38 +46,30 @@ pub mod error;
 pub mod manager;
 pub mod message;
 
-pub use channels::{ChannelRegistry, MessageChannel};
+// Re-exports (only types used externally via crate-root shortcut path)
+pub use channels::{
+    get_channel_schema, list_channel_types, ChannelFactory, ChannelInfo, ChannelStats,
+    MessageChannel,
+};
 pub use error::{Error, Result};
-pub use manager::{MessageManager, MessageStats};
-pub use message::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
+pub use manager::MessageManager;
+pub use message::{Message, MessageId, MessageSeverity, MessageStatus};
 
-// Conditional exports for feature-gated channels
+// Feature-gated channel factories (used by API handler for channel registration)
 #[cfg(feature = "webhook")]
-pub use channels::{WebhookChannel, WebhookChannelFactory};
-
+pub use channels::WebhookChannelFactory;
 #[cfg(feature = "email")]
-pub use channels::{EmailChannel, EmailChannelFactory};
-
+pub use channels::EmailChannelFactory;
 #[cfg(feature = "telegram")]
-pub use channels::{TelegramChannel, TelegramChannelFactory};
-
+pub use channels::TelegramChannelFactory;
 #[cfg(feature = "wecom")]
-pub use channels::{WeComChannel, WeComChannelFactory};
-
+pub use channels::WeComChannelFactory;
 #[cfg(feature = "dingtalk")]
-pub use channels::{DingTalkChannel, DingTalkChannelFactory};
-
+pub use channels::DingTalkChannelFactory;
 #[cfg(feature = "slack")]
-pub use channels::{SlackChannel, SlackChannelFactory};
-
+pub use channels::SlackChannelFactory;
 #[cfg(feature = "feishu")]
-pub use channels::{FeishuChannel, FeishuChannelFactory};
-
-// Channel info exports (always available)
-pub use channels::{ChannelFactory, ChannelInfo, ChannelStats, ChannelTypeInfo, TestResult};
-
-// Re-export channel helper functions
-pub use channels::{get_channel_schema, list_channel_types};
+pub use channels::FeishuChannelFactory;
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
