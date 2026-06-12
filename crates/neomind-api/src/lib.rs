@@ -19,5 +19,5 @@ pub mod shutdown;
 pub mod startup;
 pub mod validator;
 
-// Re-export the server entry point for the CLI binary
-pub use server::run;
+// Re-export server entry points for binary crates (neomind-cli, neomind-tauri)
+pub use server::{run, start_server};
