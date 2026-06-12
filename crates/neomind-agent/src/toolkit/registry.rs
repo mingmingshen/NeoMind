@@ -105,6 +105,14 @@ impl ToolRegistry {
 
     /// Execute multiple tools in parallel using `JoinSet` for lower overhead
     /// than spawning individual tasks.
+    ///
+    /// Results are returned in the SAME ORDER as the input `calls`, not in
+    /// completion order. JoinSet yields tasks as they finish, so each task
+    /// tags itself with its input index and the results are reassembled into
+    /// input order before returning. This is critical: consumers
+    /// (e.g. `build_round_tool_calls`) pair results to calls by index, so a
+    /// completion-ordered return would silently swap tool names and results
+    /// in the execution log (and any other index-based consumer).
     pub async fn execute_parallel(&self, calls: Vec<ToolCall>) -> Vec<ToolResult> {
         use tokio::task::JoinSet;
 
@@ -112,45 +120,65 @@ impl ToolRegistry {
             return Vec::new();
         }
 
-        let mut join_set = JoinSet::new();
+        // Capture names up-front so panicked tasks can still be reported with
+        // their intended tool name (the JoinError payload doesn't carry it).
+        let names: Vec<String> = calls.iter().map(|c| c.name.clone()).collect();
+        let n = calls.len();
 
-        for call in calls {
+        let mut join_set: JoinSet<(usize, ToolResult)> = JoinSet::new();
+
+        for (idx, call) in calls.into_iter().enumerate() {
             if let Some(tool) = self.get(&call.name) {
                 let tool_clone = tool.clone();
                 let args = call.args;
                 let name = call.name;
 
                 join_set.spawn(async move {
-                    ToolResult {
-                        name,
-                        result: tool_clone.execute(args).await,
-                    }
+                    let result = tool_clone.execute(args).await;
+                    (
+                        idx,
+                        ToolResult {
+                            name,
+                            result,
+                        },
+                    )
                 });
             } else {
                 let name = call.name;
                 join_set.spawn(async move {
-                    ToolResult {
-                        name: name.clone(),
-                        result: Err(ToolError::NotFound(name)),
-                    }
+                    (
+                        idx,
+                        ToolResult {
+                            name: name.clone(),
+                            result: Err(ToolError::NotFound(name)),
+                        },
+                    )
                 });
             }
         }
 
-        let mut results = Vec::with_capacity(join_set.len());
+        // No await happened between spawning and this point, so the set still
+        // holds all `n` tasks.
+        let mut slots: Vec<Option<ToolResult>> = (0..n).map(|_| None).collect();
         while let Some(res) = join_set.join_next().await {
             match res {
-                Ok(tool_result) => results.push(tool_result),
+                Ok((idx, tool_result)) => slots[idx] = Some(tool_result),
                 Err(e) => {
                     tracing::error!("Tool task panicked: {}", e);
-                    results.push(ToolResult {
-                        name: String::new(),
-                        result: Err(ToolError::Execution(format!("Tool task panicked: {}", e))),
-                    });
+                    // JoinError carries no index; the slot stays None and is
+                    // filled with a panic error (name recovered below).
                 }
             }
         }
-        results
+
+        slots
+            .into_iter()
+            .enumerate()
+            .map(|(idx, opt)| opt.unwrap_or_else(|| ToolResult {
+                name: names.get(idx).cloned().unwrap_or_default(),
+                result: Err(ToolError::Execution("Tool task panicked".to_string())),
+            }))
+            .collect()
     }
 
     /// Get the number of registered tools.

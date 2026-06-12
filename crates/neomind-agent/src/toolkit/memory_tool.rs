@@ -251,18 +251,20 @@ impl Tool for MemoryTool {
         r##"Manage persistent memory across sessions. Use this to store and retrieve information that should persist between conversations.
 
 Actions:
-- add: Append content to a memory target
-- replace: Find and replace text in a memory target
-- remove: Find and remove text from a memory target
+- add: Append content to a memory target (requires content)
+- replace: Find and replace text in a memory target (requires BOTH old_text AND content)
+- remove: Find and remove text from a memory target (requires old_text)
 - read: Read the full content of a memory target
 - list: Show overview of all memory targets (chars used, preview)
-- create: Create a new custom memory file (target must be custom:{name})
+- create: Create a new custom memory file (requires content; target must be custom:{name})
 
 Targets:
 - user: Persistent user profile and preferences (USER.md)
 - knowledge: System knowledge and domain info (KNOWLEDGE.md)
 - session: Session-scoped notes for multi-step task tracking (cleared after 7 days)
 - custom:{name}: Domain-specific custom file (e.g., custom:device-patterns, custom:thresholds). Created with action='create'.
+
+Limits: every target enforces a per-file char limit (custom files ~8000 chars). `content` is REQUIRED for add/replace/create. If a write is rejected for exceeding the limit, the error reports the exact limit — TRUNCATE your content and retry. Keep entries concise (bullet points).
 
 Examples:
 - Add user preference: action='add', target='user', content='Prefers dark mode'
@@ -287,11 +289,11 @@ Examples:
                 },
                 "content": {
                     "type": "string",
-                    "description": "Content to add or replace with"
+                    "description": "Content to add or replace with. REQUIRED for add/replace/create."
                 },
                 "old_text": {
                     "type": "string",
-                    "description": "Text to find (for replace/remove)"
+                    "description": "Text to find (REQUIRED for replace and remove)."
                 }
             },
             "required": ["action"]

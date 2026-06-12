@@ -138,6 +138,9 @@ pub(crate) fn build_tool_system_prompt(
          - Do NOT store temporary data, raw metrics, or information that changes every execution.\n\
          - Update existing files with `add`/`replace` rather than creating duplicates.";
 
+    let action_guidance = "\
+         - Send notifications/alerts via the `shell` tool with: `neomind message send --title \"<title>\" --body \"<body>\" --severity <info|warning|error|critical>`. There is NO separate `message` tool — always use `shell`.";
+
     let combined_guidance = if config.is_focused_plus {
         format!(
             "## Guidelines & Exit\n\
@@ -147,6 +150,7 @@ pub(crate) fn build_tool_system_prompt(
              - Max {} rounds. Be efficient.\n\
              - For complex operations, use the `skill` tool to search for guides.\n\
              - Stop when you have enough data or a tool call failed. Write your analysis directly — plain text only.\n\
+             {action_guidance}\n\
              {memory_guidance}",
             config.max_rounds,
         )
@@ -162,6 +166,7 @@ pub(crate) fn build_tool_system_prompt(
              - For complex operations, use the `skill` tool to search for guides.\n\
              - Stop when you have enough data, already sent notifications, got the same result, or a tool failed.\n\
              - After your last tool call, write your analysis directly — plain text only, key findings first.\n\
+             {action_guidance}\n\
              {memory_guidance}",
             config.max_rounds,
         )
