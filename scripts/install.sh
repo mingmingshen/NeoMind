@@ -146,10 +146,22 @@ install_linux() {
 
     status "Downloading frontend..."
     if curl -fSL --progress-bar "$WEB_URL" -o "$TEMP_DIR/neomind-web.tar.gz" 2>/dev/null; then
-        $SUDO mkdir -p "$WEB_DIR"
-        $SUDO tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
-        $SUDO chown -R www-data:www-data "$WEB_DIR" 2>/dev/null || \
-            $SUDO chown -R neomind:neomind "$WEB_DIR"
+        # Extract to a staging dir, then atomically swap into place. This
+        # avoids accumulating stale hashed assets from previous versions
+        # (Vite emits content-hashed filenames, so old files never get
+        # overwritten and would pile up across upgrades).
+        WEB_NEW="${WEB_DIR}.new.$$"
+        WEB_OLD="${WEB_DIR}.old.$$"
+        $SUDO rm -rf "$WEB_NEW" "$WEB_OLD"
+        $SUDO mkdir -p "$WEB_NEW"
+        $SUDO tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_NEW"
+        $SUDO chown -R www-data:www-data "$WEB_NEW" 2>/dev/null || \
+            $SUDO chown -R neomind:neomind "$WEB_NEW"
+        if [ -d "$WEB_DIR" ]; then
+            $SUDO mv "$WEB_DIR" "$WEB_OLD"
+        fi
+        $SUDO mv "$WEB_NEW" "$WEB_DIR"
+        $SUDO rm -rf "$WEB_OLD"
         success "Frontend installed to $WEB_DIR"
     else
         warning "Frontend package not found. Web UI will show a placeholder page."
