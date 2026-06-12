@@ -195,9 +195,11 @@ impl AgentExecutor {
         for f in knowledge_files {
             match store.read_agent_custom_file(agent_id, &f.name) {
                 Ok(content) => {
-                    // Truncate individual files to 6000 chars — generous for 128K
-                    // context models while still preventing extreme bloat.
-                    content_map.insert(f.name.clone(), truncate_to(&content, 6000));
+                    // Truncate individual files to 12000 chars — scaled up from 6000
+                    // to match the raised write limit (20000) so long-task context
+                    // written in one execution is actually visible in the next.
+                    // Still bounded per-file to avoid context bloat on small models.
+                    content_map.insert(f.name.clone(), truncate_to(&content, 12000));
                 }
                 Err(e) => {
                     tracing::debug!(

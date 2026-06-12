@@ -264,7 +264,7 @@ Targets:
 - session: Session-scoped notes for multi-step task tracking (cleared after 7 days)
 - custom:{name}: Domain-specific custom file (e.g., custom:device-patterns, custom:thresholds). Created with action='create'.
 
-Limits: every target enforces a per-file char limit (custom files ~8000 chars). `content` is REQUIRED for add/replace/create. If a write is rejected for exceeding the limit, the error reports the exact limit — TRUNCATE your content and retry. Keep entries concise (bullet points).
+Limits: every target enforces a per-file char limit (custom files ~20000 chars). `content` is REQUIRED for add/replace/create. If a write is rejected for exceeding the limit, the error reports the exact limit — TRUNCATE your content and retry. Keep entries concise (bullet points).
 
 Examples:
 - Add user preference: action='add', target='user', content='Prefers dark mode'

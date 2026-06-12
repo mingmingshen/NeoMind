@@ -49,7 +49,7 @@ fn default_knowledge_limit() -> usize {
     3000
 }
 fn default_agent_limit() -> usize {
-    8000
+    20000
 }
 fn default_ttl() -> u64 {
     7
@@ -110,7 +110,7 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.user_char_limit, 2000);
         assert_eq!(config.knowledge_char_limit, 3000);
-        assert_eq!(config.agent_char_limit, 8000);
+        assert_eq!(config.agent_char_limit, 20000);
         assert_eq!(config.temp_file_ttl_days, 7);
         assert_eq!(config.system_context_interval_secs, 600);
         assert_eq!(config.summary_interval_secs, 7200);
