@@ -9,327 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Dead Code Cleanup
-
-Removed ~3000 lines of dead/superseded code across the agent crate. All removals verified: workspace builds clean, all tests pass.
-
-**Removed subsystems:**
-
-- **`agent/planner/`** (5 files, ~900 lines) — `KeywordPlanner`, `LLMPlanner`, `PlanningCoordinator` and their types. Designed for upfront multi-step plan generation before LLM tool-calling, but never wired into the execution pipeline. Superseded by the streaming tool-calling architecture (LLM picks tools at runtime) + Skills system (on-demand scenario guides). The associated `AgentEvent` variants (`ExecutionPlanCreated`, `PlanStepStarted`, `PlanStepCompleted`) were also removed from the enum, CLI handler, and API SSE handler — they were matched but never emitted.
-- **`context/`** dead modules (5 files, ~2000 lines) — `business_context.rs`, `health.rs`, `meta_tools.rs`, `resource_resolver.rs`, `state_provider.rs`. These referenced old tool names (`list_devices`, `query_data`, `control_device`) and had zero production callers. `context/mod.rs` simplified from ~200 lines to ~25 (only `DeviceRegistry` and `ResourceIndex` remain).
-- **`tools/event_integration.rs`** (~1030 lines) — `EventIntegratedToolRegistry` with zero references.
-
-**Removed dead functions/fields:**
-
-- `format_skill_matches()` from `skills/matcher.rs` — Skills are injected via the `skill` tool at runtime, not via prompt formatting. `match_skills()` retained (used by `/api/skills/match`).
-- `AgentConfig.planning` field — serde-safe removal (unknown fields ignored on load).
-- `AgentEvent::{ExecutionPlanCreated, PlanStepStarted, PlanStepCompleted}` variants + constructors.
-- Dead semantic/smart wrapper methods in `agent/mod.rs` (6 methods).
-- `llm.rs`: `context_manager` field, `set_context_manager()`, `build_business_context_section()`.
-- `smart_conversation.rs`: unused `devices`/`rules` fields, `update_devices()`/`update_rules()`, `Rule` struct.
-- `smart_followup.rs`: dead `refresh_devices()` method.
-- **`agent/scheduler.rs`** (~320 lines, Round 11) — "Dependency-Aware Tool Scheduling (P2.1)" feature (`ToolExecutionPlan`, `ExecutionBatch`, `build_execution_plan`, `DependencyNode`, and 4 helper functions). Designed for parallel/sequential tool execution based on `ToolRelationships` metadata, but never wired into any execution path. The production executor uses `tool_loop.rs` (sequential) and `registry::execute_parallel` (parallel) directly. The module was declared `pub mod scheduler;` but had zero callers outside its own file/tests.
-- **`smart_conversation::Device`** struct (Round 12) — 12-line struct with `Serialize`/`Deserialize` derives, commented "Shared between smart_conversation and smart_followup modules" but never used in either. `ConversationContext` uses its own `EntityReference` type for device tracking instead.
-- **7 dead `Default` impls** (Round 12) — `ToolResultCache` (local, `agent/mod.rs`), `ToolNameMapper` (`tools/mapper.rs`), `DedupProcessor` (`memory/dedup.rs`), `ResourceIndex` (`context/resource_index.rs`), `AskUserTool`/`ConfirmActionTool`/`ClarifyIntentTool` (`tools/interaction.rs`). All constructors are only called via `::new()` or `::with_defaults()`, never via `::default()` or `Default::default()`.
-- **Dead scheduler methods + error variants** (Round 13) — `AgentScheduler::get_tasks()`, `AgentScheduler::health_check()` (zero callers), `SchedulerError::SchedulerNotRunning`, `SchedulerError::SchedulerStale` (only used by `health_check`). Dead re-exports `ScheduledTask` and `SchedulerError` removed from `ai_agent/mod.rs` (nobody imports via the shortcut path).
-- **`detect_ollama_capabilities()`** (Round 13) — public helper in `ollama.rs` with zero callers. The private `detect_model_capabilities()` it wraps is alive (4 call sites).
-- **`register_builtin_backends()`** (Round 13) — in `backend_plugin.rs`, designed to populate the plugin registry during init but never called in production (only its own test called it). The `create_backend()` match arms handle backend creation directly.
-- **`AgentExecutionResult`** struct (Round 14) — in `executor/mod.rs`, defined with 3 fields (`record`, `memory`, `success`) but never instantiated or returned by any function.
-- **`ExtensionToolGenerator` + `ExtensionFilter`** (Round 14) — in `extension_tools.rs`, ~90-line struct/enum with `generate()`, `generate_definitions()`, `format_for_llm()` methods. Zero production callers (only tests). Superseded by `ExtensionToolExecutor` which takes a registry and is used by `ToolRegistry`.
-- **`SkillRegistry::default()` impl** (Round 14) — all callers use `SkillRegistry::new()` or `SkillRegistry::load_all()`, never `::default()`.
-- **3 dead `Default` impls in neomind-core** (Round 15) — `AggFunc` (`datasource/mod.rs`), `DataSourceCatalog` (`datasource/mod.rs`), `FrontendField` (`extension/package.rs`). All types are alive but `::default()` is never called — callers use `::new()` or construct explicitly.
-- **`is_wasm_extension()`** (Round 15) — in `neomind-core/src/extension/mod.rs`, zero callers. WASM extension support was never implemented; `is_native_extension()` is alive (used by native loader).
-- **6 dead `Default` impls across neomind-devices + neomind-agent** (Round 16) — `DeviceId` (`mdl.rs`), `DeviceRegistry` (`registry.rs`), `WebhookAdapterConfig` (`adapters/webhook.rs`), `MdlRegistry` (`mdl_format.rs`), `MqttAdapterConfig` (`adapters/mqtt.rs`), `ConversationContext` (`agent/conversation_context.rs`). All types are alive but `::default()` is never called — callers use `::new()` or construct explicitly.
-- **`VectorStore::default()`** (Round 17) — in `neomind-storage/src/vector.rs`, zero callers. All callers use `VectorStore::new()`.
-- **9 dead `Default` impls across rules + messages + cli-ops** (Round 18) — `GeneratorConfig` and `RuleHistoryStorage` and `CommandResultHistory` and `DependencyManager` and `UnifiedValueProvider` and `InMemoryValueProvider` (neomind-rules), `Message` and `ChannelRegistry` and `MessageManager` (neomind-messages), `ApiClient` (neomind-cli-ops). All types alive but `::default()` never called.
-- **Dead LLM backend dynamic registration system** (Round 19) — Removed entire unused `BackendFactory` trait, `BackendRegistry` struct + impl + global registry singleton (`GLOBAL_REGISTRY`, `global_registry()`, `register_backend()`), `BackendRequirements` struct, and `DynamicLlmRuntime` struct + `LlmRuntime` impl from `neomind-core/src/llm/backend.rs`. These formed a complete but unused dynamic backend registration/factory system — the actual backend management uses the separate `LlmBackendInstanceManager`. Also removed dead `BackendCapabilities` convenience methods (`supports_all`, `supports_any`, `with_capability`, `with_streaming`, `with_multimodal`, `with_function_calling`, `with_max_context`), dead `BackendCapabilitiesBuilder::modality()` and `Default` impl. Cleaned up `DynamicLlmRuntime` re-exports from `llm/mod.rs` and `lib.rs`.
-- **Dead `factories` module** (Round 19) — Deleted entire `neomind-agent/src/llm_backends/factories/mod.rs` (~400 lines): `OllamaFactory`, `CloudFactory`, `MockFactory` (all implementing the dead `BackendFactory` trait) and `MockRuntime`. None were instantiated outside their own tests.
-- **Dead extension health monitoring + dead event factory methods** (Round 20) — Removed unused `ExtensionHealthInfo` struct, `ExtensionHealthStatus` enum + `as_str()` impl, and `get_health_info()` async method from `neomind-core/src/extension/isolated/process.rs` (~70 lines). These formed a health monitoring subsystem that was never wired into any API or consumer. Also removed dead `ProposedAction::new()`, `ProposedAction::create_rule()`, `ProposedAction::trigger_workflow()` factory methods and dead `MetricValue::string()`, `MetricValue::json()` factory methods from `neomind-core/src/event.rs`.
-- **Dead event bus persistence + backpressure system** (Round 21) — Removed entire unused event persistence subsystem from `neomind-core/src/eventbus.rs`: `EventPersistence` trait, `PersistError` enum, `NoOpPersistence` struct + impl, and `test_no_op_persistence` test. Also removed dead `EventBusError` enum and `publish_with_backpressure` / `publish_with_backpressure_and_source` methods (never called — all callers use `publish` / `publish_sync` / `publish_with_source_sync`). Cleaned up re-exports from `lib.rs`.
-- **Dead llm_backends config module + dead re-exports + dead factory method** (Round 22) — Deleted entire `neomind-agent/src/llm_backends/config.rs` (~306 lines): `LlmBackendConfig` enum, `LlmConfig` struct, `LlmRuntimeManager` struct, local `GenerationParams` type, `MAX_GENERATION_TOKENS` const — all had zero callers outside the file. Removed dead re-exports from `llm_backends/mod.rs`: `LlamaCppConfig`/`LlamaCppRuntime` (callers use full path), `BackendRegistry` (callers use `super::backend_plugin::BackendRegistry`), and the entire config re-export line. Removed dead `AgentEvent::intermediate_end()` factory method (variant constructed directly as `AgentEvent::IntermediateEnd`).
-- **Dead session cleanup subsystem + dead instance manager method** (Round 23) — Removed entire unused session cleanup system from `neomind-agent/src/session.rs`: `SessionCleanupConfig` struct + `Default` impl + `cleanup_interval()` method, `SessionManager.cleanup_config` and `cleanup_running` fields, `start_cleanup_task()` (~127 lines), `stop_cleanup_task()`, `perform_cleanup()`, and `get_session_title()` methods. The cleanup task was never started — the `cleanup_running` field was always `false`. Also removed dead `LlmBackendInstanceManager::get_backend_type()` (zero callers). Cleaned up unused `std::time::Duration` import.
-- **Dead neomind-core session, datasource query, and macros modules** (Round 24) — Deleted entire `neomind-core/src/session.rs` (~186 lines): `Session`, `SessionId`, `SessionMetadata` — all had zero external consumers (neomind-agent and neomind-storage have their own session types). Deleted entire `neomind-core/src/datasource/query.rs` (~195 lines): `UnifiedQueryService`, `QueryError` — designed as a unified query abstraction but never adopted; actual querying goes through the extension executor's `UnifiedStorage` trait. Removed dead datasource types from `datasource/mod.rs`: `QueryResult`, `AggregatedValue`, `AggFunc`, `QueryParams`, `DataSourceInfo`, `DataSourceCatalog` — none used outside neomind-core. Removed dead `DataSourceId` methods: `field_components()`, `is_extension_command()`, `from_storage_parts()` — all only used in own tests. Removed dead `lookup_tools()` from `llm/registry.rs` (zero callers, `lookup_vision` and `lookup_max_input_tokens` are alive). Deleted entire `neomind-core/src/macros.rs` (~216 lines): `newtype_wrapper!`, `builder_methods!`, `enum_from_str!`, `__private_ident!` — all four exported macros had zero consumers across the workspace. Deleted dead `crates/neomind-core/tests/session_test.rs`. Cleaned up all re-exports from `lib.rs` and prelude.
-- **Dead brand constants + dead Error factory methods** (Round 25) — Removed dead brand items: `APP_SHORT_NAME`, `APP_HOMEPAGE`, `APP_DOCS_URL` constants and `welcome_message()` function (all zero callers outside own tests). Removed 8 dead `Error` factory methods: `config()`, `storage()`, `device()`, `tool()`, `workflow()`, `rule()`, `memory()`, `auth()` (zero callers — callers use the enum variant directly, e.g. `Error::Config(...)`). Kept alive factory methods: `llm()`, `not_found()`, `validation()`, `timeout()`, `unauthorized()`.
-- **Dead extension runtime/package methods** (Round 26) — Removed dead `ExtensionRuntime::proxy_registry()` (zero callers) and dead `FrontendField::is_empty_string()` (zero callers).
-- **Dead MetricCache + MqttConfig methods** (Round 27) — Removed 4 dead `MetricCache` methods: `get_source()`, `clear_before()`, `clear_source()`, `source_count()` (all zero external callers). Removed 7 dead `MqttConfig` builder/utility methods: `with_client_id()`, `with_tls()`, `with_ca_cert()`, `with_client_cert()`, `with_client_key()`, `full_broker_addr()` (all zero callers — config fields are populated via serde deserialization, not builder pattern).
-- **Dead SessionMessage + PendingStreamState methods** (Round 28) — Removed 4 dead builder/mutator methods from `neomind-storage/src/session.rs`: `SessionMessage::with_round_contents()`, `SessionMessage::with_round_thinking()` (zero callers — round contents are set via struct literal in streaming.rs), `PendingStreamState::set_tool_calls()`, `PendingStreamState::mark_interrupted()` (zero callers — fields are public and set directly). Removed 3 dead tests that only exercised these methods; fixed `test_pending_stream_state_stage_transitions` to use direct field assignment + `set_stage()` instead of `set_tool_calls()`.
-- **Dead memory error module + dead Message methods** (Round 29) — Deleted entire `neomind-agent/src/memory/error.rs` (~110 lines): `MemoryError` enum with 11 variants, `Result` type alias, `From<MemoryError> for NeoMindError` impl, `From<serde_json::Error> for MemoryError` impl, and `NeoMindError` re-export — all had zero external callers (all consumers use `crate::error::NeoMindError` directly). Removed 3 dead `Message` methods from `neomind-messages/src/message.rs`: `add_tag()` (zero callers anywhere), `duration()` (only own test), `summary()` (only own test). Removed corresponding tests.
-- **Dead RuleStore methods + types** (Round 30) — Removed 10 dead methods from `neomind-rules/src/store.rs`: `list_ids()`, `count()`, `exists()`, `save_history()`, `load_history()`, `get_history_stats()`, `clear_history()`, `clear_all()`, `export_json()`, `import_json()` — all zero external callers (the rule engine uses its own in-memory history, API handlers only call `save()`/`delete()`/`list_all()`). Removed dead types: `RuleStoreConfig` struct + impl + `default_create_dirs()`, `RuleHistoryStats` struct + Default impl + `success_rate()`, `RulesExport` struct, `ImportResult` struct, `ExportFormat` enum, and `RULE_HISTORY_TABLE` constant. Removed dead re-exports from `lib.rs`. Removed unused imports (`serde`, `RuleHistoryEntry`). Removed 2 dead tests.
-- **Dead DeviceActionExecutor methods + dead adapter** (Round 31) — Removed `RetryConfig::no_retry()` (zero callers). Removed 6 dead `DeviceActionExecutor` constructors/setters: `with_retry_config()`, `with_device_service_and_retry()`, `with_all()`, `set_device_service()`, `set_extension_registry()`, `set_retry_config()` (all zero external callers — only `new()`, `with_device_service()`, and `with_extension_registry()` are alive). Removed 2 dead getters: `DeviceActionExecutor::retry_config()` and `DeviceActionExecutor::history()` (fields are used internally but never read externally). Removed dead `DeviceIntegratedRuleEngine::value_provider()` getter (zero callers, `executor()` and `event_bus()` are alive). Deleted entire `CoreExtensionRegistryAdapter` struct + `new()` + `inner()` + `ExtensionRegistry` trait impl (~40 lines) — never instantiated anywhere in the workspace. Removed dead re-export from `lib.rs`. Removed dead `NeoMindError` re-export + `From<RuleError> for NeoMindError` impl from `neomind-rules/src/error.rs` (zero external consumers — same pattern as memory/error.rs removed in Round 29).
-- **Dead neomind-core LLM modules** (Round 32) — Deleted entire `neomind-core/src/llm/memory_consolidation.rs`: `MemoryConsolidator`, `CompactResult`, `ConsolidatedMessage`, `ConsolidationResult`, `MemoryConfig` — all types had zero callers anywhere in the workspace (the production memory system uses `neomind-storage::MemoryConfig` and `neomind-agent::MemorySnapshot`). Deleted entire `neomind-core/src/llm/token_counter.rs`: `count_tokens()`, `heuristic_count()`, `CounterMode`, `EncodingType`, `TokenCounter` — all zero callers (token counting uses `neomind-core::llm::compaction::estimate_tokens` instead). Removed `pub mod` declarations and `pub use` re-exports from `llm/mod.rs`.
-- **Dead neomind-devices methods + BrokerMode** (Round 33) — Removed deprecated `BrokerMode` enum from `embedded_broker.rs` (marked "deprecated, kept for compatibility" but zero usage anywhere; `EmbeddedBroker`/`EmbeddedBrokerConfig` heavily used, alive). Removed its re-export from `lib.rs`. Removed dead `MqttMappingBuilder::default_qos()` and `default_retain()` builder methods (zero `.default_qos(` / `.default_retain(` calls — the fields are initialized to `None` and passed through to config, but never set via these methods). Removed dead `MqttAdapterConfig::with_storage_dir()` and `with_auto_discovery()` builder methods (zero callers — the `storage_dir` and `auto_discovery` fields are set directly via struct literals in `neomind-api/src/server/types.rs` and `handlers/mqtt/brokers.rs`).
-- **Dead protocol re-exports + dead storage methods** (Round 34) — Removed dead `pub use protocol::{Address, BinaryFormat, Capability, CapabilityType, MappingConfig, MqttMapping, MqttMappingBuilder, ProtocolMapping, SharedMapping}` re-export from `neomind-devices/src/lib.rs` — zero external callers via any path (`neomind_devices::TypeName`, `devices::TypeName`, or `neomind_devices::protocol::TypeName`). The types remain accessible internally via `crate::protocol::TypeName` and externally via full path if needed. Removed dead `DeviceRegistry::delete_command()` and `DeviceRegistry::clear_device_commands()` from `neomind-storage/src/device_registry.rs` — both zero callers anywhere including tests.
-- **Dead StreamConfig presets + dead builder methods + dead MemorySnapshot field** (Round 35) — Removed dead `StreamConfig::fast_model()` and `StreamConfig::reasoning_model()` preset constructors from `neomind-core/src/llm/backend.rs` (zero callers — all consumers use `StreamConfig::default()`). Removed dead `ToolRegistryBuilder::with_tool()` method and dead `Default` impl from `neomind-agent/src/toolkit/registry.rs` (zero callers — all consumers use `.with_extension_registry()` + `.with_shell_tool()` + `.build()`). Removed dead `MemorySnapshot::loaded_at` field + `loaded_at()` getter from `neomind-agent/src/memory/snapshot.rs` (field was set in constructor but never read anywhere — `.loaded_at()` had zero callers).
-- **Dead MessageManager::reload()** (Round 36) — Removed dead `MessageManager::reload()` from `neomind-messages/src/manager.rs` (zero callers anywhere in the workspace — messages are loaded from storage at startup and mutated in-memory thereafter, never reloaded).
-- **Dead monitoring module + dead settings methods** (Round 37) — Deleted entire `neomind-storage/src/monitoring.rs` (614 lines): `StorageMonitor`, `StorageMetrics`, `HealthCheckResult`, `OperationStats`, `MonitoringConfig`, `AlertThresholds`, `CheckResult`, `HealthStatus` — zero external callers for ANY type in the module (monitoring was implemented but never integrated into the API or any handler). Removed `pub mod monitoring` declaration and `pub use monitoring::{...}` re-export from `lib.rs`. Removed dead `SettingsStore::export_settings()`, `import_settings()`, `validate_llm_settings()`, `validate_mqtt_settings()` from `settings.rs` (~109 lines) — all four methods had zero callers anywhere in the workspace. Deleted entire `neomind-storage/src/backup.rs` (517 lines): `BackupManager`, `BackupHandler`, `BackupConfig`, `BackupMetadata`, `BackupType` — zero external callers for any type (backup was implemented but never wired into any API handler or CLI command). Removed `pub mod backup` declaration and `pub use backup::{...}` re-export from `lib.rs`.
-- **Dead llm_data + agent_summary + device_state modules** (Round 37b) — Deleted entire `neomind-storage/src/llm_data.rs` (746 lines): `LongTermMemoryStore`, `MemoryEntry`, `MemoryFilter`, `MemoryStats` — all zero external callers (production memory uses `system_memory::MarkdownMemoryStore`). Deleted entire `neomind-storage/src/agent_summary.rs` (82 lines) — zero callers, never integrated. Deleted entire `neomind-storage/src/device_state.rs` (905 lines): `DeviceStateStore`, `DeviceCapabilities`, `DeviceFilter`, `DeviceState`, `MetricQuality`, `MetricSpec`, `MetricValue`, `ParameterSpec`, `CacheStats`, `CommandSpec`, `ConfigSpec` — all zero external callers, superseded by `device_registry` + `neomind-devices` architecture. Removed corresponding `pub mod` declarations and `pub use` re-exports from `lib.rs`.
-- **Dead prelude module** (Round 38) — Removed entire `pub mod prelude { ... }` block (~60 lines) from `neomind-core/src/lib.rs` — re-exported commonly used types but had zero external callers (`neomind_core::prelude::*` never imported anywhere). All types remain accessible via their direct re-exports at the top of `lib.rs` and their canonical module paths.
-- **Dead code behind `#[allow(dead_code)]`** (Round 39) — Removed `derive_key()` from `neomind-cli-ops/src/auto_auth.rs` (duplicate of `crypto.rs::derive_key()`, zero callers) and its now-unused `PBKDF2_ITERATIONS`/`SALT` constants + `pbkdf2`/`sha2` Cargo deps. Removed dead `auto_discovery` field from `TomlMqttConfig` in `config.rs` + its `default_mqtt_auto_discovery()` function (deserialized but never read after load) + struct-level `#[allow(dead_code)]`. Removed dead `session_id` field from `StreamEvent` in `sessions.rs` (stored at 4 construction sites but never read — only `.json` accessed by the WebSocket consumer).
-- **Dead lib.rs shortcut re-exports** (Round 40) — Removed 7 dead shortcut re-exports from `neomind-agent/src/lib.rs`: `BackendTypeDefinition`, `CloudConfig`, `CloudProvider`, `CloudRuntime`, `LlmBackendInstanceManager`, `OllamaConfig`, `OllamaRuntime` — all zero external callers via the shortcut path `neomind_agent::TypeName` (production code uses `neomind_agent::llm_backends::TypeName`; 7 test files updated to use the same full path). Only `get_instance_manager` retained (3 shortcut callers).
-- **Dead storage backend/singleton modules** (Round 41) — Deleted 3 entirely dead modules from `neomind-storage` (1,681 lines total): (1) `backend.rs` (627 lines): `InternalStorageBackend` trait, `KvPair`, `RedbBackend`, `MemoryBackend`, `UnifiedStorage`, `DeviceStateStore`, `DeviceState`, `ConfigStore` — all zero callers (name collisions with `DeviceState` in neomind-api/neomind-devices are independent types). (2) `backends/` directory (803 lines, 3 files): separate `RedbBackend`/`MemoryBackend` implementing the `StorageBackend` trait from `neomind_core::storage`, plus `create_backend()` factory and `available_backends()` — zero external callers (production stores open redb directly). (3) `singleton.rs` (220 lines): `get_or_open_db`, `cache_size`, `clear_cache`, `close_db`, `is_cached` — zero callers (designed for DB connection sharing but never adopted; each store opens its own connection). Also removed `pub use neomind_core::storage::{StorageBackend, StorageError, StorageFactory}` re-export (zero callers) and the `memory` Cargo feature (only gated the dead `backends` module).
-- **Dead core lib.rs re-exports** (Round 42) — Removed 17 dead shortcut re-exports from `neomind-core/src/lib.rs`: `BackendId`, `FinishReason`, `LlmRuntimeInput`, `LlmOutput`, `StreamChunk`, `TokenUsage` (from `llm::backend`); `ImageContent`, `ImageFormat`, `ImageInput`, `ModalityContent` (entire `llm::modality` re-export); `ImageDetail` (from `message`); `EventMetadata`, `ProposedAction` (from `event`); `EventBusReceiver`, `FilterBuilder`, `FilteredReceiver`, `SharedEventBus`, `DEFAULT_CHANNEL_CAPACITY` (from `eventbus`). All had zero external callers via the shortcut path `neomind_core::TypeName` (callers use full module paths like `neomind_core::llm::backend::TypeName`). Retained: `LlmError`, `BackendCapabilities`, `GenerationParams`, `LlmRuntime`, `Content`, `ContentPart`, `Message`, `MessageRole`, `MetricValue`, `NeoMindEvent`, `EventBus`.
-- **Dead storage lib.rs re-exports** (Round 43) — Removed ~60 dead shortcut re-exports from `neomind-storage/src/lib.rs`, verified via compiler (stripped all re-exports, rebuilt with `--tests`, added back only what the compiler required). Entire `pub use` blocks removed for `business` (9 types), `dashboards` (9 types), and `frontend_components` (5 types) — all zero shortcut-path callers. Partially stripped: `timeseries` (7 of 10 removed), `vector` (4 of 6), `settings` (5 of 12), `agents` (1 of 25), `system_memory` (5 of 9), `device_registry` (10 of 11). Types remain accessible via full module paths (e.g., `neomind_storage::business::AlertStore`).
-- **Dead devices lib.rs re-exports** (Round 44) — Removed 33 dead shortcut re-exports + 1 dead constant from `neomind-devices/src/lib.rs`, verified via compiler. Dead re-exports: `Command`, `DeviceCapability`, `DeviceId`, `DeviceInfo`, `DeviceState`, `DeviceType`, `MetricDefinition` (mdl); `DeviceInstance`, `DeviceTypeDefinition`, `DownlinkConfig`, `MdlRegistry`, `MdlStorage`, `ParameterDefinition`, `UplinkConfig` (mdl_format); `AdapterInfo`, `AdapterStats`, `CommandHistoryRecord`, `DeviceHealth`, `DeviceStatus`, `HeartbeatConfig` (service); `AggregatedData`, `MetricCache` (telemetry); all 5 unified_extractor types; `AdapterConfig`, `AdapterError`, `DiscoveredDeviceInfo`, `EventPublishingAdapter` (adapter); `available_adapters`, `create_adapter` (adapters). Also removed dead `BUILD_PROFILE` constant (zero readers). Types remain accessible via full module paths.
-- **Dead rules lib.rs re-exports** (Round 45) — Removed 43 dead shortcut re-exports from `neomind-rules/src/lib.rs`, verified via compiler. Entire `pub use` blocks removed for `dependencies` (4 types), `device_integration` (9 types), `extension_integration` (8 types), `history` (5 types), `store` (2 types) — all zero shortcut-path callers. Partially stripped: `dsl` (2 of 7), `engine` (2 of 8), `unified_provider` (4 of 6), `validator` (7 of 15). Retained 22 types used externally. Types remain accessible via full module paths (e.g., `neomind_rules::history::RuleHistoryStorage`).
-- **Dead messages lib.rs re-exports** (Round 46) — Removed 12 dead shortcut re-exports from `neomind-messages/src/lib.rs`, verified via compiler. Dead: `ChannelRegistry`, `MessageStats`, `MessageType`, `ChannelTypeInfo`, `TestResult`, and 7 feature-gated channel struct types (`WebhookChannel`, `EmailChannel`, `TelegramChannel`, `WeComChannel`, `DingTalkChannel`, `SlackChannel`, `FeishuChannel`) — only their `*Factory` types are used, not the channel structs themselves. Types remain accessible via full module paths.
-- **Dead cli-ops lib.rs re-exports** (Round 47) — Removed 3 dead shortcut re-exports from `neomind-cli-ops/src/lib.rs`: `BuildMeta`, `CliResponse`, `OutputFormat` — all zero shortcut-path callers in the main workspace (callers use `neomind_cli_ops::types::TypeName`). Only `ApiClient` retained (used internally via `crate::ApiClient`).
-- **Dead data-push lib.rs re-exports** (Round 48) — Removed dead `DataPushStore` re-export and `pub use types::*` glob from `neomind-data-push/src/lib.rs`. The glob was re-exporting all types module types but zero were used via shortcut path (callers use `neomind_data_push::types::TypeName`). Retained only 3 manager types used externally: `CreateTargetRequest`, `PushManager`, `UpdateTargetRequest`.
-- **Dead api lib.rs re-exports** (Round 49) — Removed ~38 dead shortcut re-exports from `neomind-api/src/lib.rs`, verified via compiler. Entire dead blocks: `auth` (3 types), `cache` (5 types), `config` (2 types), `crypto` (2 types), `rate_limit` (5 types), `validator` (18 types/functions), plus `create_router`, `ServerState` from `server`. Retained `run` (used by neomind-cli) and `start_server` (used by neomind-tauri). All types accessible via full module paths (e.g., `neomind_api::server::ServerState`).
-- **Dead core storage module** (Round 50) — Deleted entire `neomind-core/src/storage/` directory (94 lines): `StorageBackend` trait, `StorageFactory` trait, `StorageError` enum, `Result` type alias. The trait was never adopted by production code — all stores open redb directly. The implementing backends were already deleted in Round 41. Zero callers remain (verified via grep for all exported types).
-- **Dead rules history module** (Round 51) — Deleted entire `neomind-rules/src/history.rs` (606 lines): `RuleHistoryStorage`, `RuleHistoryEntry`, `RuleHistoryStats`, `HistoryFilter`, `HistoryError` — all zero callers (internal AND external). Production rule history uses `neomind_storage::business::RuleHistoryStore` instead. Found via background dead-module scan; verified via grep for all exported types across the full workspace.
-- `prompts/builder.rs`: deprecated `build_tool_calling_section()`, legacy `build_base_prompt()` wrapper.
-- `toolkit/registry.rs`: dead `categories()` method.
-
-**Critical bug fix (cache.rs):**
-
-- `is_tool_cacheable()` now inspects shell command contents using a read-only action whitelist (`list`, `get`, `history`, etc.) instead of matching stale tool name aliases. Previously, mutation commands routed through `shell` (delete, control, send) were silently cached for 5 minutes.
-
-**Renamed for clarity:**
-
-- `format_aggregated_tool_result` → `format_cli_tool_result` (result_format.rs)
-- Cleaned up "legacy"/"aggregated"/"virtual" terminology in mapper.rs comments and test names
-
-### Dead Code Cleanup (Round 2)
-
-Removed ~2500 lines of dead modules, functions, and legacy test files.
-
-**Removed dead modules (zero production callers):**
-
-- **`agent/formatter.rs`** (278 lines) — `format_tool_result` / `format_summary`. Production formatting uses `streaming/result_format.rs::format_tool_results` (plural).
-- **`agent/cache.rs`** (311 lines) — A `ToolResultCache` that was never imported. The live caches are in `streaming/cache.rs` and `agent/mod.rs`.
-- **`config/mod.rs`** (329 lines) — `StreamingConfig`, `get_default_config()`, `set_default_config()`. Defined but never called anywhere in the workspace.
-- **`ai_agent/intent_parser.rs`** (294 lines) — `IntentParser` struct. The executor has its own `parse_intent` / `parse_intent_keywords` methods that don't use this type.
-- **`memory_extraction.rs`** (~570 lines) — `MemoryExtractor`. Only referenced by `#[ignore]` integration tests. The production memory system uses `AgentMemory` (scheduled) and `MemorySnapshot` (chat).
-
-**Removed legacy test files (all 100% `#[ignore]`, reference removed tool names):**
-
-- `tests/test_multi_tool_inline.rs` — used `list_devices` / `list_rules`
-- `tests/tool_calling_test.rs` (9 tests) — used `list_devices`
-- `tests/tool_calling_evaluation.rs` — used `list_devices`, `query_data`, `device_discover`
-- `tests/tool_calling_evaluation_real.rs` — used `device_discover`, `query_data`
-- `tests/tool_chain_test.rs` — used `device_discover`, `get_device_data`
-- `tests/memory_extraction_integration.rs` — tested removed `MemoryExtractor`
-- `tests/memory_30rounds.rs` — tested removed `MemoryExtractor`
-
-**Cleaned up dead re-exports in `lib.rs`:**
-
-- `pub use tools::ToolNameMapper` — no external consumers
-- `pub use ai_agent::IntentParser` — removed along with the module
-- `pub use config::{get_default_config, set_default_config, StreamingConfig}` — removed along with the module
-- `pub use memory_extraction::MemoryExtractor` — removed along with the module
-
-### Dead Code Cleanup (Round 3)
-
-Removed ~1540 lines of dead code from `semantic_mapper.rs`, `translation.rs`, and `agent/mod.rs`.
-
-**Removed dead module:**
-
-- **`translation.rs`** (1142 lines) — `MdlTranslator`, `DslTranslator`, `Language`, `DeviceDescription`, `RuleDescription`. Zero callers anywhere in the workspace.
-
-**Removed dead SemanticToolMapper code (~400 lines):**
-
-- 18 dead methods: `resolve_devices`, `register_rule(s)`, `resolve_rule`, `register_workflow(s)`, `resolve_workflow`, `register_device`, `get_rule_names_for_llm`, `get_workflow_names_for_llm`, `update_stats`, `get_stats`, `clear_caches`, `periodic_cache_cleanup`, `suggest_resolution`, `add_alias(es)`
-- 4 dead types: `SemanticMapping`, `RuleMapping`, `WorkflowMapping`, `MappingStats`
-- 3 dead struct fields: `rule_cache`, `workflow_cache`, `stats`
-- **Key insight:** `rule_cache` and `workflow_cache` were never populated — all `register_*` methods had zero callers, so rule/workflow resolution always returned `None`. The caches and all dependent code were dead at runtime.
-- `get_semantic_context()` simplified — removed rule/workflow context sections (always showed "暂无可用规则/工作流")
-- `map_tool_parameters()` simplified — removed `resolve_rule` dead path and `update_stats` call
-
-**Removed dead Agent methods (4):**
-
-- `context_selector()`, `update_context_device_types()`, `update_context_rule_engine()`, `get_semantic_mapping_stats()` — zero callers
-
-### Dead Code Cleanup (Round 4)
-
-Removed ~770 lines of dead code from `context_selector.rs` and `smart_conversation.rs`.
-
-**Removed dead module:**
-
-- **`context_selector.rs`** (717 lines) — `IntentAnalyzer`, `ContextSelector`, `ContextBundle`, and all associated types. The entire module existed solely to produce a debug log: `analyze_intent()` was called via `tokio::join!` in the non-streaming `process_message` path, but `ContextBundle` was discarded (`_context_bundle`) and `IntentAnalysis` was only consumed by `tracing::debug!`. Removed the `context_selector` field from `Agent`, its initialization, the `analyze_intent()` method, all re-exports, and simplified the `tokio::join!` to a plain expression.
-
-**Removed dead SmartConversationManager state:**
-
-- `ConversationState` enum, `state` field, `state()` / `set_state()` methods — all had zero callers. The manager is now a unit struct (stateless interceptor for dangerous-operation detection and missing-info detection).
-
-### Dead Code Cleanup (Round 5)
-
-Removed ~76 lines of dead helpers from `prompts/builder.rs` and `conversation_context.rs`.
-
-- 4 dead `PromptBuilder` methods: `build_system_prompt_with_time()`, `core_identity()`, `interaction_principles()`, `tool_strategy()` — superseded by the static `IDENTITY` / `PRINCIPLES` / `TOOL_STRATEGY` constants used by `build_system_prompt()`.
-- Dead `CONVERSATION_CONTEXT_EN` constant and its re-export in `prompts/mod.rs` — only `CONVERSATION_CONTEXT_ZH` is consumed.
-- Dead `ConversationContext::reset()` method — zero callers.
-- 3 dead test functions that asserted on removed methods.
-
-### Dead Code Cleanup (Round 5b)
-
-Removed ~100 lines of dead methods, fields, and re-exports from `smart_followup.rs` and `agent/mod.rs`.
-
-- 5 dead `SmartFollowUpManager` methods: `get_device_suggestions()`, `get_location_suggestions()`, `analyze_input_with_search()`, `clear_history()`, `record_asked()`.
-- 2 dead struct fields: `asked_questions` (write-only, never read), `resource_index` (only readers were the removed methods above). `with_resource_index()` merged into `new()`.
-- Dead `Default` impl (construction always uses `new()`).
-- Trimmed 6 dead re-exports from `agent/mod.rs` (`FollowUpAnalysis`, `FollowUpItem`, `FollowUpPriority`, `FollowUpType`, `DetectedIntent`, `AvailableDevice`) — no code outside the module consumes them.
-
-### Dead Code Cleanup (Round 6)
-
-Removed ~250 lines of dead re-exports and dead types across 8 module files. All callers use full module paths (e.g., `memory::compressor::evict_to_limit`) rather than shortcut re-exports (e.g., `memory::evict_to_limit`); the shortcuts were dead.
-
-**Deleted `memory/manager.rs` (186 lines):**
-- `MemoryManager` was a dead abstraction wrapping `MarkdownMemoryStore`. Zero production callers — all code uses `MarkdownMemoryStore` directly. Removed after the `MemoryScheduler.manager` field (its last consumer) was cleaned up.
-
-**Dead re-export trimming (37 re-exports removed):**
-
-- `lib.rs` (8): `default_fallback_rules`, `process_fallback`, `AgentResponse`, `FallbackRule`, `SessionState`, `ToolCall`, `IntentCategory`, `IntentResult`
-- `agent/mod.rs` (12): `NeoMindError` (pub use → private use), 3 conversation_context types, 3 semantic_mapper types, 4 streaming functions (shadowed or called via full path), 1 NeoMindError pub use
-- `tools/mod.rs` (2): `get_mapper`, `ToolNameMapper`
-- `toolkit/mod.rs` (5): `SharedToolRegistry`, `ToolResultList`, `ToolCallList`, `ExtensionFilter`, `ExtensionToolGenerator` + unused `Arc` import
-- `memory/mod.rs` (12): `MemoryManager`, error types, compressor/dedup/extractor/security types
-- `ai_agent/mod.rs` (2): `AgentExecutionResult`, `ExecutionContext`
-- `skills/mod.rs` (3): `SkillMatch`, `SkillMetadata`, `SkillOrigin`
-- `llm_backends/mod.rs` (6): `DynBackendPlugin`, `LlmBackendPlugin`, `register_builtin_backends`, `CloudFactory`, `MockFactory`, `OllamaFactory`
-- `context/mod.rs` + `device_registry.rs` (2): `DeviceLocation` struct deleted (zero consumers), re-export removed
-
-**Other dead code removed:**
-- `MemoryScheduler.manager` field — stored but never read (also updated 3 tests + 1 production caller in `agent_state.rs`)
-
-### Dead Code Cleanup (Round 7)
-
-Removed ~200 lines of dead functions, dead builder methods, and a dead abstraction across 7 files. All removals verified: workspace builds clean, 435 agent tests + 40 extension-runner tests pass.
-
-**Dead streaming functions removed (all callers use `_with_safeguards` variants):**
-- `process_stream_events` (stream_core.rs, ~19 lines) — zero callers; Agent has its own method with same name
-- `process_multimodal_stream_events` (stream_multimodal.rs, ~19 lines) — zero callers; Agent has its own method
-- Cleaned up `streaming/mod.rs` re-exports (removed 2 dead re-exports)
-
-**Dead StreamSafeguards builder methods (zero callers):**
-- `fast_model()`, `reasoning_model()`, `with_interrupt()`, `new()` — all callers use `StreamSafeguards::default()` + `.with_interrupt_signal()`
-
-**Dead functions in agent utility modules:**
-- `tokenizer.rs`: `select_messages_within_token_limit` — superseded by `select_messages_with_importance` (zero callers)
-- `tool_parser.rs`: `parse_tool_call_json` — zero callers
-- `staged.rs`: `IntentClassifier::with_threshold` — all callers use `IntentClassifier::default()`
-
-**Dead abstraction removed:**
-- `fallback.rs`: `FallbackBuilder` struct + 4 methods + Default impl (~35 lines) — `process_fallback` constructs results directly; builder never used
-
-**Dead methods on internal types:**
-- `types.rs`: `LargeDataCache::{get, has, clear, entries}` — 4 methods with zero callers (only `store`, `resolve_reference`, `get_latest_image` are used)
-- `types.rs`: `AgentInternalState::is_response_repetitive` — zero callers; made `hash_response` private (only used internally by `register_response`)
-- `session.rs`: `SessionManager::validate_session` — zero callers (not used by `cleanup_invalid_sessions` which loads history directly)
-
-**Extension-runner cleanup (pre-existing warnings fixed):**
-- `resource_limits.rs`: moved platform-specific `libc` imports inside their `#[cfg]` blocks (fixed 2 macOS-only unused import warnings)
-- `resource_limits.rs`: hoisted `hard_mb` computation out of cfg block (fixed field-never-read warning for `memory_limit_hard_mb`)
-- `resource_limits.rs`: fixed 2 stale test assertions (`test_config_default` expected 2048 but Default sets 4096; `test_config_custom` set hard_mb=4096 but asserted 2048)
-
-### Dead Code Cleanup (Round 8)
-
-Removed ~120 lines of dead `LlmInterface` methods, `Agent` methods, and error helpers. All zero-caller removals verified: workspace builds clean, 434 tests pass.
-
-**Dead `LlmInterface` methods removed (llm.rs):**
-- `get_concurrent_limit()` — free function, zero callers
-- `set_llm_from_box()` — broken stub that stored `None` (comment said "caller should use Arc directly")
-- `switch_backend()` — zero callers
-- `get_available_backends()` — zero callers
-- `chat_without_tools()` — zero callers (use `chat()` or `chat_with_history()`)
-- `chat_stream()` — zero callers (use `chat_stream_with_history()`)
-
-**Dead `Agent` methods removed (agent/mod.rs):**
-- `internal_state()` — zero callers (streaming code accesses the field directly)
-- `is_llm_configured()` — zero callers (callers use `llm_interface().is_ready()`)
-- `tool_definitions()` — zero callers
-- `process_tool_result()` — zero callers (26-line stub that never called LLM)
-
-**Dead error helpers removed (error.rs):**
-- `from_memory_err()`, `from_tool_err()`, `from_device_err()` — zero callers
-- `invalid_input()` — last caller (`parse_tool_call_json`) was removed in Round 7
-
-### Dead Code Cleanup (Round 9)
-
-Removed ~900 lines of dead public API methods, dead registry methods, dead dedup utilities, dead context modules, and dead skill index infrastructure across 12 files. All zero-caller removals verified: workspace builds clean, 469 tests pass.
-
-**Dead `ToolNameMapper` methods removed (tools/mapper.rs):**
-- `get_aliases()`, `has_alias()`, `has_simplified()` — zero callers
-- `register_custom()`, `all_known_names()` — only test callers (runtime mapper is immutable behind `OnceLock`; custom registration was never used)
-
-**Dead `ToolRegistry` methods removed (toolkit/registry.rs):**
-- `definitions_json()` + `cached_definitions_json` field — zero callers (the cached `Vec<ToolDefinition>` via `definitions()` is the live path)
-- `search()`, `search_with_category()` — zero callers
-
-**Dead misc methods removed:**
-- `ConfirmActionTool::requires_confirmation()` — only test caller (production uses `SmartConversationAnalysis.requires_confirmation` field)
-- `Agent::available_tools()` — only test caller
-- `ExtensionTool::command_descriptor()`, `ExtensionTool::extension_id()` — zero callers (field access used directly)
-- `MemoryTool::session_id_handle()` — zero callers
-- `available_backends()` (llm_backends/backends/mod.rs) + re-export — only test caller (the `neomind-storage` crate has its own unrelated `available_backends()`)
-
-**Dead `DedupProcessor` code removed (memory/dedup.rs, ~100 lines + 10 tests):**
-- `with_ngram_size()`, `similarity()`, `jaccard_similarity()` — zero production callers (production only uses `with_defaults()` + `find_similar()`)
-- `dedup()`, `merge()`, `threshold()` — only test callers
-- `DedupResult` struct + `has_duplicates()` — only used by dead `dedup()`
-- Made `jaccard_similarity_with_ngram()` private (only called by `find_similar`)
-
-**Dead memory modules deleted:**
-- `memory/extractor.rs` (~255 lines) — `AgentExtractor`, `MemoryCandidate`, `MemoryAction`, `ExtractResult`, `parse_category()`. All types had zero production callers (only self-tests). The production memory system uses `AgentMemory` (scheduled) and `MemorySnapshot` (chat), not this LLM-based extractor.
-- `memory/security.rs` (~185 lines) — `MemorySecurityScanner`, `SecurityScanResult`. Zero production callers (only self-tests). Memory injection/exfiltration scanning was never wired into the memory write path.
-
-**Dead `context/device_registry.rs` deleted (~460 lines):**
-- Entire module removed: `DeviceRegistry`, `DeviceAlias`, `DeviceCapability`, `SharedDeviceRegistry` type alias. All types had zero production callers (only self-tests). The production device system uses `neomind_devices::DeviceRegistry` (separate crate). `semantic_mapper.rs` uses `ResourceIndex`, not this module.
-
-**Dead `ResourceIndex` methods + types removed (context/resource_index.rs):**
-- `SearchQuery` builder methods (`new`, `with_resource_type`, `with_location`, `with_capability`, `with_min_score`, `with_limit`) — zero callers (only struct literal construction used internally)
-- `SearchQuery` removed from `context/mod.rs` re-export (not used outside the module)
-- `get()` — zero callers
-- `list_channels()` — zero callers
-- `stats()` + `ResourceIndexStats` struct — only test caller
-
-**Dead `SkillRegistry` index infrastructure removed (skills/registry.rs):**
-- `keyword_index` + `tool_action_index` fields + index-building code in `insert()` — built but never queried (the matching happens via `match_skills()` in `matcher.rs`, not registry lookups)
-- `remove_indices()` method — only maintained dead indices
-- `list_by_category()`, `find_by_keyword()`, `find_by_tool_action()` — zero/only-test callers
-
-**Dead `Skill` method removed (skills/types.rs):**
-- `estimated_tokens()` — zero callers
-
-**Dead re-exports cleaned from mod.rs files:**
-- `context/mod.rs`: removed 9 unused re-exports (`AccessType`, `AlertChannelResourceData`, `Capability`, `CapabilityType`, `DeviceResourceData`, `DeviceTypeResourceData`, `ResourceData`, `ResourceId`, `SearchResult`) + dead `SharedResourceIndex` type alias + unused `Arc`/`RwLock` imports
-- `agent/mod.rs`: removed dead `SharedResourceIndex` type alias (duplicate, never used)
-- `toolkit/mod.rs`: removed 10 dead re-exports (`NeoMindError`, `ToolCall`, `DynTool`, `Parameter`, `ExtensionTool`, `ExtensionToolExecutor`, `array_property`, `boolean_property`, `number_property`, `property`)
-- `tools/mod.rs`: removed dead `map_tool_parameters` re-export (callers use full path `tools::mapper::map_tool_parameters`)
-- `prompts/mod.rs` + `prompts/builder.rs`: removed dead `CONVERSATION_CONTEXT_ZH` constant + re-export (stale comment said "used by memory.rs" but zero actual references)
-- `agent/streaming/mod.rs`: removed dead `build_context_window_with_config` re-export (callers use `super::context::` directly)
-
-**Dead methods removed from `llm.rs`:**
-- `LlmInterface::instance_manager()` — only test caller (field access used directly where needed)
-- `LlmInterface::set_instance_manager()` — placeholder stub (`let _ = manager;`), zero callers
-- `LlmInterface::max_concurrent()` — only test callers (`available_permits()` covers production needs)
-
-**Dead methods removed from `session.rs`:**
-- `SessionCleanupConfig::new()` — zero callers (`Default::default()` used everywhere)
-- `SessionCleanupConfig::disabled()` — zero callers
-- `SessionManager::with_config()` — zero callers (builder method never chained)
-- `SessionManager::set_cleanup_config()` — zero callers
-- `SessionManager::cleanup_config()` getter — zero callers
-
-### Dead Code Cleanup (Round 10)
-
-Removed ~220 lines of dead test-only APIs and never-populated device-aware followup infrastructure.
-
-**`Agent::with_fallback_rules()` removed (agent/mod.rs):**
-- Test-only builder method, zero production callers. The `fallback_rules` field and `process_fallback()` remain alive (6 production call sites in streaming code).
-- Removed sole caller `test_custom_fallback_rules` test.
-- Removed `MockGreetTool` struct + `impl Tool` (only invoked by the removed test).
-
-**Dead `available_devices` infrastructure removed (agent/smart_followup.rs, ~180 lines):**
-- `set_available_devices()` — pub method, only test caller. The `available_devices` field was never populated in production.
-- `available_devices` field + initialization.
-- `AvailableDevice` re-export (`pub use crate::smart_conversation::Device as AvailableDevice`).
-- `has_location_info()` private method — sole caller was the removed "设备控制类" branch.
-- `get_available_locations()` private method — sole callers were dead branches in `detect_missing_info_aware()`.
-- Simplified `detect_missing_info_aware()`: removed `context` parameter (no longer needed), removed 2 dead branches that generated `MissingLocation` followups (the guard `!self.available_devices.is_empty()` was always false).
-- Removed `create_manager_with_devices()` test helper.
-- Removed 4 dead/vacuous tests: `test_context_aware_missing_info`, `test_missing_info_without_context`, `test_followup_priority_ordering` (vacuous after cleanup), `test_fallback_suggestion_with_context`.
-
 ## [0.8.11] - 2026-06-11
+
+### Dead Code Cleanup (51 rounds, compiler-verified)
+
+Systematic removal of ~10,000+ lines of dead/superseded code across the entire Rust workspace. All removals verified by compiler (`cargo build --tests`) — zero functional impact, all tests pass.
+
+**Benefits:**
+- Cleaner public API surface — crate roots now export only what consumers actually use
+- Faster compilation — fewer modules to parse and type-check
+- Reduced cognitive load — maintainers no longer wade through unused abstractions
+- Lower risk of drift — dead code silently rots and misleads future readers
+- Accurate dependency picture — removed phantom couplings between modules
+
+**Removed dead modules (~3,800 lines):**
+
+| Module | Crate | Lines | Why dead |
+|--------|-------|-------|----------|
+| `planner/` (5 files) | agent | ~900 | Upfront planning superseded by streaming tool-calling + Skills |
+| `context/` dead files (5) | agent | ~2000 | Referenced old tool names, zero production callers |
+| `tools/event_integration.rs` | agent | ~1030 | `EventIntegratedToolRegistry` never referenced |
+| `scheduler.rs` (P2.1) | agent | ~320 | Dependency-aware scheduling never wired into execution |
+| `llm_backends/config.rs` | agent | ~306 | `LlmBackendConfig`/`LlmRuntimeManager` unused |
+| `llm_backends/factories/` | agent | ~400 | `BackendFactory` trait + impls never instantiated |
+| `session.rs` cleanup subsystem | agent | ~127 | Cleanup task never started (`cleanup_running` always false) |
+| `storage/mod.rs` | core | 94 | `StorageBackend`/`StorageFactory` traits never adopted |
+| `monitoring.rs` | storage | 614 | `StorageMonitor` never integrated |
+| `backup.rs` | storage | 517 | `BackupManager` never wired |
+| `llm_data.rs` | storage | 746 | Superseded by `system_memory::MarkdownMemoryStore` |
+| `device_state.rs` | storage | 905 | Superseded by device_registry + neomind-devices |
+| `agent_summary.rs` | storage | 82 | Zero callers |
+| `history.rs` | rules | 606 | `RuleHistoryStorage` never used (production uses storage::business) |
+
+**Removed dead re-exports (~250+ across all crates):**
+
+Compiler-based verification (strip all `pub use`, rebuild, add back only what errors demand). Eliminates grep false positives from multi-line brace imports. Cleaned across: neomind-core (17), neomind-storage (~60), neomind-agent (7), neomind-devices (33), neomind-rules (43), neomind-messages (12), neomind-cli-ops (3), neomind-data-push (1), neomind-api (~38).
+
+**Removed dead functions/types/Default impls (~150+ items):**
+
+- Dead LLM backend dynamic registration system (`BackendFactory`, `BackendRegistry`, global singleton, `DynamicLlmRuntime`)
+- Dead event bus persistence + backpressure (`EventPersistence`, `publish_with_backpressure*`)
+- Dead extension health monitoring (`ExtensionHealthInfo`, `get_health_info()`)
+- Dead `ExtensionToolGenerator`/`ExtensionFilter` (superseded by `ExtensionToolExecutor`)
+- Dead `AgentExecutionResult`, `EntityResolver`, `MemoryManager` wrappers
+- 30+ dead `Default` impls where `::default()`/`unwrap_or_default()`/`or_default()` never called
+- Dead semantic wrapper methods, factory methods, and event variants never emitted
 
 ### Agent Module Architecture Refactor
 
