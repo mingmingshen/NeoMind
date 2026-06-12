@@ -75,7 +75,6 @@ pub mod llm_backends;
 pub mod llm_data;
 pub mod memory_config;
 pub mod messages;
-pub mod monitoring;
 pub mod session;
 pub mod settings;
 pub mod singleton;
@@ -178,11 +177,6 @@ pub use business::{
 pub use llm_data::{LongTermMemoryStore, MemoryEntry, MemoryFilter, MemoryStats};
 
 pub use backup::{BackupConfig, BackupHandler, BackupManager, BackupMetadata, BackupType};
-
-pub use monitoring::{
-    AlertThresholds, CheckResult, HealthCheckResult, HealthStatus, MonitoringConfig,
-    OperationStats, StorageMetrics, StorageMonitor,
-};
 
 pub use device_registry::{
     CommandDefinition, CommandHistoryRecord, CommandStatus, ConnectionConfig, DeviceConfig,
