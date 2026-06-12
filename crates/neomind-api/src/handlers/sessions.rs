@@ -23,8 +23,6 @@ use neomind_storage::{PendingStreamState, StreamStage};
 #[derive(Debug, Clone)]
 struct StreamEvent {
     json: String,
-    #[allow(dead_code)]
-    session_id: String,
 }
 
 /// Process the LLM stream in a spawned task and send events through a channel.
@@ -279,7 +277,6 @@ async fn process_stream_to_channel(
 
                 let stream_event = StreamEvent {
                     json: event_json.to_string(),
-                    session_id: session_id.clone(),
                 };
 
                 // Try to send, but don't block if channel is closed
@@ -306,7 +303,6 @@ async fn process_stream_to_channel(
                     let _ = tx
                         .send(StreamEvent {
                             json: end_json.to_string(),
-                            session_id: session_id.clone(),
                         })
                         .await;
                 }
@@ -328,7 +324,6 @@ async fn process_stream_to_channel(
                 let _ = tx
                     .send(StreamEvent {
                         json: timeout_json.to_string(),
-                        session_id: session_id.clone(),
                     })
                     .await;
                 // Send end event after timeout
@@ -340,7 +335,6 @@ async fn process_stream_to_channel(
                     let _ = tx
                         .send(StreamEvent {
                             json: end_json.to_string(),
-                            session_id: session_id.clone(),
                         })
                         .await;
                 }

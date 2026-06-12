@@ -353,7 +353,6 @@ struct TomlLlmConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct TomlMqttConfig {
     /// Listen address for embedded broker
     #[serde(default = "default_mqtt_listen")]
@@ -363,8 +362,6 @@ struct TomlMqttConfig {
     port: u16,
     #[serde(default = "default_mqtt_discovery_prefix")]
     discovery_prefix: String,
-    #[serde(default = "default_mqtt_auto_discovery")]
-    auto_discovery: bool,
 }
 
 fn default_mqtt_listen() -> String {
@@ -375,9 +372,6 @@ fn default_mqtt_port() -> u16 {
 }
 fn default_mqtt_discovery_prefix() -> String {
     "neomind/discovery".to_string()
-}
-fn default_mqtt_auto_discovery() -> bool {
-    true
 }
 
 /// LLM settings request (for Web UI).
@@ -469,8 +463,7 @@ pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
             Ok(None) => {
                 // First run: resolve from config.toml/defaults and persist to redb
                 // so the dynamic auth handler reads the same values
-                let config = load_embedded_broker_config()
-                    .unwrap_or_default();
+                let config = load_embedded_broker_config().unwrap_or_default();
 
                 if let Ok(config_value) = serde_json::to_value(&config) {
                     if let Err(e) = store.save_embedded_broker_config(&config_value) {
@@ -478,8 +471,7 @@ pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
                     } else {
                         info!(
                             category = "mqtt",
-                            "Initialized broker config in database: 0.0.0.0:{}",
-                            config.port
+                            "Initialized broker config in database: 0.0.0.0:{}", config.port
                         );
                     }
                 }
@@ -495,8 +487,7 @@ pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
     if let Some(config) = load_embedded_broker_config() {
         info!(
             category = "mqtt",
-            "Using embedded broker configuration from config.toml: 0.0.0.0:{}",
-            config.port
+            "Using embedded broker configuration from config.toml: 0.0.0.0:{}", config.port
         );
         return config;
     }

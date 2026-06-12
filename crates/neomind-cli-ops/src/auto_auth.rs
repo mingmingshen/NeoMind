@@ -19,9 +19,6 @@ use tracing::{debug, warn};
 const API_KEYS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("api_keys");
 const API_KEY_HASHES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("api_key_hashes");
 
-const PBKDF2_ITERATIONS: u32 = 100_000;
-const SALT: &[u8] = b"NeoMind-API-Key-Salt-2024";
-
 /// Minimal ApiKeyInfo for deserialization (matches neomind-api auth.rs).
 #[derive(serde::Deserialize)]
 struct ApiKeyInfo {
@@ -110,10 +107,7 @@ pub fn read_default_api_key_from(data_dir: &str) -> Option<String> {
             if let Ok(Some(info_bytes)) = ht.get(hash_key.value()) {
                 if let Ok(info) = bincode::deserialize::<ApiKeyInfo>(info_bytes.value()) {
                     if info.active && info.permissions.contains(&"*".to_string()) {
-                        debug!(
-                            "Auto-auth: using API key '{}' ({})",
-                            info.name, info.id
-                        );
+                        debug!("Auto-auth: using API key '{}' ({})", info.name, info.id);
                         return Some(plaintext);
                     }
                 }
@@ -145,20 +139,6 @@ fn decrypt_api_key(cipher: &Aes256Gcm, encoded: &str) -> Option<String> {
 
     let plaintext = cipher.decrypt(nonce, ciphertext).ok()?;
     String::from_utf8(plaintext).ok()
-}
-
-/// Derive a 256-bit key from input using PBKDF2 (matches CryptoService).
-#[allow(dead_code)]
-fn derive_key(input: &[u8]) -> [u8; 32] {
-    if input.len() >= 32 {
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&input[..32]);
-        return key;
-    }
-
-    let mut key = [0u8; 32];
-    pbkdf2::pbkdf2_hmac::<sha2::Sha256>(input, SALT, PBKDF2_ITERATIONS, &mut key);
-    key
 }
 
 #[cfg(test)]
