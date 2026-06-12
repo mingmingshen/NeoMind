@@ -9,7 +9,7 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::{GenerationParams, LlmInput};
 use neomind_core::{
     message::{Content, Message, MessageRole},
@@ -697,7 +697,10 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
     // Verify conversation history (backward compat field, no longer written to)
     println!("\n--- 对话历史 ---");
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    println!("总轮次 (conversation_history): {}", agent.conversation_history.len());
+    println!(
+        "总轮次 (conversation_history): {}",
+        agent.conversation_history.len()
+    );
     let _ = &agent.conversation_history;
 
     println!("\n✅ 端到端工作流测试通过！");

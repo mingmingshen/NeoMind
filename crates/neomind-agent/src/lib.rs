@@ -57,10 +57,7 @@ pub use error::{NeoMindError, Result};
 pub use session::SessionManager;
 
 // Re-export llm_backends types for backward compatibility (merged from neomind-llm crate)
-pub use llm_backends::{
-    get_instance_manager, BackendTypeDefinition, CloudConfig, CloudProvider, CloudRuntime,
-    LlmBackendInstanceManager, OllamaConfig, OllamaRuntime,
-};
+pub use llm_backends::get_instance_manager;
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -26,7 +26,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
@@ -1120,7 +1120,10 @@ async fn scenario_4_long_running_agent() -> anyhow::Result<()> {
     // 检查Agent状态
     let agent = ctx.store.get_agent(&daily_monitor.id).await?.unwrap();
     println!("\n   📈 Agent状态:");
-    println!("      对话历史: {} 条 (backward compat)", agent.conversation_history.len());
+    println!(
+        "      对话历史: {} 条 (backward compat)",
+        agent.conversation_history.len()
+    );
     println!("      上下文窗口: {}", agent.context_window_size);
     println!("      成功执行: {}", agent.stats.successful_executions);
     println!("      平均耗时: {}ms", agent.stats.avg_duration_ms);

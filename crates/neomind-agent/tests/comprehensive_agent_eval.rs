@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use neomind_agent::session::SessionManager;
-use neomind_agent::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 
 // ── helpers ───────────────────────────────────────────────────────────

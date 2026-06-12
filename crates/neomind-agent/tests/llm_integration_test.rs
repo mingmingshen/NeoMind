@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::EventBus;
 use neomind_storage::{

@@ -11,7 +11,7 @@
 
 use anyhow::Result;
 use neomind_agent::session::SessionManager;
-use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
 use std::sync::Arc;
 use std::time::Instant;
 

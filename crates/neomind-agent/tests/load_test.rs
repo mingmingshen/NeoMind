@@ -10,7 +10,7 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_storage::{
     AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionJournal,
@@ -441,7 +441,10 @@ async fn test_agent_with_large_dataset() -> anyhow::Result<()> {
 
     // Check agent state (conversation_history is backward compat only, not written to)
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-    println!("  对话历史 (backward compat): {} 条", agent.conversation_history.len());
+    println!(
+        "  对话历史 (backward compat): {} 条",
+        agent.conversation_history.len()
+    );
     let _ = &agent.conversation_history;
 
     println!("✅ 大数据集 Agent 测试通过！");
