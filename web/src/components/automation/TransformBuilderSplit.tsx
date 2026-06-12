@@ -1,8 +1,8 @@
 /**
  * TransformBuilderSplit Component
  *
- * Full-screen dialog for creating/editing data transforms.
- * Using unified FullScreenDialog components with glassmorphism style.
+ * Split-workspace dialog for creating/editing data transforms.
+ * Uses BuilderShell with emerald accent: config rail + code workspace + test strip.
  *
  * @module automation
  */
@@ -22,57 +22,33 @@ import { CodeEditor } from '@/components/ui/code-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import {
   Code,
   Loader2,
   Play,
   Database,
   FlaskConical,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
   Check,
   Plus,
   Puzzle,
   FileCode,
-  Info,
-  ChevronDown,
-  Eye,
-  Lightbulb,
   Zap,
-  Globe,
-  Clock,
 } from 'lucide-react'
 import type {
   TransformAutomation,
   TransformScope,
-  Extension,
-  ExtensionV2DataSourceInfo,
   ExtensionDataType,
-  ExtensionAggFunc,
 } from '@/types'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
-// Unified dialog components
-import {
-  FullScreenDialog,
-  FullScreenDialogHeader,
-  FullScreenDialogContent,
-  FullScreenDialogFooter,
-  FullScreenDialogSidebar,
-  FullScreenDialogMain,
-  VerticalStepper,
-  type Step as StepperStep,
-} from '@/components/automation/dialog'
+// Builder shell + field primitives
+import { BuilderShell } from './dialog/BuilderShell'
+import { Field, FieldLabel, FieldMessage } from '@/components/ui/field'
+import { LoadingState } from '@/components/shared/LoadingState'
 
 // ============================================================================
 // Types
@@ -87,7 +63,6 @@ interface TransformBuilderProps {
   onSave: (data: Partial<TransformAutomation>) => void
 }
 
-type Step = 'basic' | 'code' | 'test'
 type ScopeType = 'global' | 'device_type' | 'device'
 
 interface FormErrors {
@@ -185,38 +160,88 @@ const CODE_TEMPLATES = [
 ]
 
 // ============================================================================
-// Variables Panel Component (with Tabs)
+// Helper: extract parameters from JSON schema
 // ============================================================================
 
-interface VariablesPanelProps {
-  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }>
-  extensionSources?: SelectedExtensionSource[]
-  allExtensionSources?: ExtensionDataSourceGroup[]
-  onExtensionSourcesChange: (sources: SelectedExtensionSource[]) => void
-  scopeType: ScopeType
-  tBuilder: (key: string) => string
-  t: (key: string, params?: Record<string, unknown>) => string
-  onInsertVariable?: (variable: string) => void
-  isMobile?: boolean
+function extractParametersFromSchema(schema: Record<string, unknown> | undefined): ExtensionCommandInfo['parameters'] {
+  if (!schema || typeof schema !== 'object') return []
+  const params: ExtensionCommandInfo['parameters'] = []
+  const properties = schema.properties as Record<string, unknown> | undefined
+  const required = (schema.required as string[]) || []
+  if (!properties) return params
+  for (const [name, propSchema] of Object.entries(properties)) {
+    if (typeof propSchema !== 'object' || propSchema === null) continue
+    const prop = propSchema as Record<string, unknown>
+    let dataType = 'string'
+    const type = prop.type as string | undefined
+    if (type === 'number' || type === 'integer') dataType = 'number'
+    else if (type === 'boolean') dataType = 'boolean'
+    else if (type === 'array') dataType = 'array'
+    else if (type === 'object') dataType = 'object'
+    params.push({
+      name,
+      display_name: (prop.title as string) || name,
+      data_type: dataType,
+      required: required.includes(name),
+      default_value: prop.default,
+      description: prop.description as string | undefined,
+    })
+  }
+  return params
 }
 
-function VariablesPanel({
+function getTypeColor(type: string) {
+  switch (type) {
+    case 'number': case 'integer': case 'float': return 'text-info'
+    case 'string': return 'text-success'
+    case 'boolean': return 'text-accent-purple'
+    case 'object': return 'text-accent-orange'
+    case 'array': return 'text-accent-cyan'
+    case 'binary': return 'text-warning'
+    default: return 'text-muted-foreground'
+  }
+}
+
+function getTypeIcon(type: string) {
+  switch (type) {
+    case 'number': case 'integer': case 'float': return '#'
+    case 'string': return '"'
+    case 'boolean': return 'TF'
+    case 'object': return '{}'
+    case 'array': return '[]'
+    case 'binary': return 'BIN'
+    default: return '?'
+  }
+}
+
+// ============================================================================
+// VariablesRail — single unified rail replacing the old two Tabs blocks
+// ============================================================================
+
+interface VariablesRailProps {
+  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }>
+  extensionSources: SelectedExtensionSource[]
+  onExtensionSourcesChange: (sources: SelectedExtensionSource[]) => void
+  onInsertVariable: (variable: string) => void
+  tBuilder: (key: string) => string
+  t: (key: string, params?: Record<string, unknown>) => string
+}
+
+function VariablesRail({
   deviceTypeMetrics,
   extensionSources,
-  allExtensionSources,
   onExtensionSourcesChange,
-  scopeType,
+  onInsertVariable,
   tBuilder,
   t,
-  onInsertVariable,
-  isMobile = false,
-}: VariablesPanelProps) {
+}: VariablesRailProps) {
+  const isMobile = useIsMobile()
   const [extensions, setExtensions] = useState<ExtensionDataSourceGroup[]>([])
   const [extensionCommands, setExtensionCommands] = useState<ExtensionCommandInfo[]>([])
   const [loadingExtensions, setLoadingExtensions] = useState(true)
   const [extensionPopoverOpen, setExtensionPopoverOpen] = useState(false)
 
-  // Fetch extension data sources and commands when needed
+  // Fetch extension data sources and commands on mount
   useEffect(() => {
     const fetchSources = async () => {
       setLoadingExtensions(true)
@@ -227,14 +252,14 @@ function VariablesPanel({
         ])
 
         // Filter only extension data sources (exclude transform data sources)
-        const extensionSources = allSources.filter(
+        const extSources = allSources.filter(
           (source): source is import('@/types').ExtensionDataSourceInfo =>
             'extension_id' in source
         )
 
         // Group data sources by extension
         const groups: Record<string, ExtensionDataSourceGroup> = {}
-        for (const source of extensionSources) {
+        for (const source of extSources) {
           const key = source.extension_id
           if (!groups[key]) {
             const ext = extList.find(e => e.id === source.extension_id)
@@ -299,64 +324,15 @@ function VariablesPanel({
       }
     }
 
-    if (extensionPopoverOpen && extensions.length === 0) {
-      fetchSources()
-    }
-  }, [extensionPopoverOpen, extensions.length])
-
-  // Extract parameters from JSON schema
-  const extractParametersFromSchema = (schema: Record<string, unknown> | undefined): ExtensionCommandInfo['parameters'] => {
-    if (!schema || typeof schema !== 'object') {
-      return []
-    }
-
-    const params: ExtensionCommandInfo['parameters'] = []
-    const properties = schema.properties as Record<string, unknown> | undefined
-    const required = (schema.required as string[]) || []
-
-    if (!properties) {
-      return params
-    }
-
-    for (const [name, propSchema] of Object.entries(properties)) {
-      if (typeof propSchema !== 'object' || propSchema === null) {
-        continue
-      }
-
-      const prop = propSchema as Record<string, unknown>
-
-      // Determine data type
-      let dataType = 'string'
-      const type = prop.type as string | undefined
-      if (type === 'number' || type === 'integer') {
-        dataType = 'number'
-      } else if (type === 'boolean') {
-        dataType = 'boolean'
-      } else if (type === 'array') {
-        dataType = 'array'
-      } else if (type === 'object') {
-        dataType = 'object'
-      }
-
-      params.push({
-        name,
-        display_name: (prop.title as string) || name,
-        data_type: dataType,
-        required: required.includes(name),
-        default_value: prop.default,
-        description: prop.description as string | undefined,
-      })
-    }
-
-    return params
-  }
+    fetchSources()
+  }, [])
 
   const isSourceSelected = (extId: string, field: string) => {
-    return extensionSources?.some(s => s.extension_id === extId && s.field === field)
+    return extensionSources.some(s => s.extension_id === extId && s.field === field)
   }
 
   const toggleSource = (extId: string, extName: string, field: string, display: string, dataType: ExtensionDataType, unit: string | undefined) => {
-    const currentSources = extensionSources || []
+    const currentSources = extensionSources
     const key = `${extId}/${field}`
     if (isSourceSelected(extId, field)) {
       onExtensionSourcesChange(currentSources.filter(s => `${s.extension_id}/${s.field}` !== key))
@@ -371,30 +347,6 @@ function VariablesPanel({
         data_type: dataType,
         unit,
       }])
-    }
-  }
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'number': case 'integer': case 'float': return 'text-info'
-      case 'string': return 'text-success'
-      case 'boolean': return 'text-accent-purple'
-      case 'object': return 'text-accent-orange'
-      case 'array': return 'text-accent-cyan'
-      case 'binary': return 'text-warning'
-      default: return 'text-muted-foreground'
-    }
-  }
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'number': case 'integer': case 'float': return '#'
-      case 'string': return '"'
-      case 'boolean': return 'TF'
-      case 'object': return '{}'
-      case 'array': return '[]'
-      case 'binary': return 'BIN'
-      default: return '?'
     }
   }
 
@@ -419,21 +371,15 @@ function VariablesPanel({
     const hasParams = cmdInfo.parameters.length > 0
     const resultParam = hasParams ? 'result' : '{ processed: true }'
 
-    const codeTemplate = `// Call ${cmdInfo.extension_name}: ${cmdInfo.display_name}
-// ${cmdInfo.description || 'Execute extension command'}
-const ${resultParam} = extensions_invoke('${cmdInfo.extension_id}', '${cmdInfo.command_name}', {
-${paramsCode}
-})
+    const codeTemplate = `// Call ${cmdInfo.extension_name}: ${cmdInfo.display_name}\n// ${cmdInfo.description || 'Execute extension command'}\nconst ${resultParam} = extensions_invoke('${cmdInfo.extension_id}', '${cmdInfo.command_name}', {\n${paramsCode}\n})\n\nreturn ${resultParam}`
 
-return ${resultParam}`
-
-    onInsertVariable?.(codeTemplate)
+    onInsertVariable(codeTemplate)
   }
 
   // Group extension sources by extension and command
   const groupedExtensions = useMemo(() => {
     const groups: Record<string, Record<string, SelectedExtensionSource[]>> = {}
-    for (const source of extensionSources || []) {
+    for (const source of extensionSources) {
       if (!groups[source.extension_id]) {
         groups[source.extension_id] = {}
       }
@@ -445,49 +391,46 @@ return ${resultParam}`
     return groups
   }, [extensionSources])
 
+  // --- Render ---
+
+  if (loadingExtensions) {
+    return (
+      <div className={cn(
+        "border rounded-lg bg-background",
+        isMobile ? "w-full" : "w-72"
+      )}>
+        <LoadingState variant="page" />
+      </div>
+    )
+  }
+
   return (
     <div className={cn(
-      "border rounded-lg overflow-hidden bg-background",
+      "border rounded-lg overflow-hidden bg-background flex flex-col",
       isMobile ? "w-full" : "w-72"
     )}>
       {/* Header */}
       <div className={cn(
-        "border-b bg-muted-30 flex items-center gap-2",
+        "border-b bg-muted-30 flex items-center gap-2 shrink-0",
         isMobile ? "px-4 py-3" : "px-3 py-2"
       )}>
         <Database className={cn("text-info", isMobile ? "h-5 w-5" : "h-4 w-4")} />
         <span className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tBuilder('availableVars')}</span>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="device" className={cn(isMobile ? "h-[350px]" : "h-[400px]")}>
-        <div className={cn(isMobile ? "px-4 pt-3" : "px-3 pt-2")}>
-          <TabsList className={cn(
-            "w-full gap-0.5",
-            isMobile ? "h-10" : "h-8 px-0.5"
+      {/* Scrollable list */}
+      <div className={cn(
+        "overflow-y-auto overflow-x-hidden flex-1",
+        isMobile ? "p-3" : "p-2"
+      )}>
+        {/* --- Device Metrics group --- */}
+        <div className="mb-3">
+          <div className={cn(
+            "uppercase tracking-wide text-muted-foreground font-semibold mb-1.5",
+            isMobile ? "text-xs px-1" : "text-xs px-1"
           )}>
-            <TabsTrigger value="device" className={cn(
-              "flex-1",
-              isMobile ? "h-9 px-3 text-sm" : "h-7 px-2 text-xs"
-            )}>
-              <Database className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
-              {tBuilder('device') || 'Device'}
-            </TabsTrigger>
-            <TabsTrigger value="extension" className={cn(
-              "flex-1",
-              isMobile ? "h-9 px-3 text-sm" : "h-7 px-2 text-xs"
-            )}>
-              <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
-              {tBuilder('extension') || 'Extension'}
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
-        {/* Device Metrics Tab */}
-        <TabsContent value="device" className={cn(
-          "overflow-y-auto overflow-x-hidden mt-0",
-          isMobile ? "h-[290px] p-3" : "h-[340px] p-2"
-        )}>
+            {tBuilder('device') || 'Device'}
+          </div>
           {deviceTypeMetrics && deviceTypeMetrics.length > 0 ? (
             <div className={cn("space-y-1", isMobile ? "space-y-2" : "")}>
               {deviceTypeMetrics.map((metric, idx) => (
@@ -500,7 +443,7 @@ return ${resultParam}`
                   onClick={() => {
                     // Add ?. for nested paths (e.g., "metadata.height" -> "metadata?.height")
                     const safePath = metric.name.split('.').join('?.')
-                    onInsertVariable?.(`input.${safePath}`)
+                    onInsertVariable(`input.${safePath}`)
                   }}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -531,95 +474,83 @@ return ${resultParam}`
             </div>
           ) : (
             <div className={cn(
-              "text-center text-muted-foreground py-8 px-4",
-              isMobile ? "text-sm" : "text-sm"
+              "text-center text-muted-foreground py-4 px-2",
+              isMobile ? "text-sm" : "text-xs"
             )}>
-              <Database className={cn("mx-auto mb-2 opacity-30", isMobile ? "h-10 w-10" : "h-8 w-8")} />
+              <Database className={cn("mx-auto mb-1.5 opacity-30", isMobile ? "h-8 w-8" : "h-6 w-6")} />
               <div>{tBuilder('noVariablesHint')}</div>
             </div>
           )}
-        </TabsContent>
+        </div>
 
-        {/* Extension Tab */}
-        <TabsContent value="extension" className={cn(
-          "overflow-y-auto overflow-x-hidden mt-0",
-          isMobile ? "h-[290px] p-3" : "h-[340px] p-2"
-        )}>
-          {/* Extension Selector Button */}
-          <Popover open={extensionPopoverOpen} onOpenChange={setExtensionPopoverOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size={isMobile ? "default" : "sm"} className={cn(
-                "w-full justify-start mb-3",
-                isMobile ? "h-11 text-base" : "h-9 text-sm"
-              )}>
-                <Puzzle className={cn(isMobile ? "h-5 w-5" : "h-4 w-4", "mr-2")} />
-                {tBuilder('selectSources')}
-                {extensionSources && extensionSources.length > 0 && (
-                  <Badge variant="secondary" className={cn(
-                    "ml-auto",
-                    isMobile ? "h-7 px-2 text-sm" : "h-5 px-1.5 text-xs"
-                  )}>
-                    {extensionSources.length}
-                  </Badge>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72 max-h-80 overflow-auto p-3" align="start">
-              {loadingExtensions ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2" />
-                  <span className="text-sm text-muted-foreground">{t('loading')}</span>
-                </div>
-              ) : extensions.length === 0 ? (
-                <div className="text-center py-4 text-sm text-muted-foreground">
-                  {tBuilder('noExtensionSources')}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {extensions.map((ext) => (
-                    <div key={ext.extension_id} className="space-y-1.5">
-                      <div className="font-medium text-xs flex items-center gap-2">
-                        <Puzzle className="h-4 w-4 text-accent-purple" />
-                        {ext.extension_name}
-                      </div>
-                      {ext.commands.map((cmd) => (
-                        <div key={cmd.command} className="ml-4 space-y-1">
-                          {cmd.fields.map((field) => (
-                            <div key={field.field} className="flex items-center gap-2 py-0.5">
-                              <Checkbox
-                                id={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
-                                checked={isSourceSelected(ext.extension_id, field.field)}
-                                className="h-4 w-4"
-                                onCheckedChange={() => toggleSource(
-                                  ext.extension_id,
-                                  ext.extension_name,
-                                  field.field,
-                                  field.display_name,
-                                  field.data_type,
-                                  field.unit
-                                )}
-                              />
-                              <label
-                                htmlFor={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
-                                className="text-xs text-muted-foreground cursor-pointer flex-1 truncate"
-                                title={field.display_name}
-                              >
-                                {field.field}
-                                {field.unit && <span className="ml-1 text-muted-foreground">({field.unit})</span>}
-                              </label>
-                            </div>
-                          ))}
+        {/* --- Extension sources group --- */}
+        <div className="mb-3">
+          <div className={cn(
+            "flex items-center justify-between uppercase tracking-wide text-muted-foreground font-semibold mb-1.5",
+            isMobile ? "text-xs px-1" : "text-xs px-1"
+          )}>
+            <span className="flex items-center gap-1">
+              <Puzzle className="h-3.5 w-3.5" />
+              {tBuilder('extension') || 'Extension'}
+            </span>
+            <Popover open={extensionPopoverOpen} onOpenChange={setExtensionPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs normal-case tracking-normal">
+                  <Plus className="h-3 w-3 mr-1" />
+                  {tBuilder('selectSources')}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 max-h-80 overflow-auto p-3" align="start">
+                {extensions.length === 0 ? (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    {tBuilder('noExtensionSources')}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {extensions.map((ext) => (
+                      <div key={ext.extension_id} className="space-y-1.5">
+                        <div className="font-medium text-xs flex items-center gap-2">
+                          <Puzzle className="h-4 w-4 text-accent-purple" />
+                          {ext.extension_name}
                         </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
+                        {ext.commands.map((cmd) => (
+                          <div key={cmd.command} className="ml-4 space-y-1">
+                            {cmd.fields.map((field) => (
+                              <div key={field.field} className="flex items-center gap-2 py-0.5">
+                                <Checkbox
+                                  id={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
+                                  checked={isSourceSelected(ext.extension_id, field.field)}
+                                  className="h-4 w-4"
+                                  onCheckedChange={() => toggleSource(
+                                    ext.extension_id,
+                                    ext.extension_name,
+                                    field.field,
+                                    field.display_name,
+                                    field.data_type,
+                                    field.unit
+                                  )}
+                                />
+                                <label
+                                  htmlFor={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
+                                  className="text-xs text-muted-foreground cursor-pointer flex-1 truncate"
+                                  title={field.display_name}
+                                >
+                                  {field.field}
+                                  {field.unit && <span className="ml-1 text-muted-foreground">({field.unit})</span>}
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
 
-          {/* Selected Extension Sources */}
-          {extensionSources && extensionSources.length > 0 && (
+          {extensionSources.length > 0 ? (
             <div className={cn("space-y-2", isMobile ? "space-y-3" : "")}>
               {Object.entries(groupedExtensions).map(([extId, commands]) => {
                 const extName = extensionSources.find(s => s.extension_id === extId)?.extension_name || extId
@@ -642,7 +573,7 @@ return ${resultParam}`
                                 "flex items-center justify-between bg-background border rounded hover:bg-muted hover:border-border transition-all cursor-pointer group",
                                 isMobile ? "px-4 py-3" : "px-2 py-1.5"
                               )}
-                              onClick={() => onInsertVariable?.(`input.extensions?.${extId}?.${field.field}`)}
+                              onClick={() => onInsertVariable(`input.extensions?.${extId}?.${field.field}`)}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <code className={cn(
@@ -676,340 +607,434 @@ return ${resultParam}`
                 )
               })}
             </div>
-          )}
-
-          {/* Extension Commands Section */}
-          {extensionCommands.length > 0 && (
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex items-center gap-2 mb-3 px-1">
-                <Zap className="h-4 w-4 text-warning" />
-                <span className="text-sm font-medium">{tBuilder('extensionActions') || 'Actions'}</span>
-              </div>
-              <div className="space-y-2">
-                {extensionCommands.map((cmd, idx) => (
-                  <div
-                    key={idx}
-                    className="border border-warning rounded-lg overflow-hidden bg-warning-light hover:bg-warning-light transition-all cursor-pointer group"
-                    onClick={() => handleInvokeCommand(cmd)}
-                  >
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-warning-light border-b border-warning">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Zap className="h-4 w-4 text-warning shrink-0" />
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-warning truncate">
-                            {cmd.display_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {cmd.extension_name} · {cmd.command_id}
-                          </div>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="text-xs h-6 px-2 text-warning border-warning">
-                        {tBuilder('call') || 'Call'}
-                      </Badge>
-                    </div>
-
-                    {/* Description */}
-                    {cmd.description && (
-                      <div className="px-3 py-1.5 text-xs text-muted-foreground truncate" title={cmd.description}>
-                        {cmd.description}
-                      </div>
-                    )}
-
-                    {/* Parameters */}
-                    {cmd.parameters.length > 0 && (
-                      <div className="px-3 pb-2">
-                        <div className="text-xs text-muted-foreground mb-1.5">Parameters:</div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {cmd.parameters.map((param, pIdx) => (
-                            <div
-                              key={pIdx}
-                              className="text-xs px-2 py-1 bg-background border rounded flex items-center gap-1.5"
-                              title={`${param.display_name} (${param.data_type})${param.required ? '' : ' - optional'}`}
-                            >
-                              <span className={cn(
-                                param.required ? 'text-foreground' : 'text-muted-foreground'
-                              )}>
-                                {param.name}
-                              </span>
-                              <span className={cn(textNano, "px-1.5 rounded bg-muted")}>
-                                {param.data_type.slice(0, 3)}
-                              </span>
-                              {param.required && (
-                                <span className="text-error">*</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty state */}
-          {!extensionSources || extensionSources.length === 0 ? (
-            <div className="text-center text-muted-foreground text-sm py-10 px-4">
-              <Puzzle className="h-12 w-12 mx-auto mb-3 opacity-30" />
+          ) : (
+            <div className={cn(
+              "text-center text-muted-foreground py-4 px-2",
+              isMobile ? "text-sm" : "text-xs"
+            )}>
+              <Puzzle className={cn("mx-auto mb-1.5 opacity-30", isMobile ? "h-8 w-8" : "h-6 w-6")} />
               <div>{tBuilder('noSourcesSelectedHint')}</div>
             </div>
-          ) : null}
-        </TabsContent>
-      </Tabs>
+          )}
+        </div>
+
+        {/* --- Extension actions group --- */}
+        {extensionCommands.length > 0 && (
+          <div className="mt-3 pt-3 border-t">
+            <div className={cn(
+              "uppercase tracking-wide text-muted-foreground font-semibold mb-1.5 flex items-center gap-1",
+              isMobile ? "text-xs px-1" : "text-xs px-1"
+            )}>
+              <Zap className="h-3.5 w-3.5 text-warning" />
+              {tBuilder('extensionActions') || 'Actions'}
+            </div>
+            <div className="space-y-2">
+              {extensionCommands.map((cmd, idx) => (
+                <div
+                  key={idx}
+                  className="border border-warning rounded-lg overflow-hidden bg-warning-light hover:bg-warning-light transition-all cursor-pointer group"
+                  onClick={() => handleInvokeCommand(cmd)}
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-2.5 py-1.5 bg-warning-light border-b border-warning">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Zap className="h-3.5 w-3.5 text-warning shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-warning truncate">
+                          {cmd.display_name}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {cmd.extension_name} . {cmd.command_id}
+                        </div>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs h-5 px-1.5 text-warning border-warning">
+                      {tBuilder('call') || 'Call'}
+                    </Badge>
+                  </div>
+
+                  {/* Description */}
+                  {cmd.description && (
+                    <div className="px-2.5 py-1 text-xs text-muted-foreground truncate" title={cmd.description}>
+                      {cmd.description}
+                    </div>
+                  )}
+
+                  {/* Parameters */}
+                  {cmd.parameters.length > 0 && (
+                    <div className="px-2.5 pb-1.5">
+                      <div className="flex flex-wrap gap-1">
+                        {cmd.parameters.map((param, pIdx) => (
+                          <div
+                            key={pIdx}
+                            className="text-xs px-1.5 py-0.5 bg-background border rounded flex items-center gap-1"
+                            title={`${param.display_name} (${param.data_type})${param.required ? '' : ' - optional'}`}
+                          >
+                            <span className={cn(
+                              param.required ? 'text-foreground' : 'text-muted-foreground'
+                            )}>
+                              {param.name}
+                            </span>
+                            {param.required && (
+                              <span className="text-error">*</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 // ============================================================================
-// Transform Preview Panel Component
+// TestStrip — compact test panel
 // ============================================================================
 
-interface TransformPreviewPanelProps {
-  name: string
-  description: string
-  enabled: boolean
-  scopeType: ScopeType
-  scopeValue: string
+interface TestStripProps {
   jsCode: string
-  outputPrefix: string
-  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }> | null
-  extensionSources?: SelectedExtensionSource[]
+  testInput: string
+  onTestInputChange: (v: string) => void
   testOutput: string
-  t: (key: string) => string
+  testError: string
+  testRunning: boolean
+  onTest: () => void
+  onClearTest: () => void
+  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }>
+  extensionSources: SelectedExtensionSource[]
   tBuilder: (key: string) => string
 }
 
-function TransformPreviewPanel({
-  name,
-  description,
-  enabled,
-  scopeType,
-  scopeValue,
+function TestStrip({
   jsCode,
-  outputPrefix,
+  testInput,
+  onTestInputChange,
+  testOutput,
+  testError,
+  testRunning,
+  onTest,
+  onClearTest,
   deviceTypeMetrics,
   extensionSources,
-  testOutput,
-  t,
-  tBuilder
-}: TransformPreviewPanelProps) {
-  const [showDSL, setShowDSL] = React.useState(false)
+  tBuilder,
+}: TestStripProps) {
+  const generateMockData = useCallback(() => {
+    const mockData: Record<string, unknown> & { extensions?: Record<string, unknown> } = {}
 
-  // Count code lines
-  const codeLines = React.useMemo(() => {
-    return jsCode.split('\n').filter(s => s.trim()).length
-  }, [jsCode])
-
-  // Parse output metrics from code (simple heuristic)
-  const outputMetrics = React.useMemo(() => {
-    try {
-      // Try to execute code with sample data to get output keys
-      const sampleInput = { temperature: 25, humidity: 60 }
-      const fn = new Function('input', jsCode)
-      const result = fn(sampleInput)
-      if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
-        return Object.keys(result)
+    // Generate device metrics mock data
+    if (deviceTypeMetrics && deviceTypeMetrics.length > 0) {
+      for (const metric of deviceTypeMetrics) {
+        switch (metric.data_type) {
+          case 'integer':
+            mockData[metric.name] = Math.floor(Math.random() * 100)
+            break
+          case 'float':
+            mockData[metric.name] = parseFloat((Math.random() * 100).toFixed(2))
+            break
+          case 'string':
+            mockData[metric.name] = `sample_${metric.name}`
+            break
+          case 'boolean':
+            mockData[metric.name] = Math.random() > 0.5
+            break
+          case 'array':
+            mockData[metric.name] = [
+              Math.floor(Math.random() * 100),
+              parseFloat((Math.random() * 100).toFixed(2)),
+              `sample_${metric.name}`
+            ]
+            break
+          default:
+            mockData[metric.name] = null
+        }
       }
-    } catch {
-      // If execution fails, return undefined
+    } else {
+      // Default mock data
+      mockData.temperature = 25
+      mockData.humidity = 60
     }
-    return []
-  }, [jsCode])
 
-  // Render compact source card
-  const renderSourceCard = () => {
-    const deviceMetricCount = deviceTypeMetrics?.length || 0
-    const extensionSourceCount = extensionSources?.length || 0
-    const hasSources = deviceMetricCount > 0 || extensionSourceCount > 0
+    // Add extension data mock (V2: flat structure without command layer)
+    if (extensionSources && extensionSources.length > 0) {
+      const extensions: Record<string, Record<string, unknown>> = {}
+      mockData.extensions = extensions
+      for (const source of extensionSources) {
+        if (!extensions[source.extension_id]) {
+          extensions[source.extension_id] = {}
+        }
+        switch (source.data_type) {
+          case 'integer':
+            extensions[source.extension_id][source.field] = Math.floor(Math.random() * 100)
+            break
+          case 'number':
+            extensions[source.extension_id][source.field] = parseFloat((Math.random() * 100).toFixed(2))
+            break
+          case 'boolean':
+            extensions[source.extension_id][source.field] = Math.random() > 0.5
+            break
+          case 'string':
+            extensions[source.extension_id][source.field] = `sample_${source.field}`
+            break
+          default:
+            extensions[source.extension_id][source.field] = null
+        }
+      }
+    }
 
-    return (
-      <div className="bg-gradient-to-br from-info-light to-accent-indigo-light rounded-lg p-4 border border-info">
-        <div className="flex items-center gap-2 mb-3">
-          <Database className="h-4 w-4 text-info" />
-          <span className="text-sm font-medium text-info">
-            {tBuilder('deviceMetrics') || '输入来源'}
-          </span>
-          <Badge variant="secondary" className="ml-auto text-xs">
-            {deviceMetricCount + extensionSourceCount}
-          </Badge>
-        </div>
-        {hasSources ? (
-          <div className="space-y-2">
-            {deviceMetricCount > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs text-info">
-                  <Lightbulb className="h-4 w-4" />
-                  <span>{deviceMetricCount} {tBuilder('deviceMetrics') || '设备指标'}</span>
-                </div>
-                {deviceTypeMetrics?.slice(0, 3).map((metric, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                    <span className="text-xs truncate">{metric.display_name || metric.name}</span>
-                    {metric.unit && <span className={cn(textNano, "text-muted-foreground")}>({metric.unit})</span>}
-                  </div>
-                ))}
-                {deviceMetricCount > 3 && (
-                  <div className="text-xs text-info pl-4">
-                    +{deviceMetricCount - 3} {tBuilder('more') || '更多'}
-                  </div>
-                )}
-              </div>
-            )}
-            {extensionSourceCount > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs text-info">
-                  <Puzzle className="h-4 w-4" />
-                  <span>{extensionSourceCount} {tBuilder('extensionDataSources') || '扩展数据源'}</span>
-                </div>
-                {extensionSources?.slice(0, 2).map((source, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                    <Puzzle className="h-4 w-4 text-accent-purple" />
-                    <span className="text-xs truncate">{source.extension_name}</span>
-                    <span className={cn(textNano, "text-muted-foreground")}>·</span>
-                    <span className="text-xs truncate">{source.display_name || source.field}</span>
-                  </div>
-                ))}
-                {extensionSourceCount > 2 && (
-                  <div className="text-xs text-info pl-4">
-                    +{extensionSourceCount - 2} {tBuilder('more') || '更多'}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-info">
-            {tBuilder('noVariablesHint') || '暂无输入变量'}
-          </p>
-        )}
-      </div>
-    )
-  }
-
-  // Render transform logic card
-  const renderLogicCard = () => {
-    return (
-      <div className="bg-gradient-to-br from-accent-purple-light to-violet-50 dark:to-violet-950/30 rounded-lg p-4 border border-accent-purple-light">
-        <div className="flex items-center gap-2 mb-3">
-          <Code className="h-4 w-4 text-accent-purple" />
-          <span className="text-sm font-medium text-accent-purple">
-            {tBuilder('transformCode') || '转换逻辑'}
-          </span>
-          <Badge variant="secondary" className="ml-auto text-xs">
-            {codeLines} {tBuilder('lines') || '行'}
-          </Badge>
-        </div>
-        <div className="text-xs text-accent-purple space-y-2">
-          <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-            <Globe className="h-4 w-4" />
-            <span className="font-medium">{tBuilder('scopeLabel') || '作用范围'}:</span>
-            <span>
-              {scopeType === 'global' ? (tBuilder('scope.global') || '全局') :
-               scopeType === 'device_type' ? (tBuilder('scope.deviceType') || scopeValue) :
-               scopeValue}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-            <FileCode className="h-4 w-4" />
-            <span className="font-mono">{outputPrefix || 'transform'}</span>
-            <span className={cn(textNano, "text-muted-foreground")}>.key</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Render output preview card
-  const renderOutputCard = () => {
-    return (
-      <div className="bg-gradient-to-br from-success-light to-accent-emerald-light rounded-lg p-4 border border-success-light dark:border-success-light">
-        <div className="flex items-center gap-2 mb-3">
-          <Zap className="h-4 w-4 text-success dark:text-success" />
-          <span className="text-sm font-medium text-success dark:text-success">
-            {tBuilder('outputPrefix') || '输出指标'}
-          </span>
-          <Badge variant="secondary" className="ml-auto text-xs">
-            {outputMetrics.length || 0}
-          </Badge>
-        </div>
-        {outputMetrics.length > 0 ? (
-          <div className="space-y-1.5">
-            {outputMetrics.slice(0, 4).map((metric, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                <Zap className="h-4 w-4 text-success" />
-                <span className="text-xs font-mono">{outputPrefix}.{metric}</span>
-              </div>
-            ))}
-            {outputMetrics.length > 4 && (
-              <div className="text-xs text-center text-success dark:text-success">
-                +{outputMetrics.length - 4} {tBuilder('more') || '更多'}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-success dark:text-success">
-            {tBuilder('outputPrefixHint') || '运行测试后显示输出指标'}
-          </p>
-        )}
-      </div>
-    )
-  }
+    onTestInputChange(JSON.stringify(mockData, null, 2))
+  }, [deviceTypeMetrics, extensionSources, onTestInputChange])
 
   return (
-    <div className="h-full flex flex-col bg-muted-30 rounded-lg p-4">
-      {/* Header with toggle */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b">
-        <div className="flex items-center gap-2">
-          <Eye className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold">{tBuilder('preview') || '实时预览'}</h3>
-        </div>
-        <button
-          onClick={() => setShowDSL(!showDSL)}
-          className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
-            showDSL
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted hover:bg-muted"
+    <div className={cn(cardPadded, "space-y-3")}>
+      <div className="flex items-center gap-2">
+        <Play className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">{tBuilder('testPanel')}</span>
+      </div>
+
+      {/* Input row */}
+      <div className="flex flex-col md:flex-row gap-2">
+        <Textarea
+          value={testInput}
+          onChange={e => onTestInputChange(e.target.value)}
+          placeholder='{"temperature": 25}'
+          className="font-mono text-xs resize-none bg-muted-30 h-20 md:h-16 flex-1"
+        />
+        <div className="flex md:flex-col gap-2">
+          <Button
+            size="sm"
+            onClick={onTest}
+            disabled={!jsCode || testRunning}
+          >
+            {testRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
+            {tBuilder('run')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={generateMockData}
+          >
+            <FlaskConical className="h-4 w-4 mr-1" />
+            {tBuilder('generateMock')}
+          </Button>
+          {(testOutput || testError) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onClearTest}
+            >
+              {tBuilder('clear')}
+            </Button>
           )}
-        >
-          <Code className="h-4 w-4" />
-          {showDSL ? 'DSL' : (tBuilder('overview') || '预览')}
-        </button>
+        </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto">
-        {showDSL ? (
-          <div className="p-3 bg-background rounded-lg border max-h-full overflow-y-auto">
-            <pre className={cn(textNano, "font-mono bg-muted-50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all")}>
-              {jsCode || '// No code'}
-            </pre>
+      {/* Output / Error row */}
+      {(testOutput || testError) && (
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-muted-foreground">{tBuilder('outputData')}</span>
+            {testError ? (
+              <span className="text-xs text-error flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-error" />
+                {tBuilder('testFailed') || 'Failed'}
+              </span>
+            ) : (
+              <span className="text-xs text-success flex items-center gap-1">
+                <Check className="h-3 w-3" />
+                {tBuilder('testSuccess') || 'Passed'}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="space-y-3">
-            {/* Input Sources Card */}
-            {renderSourceCard()}
-
-            {/* Arrow */}
-            <div className="flex justify-center py-1">
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-            </div>
-
-            {/* Transform Logic Card */}
-            {renderLogicCard()}
-
-            {/* Arrow */}
-            <div className="flex justify-center py-1">
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-            </div>
-
-            {/* Output Preview Card */}
-            {renderOutputCard()}
+          <div className="rounded-md bg-muted-30 p-2 max-h-40 overflow-auto">
+            {testError && (
+              <div className="p-1.5 bg-muted border border-destructive rounded text-xs text-destructive font-mono">
+                {testError}
+              </div>
+            )}
+            {testOutput && !testError && (
+              <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
+                {testOutput}
+              </pre>
+            )}
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// TransformWorkspace — local component for the BuilderShell workspace slot
+// ============================================================================
+
+interface TransformWorkspaceProps {
+  jsCode: string
+  onCodeChange: (v: string) => void
+  templates: Array<{ key: string; nameKey: string; code: string }>
+  onApplyTemplate: (code: string) => void
+  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }> | null
+  extensionSources: SelectedExtensionSource[]
+  onExtensionSourcesChange: (sources: SelectedExtensionSource[]) => void
+  outputPrefix: string
+  onOutputPrefixChange: (v: string) => void
+  onInsertVariable: (variable: string) => void
+  formErrors: FormErrors
+  // Test strip props
+  testInput: string
+  onTestInputChange: (v: string) => void
+  testOutput: string
+  testError: string
+  testRunning: boolean
+  onTest: () => void
+  onClearTest: () => void
+  tBuilder: (key: string) => string
+  t: (key: string, params?: Record<string, unknown>) => string
+}
+
+function TransformWorkspace({
+  jsCode,
+  onCodeChange,
+  templates,
+  onApplyTemplate,
+  deviceTypeMetrics,
+  extensionSources,
+  onExtensionSourcesChange,
+  outputPrefix,
+  onOutputPrefixChange,
+  onInsertVariable,
+  formErrors,
+  testInput,
+  onTestInputChange,
+  testOutput,
+  testError,
+  testRunning,
+  onTest,
+  onClearTest,
+  tBuilder,
+  t,
+}: TransformWorkspaceProps) {
+  const isMobile = useIsMobile()
+
+  // Grouped selected extension sources for badge display
+  const selectedSourceBadges = useMemo(() => {
+    if (!extensionSources || extensionSources.length === 0) return []
+    const grouped: Record<string, { name: string; count: number }> = {}
+    for (const s of extensionSources) {
+      if (!grouped[s.extension_id]) {
+        grouped[s.extension_id] = { name: s.extension_name, count: 0 }
+      }
+      grouped[s.extension_id].count++
+    }
+    return Object.entries(grouped).map(([id, info]) => ({ id, ...info }))
+  }, [extensionSources])
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-toolbar with template buttons + output prefix */}
+      <div className="rounded-xl border bg-background overflow-hidden">
+        <div className="border-b px-3 py-2 bg-muted-30">
+          {/* Output Prefix section */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-2 flex-1">
+              <Label className="text-xs font-medium whitespace-nowrap text-muted-foreground">{tBuilder('outputPrefix')}</Label>
+              <Input
+                value={outputPrefix}
+                onChange={e => onOutputPrefixChange(e.target.value)}
+                placeholder={tBuilder('outputPrefixPlaceholder')}
+                className={cn(
+                  "h-8 text-sm w-[180px]",
+                  formErrors.outputPrefix && "border-destructive"
+                )}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{tBuilder('outputPrefixHint')}</p>
+          </div>
+
+          {/* Toolbar row: Template + badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Template Select */}
+            <Select onValueChange={(key) => {
+              const tpl = templates.find(t => t.key === key)
+              if (tpl) onApplyTemplate(tpl.code)
+            }}>
+              <SelectTrigger className="w-[160px] h-8 text-sm">
+                <FileCode className="h-4 w-4 mr-1.5 text-muted-foreground" />
+                <SelectValue placeholder={tBuilder('selectTemplate') || 'Template'} />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((tpl) => (
+                  <SelectItem key={tpl.key} value={tpl.key}>
+                    {tBuilder(tpl.nameKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Selected extension source badges */}
+            {selectedSourceBadges.map(({ id, name, count }) => (
+              <Badge key={id} variant="secondary" className="h-6 text-xs gap-1">
+                <Puzzle className="h-3 w-3 text-accent-purple" />
+                {name}
+                <span className="text-muted-foreground">x{count}</span>
+              </Badge>
+            ))}
+          </div>
+
+          {formErrors.outputPrefix && (
+            <p className="text-xs text-destructive mt-1">{formErrors.outputPrefix}</p>
+          )}
+        </div>
+
+        {/* Code editor + VariablesRail side by side */}
+        <div className="flex flex-col md:flex-row">
+          <div className="flex-1 min-w-0">
+            <CodeEditor
+              value={jsCode}
+              onChange={onCodeChange}
+              minHeight="320px"
+              maxHeight={isMobile ? '420px' : '560px'}
+              className="border-0 rounded-none focus-within:ring-0 focus-within:ring-offset-0"
+            />
+            {formErrors.code && (
+              <div className="px-3 pb-2">
+                <p className="text-xs text-destructive">{formErrors.code}</p>
+              </div>
+            )}
+          </div>
+          {/* Variables rail */}
+          <div className={cn("border-t md:border-t-0 md:border-l shrink-0", isMobile ? "" : "")}>
+            <VariablesRail
+              deviceTypeMetrics={deviceTypeMetrics || undefined}
+              extensionSources={extensionSources}
+              onExtensionSourcesChange={onExtensionSourcesChange}
+              onInsertVariable={onInsertVariable}
+              tBuilder={tBuilder}
+              t={t}
+            />
+          </div>
+        </div>
       </div>
+
+      {/* Test strip */}
+      <TestStrip
+        jsCode={jsCode}
+        testInput={testInput}
+        onTestInputChange={onTestInputChange}
+        testOutput={testOutput}
+        testError={testError}
+        testRunning={testRunning}
+        onTest={onTest}
+        onClearTest={onClearTest}
+        deviceTypeMetrics={deviceTypeMetrics || undefined}
+        extensionSources={extensionSources}
+        tBuilder={tBuilder}
+      />
     </div>
   )
 }
@@ -1029,11 +1054,6 @@ export function TransformBuilder({
   const { t } = useTranslation(['automation', 'common'])
   const tBuilder = (key: string) => t(`automation:transformBuilder.${key}`)
   const isEditMode = !!transform
-  const isMobile = useIsMobile()
-
-  // Step state
-  const [currentStep, setCurrentStep] = useState<Step>('basic')
-  const [completedSteps, setCompletedSteps] = useState<Set<Step>>(new Set())
 
   // Form data
   const [name, setName] = useState('')
@@ -1145,9 +1165,6 @@ export function TransformBuilder({
   // Reset when dialog opens or transform changes
   useEffect(() => {
     if (open) {
-      setCurrentStep('basic')
-      setCompletedSteps(new Set())
-
       if (transform) {
         setName(transform.name)
         setDescription(transform.description || '')
@@ -1262,56 +1279,6 @@ export function TransformBuilder({
     }
   }, [jsCode, testInput, outputPrefix, selectedExtensionSources])
 
-  // Validate current step
-  const validateStep = (step: Step): boolean => {
-    const errors: FormErrors = {}
-
-    if (step === 'basic') {
-      if (!name.trim()) {
-        errors.name = tBuilder('validationErrors.name')
-      }
-      if (scopeType !== 'global' && !scopeValue) {
-        errors.scopeValue = tBuilder('validationErrors.scopeValue')
-      }
-    }
-
-    if (step === 'code') {
-      if (!jsCode.trim()) {
-        errors.code = tBuilder('validationErrors.code')
-      }
-      if (outputPrefix && !/^[a-z0-9_]+$/.test(outputPrefix)) {
-        errors.outputPrefix = tBuilder('validationErrors.outputPrefix')
-      }
-    }
-
-    setFormErrors(errors)
-    return Object.keys(errors).length === 0
-  }
-
-  // Navigate to next step
-  const handleNext = () => {
-    if (!validateStep(currentStep)) return
-
-    const newCompleted = new Set(completedSteps)
-    newCompleted.add(currentStep)
-    setCompletedSteps(newCompleted)
-
-    const steps: Step[] = ['basic', 'code', 'test']
-    const currentIndex = steps.indexOf(currentStep)
-    if (currentIndex < steps.length - 1) {
-      setCurrentStep(steps[currentIndex + 1])
-    }
-  }
-
-  // Navigate to previous step
-  const handlePrevious = () => {
-    const steps: Step[] = ['basic', 'code', 'test']
-    const currentIndex = steps.indexOf(currentStep)
-    if (currentIndex > 0) {
-      setCurrentStep(steps[currentIndex - 1])
-    }
-  }
-
   // Save
   const handleSave = useCallback(() => {
     if (!name.trim()) return
@@ -1349,946 +1316,171 @@ export function TransformBuilder({
     })
   }, [name, description, enabled, scopeType, scopeValue, jsCode, outputPrefix, selectedExtensionSources, onSave])
 
-  // Step config
-  const steps: { key: Step; label: string; shortLabel: string; icon: React.ReactNode }[] = [
-    { key: 'basic', label: tBuilder('steps.basic'), shortLabel: tBuilder('stepShort.basic') || '基本', icon: <Settings className="h-4 w-4" /> },
-    { key: 'code', label: tBuilder('steps.code'), shortLabel: tBuilder('stepShort.code') || '代码', icon: <Code className="h-4 w-4" /> },
-    { key: 'test', label: tBuilder('steps.test'), shortLabel: tBuilder('stepShort.test') || '测试', icon: <FlaskConical className="h-4 w-4" /> },
-  ]
-
-  const stepIndex = steps.findIndex(s => s.key === currentStep)
-  const isFirstStep = currentStep === 'basic'
-
-  // Convert steps to VerticalStepper format
-  const stepperSteps: StepperStep[] = steps.map(step => ({
-    id: step.key,
-    label: step.label,
-    shortLabel: step.shortLabel,
-    icon: step.icon,
-  }))
-
-  return (
-    <FullScreenDialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
-      {/* Header */}
-      <FullScreenDialogHeader
-        icon={<Code className="h-5 w-5" />}
-        iconBg="bg-info-light"
-        iconColor="text-info"
-        title={isEditMode ? tBuilder('editTitle') : tBuilder('title')}
-        onClose={() => onOpenChange(false)}
-      />
-
-      {/* Content with Sidebar */}
-      <FullScreenDialogContent>
-        {/* Left Sidebar - Vertical Steps (Compact) - Hide on mobile */}
-        <FullScreenDialogSidebar>
-          <VerticalStepper
-            steps={stepperSteps}
-            currentStep={currentStep}
-            completedSteps={Array.from(completedSteps)}
-            onStepClick={(stepId) => {
-              // Allow clicking on completed or past steps
-              const clickedIndex = steps.findIndex(s => s.key === stepId)
-              if (completedSteps.has(stepId as Step) || clickedIndex < stepIndex) {
-                setCurrentStep(stepId as Step)
-              }
-            }}
-          />
-        </FullScreenDialogSidebar>
-
-        {/* Main Content */}
-        <FullScreenDialogMain>
-          <div className={cn(
-            "max-w-5xl mx-auto",
-            isMobile ? "px-4 py-4" : "px-4 py-6"
-          )}>
-            {/* Step 1: Basic Info */}
-            {currentStep === 'basic' && (
-              <BasicInfoStep
-                name={name}
-                onNameChange={setName}
-                description={description}
-                onDescriptionChange={setDescription}
-                enabled={enabled}
-                onEnabledChange={setEnabled}
-                scopeType={scopeType}
-                onScopeTypeChange={setScopeType}
-                scopeValue={scopeValue}
-                onScopeValueChange={setScopeValue}
-                scopeOptions={scopeOptions}
-                errors={formErrors}
-                t={t}
-                tBuilder={tBuilder}
-              />
-            )}
-
-            {/* Step 2: Code */}
-            {currentStep === 'code' && (
-              <CodeStep
-                jsCode={jsCode}
-                onCodeChange={setJsCode}
-                templates={CODE_TEMPLATES}
-                onApplyTemplate={handleApplyTemplate}
-                deviceTypeMetrics={deviceTypeMetrics || undefined}
-                extensionSources={selectedExtensionSources}
-                onExtensionSourcesChange={setSelectedExtensionSources}
-                errors={formErrors}
-                outputPrefix={outputPrefix}
-                onOutputPrefixChange={setOutputPrefix}
-                onInsertVariable={handleInsertVariable}
-                t={t}
-                tBuilder={tBuilder}
-                isMobile={isMobile}
-              />
-            )}
-
-            {/* Step 3: Test */}
-            {currentStep === 'test' && (
-              <TestStep
-                jsCode={jsCode}
-                testInput={testInput}
-                onTestInputChange={setTestInput}
-                testOutput={testOutput}
-                testError={testError}
-                testRunning={testRunning}
-                onTest={handleTestCode}
-                onClearTest={() => { setTestOutput(''); setTestError('') }}
-                deviceTypeMetrics={deviceTypeMetrics || undefined}
-                extensionSources={selectedExtensionSources}
-                scopeType={scopeType}
-                t={t}
-                tBuilder={tBuilder}
-              />
-            )}
-          </div>
-        </FullScreenDialogMain>
-
-        {/* Right Preview Panel - Hide on mobile */}
-        {!isMobile && (
-          <aside className={cn(
-            "w-[360px] border-l shrink-0 overflow-y-auto",
-            "bg-black/[0.02] dark:bg-white/[0.02]"
-          )}>
-            <TransformPreviewPanel
-              name={name}
-              description={description}
-              enabled={enabled}
-              scopeType={scopeType}
-              scopeValue={scopeValue}
-              jsCode={jsCode}
-              outputPrefix={outputPrefix}
-              deviceTypeMetrics={deviceTypeMetrics}
-              extensionSources={selectedExtensionSources}
-              testOutput={testOutput}
-              t={t}
-              tBuilder={tBuilder}
-            />
-          </aside>
-        )}
-      </FullScreenDialogContent>
-
-      {/* Step Navigation Footer */}
-      <FullScreenDialogFooter>
-        {!isFirstStep && (
-          <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
-            {tBuilder('previous')}
-          </Button>
-        )}
-
-        <div className="flex-1" />
-
-        <Button
-          size={isMobile ? "default" : "sm"}
-          onClick={currentStep === 'test' ? handleSave : handleNext}
-          disabled={!name.trim() && currentStep !== 'basic'}
-          className={isMobile ? "h-12 min-w-[100px]" : ""}
-        >
-          {currentStep === 'test' ? tBuilder('save') : tBuilder('next')}
-          <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "ml-1")} />
-        </Button>
-      </FullScreenDialogFooter>
-    </FullScreenDialog>
-  )
-}
-
-// ============================================================================
-// Step 1: Basic Info
-// ============================================================================
-
-interface BasicInfoStepProps {
-  name: string
-  onNameChange: (v: string) => void
-  description: string
-  onDescriptionChange: (v: string) => void
-  enabled: boolean
-  onEnabledChange: (v: boolean) => void
-  scopeType: ScopeType
-  onScopeTypeChange: (v: ScopeType) => void
-  scopeValue: string
-  onScopeValueChange: (v: string) => void
-  scopeOptions: Array<{ value: string; label: string }>
-  errors: FormErrors
-  t: (key: string) => string
-  tBuilder: (key: string) => string
-}
-
-function BasicInfoStep({
-  name,
-  onNameChange,
-  description,
-  onDescriptionChange,
-  enabled,
-  onEnabledChange,
-  scopeType,
-  onScopeTypeChange,
-  scopeValue,
-  onScopeValueChange,
-  scopeOptions,
-  errors,
-  tBuilder,
-}: BasicInfoStepProps) {
-  return (
-    <div className="space-y-6 py-4">
-      {/* Transform Name */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">
+  // --- Config rail content ---
+  const config = (
+    <div className="space-y-4">
+      {/* Name */}
+      <Field>
+        <FieldLabel>
           {tBuilder('name')} <span className="text-destructive">*</span>
-        </Label>
+        </FieldLabel>
         <Input
           value={name}
-          onChange={e => onNameChange(e.target.value)}
+          onChange={e => setName(e.target.value)}
           placeholder={tBuilder('transformNamePlaceholder')}
-          className={cn(errors.name && "border-destructive")}
+          aria-invalid={!!formErrors.name}
         />
-        {errors.name && (
-          <p className="text-xs text-destructive">{errors.name}</p>
-        )}
-      </div>
+        {formErrors.name && <FieldMessage>{formErrors.name}</FieldMessage>}
+      </Field>
 
       {/* Description */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">{tBuilder('description')}</Label>
-        <Input
+      <Field>
+        <FieldLabel>{tBuilder('description')}</FieldLabel>
+        <Textarea
           value={description}
-          onChange={e => onDescriptionChange(e.target.value)}
+          onChange={e => setDescription(e.target.value)}
           placeholder={tBuilder('descriptionPlaceholder')}
+          className="resize-none"
+          rows={2}
         />
-      </div>
+      </Field>
 
-      {/* Enable Switch */}
+      {/* Scope */}
+      <Field>
+        <FieldLabel>{tBuilder('scopeLabel')}</FieldLabel>
+        <Select value={scopeType} onValueChange={(v: string) => setScopeType(v as ScopeType)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="global">{tBuilder('scope.global')}</SelectItem>
+            <SelectItem value="device_type">{tBuilder('scope.deviceType')}</SelectItem>
+            <SelectItem value="device">{tBuilder('scope.device')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {scopeType !== 'global' && (
+        <Field>
+          <FieldLabel>
+            {scopeType === 'device_type' ? tBuilder('scope.deviceType') : tBuilder('scope.device')}
+          </FieldLabel>
+          <Select value={scopeValue} onValueChange={setScopeValue}>
+            <SelectTrigger aria-invalid={!!formErrors.scopeValue}>
+              <SelectValue placeholder={tBuilder('selectScope')} />
+            </SelectTrigger>
+            <SelectContent>
+              {scopeOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {formErrors.scopeValue && <FieldMessage>{formErrors.scopeValue}</FieldMessage>}
+        </Field>
+      )}
+
+      {/* Output prefix */}
+      <Field>
+        <FieldLabel>{tBuilder('outputPrefix')}</FieldLabel>
+        <Input
+          value={outputPrefix}
+          onChange={e => setOutputPrefix(e.target.value)}
+          placeholder={tBuilder('outputPrefixPlaceholder')}
+        />
+      </Field>
+
+      {/* Enabled */}
       <div className="flex items-center gap-3">
-        <Checkbox
+        <Switch
           id="transform-enabled"
           checked={enabled}
-          onCheckedChange={(checked) => onEnabledChange(!!checked)}
+          onCheckedChange={(checked) => setEnabled(!!checked)}
         />
         <Label htmlFor="transform-enabled" className="text-sm font-medium cursor-pointer">
           {tBuilder('enabled')}
         </Label>
       </div>
-
-      {/* Scope Selection */}
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">{tBuilder('scopeLabel')}</Label>
-          <Select value={scopeType} onValueChange={(v: any) => onScopeTypeChange(v)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="global">{tBuilder('scope.global')}</SelectItem>
-              <SelectItem value="device_type">{tBuilder('scope.deviceType')}</SelectItem>
-              <SelectItem value="device">{tBuilder('scope.device')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {scopeType !== 'global' && (
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">
-              {scopeType === 'device_type' ? tBuilder('scope.deviceType') : tBuilder('scope.device')}
-            </Label>
-            <Select value={scopeValue} onValueChange={onScopeValueChange}>
-              <SelectTrigger className={cn(errors.scopeValue && "border-destructive")}>
-                <SelectValue placeholder={tBuilder('selectScope')} />
-              </SelectTrigger>
-              <SelectContent>
-                {scopeOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.scopeValue && (
-              <p className="text-xs text-destructive">{errors.scopeValue}</p>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   )
-}
 
-// ============================================================================
-// Step 2: Code
-// ============================================================================
+  // --- Status indicator (enable dot) ---
+  const statusIndicator = (
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          "inline-block w-2 h-2 rounded-full",
+          enabled ? "bg-success" : "bg-muted-foreground/40"
+        )}
+      />
+      <span className="text-xs text-muted-foreground">
+        {enabled ? tBuilder('enabled') : tBuilder('disabled')}
+      </span>
+    </div>
+  )
 
-interface CodeStepProps {
-  jsCode: string
-  onCodeChange: (v: string) => void
-  templates: Array<{ key: string; nameKey: string; code: string }>
-  onApplyTemplate: (code: string) => void
-  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }>
-  extensionSources?: SelectedExtensionSource[]
-  onExtensionSourcesChange: (sources: SelectedExtensionSource[]) => void
-  errors: FormErrors
-  outputPrefix: string
-  onOutputPrefixChange: (v: string) => void
-  onInsertVariable: (variable: string) => void
-  t: (key: string) => string
-  tBuilder: (key: string) => string
-  isMobile?: boolean
-}
-
-function CodeStep({
-  jsCode,
-  onCodeChange,
-  templates,
-  onApplyTemplate,
-  deviceTypeMetrics,
-  extensionSources,
-  onExtensionSourcesChange,
-  errors,
-  outputPrefix,
-  onOutputPrefixChange,
-  onInsertVariable,
-  tBuilder,
-  t,
-  isMobile = false,
-}: CodeStepProps) {
-  // Extension data fetching state (migrated from VariablesPanel)
-  const [extensions, setExtensions] = useState<ExtensionDataSourceGroup[]>([])
-  const [extensionCommands, setExtensionCommands] = useState<ExtensionCommandInfo[]>([])
-  const [loadingExtensions, setLoadingExtensions] = useState(false)
-  const [insertPopoverOpen, setInsertPopoverOpen] = useState(false)
-
-  // Fetch extension data sources when popover opens
-  useEffect(() => {
-    if (!insertPopoverOpen || extensions.length > 0) return
-    const fetchSources = async () => {
-      setLoadingExtensions(true)
-      try {
-        const [allSources, extList] = await Promise.all([
-          api.listAllDataSources(),
-          api.listExtensions()
-        ])
-        const extSources = allSources.filter(
-          (source): source is import('@/types').ExtensionDataSourceInfo =>
-            'extension_id' in source
-        )
-        const groups: Record<string, ExtensionDataSourceGroup> = {}
-        for (const source of extSources) {
-          const key = source.extension_id
-          if (!groups[key]) {
-            const ext = extList.find(e => e.id === source.extension_id)
-            groups[key] = {
-              extension_id: source.extension_id,
-              extension_name: ext?.name || source.extension_id,
-              commands: [],
-            }
-          }
-          const cmdKey = source.command || 'metrics'
-          let cmdGroup = groups[key].commands.find(c => c.command === cmdKey)
-          if (!cmdGroup) {
-            cmdGroup = { command: cmdKey, command_display_name: 'Metrics', fields: [] }
-            groups[key].commands.push(cmdGroup)
-          }
-          cmdGroup.fields.push({
-            field: source.field,
-            display_name: source.display_name,
-            data_type: source.data_type as ExtensionDataType,
-            unit: source.unit,
-          })
-        }
-        setExtensions(Object.values(groups))
-
-        const commands: ExtensionCommandInfo[] = []
-        for (const ext of extList) {
-          for (const cmd of ext.commands || []) {
-            if (cmd.id === 'metrics' || cmd.id === 'get_current') continue
-            const parameters = extractParametersFromSchema(cmd.input_schema)
-            commands.push({
-              extension_id: ext.id,
-              extension_name: ext.name,
-              command_id: cmd.id,
-              command_name: cmd.id,
-              display_name: cmd.display_name || cmd.id,
-              description: cmd.description || '',
-              parameters,
-            })
-          }
-        }
-        setExtensionCommands(commands)
-      } catch (err) {
-        console.error('Failed to load extension data sources:', err)
-      } finally {
-        setLoadingExtensions(false)
-      }
-    }
-    fetchSources()
-  }, [insertPopoverOpen]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Helper: extract parameters from JSON schema (migrated from VariablesPanel)
-  const extractParametersFromSchema = (schema: Record<string, unknown> | undefined): ExtensionCommandInfo['parameters'] => {
-    if (!schema || typeof schema !== 'object') return []
-    const params: ExtensionCommandInfo['parameters'] = []
-    const properties = schema.properties as Record<string, unknown> | undefined
-    const required = (schema.required as string[]) || []
-    if (!properties) return params
-    for (const [name, propSchema] of Object.entries(properties)) {
-      if (typeof propSchema !== 'object' || propSchema === null) continue
-      const prop = propSchema as Record<string, unknown>
-      let dataType = 'string'
-      const type = prop.type as string | undefined
-      if (type === 'number' || type === 'integer') dataType = 'number'
-      else if (type === 'boolean') dataType = 'boolean'
-      else if (type === 'array') dataType = 'array'
-      else if (type === 'object') dataType = 'object'
-      params.push({
-        name,
-        display_name: (prop.title as string) || name,
-        data_type: dataType,
-        required: required.includes(name),
-        default_value: prop.default,
-        description: prop.description as string | undefined,
-      })
-    }
-    return params
-  }
-
-  // Extension source toggle helpers (migrated from VariablesPanel)
-  const isSourceSelected = (extId: string, field: string) =>
-    extensionSources?.some(s => s.extension_id === extId && s.field === field)
-
-  const toggleSource = (extId: string, extName: string, field: string, display: string, dataType: ExtensionDataType, unit: string | undefined) => {
-    const currentSources = extensionSources || []
-    const key = `${extId}/${field}`
-    if (isSourceSelected(extId, field)) {
-      onExtensionSourcesChange(currentSources.filter(s => `${s.extension_id}/${s.field}` !== key))
-    } else {
-      onExtensionSourcesChange([...currentSources, {
-        extension_id: extId,
-        extension_name: extName,
-        command: 'metrics',
-        command_display_name: 'Metrics',
-        field,
-        display_name: display,
-        data_type: dataType,
-        unit,
-      }])
-    }
-  }
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'number': case 'integer': case 'float': return 'text-info'
-      case 'string': return 'text-success'
-      case 'boolean': return 'text-accent-purple'
-      case 'object': return 'text-accent-orange'
-      case 'array': return 'text-accent-cyan'
-      case 'binary': return 'text-warning'
-      default: return 'text-muted-foreground'
-    }
-  }
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'number': case 'integer': case 'float': return '#'
-      case 'string': return '"'
-      case 'boolean': return 'TF'
-      case 'object': return '{}'
-      case 'array': return '[]'
-      case 'binary': return 'BIN'
-      default: return '?'
-    }
-  }
-
-  const handleInvokeCommand = (cmdInfo: ExtensionCommandInfo) => {
-    let paramsCode = '  data: input'
-    if (cmdInfo.parameters.length > 0) {
-      const otherParams = cmdInfo.parameters
-        .filter(p => p.name !== 'data')
-        .map(p => {
-          const comment = p.required ? '' : ` // optional${p.description ? ` - ${p.description}` : ''}`
-          const value = p.default_value !== undefined ? JSON.stringify(p.default_value) : `/* ${p.display_name} */`
-          return `\n  ${p.name}: ${value},${comment}`
-        })
-        .join('')
-      if (otherParams) paramsCode += ',' + otherParams
-    }
-    const hasParams = cmdInfo.parameters.length > 0
-    const resultParam = hasParams ? 'result' : '{ processed: true }'
-    const codeTemplate = `// Call ${cmdInfo.extension_name}: ${cmdInfo.display_name}\n// ${cmdInfo.description || 'Execute extension command'}\nconst ${resultParam} = extensions_invoke('${cmdInfo.extension_id}', '${cmdInfo.command_name}', {\n${paramsCode}\n})\n\nreturn ${resultParam}`
-    onInsertVariable?.(codeTemplate)
-    setInsertPopoverOpen(false)
-  }
-
-  // Grouped selected extension sources for badge display
-  const selectedSourceBadges = useMemo(() => {
-    if (!extensionSources || extensionSources.length === 0) return []
-    const grouped: Record<string, { name: string; count: number }> = {}
-    for (const s of extensionSources) {
-      if (!grouped[s.extension_id]) {
-        grouped[s.extension_id] = { name: s.extension_name, count: 0 }
-      }
-      grouped[s.extension_id].count++
-    }
-    return Object.entries(grouped).map(([id, info]) => ({ id, ...info }))
-  }, [extensionSources])
+  // --- Footer ---
+  const footer = (
+    <>
+      <div />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleTestCode}
+          disabled={testRunning || !jsCode.trim()}
+        >
+          {testRunning ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Play className="h-4 w-4 mr-1" />}
+          {tBuilder('run')}
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!name.trim()}
+        >
+          {tBuilder('save')}
+        </Button>
+      </div>
+    </>
+  )
 
   return (
-    <div className="space-y-4 py-4">
-      {/* Unified code editor container */}
-      <div className="rounded-xl border bg-background overflow-hidden">
-        {/* Toolbar */}
-        <div className="border-b px-3 py-2 bg-muted-30">
-          {/* Output Prefix section */}
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex items-center gap-2 flex-1">
-              <Label className="text-xs font-medium whitespace-nowrap text-muted-foreground">{tBuilder('outputPrefix')}</Label>
-              <Input
-                value={outputPrefix}
-                onChange={e => onOutputPrefixChange(e.target.value)}
-                placeholder={tBuilder('outputPrefixPlaceholder')}
-                className={cn(
-                  "h-8 text-sm w-[180px]",
-                  errors.outputPrefix && "border-destructive"
-                )}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">{tBuilder('outputPrefixHint')}</p>
-          </div>
-
-          {/* Toolbar row: Template + Insert Data + badges */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Template Select */}
-            <Select onValueChange={(key) => {
-              const tpl = templates.find(t => t.key === key)
-              if (tpl) onApplyTemplate(tpl.code)
-            }}>
-              <SelectTrigger className="w-[160px] h-8 text-sm">
-                <FileCode className="h-4 w-4 mr-1.5 text-muted-foreground" />
-                <SelectValue placeholder={tBuilder('selectTemplate') || 'Template'} />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((tpl) => (
-                  <SelectItem key={tpl.key} value={tpl.key}>
-                    {tBuilder(tpl.nameKey)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Insert Data */}
-            <Popover open={insertPopoverOpen} onOpenChange={setInsertPopoverOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="h-8 text-sm font-medium px-3">
-                  <Plus className="h-4 w-4 mr-1.5" />
-                  {tBuilder('insertData') || 'Insert Data'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80 p-0" align="start" side="bottom">
-                <Tabs defaultValue="device">
-                  <div className="px-3 pt-3">
-                    <TabsList className="w-full h-8">
-                      <TabsTrigger value="device" className="flex-1 h-7 text-xs">
-                        <Database className="h-3.5 w-3.5 mr-1" />
-                        {tBuilder('device') || 'Device'}
-                      </TabsTrigger>
-                      <TabsTrigger value="extension" className="flex-1 h-7 text-xs">
-                        <Puzzle className="h-3.5 w-3.5 mr-1" />
-                        {tBuilder('extension') || 'Extension'}
-                      </TabsTrigger>
-                      <TabsTrigger value="actions" className="flex-1 h-7 text-xs">
-                        <Zap className="h-3.5 w-3.5 mr-1" />
-                        {tBuilder('extensionActions') || 'Actions'}
-                      </TabsTrigger>
-                    </TabsList>
-                  </div>
-
-                  {/* Device Metrics Tab */}
-                  <TabsContent value="device" className="overflow-y-auto max-h-[280px] p-2 mt-0">
-                    {deviceTypeMetrics && deviceTypeMetrics.length > 0 ? (
-                      <div className="space-y-1">
-                        {deviceTypeMetrics.map((metric, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between bg-background border rounded px-2 py-1.5 hover:bg-muted hover:border-border transition-all cursor-pointer"
-                            onClick={() => {
-                              const safePath = metric.name.split('.').join('?.')
-                              onInsertVariable?.(`input.${safePath}`)
-                              setInsertPopoverOpen(false)
-                            }}
-                          >
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <code className="font-mono text-xs text-info truncate">{metric.name}</code>
-                              {metric.display_name && metric.display_name !== metric.name && (
-                                <span className="text-xs text-muted-foreground truncate">{metric.display_name}</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {metric.unit && <span className="text-xs text-muted-foreground">{metric.unit}</span>}
-                              <Badge variant="outline" className="py-0 h-5 px-1.5 text-xs" >
-                                <span className={getTypeColor(metric.data_type)}>{getTypeIcon(metric.data_type)}</span>
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center text-muted-foreground py-8 px-4 text-sm">
-                        <Database className="mx-auto mb-2 opacity-30 h-8 w-8" />
-                        <div>{tBuilder('noVariablesHint')}</div>
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  {/* Extension Tab */}
-                  <TabsContent value="extension" className="overflow-y-auto max-h-[280px] p-2 mt-0">
-                    {loadingExtensions ? (
-                      <div className="flex items-center justify-center py-6">
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2" />
-                        <span className="text-sm text-muted-foreground">{t('loading')}</span>
-                      </div>
-                    ) : extensions.length === 0 ? (
-                      <div className="text-center py-6 text-sm text-muted-foreground">
-                        <Puzzle className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        {tBuilder('noExtensionSources')}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {extensions.map((ext) => (
-                          <div key={ext.extension_id} className="space-y-1">
-                            <div className="font-medium text-xs flex items-center gap-2 px-1">
-                              <Puzzle className="h-3.5 w-3.5 text-accent-purple" />
-                              {ext.extension_name}
-                            </div>
-                            {ext.commands.map((cmd) => (
-                              <div key={cmd.command} className="ml-5 space-y-0.5">
-                                {cmd.fields.map((field) => (
-                                  <div
-                                    key={field.field}
-                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-xs"
-                                    onClick={() => {
-                                      toggleSource(ext.extension_id, ext.extension_name, field.field, field.display_name, field.data_type, field.unit)
-                                      onInsertVariable?.(`input.extensions?.${ext.extension_id}?.${field.field}`)
-                                      setInsertPopoverOpen(false)
-                                    }}
-                                  >
-                                    <Checkbox
-                                      checked={isSourceSelected(ext.extension_id, field.field)}
-                                      className="h-3.5 w-3.5 pointer-events-none"
-                                    />
-                                    <span className="text-muted-foreground truncate flex-1">{field.field}</span>
-                                    {field.unit && <span className="text-muted-foreground">({field.unit})</span>}
-                                    <Badge variant="outline" className="py-0 h-4 px-1 text-xs">
-                                      <span className={getTypeColor(field.data_type)}>{getTypeIcon(field.data_type)}</span>
-                                    </Badge>
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  {/* Actions Tab */}
-                  <TabsContent value="actions" className="overflow-y-auto max-h-[280px] p-2 mt-0">
-                    {extensionCommands.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {extensionCommands.map((cmd, idx) => (
-                          <div
-                            key={idx}
-                            className="border border-warning rounded-lg overflow-hidden bg-warning-light hover:bg-warning-light cursor-pointer"
-                            onClick={() => handleInvokeCommand(cmd)}
-                          >
-                            <div className="flex items-center justify-between px-2.5 py-1.5">
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <Zap className="h-3.5 w-3.5 text-warning shrink-0" />
-                                <div className="min-w-0">
-                                  <div className="text-xs font-medium text-warning truncate">{cmd.display_name}</div>
-                                  <div className="text-xs text-muted-foreground truncate">{cmd.extension_name}</div>
-                                </div>
-                              </div>
-                              <Badge variant="outline" className="text-xs h-5 px-1.5 text-warning border-warning">
-                                {tBuilder('call') || 'Call'}
-                              </Badge>
-                            </div>
-                            {cmd.parameters.length > 0 && (
-                              <div className="px-2.5 pb-1.5 flex flex-wrap gap-1">
-                                {cmd.parameters.map((p, pi) => (
-                                  <span key={pi} className={cn(textNano, "px-1.5 rounded bg-muted")}>
-                                    {p.name}
-                                    {p.required && <span className="text-error ml-0.5">*</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 text-sm text-muted-foreground">
-                        <Zap className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                        {tBuilder('noExtensionSources')}
-                      </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </PopoverContent>
-            </Popover>
-
-            {/* Selected extension source badges */}
-            {selectedSourceBadges.map(({ id, name, count }) => (
-              <Badge key={id} variant="secondary" className="h-6 text-xs gap-1">
-                <Puzzle className="h-3 w-3 text-accent-purple" />
-                {name}
-                <span className="text-muted-foreground">×{count}</span>
-              </Badge>
-            ))}
-          </div>
-
-          {errors.outputPrefix && (
-            <p className="text-xs text-destructive mt-1">{errors.outputPrefix}</p>
-          )}
-        </div>
-
-        {/* Code Editor - full width, no border */}
-        <CodeEditor
-          value={jsCode}
-          onChange={onCodeChange}
-          minHeight={isMobile ? "350px" : "500px"}
-          maxHeight={isMobile ? "500px" : "700px"}
-          className="border-0 rounded-none focus-within:ring-0 focus-within:ring-offset-0"
+    <BuilderShell
+      open={open}
+      onOpenChange={onOpenChange}
+      accent="emerald"
+      title={isEditMode ? tBuilder('editTitle') : tBuilder('title')}
+      subtitle={tBuilder('desc')}
+      icon={<Code className="h-5 w-5" />}
+      statusIndicator={statusIndicator}
+      config={config}
+      workspace={
+        <TransformWorkspace
+          jsCode={jsCode}
+          onCodeChange={setJsCode}
+          templates={CODE_TEMPLATES}
+          onApplyTemplate={handleApplyTemplate}
+          deviceTypeMetrics={deviceTypeMetrics}
+          extensionSources={selectedExtensionSources}
+          onExtensionSourcesChange={setSelectedExtensionSources}
+          outputPrefix={outputPrefix}
+          onOutputPrefixChange={setOutputPrefix}
+          onInsertVariable={handleInsertVariable}
+          formErrors={formErrors}
+          testInput={testInput}
+          onTestInputChange={setTestInput}
+          testOutput={testOutput}
+          testError={testError}
+          testRunning={testRunning}
+          onTest={handleTestCode}
+          onClearTest={() => { setTestOutput(''); setTestError('') }}
+          tBuilder={tBuilder}
+          t={t}
         />
-        {errors.code && (
-          <div className="px-3 pb-2">
-            <p className="text-xs text-destructive">{errors.code}</p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
-// Step 3: Test
-// ============================================================================
-
-interface TestStepProps {
-  jsCode: string
-  testInput: string
-  onTestInputChange: (v: string) => void
-  testOutput: string
-  testError: string
-  testRunning: boolean
-  onTest: () => void
-  onClearTest: () => void
-  deviceTypeMetrics?: Array<{ name: string; display_name: string; data_type: string; unit?: string }>
-  extensionSources?: SelectedExtensionSource[]
-  scopeType: ScopeType
-  t: (key: string) => string
-  tBuilder: (key: string) => string
-}
-
-function TestStep({
-  jsCode,
-  testInput,
-  onTestInputChange,
-  testOutput,
-  testError,
-  testRunning,
-  onTest,
-  onClearTest,
-  deviceTypeMetrics,
-  extensionSources,
-  scopeType,
-  tBuilder,
-}: TestStepProps) {
-  const generateMockData = useCallback(() => {
-    const mockData: Record<string, unknown> & { extensions?: Record<string, unknown> } = {}
-
-    // Generate device metrics mock data
-    if (deviceTypeMetrics && deviceTypeMetrics.length > 0) {
-      for (const metric of deviceTypeMetrics) {
-        switch (metric.data_type) {
-          case 'integer':
-            mockData[metric.name] = Math.floor(Math.random() * 100)
-            break
-          case 'float':
-            mockData[metric.name] = parseFloat((Math.random() * 100).toFixed(2))
-            break
-          case 'string':
-            mockData[metric.name] = `sample_${metric.name}`
-            break
-          case 'boolean':
-            mockData[metric.name] = Math.random() > 0.5
-            break
-          case 'array':
-            mockData[metric.name] = [
-              Math.floor(Math.random() * 100),
-              parseFloat((Math.random() * 100).toFixed(2)),
-              `sample_${metric.name}`
-            ]
-            break
-          default:
-            mockData[metric.name] = null
-        }
       }
-    } else {
-      // Default mock data
-      mockData.temperature = 25
-      mockData.humidity = 60
-    }
-
-    // Add extension data mock (V2: flat structure without command layer)
-    if (extensionSources && extensionSources.length > 0) {
-      const extensions: Record<string, Record<string, unknown>> = {}
-      mockData.extensions = extensions
-      for (const source of extensionSources) {
-        if (!extensions[source.extension_id]) {
-          extensions[source.extension_id] = {}
-        }
-        switch (source.data_type) {
-          case 'integer':
-            extensions[source.extension_id][source.field] = Math.floor(Math.random() * 100)
-            break
-          case 'number':
-            extensions[source.extension_id][source.field] = parseFloat((Math.random() * 100).toFixed(2))
-            break
-          case 'boolean':
-            extensions[source.extension_id][source.field] = Math.random() > 0.5
-            break
-          case 'string':
-            extensions[source.extension_id][source.field] = `sample_${source.field}`
-            break
-          default:
-            extensions[source.extension_id][source.field] = null
-        }
-      }
-    }
-
-    onTestInputChange(JSON.stringify(mockData, null, 2))
-  }, [deviceTypeMetrics, extensionSources, onTestInputChange])
-
-  return (
-    <div className="space-y-6 py-4">
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className={cn(cardPadded, "text-center")}>
-          <div className="text-xl font-bold text-info">
-            {jsCode.split('\n').filter(s => s.trim()).length}
-          </div>
-          <div className="text-xs text-muted-foreground">{tBuilder('test.codeLines')}</div>
-        </div>
-        <div className={cn(cardPadded, "text-center")}>
-          <div className="text-xl font-bold">
-            {scopeType === 'global' ? tBuilder('scope.global') : scopeType}
-          </div>
-          <div className="text-xs text-muted-foreground">{tBuilder('test.scope')}</div>
-        </div>
-        <div className={cn(cardPadded, "text-center")}>
-          <div className="text-xl font-bold text-accent-purple">
-            {extensionSources?.length || 0}
-          </div>
-          <div className="text-xs text-muted-foreground">{tBuilder('test.extensionSources')}</div>
-        </div>
-      </div>
-
-      {/* Code Preview */}
-      <div className={cn(cardPadded)}>
-        <h4 className="font-medium flex items-center gap-2 mb-3">
-          <Code className="h-4 w-4" />
-          {tBuilder('test.transformCode')}
-        </h4>
-        <pre className="text-xs font-mono bg-muted-30 p-3 rounded overflow-x-auto whitespace-pre-wrap max-h-48">
-          {jsCode || tBuilder('noCode')}
-        </pre>
-      </div>
-
-      {/* Test Panel */}
-      <div className={cn(cardPadded)}>
-        <h4 className="font-medium flex items-center gap-2 mb-3">
-          <Play className="h-4 w-4" />
-          {tBuilder('test.testPanel')}
-        </h4>
-
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-2 block">{tBuilder('inputData')}</Label>
-            <Textarea
-              value={testInput}
-              onChange={e => onTestInputChange(e.target.value)}
-              placeholder='{"temperature": 25}'
-              className="font-mono text-xs resize-none bg-muted-30 h-24"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={onTest}
-              disabled={!jsCode || testRunning}
-            >
-              {testRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
-              {tBuilder('run')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={generateMockData}
-            >
-              <FlaskConical className="h-4 w-4 mr-1" />
-              {tBuilder('generateMock')}
-            </Button>
-            {(testOutput || testError) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onClearTest}
-              >
-                {tBuilder('clear')}
-              </Button>
-            )}
-          </div>
-
-          {/* Output */}
-          {(testOutput || testError) && (
-            <div>
-              <Label className="text-xs text-muted-foreground mb-2 block">{tBuilder('outputData')}</Label>
-              <div className="rounded-md bg-muted-30 p-2 max-h-40 overflow-auto">
-                {testError && (
-                  <div className="p-1.5 bg-muted border border-destructive rounded text-xs text-destructive font-mono">
-                    {testError}
-                  </div>
-                )}
-                {testOutput && !testError && (
-                  <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all">
-                    {testOutput}
-                  </pre>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      footer={footer}
+      mobileConfigLabel={tBuilder('basicInfo')}
+    />
   )
 }

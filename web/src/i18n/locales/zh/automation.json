@@ -598,7 +598,12 @@
   },
   "transformBuilder": {
     "title": "创建数据转换",
+    "subtitle": "定义如何处理设备数据，提取有用信息或转换数据格式",
     "editTitle": "编辑数据转换",
+    "editTransform": "编辑数据转换",
+    "newTransform": "新建数据转换",
+    "config": "配置",
+    "test": "测试",
     "desc": "定义如何处理设备数据，提取有用信息或转换数据格式",
     "editDesc": "修改数据转换配置",
     "basicInfo": "基本信息",

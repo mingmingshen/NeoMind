@@ -600,7 +600,12 @@
   },
   "transformBuilder": {
     "title": "Create Data Transform",
+    "subtitle": "Define how to process device data, extract useful information or transform data format",
     "editTitle": "Edit Data Transform",
+    "editTransform": "Edit Transform",
+    "newTransform": "New Transform",
+    "config": "Configuration",
+    "test": "Test",
     "desc": "Define how to process device data, extract useful information or transform data format",
     "editDesc": "Modify the data transform configuration",
     "basicInfo": "Basic Info",
