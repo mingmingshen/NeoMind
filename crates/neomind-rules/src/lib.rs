@@ -41,7 +41,6 @@ pub mod error;
 pub mod extension_integration;
 pub mod unified_provider;
 
-pub mod history;
 pub mod store;
 pub mod validator;
 
