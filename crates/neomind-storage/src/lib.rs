@@ -71,7 +71,6 @@ pub mod extensions;
 pub mod frontend_components;
 pub mod instances;
 pub mod llm_backends;
-pub mod llm_data;
 pub mod memory_config;
 pub mod messages;
 pub mod session;
@@ -172,8 +171,6 @@ pub use business::{
     Alert, AlertFilter, AlertStatus, AlertStore, EventSeverity, RuleExecution, RuleExecutionResult,
     RuleExecutionStats, RuleHistoryStore,
 };
-
-pub use llm_data::{LongTermMemoryStore, MemoryEntry, MemoryFilter, MemoryStats};
 
 pub use device_registry::{
     CommandDefinition, CommandHistoryRecord, CommandStatus, ConnectionConfig, DeviceConfig,
