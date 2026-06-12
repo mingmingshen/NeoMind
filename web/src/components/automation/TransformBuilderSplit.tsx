@@ -935,91 +935,89 @@ function TransformWorkspace({
   }, [extensionSources])
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 h-full">
       {/* Sub-toolbar with template buttons + output prefix */}
-      <div className="rounded-xl border bg-background overflow-hidden">
-        <div className="border-b px-3 py-2 bg-muted-30">
-          {/* Output Prefix section */}
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex items-center gap-2 flex-1">
-              <Label className="text-xs font-medium whitespace-nowrap text-muted-foreground">{tBuilder('outputPrefix')}</Label>
-              <Input
-                value={outputPrefix}
-                onChange={e => onOutputPrefixChange(e.target.value)}
-                placeholder={tBuilder('outputPrefixPlaceholder')}
-                className={cn(
-                  "h-8 text-sm w-[180px]",
-                  formErrors.outputPrefix && "border-destructive"
-                )}
-              />
+      <div className="rounded-lg border border-border bg-muted-30 px-3 py-2 shrink-0">
+        {/* Output Prefix section */}
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-2 flex-1">
+            <Label className="text-xs font-medium whitespace-nowrap text-muted-foreground">{tBuilder('outputPrefix')}</Label>
+            <Input
+              value={outputPrefix}
+              onChange={e => onOutputPrefixChange(e.target.value)}
+              placeholder={tBuilder('outputPrefixPlaceholder')}
+              className={cn(
+                "h-8 text-sm w-[180px]",
+                formErrors.outputPrefix && "border-destructive"
+              )}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">{tBuilder('outputPrefixHint')}</p>
+        </div>
+
+        {/* Toolbar row: Template + badges */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Template Select */}
+          <Select onValueChange={(key) => {
+            const tpl = templates.find(t => t.key === key)
+            if (tpl) onApplyTemplate(tpl.code)
+          }}>
+            <SelectTrigger className="w-[160px] h-8 text-sm">
+              <FileCode className="h-4 w-4 mr-1.5 text-muted-foreground" />
+              <SelectValue placeholder={tBuilder('selectTemplate') || 'Template'} />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((tpl) => (
+                <SelectItem key={tpl.key} value={tpl.key}>
+                  {tBuilder(tpl.nameKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Selected extension source badges */}
+          {selectedSourceBadges.map(({ id, name, count }) => (
+            <Badge key={id} variant="secondary" className="h-6 text-xs gap-1">
+              <Puzzle className="h-3 w-3 text-accent-purple" />
+              {name}
+              <span className="text-muted-foreground">x{count}</span>
+            </Badge>
+          ))}
+        </div>
+
+        {formErrors.outputPrefix && (
+          <p className="text-xs text-destructive mt-1">{formErrors.outputPrefix}</p>
+        )}
+      </div>
+
+      {/* Code editor + VariablesRail — fills remaining height */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3">
+        <div className="flex-1 min-h-0 rounded-lg border border-border overflow-hidden flex flex-col">
+          <CodeEditor
+            value={jsCode}
+            onChange={onCodeChange}
+            height="100%"
+            minHeight="300px"
+            className="border-0 rounded-none flex-1 focus-within:ring-0 focus-within:ring-offset-0"
+          />
+          {formErrors.code && (
+            <div className="px-3 pb-2 shrink-0">
+              <p className="text-xs text-destructive">{formErrors.code}</p>
             </div>
-            <p className="text-xs text-muted-foreground">{tBuilder('outputPrefixHint')}</p>
-          </div>
-
-          {/* Toolbar row: Template + badges */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Template Select */}
-            <Select onValueChange={(key) => {
-              const tpl = templates.find(t => t.key === key)
-              if (tpl) onApplyTemplate(tpl.code)
-            }}>
-              <SelectTrigger className="w-[160px] h-8 text-sm">
-                <FileCode className="h-4 w-4 mr-1.5 text-muted-foreground" />
-                <SelectValue placeholder={tBuilder('selectTemplate') || 'Template'} />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((tpl) => (
-                  <SelectItem key={tpl.key} value={tpl.key}>
-                    {tBuilder(tpl.nameKey)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Selected extension source badges */}
-            {selectedSourceBadges.map(({ id, name, count }) => (
-              <Badge key={id} variant="secondary" className="h-6 text-xs gap-1">
-                <Puzzle className="h-3 w-3 text-accent-purple" />
-                {name}
-                <span className="text-muted-foreground">x{count}</span>
-              </Badge>
-            ))}
-          </div>
-
-          {formErrors.outputPrefix && (
-            <p className="text-xs text-destructive mt-1">{formErrors.outputPrefix}</p>
           )}
         </div>
-
-        {/* Code editor + VariablesRail side by side */}
-        <div className="flex flex-col md:flex-row">
-          <div className="flex-1 min-w-0">
-            <CodeEditor
-              value={jsCode}
-              onChange={onCodeChange}
-              minHeight="320px"
-              maxHeight={isMobile ? '420px' : '560px'}
-              className="border-0 rounded-none focus-within:ring-0 focus-within:ring-offset-0"
-            />
-            {formErrors.code && (
-              <div className="px-3 pb-2">
-                <p className="text-xs text-destructive">{formErrors.code}</p>
-              </div>
-            )}
-          </div>
-          {/* Variables rail */}
-          <div className={cn("border-t md:border-t-0 md:border-l shrink-0", isMobile ? "" : "")}>
-            <VariablesRail
-              deviceTypeMetrics={deviceTypeMetrics || undefined}
-              extensionSources={extensionSources}
-              onExtensionSourcesChange={onExtensionSourcesChange}
-              onInsertVariable={onInsertVariable}
-              tBuilder={tBuilder}
-              t={t}
-            />
+        {/* Variables rail */}
+        <div className="md:border-l border-t md:border-t-0 shrink-0 rounded-lg md:rounded-none overflow-hidden">
+          <VariablesRail
+            deviceTypeMetrics={deviceTypeMetrics || undefined}
+            extensionSources={extensionSources}
+            onExtensionSourcesChange={onExtensionSourcesChange}
+            onInsertVariable={onInsertVariable}
+            tBuilder={tBuilder}
+            t={t}
+          />
           </div>
         </div>
-      </div>
 
       {/* Test strip */}
       <TestStrip

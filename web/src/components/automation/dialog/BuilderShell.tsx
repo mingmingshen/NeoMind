@@ -81,7 +81,7 @@ export function BuilderShell({
           </FullScreenDialogMain>
         ) : (
           <>
-            <FullScreenDialogSidebar className="w-[440px] overflow-y-auto p-4">
+            <FullScreenDialogSidebar className="w-[440px] md:w-[440px] overflow-y-auto p-4">
               {config}
             </FullScreenDialogSidebar>
             <FullScreenDialogMain className="p-5">{workspace}</FullScreenDialogMain>
