@@ -62,7 +62,15 @@ The streaming/chat path already had a silent `message`→`shell` mapper; the sch
 
 ### Frontend
 
-- **Automation builder:** scaffolding primitives (`WorkspaceSegmentedControl`, `BuilderShell` split-workspace) for the in-progress rule/automation builder redesign.
+- **Rule Builder redesign:** full rewrite from multi-step wizard to split-workspace layout (`BuilderShell`). Form and DSL preview tabs share a single workspace; conditions and actions are visible simultaneously instead of paginated. All 7 action types (Execute, Set, Notify, CreateAlert, HttpRequest, Log, Delay) surfaced as one-click buttons. Required-field validation now covers name, cron expression (schedule trigger), and every action type's mandatory fields — incomplete actions show inline errors. Condition (indigo) and Action (emerald) sections are visually differentiated with accent-colored headers. Removed 3 dead step components and the redundant footer Cancel button.
+- **Transform Builder:** migrated to the same `BuilderShell` split-workspace layout. Templates toolbar converted from flat buttons (height-growth bug) to a dropdown. Dead i18n fallbacks cleaned up; mobile cards now show execution count alongside last-executed time.
+- **Automation list views:** mobile cards and desktop tables share `ResponsiveTable` patterns; consistency pass on icons, badges, and pagination.
+
+### Backend
+
+- **Rule list API:** `GET /rules` now returns `created_at` and structured `actions` (previously only in the detail endpoint), fixing empty "Created" and "Execute Actions" columns in the rule list.
+- **Transform execution tracking:** `mark_executed()` now records `last_executed` + `execution_count` without bumping `updated_at`. Execution stats are persisted with a 60-second throttle (shared `Arc<Mutex<HashMap>>`) to prevent write amplification under high-frequency event evaluation.
+- **Agent tool-hint fix:** `ToolError::NotFound` hint now matches the enum variant instead of stringifying, closing a gap where hallucinated-tool guidance was silently skipped.
 
 ## [0.8.11] - 2026-06-11
 
