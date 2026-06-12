@@ -59,13 +59,11 @@
 // Storage backends module
 pub mod backends;
 
-pub mod agent_summary;
 pub mod agents;
 pub mod backend;
 pub mod business;
 pub mod dashboards;
 pub mod device_registry;
-pub mod device_state;
 pub mod error;
 pub mod extensions;
 pub mod frontend_components;
@@ -160,11 +158,6 @@ pub use agents::{
     ResourceType,
     ScheduleType,
     UserMessage,
-};
-
-pub use device_state::{
-    CacheStats, CommandSpec, ConfigSpec, DeviceCapabilities, DeviceFilter, DeviceState,
-    DeviceStateStore, MetricQuality, MetricSpec, MetricValue, ParameterSpec,
 };
 
 pub use business::{
