@@ -82,7 +82,7 @@ pub use unified_extractor::{
 };
 
 #[cfg(feature = "embedded-broker")]
-pub use embedded_broker::{BrokerMode, EmbeddedBroker, EmbeddedBrokerConfig};
+pub use embedded_broker::{EmbeddedBroker, EmbeddedBrokerConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

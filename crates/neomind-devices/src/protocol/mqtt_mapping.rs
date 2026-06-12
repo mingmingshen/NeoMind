@@ -520,18 +520,6 @@ impl MqttMappingBuilder {
         self
     }
 
-    /// Set default QoS.
-    pub fn default_qos(mut self, qos: u8) -> Self {
-        self.default_qos = Some(qos);
-        self
-    }
-
-    /// Set default retain.
-    pub fn default_retain(mut self, retain: bool) -> Self {
-        self.default_retain = Some(retain);
-        self
-    }
-
     /// Build the mapping.
     pub fn build(self) -> MqttMapping {
         MqttMapping::new(MqttMappingConfig {

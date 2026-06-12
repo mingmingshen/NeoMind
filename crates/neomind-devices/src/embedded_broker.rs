@@ -36,16 +36,6 @@ pub enum EmbeddedBrokerError {
     Config(String),
 }
 
-/// Broker mode configuration (deprecated, kept for compatibility)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[derive(Default)]
-pub enum BrokerMode {
-    External,
-    #[default]
-    Embedded,
-}
-
 /// Configuration for the embedded broker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddedBrokerConfig {

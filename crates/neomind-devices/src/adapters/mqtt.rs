@@ -118,17 +118,6 @@ impl MqttAdapterConfig {
         self
     }
 
-    /// Set storage directory.
-    pub fn with_storage_dir(mut self, dir: impl Into<String>) -> Self {
-        self.storage_dir = Some(dir.into());
-        self
-    }
-
-    /// Enable or disable auto-discovery.
-    pub fn with_auto_discovery(mut self, enabled: bool) -> Self {
-        self.auto_discovery = enabled;
-        self
-    }
 }
 
 /// Single MQTT broker connection
