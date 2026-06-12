@@ -45,54 +45,21 @@ pub mod unified_extractor;
 #[cfg(feature = "embedded-broker")]
 pub mod embedded_broker;
 
-// Re-exports for convenience
-pub use mdl::{
-    Command, DeviceCapability, DeviceError, DeviceId, DeviceInfo, DeviceState, DeviceType,
-    MetricDataType, MetricDefinition, MetricValue,
-};
-// ConnectionStatus is now defined in the adapter module
-pub use adapter::ConnectionStatus;
-pub use mdl_format::{
-    CommandDefinition, DeviceInstance, DeviceTypeDefinition, DownlinkConfig, MdlRegistry,
-    MdlStorage, MetricDefinition as MdlMetricDefinition, ParameterDefinition, UplinkConfig,
-};
-
-// New architecture exports
+// Re-exports (only types used externally via crate-root shortcut path)
+pub use mdl::{DeviceError, MetricDataType, MetricValue};
+pub use mdl_format::{CommandDefinition, MetricDefinition as MdlMetricDefinition};
+pub use telemetry::{DataPoint, TimeSeriesStorage};
+pub use service::{CommandStatus, DeviceService, ExtensionCommandRouterFn};
 pub use registry::{
     ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceTypeMode, DeviceTypeTemplate,
 };
-pub use service::{
-    AdapterInfo, AdapterStats, CommandHistoryRecord, CommandStatus, DeviceHealth, DeviceService,
-    DeviceStatus, ExtensionCommandRouterFn, HeartbeatConfig,
-};
-pub use telemetry::{AggregatedData, DataPoint, MetricCache, TimeSeriesStorage};
-
-// Unified data extraction re-exports
-pub use unified_extractor::{
-    ExtractedMetric, ExtractionConfig, ExtractionMode, ExtractionResult, UnifiedExtractor,
-};
+pub use adapter::{AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
 
 #[cfg(feature = "embedded-broker")]
 pub use embedded_broker::{EmbeddedBroker, EmbeddedBrokerConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// Build information
-pub const BUILD_PROFILE: &str = if cfg!(debug_assertions) {
-    "debug"
-} else {
-    "release"
-};
-
-// Re-export core adapter types from local adapter module
-pub use adapter::{
-    AdapterConfig, AdapterError, AdapterResult, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
-    EventPublishingAdapter,
-};
-
-// Adapter creation utilities
-pub use adapters::{available_adapters, create_adapter};
 
 #[cfg(test)]
 mod tests {
