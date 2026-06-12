@@ -9,6 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-06-12
+
+### Agent Reliability: Tool Execution & Memory
+
+A focused round of fixes targeting two recurring failure modes in scheduled AI agents — tool-call result misattribution and runaway memory file growth. All backend-only; full test suite passes (387 tests, 6 new).
+
+#### Tool-call result ordering (deterministic bug)
+
+`ToolRegistry::execute_parallel` returned results in **JoinSet completion order**, but `build_round_tool_calls` paired them to calls **by index**. When parallel tools finished out of order, each result was labeled with the wrong tool's name — making execution logs show phantom failures and cross-attributed errors (e.g. a `memory` error shown under `shell`, or "1/6 succeeded" when most actually worked). Fixed with index-tagged slots that reassemble results in input order. This was the single largest source of apparent "agent chaos."
+
+#### Memory file quadratic-growth fix
+
+Custom memory files (`custom:{name}`, e.g. `task-understanding`) grew quadratically: the agent re-appended its full "Pattern Tracking" section every analysis, and the `add` path applied **no deduplication** (unlike `user`/`knowledge` targets). A real file reached ~70% redundant content by round 6, blowing past the char cap.
+
+Replaced the unconditional `append_content` with `merge_custom_content` — an in-place, section-level merge:
+
+| Agent sends | Result |
+|---|---|
+| Exact-duplicate section | Dropped (no-op → "Skipped") |
+| Same section + one new line | Only the **new line** appended in place |
+| New section header | Appended as a new section |
+| Near-identical whole block (≥0.9 similarity) | Dropped |
+| Header-less text | Novel lines appended |
+
+Net effect: even if the agent ignores guidance and re-sends an entire growing section, only genuinely new data lands — growth is linear, not quadratic.
+
+#### Tool-call hallucination self-correction
+
+When the agent called a non-existent tool, it got a bare "not found" with no recovery path. Now `NotFound` returns **targeted guidance**:
+
+| Hallucinated name | Hint returned |
+|---|---|
+| `message` / `notify` / `alert` / `send_message` / … | Exact `neomind message send` shell syntax |
+| `device` / `dashboard` / `rule` / `agent` / … (11 CLI domains) | "Use shell: `neomind <domain> <action>`" |
+| **Anything else** (universal fallback) | Dynamic list of the *actually-registered* tools (incl. extension tools) + "Use shell for any neomind CLI command" |
+
+The streaming/chat path already had a silent `message`→`shell` mapper; the scheduled-executor path (where agents run) was the gap — now closed.
+
+#### Memory capacity & guidance
+
+- **Char limit raised:** agent memory files 5 000 → **20 000** chars (long-task context survives to the next execution).
+- **Prefetch injection cap raised:** 6 000 → **12 000** chars/file, so the raised write limit is visible in-context without burning a tool-call round.
+- **Auto-init template slimmed:** removed verbose "Memory Commands" examples + "Notes" block (~700 → ~300 chars per new agent).
+- **Prompt guidance:** system prompt now explicitly states messages go through `shell` (no separate `message` tool) and that `add` should append only new data points, never re-list previous entries.
+- **Memory tool schema:** per-action field requirements and the ~20 000 char limit are stated in the tool description so the LLM knows the constraints upfront.
+
+### Deployment & Packaging
+
+- **Install script:** frontend directory now swapped atomically on upgrade (staging dir → rename old → rename new → cleanup), eliminating stale Vite asset accumulation across versions.
+- **Tauri sidecar:** extension-runner lookup now handles the Windows `.exe` suffix and uses a 3-tier search (staged sidecar → workspace build → error with both paths).
+
+### Frontend
+
+- **Automation builder:** scaffolding primitives (`WorkspaceSegmentedControl`, `BuilderShell` split-workspace) for the in-progress rule/automation builder redesign.
+
 ## [0.8.11] - 2026-06-11
 
 ### Onboarding Wizard Redesign
