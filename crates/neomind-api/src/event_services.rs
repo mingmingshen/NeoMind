@@ -128,6 +128,14 @@ impl TransformEventService {
                 let mut device_timers: HashMap<String, tokio::task::JoinHandle<()>> =
                     HashMap::new();
 
+                // Throttle map for execution-stat persistence: transform_id -> last persist instant.
+                // The first execution of a transform flushes immediately (so last_executed appears
+                // in the UI without delay); subsequent ones are coalesced to at most one write per
+                // FLUSH_INTERVAL per transform, bounding write amplification on high-frequency telemetry.
+                let exec_flush: Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>> =
+                    Arc::new(std::sync::Mutex::new(HashMap::new()));
+                const FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
                 // Debounce delay: wait this long after the last metric before processing
                 // This allows multiple metrics from the same device to be collected and processed together
                 const DEBOUNCE_MS: u64 = 100; // 100ms debounce window
@@ -216,6 +224,7 @@ impl TransformEventService {
                         let device_entry_clone = device_entry.clone();
                         let device_type_clone = device_type.clone();
                         let time_series_storage_inner = time_series_storage.clone();
+                        let exec_flush_clone = exec_flush.clone();
 
                         // Schedule a new debounce timer
                         let timer_handle = tokio::spawn(async move {
@@ -278,6 +287,51 @@ impl TransformEventService {
                                             metric_count = result.metrics.len(),
                                             "Transform processed device data (debounced)"
                                         );
+
+                                        // Mark transforms that produced output as executed
+                                        // (updates execution_count + last_executed so the UI reflects activity).
+                                        // Done before the metrics are moved/consumed below.
+                                        // Persistence is throttled: the first execution flushes immediately
+                                        // (so last_executed shows up at once); subsequent ones within
+                                        // FLUSH_INTERVAL are skipped to bound write amplification.
+                                        let now = std::time::Instant::now();
+                                        let executed_ids: std::collections::HashSet<&str> = result
+                                            .metrics
+                                            .iter()
+                                            .filter_map(|m| m.transform_id.as_deref())
+                                            .collect();
+                                        for tid in executed_ids {
+                                            let should_flush = {
+                                                let mut map = exec_flush_clone
+                                                    .lock()
+                                                    .expect("exec_flush poisoned");
+                                                let last = map.get(tid).copied();
+                                                let do_flush =
+                                                    last.map_or(true, |t| now.duration_since(t) >= FLUSH_INTERVAL);
+                                                if do_flush {
+                                                    map.insert(tid.to_string(), now);
+                                                }
+                                                do_flush
+                                            };
+                                            if !should_flush {
+                                                continue;
+                                            }
+                                            if let Ok(Some(mut automation)) =
+                                                automation_store_clone.get_automation(tid).await
+                                            {
+                                                automation.metadata.mark_executed();
+                                                if let Err(e) = automation_store_clone
+                                                    .save_automation(&automation)
+                                                    .await
+                                                {
+                                                    tracing::warn!(
+                                                        transform_id = %tid,
+                                                        error = %e,
+                                                        "Failed to persist last_executed"
+                                                    );
+                                                }
+                                            }
+                                        }
 
                                         // Publish transformed metrics back to event bus AND store to telemetry
                                         for transformed_metric in result.metrics {

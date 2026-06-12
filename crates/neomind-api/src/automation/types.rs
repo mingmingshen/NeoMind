@@ -115,11 +115,14 @@ impl AutomationMetadata {
         self
     }
 
-    /// Mark as executed
+    /// Mark as executed — increments execution_count and stamps last_executed.
+    ///
+    /// Intentionally does NOT bump `updated_at`: that field tracks configuration
+    /// changes (name/scope/code edits), not runtime activity. Bumping it on every
+    /// execution would pollute sort order and erase the "last modified" semantic.
     pub fn mark_executed(&mut self) {
         self.execution_count += 1;
         self.last_executed = Some(Utc::now().timestamp());
-        self.updated_at = Utc::now().timestamp();
     }
 
     /// Touch the update timestamp

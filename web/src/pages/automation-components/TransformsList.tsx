@@ -218,11 +218,22 @@ export function TransformsList({
                     <ScopeIcon className="h-3 w-3" />
                     {getScopeLabel(transform.scope)}
                   </Badge>
-                  <span className={cn(textMini, "text-muted-foreground ml-auto")}>
-                    {transform.last_executed && transform.last_executed !== 0
-                      ? formatTimestamp(transform.last_executed)
-                      : t('automation:never', 'Never')}
-                  </span>
+                  {(() => {
+                    const hasExecuted = transform.last_executed && transform.last_executed !== 0
+                    const execCount = transform.execution_count || 0
+                    return (
+                      <span className={cn(textMini, "text-muted-foreground ml-auto flex items-center gap-1")}>
+                        {hasExecuted ? (
+                          <>
+                            {formatTimestamp(transform.last_executed ?? undefined)}
+                            {execCount > 1 && <span>{execCount}x</span>}
+                          </>
+                        ) : (
+                          t('automation:never', 'Never')
+                        )}
+                      </span>
+                    )
+                  })()}
                 </div>
               </div>
             </Card>

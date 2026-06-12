@@ -729,10 +729,12 @@
     },
     "selectSources": "Select Sources",
     "selectTemplate": "Template",
+    "templatesLabel": "Templates",
     "insertData": "Insert Data",
     "noExtensionSources": "No extension data sources available",
     "noSourcesSelectedHint": "Click 'Select Sources' to add extension data",
     "noVariablesHint": "No variables available",
+    "noActionsHint": "No extension actions available",
     "extensionDataHint": "Extension data accessible via input.extensions.{ext_id}.{command}.{field}",
     "comparisonOperators": {
       "greaterThan": "Greater than",
@@ -754,7 +756,10 @@
     "extensionActions": "Actions",
     "call": "Call",
     "invokeExtension": "Invoke",
-    "extensionInvokeHint": "Click to generate code that calls this extension action"
+    "extensionInvokeHint": "Click to generate code that calls this extension action",
+    "params": "params",
+    "testFailed": "Failed",
+    "testSuccess": "Passed"
   },
   "validationErrors": {
     "selectDevice": "Please select a device",

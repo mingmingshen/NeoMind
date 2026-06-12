@@ -5,7 +5,7 @@
  * Supports light/dark themes and provides a clean editing experience.
  */
 
-import React, { useMemo } from 'react'
+import React, { useEffect, useState } from 'react'
 import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -49,17 +49,30 @@ export const CodeEditor = React.forwardRef<ReactCodeMirrorRef, CodeEditorProps>(
     className,
     compact = false,
   }, ref) => {
-    // Check for dark mode using data-theme attribute or class
-    const isDark = useMemo(() => {
+    // Reactive dark mode detection — re-checks when <html> class/data-theme changes
+    const [isDark, setIsDark] = useState(() => {
       if (typeof document === 'undefined') return false
       const root = document.documentElement
       return root.getAttribute('data-theme') === 'dark' ||
-             document.documentElement.classList.contains('dark')
+             root.classList.contains('dark')
+    })
+    useEffect(() => {
+      if (typeof document === 'undefined') return
+      const root = document.documentElement
+      const check = () =>
+        root.getAttribute('data-theme') === 'dark' ||
+        root.classList.contains('dark')
+      const observer = new MutationObserver(() => setIsDark(check()))
+      observer.observe(root, {
+        attributes: true,
+        attributeFilter: ['class', 'data-theme'],
+      })
+      return () => observer.disconnect()
     }, [])
 
     return (
       <div className={cn(
-        'relative rounded-lg border overflow-hidden transition-all',
+        'relative rounded-lg border overflow-hidden transition-all flex flex-col',
         'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
         // Light theme
         !isDark && 'bg-background border-input',
@@ -72,6 +85,7 @@ export const CodeEditor = React.forwardRef<ReactCodeMirrorRef, CodeEditorProps>(
           ref={ref}
           value={value}
           height={height}
+          className="flex-1 min-h-0"
           minHeight={minHeight}
           maxHeight={maxHeight}
           extensions={[
