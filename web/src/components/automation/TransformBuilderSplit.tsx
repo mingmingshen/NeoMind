@@ -396,7 +396,7 @@ function VariablesRail({
   if (loadingExtensions) {
     return (
       <div className={cn(
-        "border rounded-lg bg-background",
+        "bg-background",
         isMobile ? "w-full" : "w-72"
       )}>
         <LoadingState variant="page" />
@@ -406,7 +406,7 @@ function VariablesRail({
 
   return (
     <div className={cn(
-      "border rounded-lg overflow-hidden bg-background flex flex-col",
+      "bg-background flex flex-col",
       isMobile ? "w-full" : "w-72"
     )}>
       {/* Header */}
