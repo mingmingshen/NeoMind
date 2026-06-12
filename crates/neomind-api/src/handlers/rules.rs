@@ -48,6 +48,8 @@ struct RuleDto {
     trigger_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_triggered: Option<String>,
+    created_at: String,
+    actions: Vec<Value>,
     dsl: String,
 }
 
@@ -307,8 +309,7 @@ pub async fn list_rules_handler(
     let dtos: Vec<RuleDto> = rules
         .into_iter()
         .map(|r| {
-            // Format last_triggered as ISO string if available
-            let last_triggered = r.state.last_triggered.as_ref().map(|dt| dt.to_rfc3339());
+            let actions_json: Vec<Value> = r.actions.iter().map(action_to_json).collect();
 
             RuleDto {
                 id: r.id.to_string(),
@@ -316,7 +317,9 @@ pub async fn list_rules_handler(
                 description: r.description.clone(),
                 enabled: matches!(r.status, RuleStatus::Active),
                 trigger_count: r.state.trigger_count,
-                last_triggered,
+                last_triggered: r.state.last_triggered.map(|dt| dt.to_rfc3339()),
+                created_at: r.created_at.to_rfc3339(),
+                actions: actions_json,
                 dsl: r.dsl.clone(),
             }
         })

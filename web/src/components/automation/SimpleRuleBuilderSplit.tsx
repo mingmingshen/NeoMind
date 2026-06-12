@@ -1207,7 +1207,8 @@ function ConditionCanvas({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <Label className="text-xs text-muted-foreground">
-                  {tBuilder('cronExpression') || 'Cron Expression'}
+                  {tBuilder('cronExpression')}
+                  <span className="text-destructive ml-0.5">*</span>
                 </Label>
                 <button
                   type="button"
@@ -1235,6 +1236,7 @@ function ConditionCanvas({
                   value={cronExpression}
                   onChange={e => onCronExpressionChange(e.target.value)}
                   placeholder="* * * * *"
+                  aria-invalid={!!errors.cron}
                   className={cn(
                     "font-mono text-sm h-9",
                     errors.cron && "border-destructive"
@@ -1246,8 +1248,9 @@ function ConditionCanvas({
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                {tBuilder('cronFormat') || 'Format: minute hour day month weekday'}
+                {tBuilder('cronFormat')}
               </p>
+              {errors.cron && <FieldMessage>{errors.cron}</FieldMessage>}
             </div>
 
             {nextExecution && (
@@ -1312,13 +1315,25 @@ interface ActionCanvasProps {
   deviceTypes?: DeviceType[]
   extensions?: Extension[]
   messageChannels?: Array<{ name: string; type: string; enabled: boolean }>
+  errors?: FormErrors
   t: (key: string) => string
   tBuilder: (key: string) => string
 }
 
-function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensions, messageChannels, t, tBuilder }: ActionCanvasProps) {
+function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensions, messageChannels, errors, t, tBuilder }: ActionCanvasProps) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4 rounded-lg border border-border bg-background">
+      {/* Header — emerald accent to differentiate from Condition (indigo) */}
+      <div className="flex items-center gap-2 pb-3 border-b">
+        <div className="p-2 rounded-full bg-accent-emerald-light">
+          <Zap className="h-5 w-5 text-accent-emerald" />
+        </div>
+        <div>
+          <h4 className="text-sm font-medium">{tBuilder('executeActions')}</h4>
+          <p className="text-xs text-muted-foreground">{tBuilder('actionsDesc')}</p>
+        </div>
+      </div>
+
       {/* Action type buttons */}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() => {
@@ -1375,6 +1390,7 @@ function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensio
               deviceTypes={deviceTypes}
               extensions={extensions}
               messageChannels={messageChannels}
+              error={errors?.actions?.[index]}
               t={t}
               tBuilder={tBuilder}
               onUpdate={(updates) => onActionsChange(actions.map((a, i) => i === index ? ({ ...a, ...updates } as RuleAction) : a))}
@@ -1603,6 +1619,49 @@ export function SimpleRuleBuilderSplit({
       errors.name = tBuilder('ruleNameRequired')
     }
 
+    // Validate cron expression for schedule trigger
+    if (triggerType === 'schedule') {
+      const cron = cronExpression.trim()
+      if (!cron) {
+        errors.cron = tBuilder('cronRequired')
+      } else if (cron.split(/\s+/).length !== 5) {
+        errors.cron = tBuilder('cronInvalid')
+      }
+    }
+
+    // Validate actions — each action's required fields must be populated
+    const actionErrors: Record<number, string> = {}
+    actions.forEach((action, index) => {
+      let incomplete = false
+      switch (action.type) {
+        case 'Execute':
+          incomplete = !action.device_id || !action.command
+          break
+        case 'Set':
+          incomplete = !action.device_id || !action.property
+          break
+        case 'Notify':
+          incomplete = !action.message.trim()
+          break
+        case 'CreateAlert':
+          incomplete = !action.title.trim() || !action.message.trim()
+          break
+        case 'HttpRequest':
+          incomplete = !action.url.trim()
+          break
+        case 'Log':
+          incomplete = !action.message.trim()
+          break
+        case 'Delay':
+          incomplete = !action.duration || action.duration <= 0
+          break
+      }
+      if (incomplete) actionErrors[index] = tBuilder('actionIncomplete')
+    })
+    if (Object.keys(actionErrors).length > 0) {
+      errors.actions = actionErrors
+    }
+
     // Only validate condition for device_state trigger type
     if (triggerType === 'device_state') {
       if (!condition) {
@@ -1744,7 +1803,6 @@ export function SimpleRuleBuilderSplit({
               t={t}
               tBuilder={tBuilder}
             />
-            <div className="border-t border-border" />
             <ActionCanvas
               actions={actions}
               onActionsChange={setActions}
@@ -1752,6 +1810,7 @@ export function SimpleRuleBuilderSplit({
               deviceTypes={resources.deviceTypes}
               extensions={resources.extensions}
               messageChannels={resources.messageChannels}
+              errors={formErrors}
               t={t}
               tBuilder={tBuilder}
             />
@@ -1761,7 +1820,7 @@ export function SimpleRuleBuilderSplit({
         {workspaceTab === 'dsl' && (
           <div className="rounded-lg border border-border bg-muted-30 p-4">
             <pre className={cn(textNano, "font-mono overflow-x-auto whitespace-pre-wrap break-all")}>
-              {previewDSL || '// No DSL generated'}
+              {previewDSL || tBuilder('noDsl')}
             </pre>
           </div>
         )}
@@ -1780,7 +1839,7 @@ export function SimpleRuleBuilderSplit({
       icon={<Zap className="h-5 w-5" />}
       statusIndicator={
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className={cn('h-1.5 w-1.5 rounded-full', enabled ? 'bg-success' : 'bg-muted-foreground/40')} />
+          <span className={cn('h-1.5 w-1.5 rounded-full', enabled ? 'bg-success' : 'bg-muted-foreground opacity-40')} />
           {enabled ? t('automation:ruleBuilder.enabled') : t('automation:ruleBuilder.disabled')}
         </span>
       }
@@ -1788,8 +1847,17 @@ export function SimpleRuleBuilderSplit({
         <div className="space-y-3.5">
           {/* Name */}
           <Field>
-            <FieldLabel htmlFor="rule-name">{t('automation:ruleBuilder.ruleName')}</FieldLabel>
-            <Input id="rule-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <FieldLabel htmlFor="rule-name">
+              {t('automation:ruleBuilder.ruleName')}
+              <span className="text-destructive ml-0.5">*</span>
+            </FieldLabel>
+            <Input
+              id="rule-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              aria-invalid={!!formErrors.name}
+              className={formErrors.name ? "border-destructive" : undefined}
+            />
             {formErrors.name && <FieldMessage>{formErrors.name}</FieldMessage>}
           </Field>
 
@@ -1822,6 +1890,7 @@ export function SimpleRuleBuilderSplit({
                   <button
                     type="button"
                     onClick={() => setTags(tags.filter(t => t !== tag))}
+                    aria-label={t('automation:ruleBuilder.removeTag') + ': ' + tag}
                     className="rounded-full p-0 hover:bg-muted"
                   >
                     <X className="h-3 w-3" />
@@ -1865,17 +1934,10 @@ export function SimpleRuleBuilderSplit({
       }
       workspace={<RuleWorkspace />}
       footer={
-        <>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>{t('automation:ruleBuilder.cancel')}</Button>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('automation:ruleBuilder.save')}
-            </Button>
-          </div>
-        </>
+        <Button onClick={handleSave} disabled={saving} className="ml-auto">
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t('automation:ruleBuilder.save')}
+        </Button>
       }
     />
   )
@@ -2078,7 +2140,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
           </Select>
 
           {renderValueInput()}
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)}>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)} aria-label={tBuilder('removeCondition')}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -2176,7 +2238,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
             placeholder="Max"
             disabled={!hasValidId}
           />
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)}>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)} aria-label={tBuilder('removeCondition')}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -2200,7 +2262,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
           <span className="text-xs text-muted-foreground flex-1">
             {condition.type === 'and' ? tBuilder('allConditionsMustMeet') : condition.type === 'or' ? tBuilder('anyConditionMustMeet') : tBuilder('conditionNotMet')}
           </span>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)}>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)} aria-label={tBuilder('removeCondition')}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -2237,6 +2299,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                     size="icon"
                     className="h-6 w-6 absolute right-0 top-2 opacity-0 group-hover:opacity-100"
                     onClick={() => removeNestedCondition(i)}
+                    aria-label={tBuilder('removeCondition')}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -2433,9 +2496,10 @@ interface ActionEditorCompactProps {
   tBuilder: (key: string) => string
   onUpdate: (data: Partial<RuleAction>) => void
   onRemove: () => void
+  error?: string
 }
 
-function ActionEditorCompact({ action, devices, deviceTypes, extensions, messageChannels, t, tBuilder, onUpdate, onRemove }: ActionEditorCompactProps) {
+function ActionEditorCompact({ action, devices, deviceTypes, extensions, messageChannels, t, tBuilder, onUpdate, onRemove, error }: ActionEditorCompactProps) {
   // Build device/extension options for Execute action
   const deviceOptions = [
     ...devices.map(d => ({ value: d.id, label: d.name, type: 'device' as const })),
@@ -2739,6 +2803,7 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 flex-shrink-0"
+                        aria-label={tBuilder('removeAction')}
                         onClick={() => {
                           const newHeaders = { ...headers }
                           delete newHeaders[key]
@@ -2834,11 +2899,15 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
               size="icon"
               className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={onRemove}
+              aria-label={tBuilder('removeAction')}
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
           {renderActionContent()}
+          {error && (
+            <p className="text-xs text-destructive mt-2">{error}</p>
+          )}
         </div>
       </div>
     </div>
