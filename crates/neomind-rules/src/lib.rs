@@ -45,38 +45,16 @@ pub mod history;
 pub mod store;
 pub mod validator;
 
-pub use dependencies::{
-    DependencyManager, DependencyType, DependencyValidationResult, RuleDependency,
-};
-pub use device_integration::{
-    CommandActionResult, CommandExecutionStats, CommandResultHistory, CommandResultValue,
-    DeviceActionExecutor, DeviceIntegratedRuleEngine,
-    DeviceIntegrationError, DeviceIntegrationResult, DeviceValueProvider,
-};
-pub use dsl::{ComparisonOperator, LogLevel, ParsedRule, RuleAction, RuleCondition, RuleDslParser, TriggerType};
+// Re-exports (only types used externally via crate-root shortcut path)
+pub use dsl::{ComparisonOperator, LogLevel, RuleAction, RuleCondition, RuleDslParser};
 pub use engine::{
-    CompiledRule, InMemoryValueProvider, RuleEngine, RuleExecutionResult, RuleId, RuleState,
-    RuleStatus, ValueProvider,
+    CompiledRule, InMemoryValueProvider, RuleEngine, RuleId, RuleStatus, ValueProvider,
 };
 pub use error::RuleError;
-pub use extension_integration::{
-    try_parse_extension_action, ConditionOperator as ExtensionConditionOperator, ExecutionResult,
-    ExtensionActionExecutor, ExtensionCommandAction, ExtensionCondition, ExtensionRegistry,
-    ExtensionValueProvider,
-};
-pub use unified_provider::{
-    CacheStats, DeviceStorageLike, ExtensionMetricsStorageAdapter, ExtensionStorageLike,
-    TimeSeriesStorageAdapter, UnifiedValueProvider,
-};
-
-pub use history::{
-    HistoryError, HistoryFilter, RuleHistoryEntry, RuleHistoryStats, RuleHistoryStorage,
-};
-pub use store::{RuleStore, StoreError};
+pub use unified_provider::{ExtensionStorageLike, UnifiedValueProvider};
 pub use validator::{
-    AlertChannelInfo, AvailableResources, CommandInfo, DeviceInfo, MetricDataType, MetricInfo,
-    ParameterInfo, ResourceSummary, RuleValidationResult, RuleValidator, ValidationContext,
-    ValidationError, ValidationIssue, ValidationResult, ValidationSeverity,
+    AlertChannelInfo, CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo,
+    RuleValidator, ValidationContext,
 };
 
 /// Version information
