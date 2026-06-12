@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/v-0.8.11-information.svg" alt="Version">
   <img src="https://img.shields.io/badge/Rust-1.85+-orange.svg" alt="Rust">
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Server-informational.svg" alt="Platform">
 </p>
 
 <br/>
