@@ -23,8 +23,6 @@ const CHAR_BUDGET: usize = 5000;
 pub struct MemorySnapshot {
     /// Truncated snapshot text wrapped in XML tags.
     content: String,
-    /// Unix timestamp when snapshot was loaded.
-    loaded_at: i64,
 }
 
 impl MemorySnapshot {
@@ -61,9 +59,7 @@ impl MemorySnapshot {
             }
         };
 
-        let loaded_at = chrono::Utc::now().timestamp();
-
-        Self { content, loaded_at }
+        Self { content }
     }
 
     /// Load a snapshot, returning None if there's no meaningful memory content.
@@ -99,11 +95,6 @@ impl MemorySnapshot {
     /// Check if the snapshot has content.
     pub fn is_empty(&self) -> bool {
         self.content.is_empty()
-    }
-
-    /// When this snapshot was loaded.
-    pub fn loaded_at(&self) -> i64 {
-        self.loaded_at
     }
 }
 

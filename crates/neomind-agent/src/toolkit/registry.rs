@@ -248,12 +248,6 @@ impl ToolRegistryBuilder {
         }
     }
 
-    /// Add a custom tool.
-    pub fn with_tool(mut self, tool: DynTool) -> Self {
-        self.registry.register(tool);
-        self
-    }
-
     /// Set the extension registry for scanning extension tools.
     pub fn with_extension_registry(
         mut self,
@@ -303,13 +297,6 @@ impl ToolRegistryBuilder {
         self.registry
     }
 }
-
-impl Default for ToolRegistryBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 
 #[cfg(test)]
 mod tests {

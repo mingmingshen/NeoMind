@@ -395,38 +395,6 @@ impl StreamConfig {
     pub fn max_thinking_time(&self) -> Duration {
         Duration::from_secs(self.max_thinking_time_secs)
     }
-
-    /// Create a config for models with limited thinking capability.
-    ///
-    /// This reduces the thinking limits for smaller/faster models that
-    /// don't need extended thinking time.
-    pub fn fast_model() -> Self {
-        Self {
-            max_thinking_chars: 10_000,
-            max_thinking_time_secs: 30,
-            max_stream_duration_secs: 120,
-            warning_thresholds: vec![30, 60, 90],
-            max_thinking_loop: 5,
-            progress_enabled: true,
-            max_total_chars: 50_000,
-        }
-    }
-
-    /// Create a config for models with extended thinking capability.
-    ///
-    /// This increases the limits for models that benefit from extended
-    /// reasoning time (e.g., vision models, reasoning models).
-    pub fn reasoning_model() -> Self {
-        Self {
-            max_thinking_chars: 100_000,
-            max_thinking_time_secs: 180,
-            max_stream_duration_secs: 600,
-            warning_thresholds: vec![60, 120, 180, 240, 300, 420, 540],
-            max_thinking_loop: 15,
-            progress_enabled: true,
-            max_total_chars: 300_000,
-        }
-    }
 }
 
 impl Default for StreamConfig {
