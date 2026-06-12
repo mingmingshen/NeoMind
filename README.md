@@ -57,6 +57,13 @@ NeoMind is an **edge-deployed AI platform** that brings intelligence to IoT. It 
 
 **Key idea**: Talk to your devices in natural language. The AI understands your intent, queries device states, creates automation rules, and takes action autonomously.
 
+### Why NeoMind?
+
+- **Fully self-contained** — Embedded MQTT broker, redb storage, no external database or broker to install
+- **Type-safe end-to-end** — Rust backend with compile-time guarantees; agent CLI commands dispatch in-process with structured data, no fragile string parsing
+- **Crash-proof extensions** — Extensions run in isolated processes with capability-based permissions; a misbehaving extension never takes down the server
+- **Cloud-optional** — Works 100% offline with local LLMs (Ollama), or connect cloud models when you need more power
+
 ## Features
 
 ### AI-Powered Intelligence
@@ -117,19 +124,19 @@ NeoMind is a modular ecosystem with specialized repositories for each concern:
 
 ### Available Extensions
 
-| Extension | Description |
-|-----------|-------------|
-| **Weather Forecast** | Real-time weather data via Open-Meteo API. Provides temperature, humidity, wind speed, and precipitation metrics as data sources for dashboards and automation rules. Supports configurable location and polling interval. |
-| **Image Analyzer** | YOLOv11-based object detection on uploaded images. Detects people, vehicles, animals, and 80+ COCO categories. Returns bounding boxes, confidence scores, and class labels as structured data. |
-| **YOLO Video** | Real-time object detection on live video streams (RTSP/RTMP/HLS). Processes frames at configurable FPS with drop-intermediate-frame queue for low latency. Supports overlay rendering and detection count metrics. |
-| **YOLO Device Inference** | Automatically runs YOLO detection on device camera feeds. Binds to NE301/NE101 camera streams, publishes detection results as device metrics. Enables AI-powered alerts when specific objects are detected. |
-| **Face Recognition** | ArcFace-based face recognition with enrollment and matching. Supports face database management, real-time detection from camera feeds, and confidence-threshold matching for access control scenarios. |
-| **OCR Device Inference** | PP-OCRv4 text recognition on device camera feeds. Extracts text from images and video frames with support for multi-language recognition. Useful for meter reading, license plate recognition, and document processing. |
-| **Stream Player** | Video player dashboard component supporting RTSP, RTMP, and HLS protocols. Provides low-latency playback with snapshot capture, fullscreen mode, and device metric overlay. |
-| **Home Assistant Bridge** | Bidirectional integration with Home Assistant via REST and WebSocket APIs. Automatic entity discovery, state synchronization, and service call support for device control. |
-| **LoRaWAN Bridge** | Connect to LoRaWAN Network Servers (ChirpStack v3/v4, TTN) for IoT device data collection, payload decoding (Cayenne LPP, custom binary), and downlink command injection. |
-| **Modbus Bridge** | Modbus TCP/RTU device integration with flexible register map decoding (uint16, int16, uint32, float32, etc.). Multi-device management with independent polling loops. |
-| **Uink-RMS Bridge** | Bridge for Uink-RMS e-paper displays. JWT authentication, device template registration, batch device sync, and telemetry collection (battery, temperature, signal strength). |
+| Extension | Category | Description |
+|-----------|----------|-------------|
+| **Weather Forecast** | Data | Real-time weather via Open-Meteo API |
+| **Image Analyzer** | Vision | YOLOv11 object detection on uploaded images (80+ COCO categories) |
+| **YOLO Video** | Vision | Real-time object detection on RTSP/RTMP/HLS streams |
+| **YOLO Device Inference** | Vision | Auto-detection on NE301/NE101 camera feeds |
+| **Face Recognition** | Vision | ArcFace enrollment, matching, and real-time detection |
+| **OCR Device Inference** | Vision | PP-OCRv4 text extraction from camera feeds |
+| **Stream Player** | UI | RTSP/RTMP/HLS video player dashboard widget |
+| **Home Assistant Bridge** | Integration | Bidirectional HA sync via REST + WebSocket |
+| **LoRaWAN Bridge** | Integration | ChirpStack/TTN device data + payload decoding |
+| **Modbus Bridge** | Integration | Modbus TCP/RTU register map decoding |
+| **Uink-RMS Bridge** | Integration | E-paper display telemetry sync |
 
 ### Supported Devices
 
@@ -302,6 +309,7 @@ NeoMind/
 │   ├── neomind-messages/        # Notifications (7 channels)
 │   ├── neomind-rules/           # DSL rule engine
 │   ├── neomind-data-push/       # Data push to external systems
+│   ├── neomind-cli-ops/         # Shared CLI logic (in-process dispatch)
 │   ├── neomind-extension-sdk/   # Extension development SDK
 │   ├── neomind-extension-runner/# Extension process isolation
 │   └── neomind-cli/             # Command-line interface
@@ -370,21 +378,12 @@ NeoMind/
 
 ## Configuration
 
-### LLM Backends
+### Supported LLM Backends
 
-| Backend | Endpoint |
-|---------|----------|
-| Ollama | `http://localhost:11434` |
-| OpenAI | `https://api.openai.com/v1` |
-| Anthropic | `https://api.anthropic.com/v1` |
-| Google | `https://generativelanguage.googleapis.com/v1beta` |
-| xAI | `https://api.x.ai/v1` |
-| Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| GLM | `https://open.bigmodel.cn/api/paas/v4` |
-| MiniMax | `https://api.minimax.chat/v1` |
+Ollama (local), OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax, and any OpenAI-compatible endpoint. Configure via the **Settings → LLM Backends** page in the UI.
 
-### Environment Variables
+<details>
+<summary>Environment variables</summary>
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -392,6 +391,8 @@ NeoMind/
 | `NEOMIND_DATA_DIR` | `/var/lib/neomind` | Data directory |
 | `NEOMIND_BIND_ADDR` | `0.0.0.0:9375` | Server bind address |
 | `SERVER_PORT` | `9375` | API server port |
+
+</details>
 
 ## CLI Reference
 
@@ -411,7 +412,10 @@ neomind api-key create                # Create API key
 
 ## Extension Development
 
-Build extensions using the Rust SDK with process isolation:
+Build extensions using the Rust SDK with process isolation. See the [Extension Development Guide](docs/guides/en/extension-system.md) and [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions) for full examples.
+
+<details>
+<summary>Quick example</summary>
 
 ```rust
 use neomind_extension_sdk::prelude::*;
@@ -444,7 +448,7 @@ impl Extension for MyExtension {
 neomind_export!(MyExtension);
 ```
 
-See the [Extension Development Guide](docs/guides/en/extension-system.md) and [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions) for more examples.
+</details>
 
 ## Documentation
 
