@@ -1,17 +1,27 @@
 /**
  * OnboardingDialog — Full-screen getting-started wizard
  *
- * Shows system capabilities, guides users through first-time setup steps
- * (configure LLM backend, connect devices), and introduces additional features.
+ * Three-step paginated guide:
+ *   1. Platform intro (what NeoMind is, AI-first differentiator, data flow)
+ *   2. Core setup (configure LLM, connect devices) — with completion status
+ *   3. Capability panorama (monitoring, vision, automation, extensions)
+ *
+ * Freely browsable; clicking Finish or Skip marks the guide as seen.
  */
 
-import { useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
-import { Rocket, Cpu, Sparkles, Check, X, Workflow, LayoutDashboard, Bot, Bell } from "lucide-react"
+import {
+  Rocket, Sparkles, Cpu, Check, X, ChevronLeft, ChevronRight,
+  LayoutDashboard, Zap, Puzzle, Code, MessageSquareText, Boxes, Gauge,
+  Terminal, Copy,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { notifySuccess, notifyError } from "@/lib/notify"
 import type { OnboardingStatus } from "@/hooks/useOnboarding"
 
 interface OnboardingDialogProps {
@@ -21,11 +31,24 @@ interface OnboardingDialogProps {
   onDismiss: () => void
 }
 
+const STEPS = ["intro", "setup", "capabilities"] as const
+type StepKey = (typeof STEPS)[number]
+
 export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: OnboardingDialogProps) {
   const { t } = useTranslation("common")
   const navigate = useNavigate()
+  const [step, setStep] = useState<StepKey>("intro")
 
-  // Lock body scroll + handle Escape
+  const stepIndex = STEPS.indexOf(step)
+  const isFirst = stepIndex === 0
+  const isLast = stepIndex === STEPS.length - 1
+
+  // Reset to first step each time the dialog opens
+  useEffect(() => {
+    if (open) setStep("intro")
+  }, [open])
+
+  // Lock body scroll + Escape to close
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -47,7 +70,7 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
     navigate(path)
   }
 
-  const handleDismiss = () => {
+  const handleFinish = () => {
     onDismiss()
     onOpenChange(false)
   }
@@ -58,109 +81,394 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
   if (!root) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex flex-col bg-bg-90 backdrop-blur-xl overflow-y-auto">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-bg-90 backdrop-blur-xl">
       {/* Close button */}
       <button
         onClick={() => onOpenChange(false)}
         className="absolute top-4 right-4 z-10 w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted-30 transition-colors"
-        aria-label="Close"
+        aria-label={t("onboarding.dismiss")}
       >
         <X className="w-5 h-5" />
       </button>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center px-6 sm:px-10 lg:px-16 py-12 sm:py-16 min-h-full">
-        {/* Header */}
-        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
-          <Rocket className="w-6 h-6 text-primary" />
+      {/* Progress indicator */}
+      <div className="shrink-0 pt-8 pb-3 px-6">
+        <div className="max-w-3xl mx-auto flex items-center justify-center">
+          {STEPS.map((s, i) => (
+            <button
+              key={s}
+              onClick={() => setStep(s)}
+              className="flex items-center"
+              aria-label={t(`onboarding.stepLabels.${s}`)}
+            >
+              <span className={cn(
+                "flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold transition-colors",
+                i < stepIndex && "bg-success text-primary-foreground",
+                i === stepIndex && "bg-primary text-primary-foreground",
+                i > stepIndex && "bg-muted-30 text-muted-foreground",
+              )}>
+                {i < stepIndex ? <Check className="w-4 h-4" /> : i + 1}
+              </span>
+              <span className={cn(
+                "ml-2 text-xs font-medium hidden sm:inline transition-colors",
+                i === stepIndex ? "text-foreground" : "text-muted-foreground",
+              )}>
+                {t(`onboarding.stepLabels.${s}`)}
+              </span>
+              {i < STEPS.length - 1 && (
+                <span className="w-6 sm:w-10 h-px bg-border mx-3" />
+              )}
+            </button>
+          ))}
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2 text-center">
-          {t("onboarding.title")}
-        </h1>
-        <p className="text-muted-foreground text-sm sm:text-base max-w-2xl text-center mb-10">
-          {t("onboarding.subtitle")}
-        </p>
+      </div>
 
-        {/* Core Steps — side by side on desktop */}
-        <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <StepCard
-            icon={<Sparkles className="w-5 h-5" />}
-            title={t("onboarding.steps.llm.title")}
-            description={t("onboarding.steps.llm.description")}
-            purpose={t("onboarding.steps.llm.purpose")}
-            completed={status.steps.llm.completed}
-            completedLabel={t("onboarding.completed")}
-            actionLabel={t("onboarding.steps.llm.action")}
-            onAction={() => handleAction("/settings?tab=llm")}
-          />
-          <StepCard
-            icon={<Cpu className="w-5 h-5" />}
-            title={t("onboarding.steps.device.title")}
-            description={t("onboarding.steps.device.description")}
-            purpose={t("onboarding.steps.device.purpose")}
-            completed={status.steps.device.completed}
-            completedLabel={t("onboarding.completed")}
-            actionLabel={t("onboarding.steps.device.action")}
-            onAction={() => handleAction("/devices")}
-          />
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-6 sm:px-10 py-6 sm:py-8">
+          {step === "intro" && <IntroStep />}
+          {step === "setup" && <SetupStep status={status} onAction={handleAction} />}
+          {step === "capabilities" && <CapabilitiesStep />}
         </div>
+      </div>
 
-        {/* Capability Overview */}
-        <div className="w-full max-w-4xl mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              {t("onboarding.moreCapabilities")}
-            </span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <CapabilityCard
-              icon={<Workflow className="w-4 h-4" />}
-              title={t("onboarding.capabilities.automation.title")}
-              description={t("onboarding.capabilities.automation.description")}
-            />
-            <CapabilityCard
-              icon={<LayoutDashboard className="w-4 h-4" />}
-              title={t("onboarding.capabilities.dashboard.title")}
-              description={t("onboarding.capabilities.dashboard.description")}
-            />
-            <CapabilityCard
-              icon={<Bot className="w-4 h-4" />}
-              title={t("onboarding.capabilities.agent.title")}
-              description={t("onboarding.capabilities.agent.description")}
-            />
-            <CapabilityCard
-              icon={<Bell className="w-4 h-4" />}
-              title={t("onboarding.capabilities.notification.title")}
-              description={t("onboarding.capabilities.notification.description")}
-            />
+      {/* Footer navigation */}
+      <div className="shrink-0 border-t border-border bg-bg-95">
+        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-between">
+          <Button variant="ghost" size="sm" onClick={handleFinish} className="text-muted-foreground">
+            {t("onboarding.dismiss")}
+          </Button>
+          <div className="flex items-center gap-2">
+            {!isFirst && (
+              <Button variant="outline" size="sm" onClick={() => setStep(STEPS[stepIndex - 1])}>
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                {t("onboarding.nav.prev")}
+              </Button>
+            )}
+            {isLast ? (
+              <Button size="sm" onClick={handleFinish}>
+                {t("onboarding.nav.finish")}
+                <Check className="w-4 h-4 ml-1.5" />
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => setStep(STEPS[stepIndex + 1])}>
+                {t("onboarding.nav.next")}
+                <ChevronRight className="w-4 h-4 ml-1.5" />
+              </Button>
+            )}
           </div>
         </div>
-
-        {/* Bottom hint */}
-        <div className="w-full max-w-4xl mb-6">
-          <div className="rounded-xl bg-muted-30 p-4 text-center">
-            <p className="text-sm text-muted-foreground">
-              {t("onboarding.hint")}
-            </p>
-          </div>
-        </div>
-
-        {/* Dismiss button */}
-        <Button variant="ghost" size="sm" onClick={handleDismiss} className="text-muted-foreground">
-          {t("onboarding.dismiss")}
-        </Button>
       </div>
     </div>,
     root,
   )
 }
 
-// ── Sub-components ──
+// ── Step 1: Platform intro ──
 
-function StepCard({
+function IntroStep() {
+  const { t } = useTranslation("common")
+  const pillars = [
+    { icon: <MessageSquareText className="w-4 h-4" />, key: "chat", tint: "bg-accent-indigo-light text-accent-indigo" },
+    { icon: <Boxes className="w-4 h-4" />, key: "unified", tint: "bg-accent-cyan-light text-accent-cyan" },
+    { icon: <Gauge className="w-4 h-4" />, key: "edge", tint: "bg-accent-emerald-light text-accent-emerald" },
+  ]
+  const flowNodes = ["s1", "s2", "s3", "s4"]
+
+  return (
+    <div>
+      {/* Hero */}
+      <div className="text-center mb-8">
+        <div className="w-14 h-14 rounded-2xl bg-accent-indigo-light flex items-center justify-center mx-auto mb-4">
+          <Rocket className="w-7 h-7 text-accent-indigo" />
+        </div>
+        <p className="text-sm sm:text-base text-foreground leading-relaxed max-w-2xl mx-auto">
+          {t("onboarding.intro.positioning")}
+        </p>
+      </div>
+
+      {/* Differentiator callout */}
+      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 mb-8">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-accent-emerald-light flex items-center justify-center shrink-0">
+            <Sparkles className="w-5 h-5 text-accent-emerald" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm text-foreground mb-1">
+              {t("onboarding.intro.diffTitle")}
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {t("onboarding.intro.diffBody")}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Data flow ribbon */}
+      <div className="rounded-2xl bg-muted-30 p-4 mb-8">
+        <div className="flex items-center justify-between gap-1 flex-wrap">
+          {flowNodes.map((k, i) => (
+            <div key={k} className="flex items-center gap-1">
+              <span className="text-xs font-medium text-foreground whitespace-nowrap">
+                {t(`onboarding.intro.flow.${k}`)}
+              </span>
+              {i < flowNodes.length - 1 && (
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Value pillars */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {pillars.map((p) => (
+          <div key={p.key} className="rounded-xl border border-border bg-card p-4">
+            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-2", p.tint)}>
+              {p.icon}
+            </div>
+            <h4 className="text-sm font-semibold text-foreground mb-0.5">
+              {t(`onboarding.intro.pillars.${p.key}.title`)}
+            </h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t(`onboarding.intro.pillars.${p.key}.desc`)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── LLM CLI quick-setup helper ──
+
+interface LlmProvider {
+  id: string
+  label: string
+  type: string
+  endpoint: string
+  model: string
+  needsKey: boolean
+}
+
+// backend_type passes straight through to the API (cli-ops/src/llm.rs),
+// so each provider's native type works. Endpoints from the user-guide README.
+const LLM_PROVIDERS: LlmProvider[] = [
+  { id: "ollama", label: "Ollama", type: "ollama", endpoint: "http://localhost:11434", model: "qwen3:8b", needsKey: false },
+  { id: "openai", label: "OpenAI", type: "openai", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", needsKey: true },
+  { id: "anthropic", label: "Anthropic", type: "anthropic", endpoint: "https://api.anthropic.com", model: "claude-sonnet-4-20250514", needsKey: true },
+  { id: "deepseek", label: "DeepSeek", type: "deepseek", endpoint: "https://api.deepseek.com", model: "deepseek-chat", needsKey: true },
+  { id: "glm", label: "GLM", type: "glm", endpoint: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash", needsKey: true },
+  { id: "qwen", label: "Qwen", type: "qwen", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus", needsKey: true },
+  { id: "xai", label: "xAI Grok", type: "xai", endpoint: "https://api.x.ai", model: "grok-2", needsKey: true },
+]
+
+function buildLlmCommand(p: LlmProvider): string {
+  const lines: string[] = []
+  if (p.id === "ollama") lines.push(`ollama pull ${p.model}`)
+  const parts = [
+    "neomind llm create",
+    `--name ${p.id}`,
+    `--type ${p.type}`,
+    `--endpoint ${p.endpoint}`,
+    `--model ${p.model}`,
+  ]
+  if (p.needsKey) parts.push("--api-key YOUR_API_KEY")
+  lines.push(parts.join(" \\\n  "))
+  return lines.join("\n")
+}
+
+// Verify + set-default, run after `create` returns a backend ID.
+const FOLLOWUP_COMMANDS = "neomind llm test <ID>\nneomind llm activate <ID>"
+
+function LlmCliHelper() {
+  const { t } = useTranslation("common")
+  const [expanded, setExpanded] = useState(false)
+  const [providerId, setProviderId] = useState("ollama")
+  const provider = LLM_PROVIDERS.find((p) => p.id === providerId) ?? LLM_PROVIDERS[0]
+  const command = useMemo(() => buildLlmCommand(provider), [provider])
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(command)
+      notifySuccess(t("onboarding.cli.copied"))
+    } catch {
+      notifyError(t("onboarding.cli.copyFailed"))
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl bg-muted-30 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted-50 transition-colors"
+      >
+        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", expanded && "rotate-90")} />
+        <Terminal className="w-4 h-4 text-muted-foreground" />
+        <span className="text-xs font-medium text-foreground">{t("onboarding.cli.toggle")}</span>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">{t("onboarding.cli.provider")}</span>
+            <Select value={providerId} onValueChange={setProviderId}>
+              <SelectTrigger className="h-8 w-auto min-w-[140px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-[200]">
+                {LLM_PROVIDERS.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {provider.needsKey && (
+              <span className="text-xs text-muted-foreground">{t("onboarding.cli.keyHint")}</span>
+            )}
+          </div>
+          <pre className="text-xs font-mono bg-background border border-border rounded-lg p-3 overflow-x-auto text-foreground whitespace-pre-wrap break-all leading-relaxed">
+            {command}
+          </pre>
+          <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
+            <Copy className="w-3.5 h-3.5" />
+            {t("onboarding.cli.copy")}
+          </Button>
+          <div className="rounded-lg bg-muted-30 p-3">
+            <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">
+              {t("onboarding.cli.followup")}
+            </p>
+            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+              {FOLLOWUP_COMMANDS}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Device CLI quick-start helper ──
+// POSTing telemetry to the webhook endpoint auto-discovers unregistered devices
+// (webhook.rs:343 emits DeviceDiscovered for unknown device IDs). This gives a
+// pure-curl closed loop: publish → draft created → approve → device registered.
+
+const DEVICE_CURL_COMMAND = [
+  "curl -X POST http://localhost:9375/api/devices/demo-001/webhook \\",
+  '  -H "Content-Type: application/json" \\',
+  `  -d '{"data": {"temperature": 25.5, "humidity": 60}}'`,
+].join("\n")
+
+// After the webhook creates a draft, these commands view and approve it.
+const DEVICE_FOLLOWUP_COMMANDS = [
+  "neomind device drafts list",
+  'neomind device drafts approve demo-001 --name "Demo Sensor" --type sensor',
+].join("\n")
+
+function DeviceQuickStart() {
+  const { t } = useTranslation("common")
+  const [expanded, setExpanded] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(DEVICE_CURL_COMMAND)
+      notifySuccess(t("onboarding.cli.copied"))
+    } catch {
+      notifyError(t("onboarding.cli.copyFailed"))
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl bg-muted-30 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted-50 transition-colors"
+      >
+        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", expanded && "rotate-90")} />
+        <Terminal className="w-4 h-4 text-muted-foreground" />
+        <span className="text-xs font-medium text-foreground">{t("onboarding.deviceCli.toggle")}</span>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3">
+          <p className="text-xs text-muted-foreground leading-relaxed">{t("onboarding.deviceCli.note")}</p>
+          <pre className="text-xs font-mono bg-background border border-border rounded-lg p-3 overflow-x-auto text-foreground whitespace-pre-wrap break-all leading-relaxed">
+            {DEVICE_CURL_COMMAND}
+          </pre>
+          <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
+            <Copy className="w-3.5 h-3.5" />
+            {t("onboarding.cli.copy")}
+          </Button>
+          <div className="rounded-lg bg-muted-30 p-3">
+            <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">
+              {t("onboarding.deviceCli.followup")}
+            </p>
+            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+              {DEVICE_FOLLOWUP_COMMANDS}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Step 2: Core setup ──
+
+function SetupStep({
+  status,
+  onAction,
+}: {
+  status: OnboardingStatus
+  onAction: (path: string) => void
+}) {
+  const { t } = useTranslation("common")
+  const completedLabel = t("onboarding.completed")
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2 className="text-lg font-bold text-foreground mb-1">{t("onboarding.setup.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("onboarding.setup.subtitle")}</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <SetupCard
+          icon={<Sparkles className="w-5 h-5" />}
+          tint="bg-accent-indigo-light text-accent-indigo"
+          title={t("onboarding.setup.llm.title")}
+          description={t("onboarding.setup.llm.description")}
+          purpose={t("onboarding.setup.llm.purpose")}
+          completed={status.steps.llm.completed}
+          completedLabel={completedLabel}
+          actionLabel={t("onboarding.setup.llm.action")}
+          onAction={() => onAction("/settings?tab=llm")}
+          extra={<LlmCliHelper />}
+        />
+        <SetupCard
+          icon={<Cpu className="w-5 h-5" />}
+          tint="bg-accent-cyan-light text-accent-cyan"
+          title={t("onboarding.setup.device.title")}
+          description={t("onboarding.setup.device.description")}
+          purpose={t("onboarding.setup.device.purpose")}
+          completed={status.steps.device.completed}
+          completedLabel={completedLabel}
+          actionLabel={t("onboarding.setup.device.action")}
+          onAction={() => onAction("/devices")}
+          extra={<DeviceQuickStart />}
+        />
+      </div>
+
+      {/* Hint */}
+      <div className="rounded-xl bg-muted-30 p-4 text-center">
+        <p className="text-sm text-muted-foreground">{t("onboarding.setup.hint")}</p>
+      </div>
+    </div>
+  )
+}
+
+function SetupCard({
   icon,
+  tint,
   title,
   description,
   purpose,
@@ -168,8 +476,10 @@ function StepCard({
   completedLabel,
   actionLabel,
   onAction,
+  extra,
 }: {
   icon: React.ReactNode
+  tint: string
   title: string
   description: string
   purpose: string
@@ -177,20 +487,21 @@ function StepCard({
   completedLabel: string
   actionLabel: string
   onAction: () => void
+  extra?: React.ReactNode
 }) {
   return (
     <div
       className={cn(
-        "rounded-xl border p-5 transition-colors",
+        "rounded-2xl border p-5 transition-colors flex flex-col",
         completed
-          ? "border-success/30 bg-success-light/30"
-          : "border-border bg-card hover:border-primary/30"
+          ? "border-success bg-success-light"
+          : "border-border bg-card",
       )}
     >
       <div className="flex items-start gap-3 mb-3">
         <div className={cn(
-          "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
-          completed ? "bg-success/10 text-success" : "bg-primary/10 text-primary"
+          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+          completed ? "bg-success-light text-success" : tint,
         )}>
           {completed ? <Check className="w-5 h-5" /> : icon}
         </div>
@@ -198,55 +509,103 @@ function StepCard({
           <h3 className={cn("font-semibold text-sm", completed && "text-muted-foreground line-through")}>
             {title}
           </h3>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-            {description}
-          </p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{description}</p>
         </div>
       </div>
-      {!completed && (
+      {completed ? (
+        <div className="mt-auto flex items-center gap-1.5 text-xs font-medium text-success">
+          <Check className="w-3.5 h-3.5" />
+          {completedLabel}
+        </div>
+      ) : (
         <>
-          <p className="text-xs text-muted-foreground mb-3 pl-12 leading-relaxed">
-            {purpose}
-          </p>
-          <div className="flex justify-end">
+          <p className="text-xs text-muted-foreground mb-4 pl-12 leading-relaxed">{purpose}</p>
+          {extra}
+          <div className="mt-auto flex justify-end">
             <Button size="sm" onClick={onAction} className="gap-1.5">
               {actionLabel}
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
+              <ChevronRight className="w-3.5 h-3.5" />
             </Button>
           </div>
         </>
       )}
-      {completed && (
-        <div className="flex justify-end">
-          <span className="text-xs font-medium text-success">
-            <Check className="w-3.5 h-3.5 inline mr-1" />
-            {completedLabel}
-          </span>
-        </div>
-      )}
+    </div>
+  )
+}
+
+// ── Step 3: Capability panorama ──
+
+function CapabilitiesStep() {
+  const { t } = useTranslation("common")
+  const cards = [
+    {
+      icon: <LayoutDashboard className="w-5 h-5" />,
+      key: "monitoring",
+      tint: "bg-accent-purple-light text-accent-purple",
+    },
+    {
+      icon: <Zap className="w-5 h-5" />,
+      key: "automation",
+      tint: "bg-accent-orange-light text-accent-orange",
+    },
+    {
+      icon: <Puzzle className="w-5 h-5" />,
+      key: "extensions",
+      tint: "bg-accent-cyan-light text-accent-cyan",
+    },
+    {
+      icon: <Code className="w-5 h-5" />,
+      key: "customDev",
+      tint: "bg-accent-indigo-light text-accent-indigo",
+    },
+  ]
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2 className="text-lg font-bold text-foreground mb-1">{t("onboarding.capabilities.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("onboarding.capabilities.subtitle")}</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {cards.map((c) => (
+          <CapabilityCard
+            key={c.key}
+            icon={c.icon}
+            tint={c.tint}
+            title={t(`onboarding.capabilities.${c.key}.title`)}
+            description={t(`onboarding.capabilities.${c.key}.description`)}
+            example={t(`onboarding.capabilities.${c.key}.example`)}
+          />
+        ))}
+      </div>
     </div>
   )
 }
 
 function CapabilityCard({
   icon,
+  tint,
   title,
   description,
+  example,
 }: {
   icon: React.ReactNode
+  tint: string
   title: string
   description: string
+  example: string
 }) {
   return (
-    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-muted-30">
-      <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+    <div className="rounded-2xl border border-border bg-card p-5 flex flex-col h-full">
+      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3 shrink-0", tint)}>
         {icon}
       </div>
-      <div className="min-w-0">
-        <h4 className="text-xs font-semibold text-foreground">{title}</h4>
-        <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{description}</p>
+      <h3 className="font-semibold text-sm text-foreground mb-1.5 shrink-0">{title}</h3>
+      <p className="text-xs text-muted-foreground leading-relaxed flex-1">{description}</p>
+      <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-muted-30 px-3 py-2 shrink-0">
+        <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+        <span className="text-xs text-muted-foreground italic">{example}</span>
       </div>
     </div>
   )

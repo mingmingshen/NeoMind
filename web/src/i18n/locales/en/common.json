@@ -743,42 +743,87 @@
   "passwordNeedsLetter": "Password Needs Letter",
   "passwordNeedsNumber": "Password Needs Number",
   "onboarding": {
-    "title": "Get Started with NeoMind",
-    "subtitle": "Edge AI Platform — quickly configure core features and start your IoT journey",
     "dismiss": "Skip Setup Guide",
     "completed": "Done",
-    "moreCapabilities": "More Capabilities",
-    "hint": "Once you've configured an AI model, try saying \"help me connect a temperature sensor\" or \"create a dashboard\" in the chat.",
-    "steps": {
+    "nav": {
+      "prev": "Back",
+      "next": "Next",
+      "finish": "Finish"
+    },
+    "cli": {
+      "toggle": "Quick setup via CLI",
+      "provider": "Provider",
+      "keyHint": "Replace YOUR_API_KEY with your key before running",
+      "copy": "Copy command",
+      "copied": "Command copied to clipboard",
+      "copyFailed": "Copy failed — please copy manually",
+      "followup": "After creating, replace <ID> below with the returned backend ID to test the connection and set it as default:"
+    },
+    "deviceCli": {
+      "toggle": "Quick device onboarding via CLI",
+      "note": "POST simulated telemetry to the webhook URL below. The system auto-discovers unknown devices and creates a draft — no pre-registration or extra tools needed.",
+      "followup": "After publishing, the system auto-discovers the device as a draft. Run these to view and approve it, completing onboarding:"
+    },
+    "stepLabels": {
+      "intro": "Platform",
+      "setup": "Core Setup",
+      "capabilities": "Capabilities"
+    },
+    "intro": {
+      "positioning": "NeoMind is an edge AI platform for IoT. Connect devices, run AI analysis, set up automation, and visualize everything on real-time dashboards — data is collected, decided, and acted on locally.",
+      "diffTitle": "AI-First Interaction",
+      "diffBody": "Traditional platforms make you configure each page by hand. NeoMind lets you do most things in natural language. Once an AI model is configured, connecting devices, creating rules, and building dashboards all take a single sentence.",
+      "flow": {
+        "s1": "Devices / Cameras",
+        "s2": "Real-time data",
+        "s3": "AI analysis & decisions",
+        "s4": "Dashboards · Automation · Alerts"
+      },
+      "pillars": {
+        "chat": { "title": "Chat to act", "desc": "Manage devices, data, rules, and dashboards in natural language" },
+        "unified": { "title": "Devices + vision unified", "desc": "MQTT devices plus camera AI recognition, all in one place" },
+        "edge": { "title": "Real-time at the edge", "desc": "Data processed locally, auto-decisions, instant alerts" }
+      }
+    },
+    "setup": {
+      "title": "Start with the essentials",
+      "subtitle": "Complete these two and NeoMind is ready to run.",
+      "hint": "Once an AI model is configured, try saying \"help me connect a temperature sensor\" or \"create a dashboard\" in the chat.",
       "llm": {
         "title": "Configure AI Model",
-        "description": "NeoMind has a built-in AI assistant that lets you interact with the system through natural language. After configuring a model, you can manage devices, query data, and create automation rules through conversation — no need to navigate each page manually.",
-        "purpose": "AI is the core interaction method in NeoMind. Once configured, almost everything can be done through conversation.",
+        "description": "At NeoMind's core is an AI assistant. Configure an LLM backend — local Ollama (free, private), or cloud like OpenAI / Anthropic / Google — and you can run the whole system in natural language.",
+        "purpose": "AI is the primary way to interact with NeoMind. Once set up, connecting devices, creating rules, and building dashboards all happen through conversation — no need to configure each page manually.",
         "action": "Configure AI Model"
       },
       "device": {
         "title": "Connect Devices",
-        "description": "Devices connecting via MQTT are auto-discovered — just approve them from the drafts list. You can also add devices manually or use BLE provisioning.",
-        "purpose": "Devices are the source of data. Without devices, monitoring, alerting, and analysis aren't possible.",
+        "description": "Connect devices over MQTT (built-in broker on port 1883) — they're auto-discovered and ready to approve in one click. Webhook, manual entry, and BLE provisioning are also supported. AI cameras like the NE101 / NE301 work out of the box.",
+        "purpose": "Devices are the source of all data. Without them, monitoring, alerting, and analysis aren't possible — this is where the system starts.",
         "action": "View Devices"
       }
     },
     "capabilities": {
+      "title": "What else you can do",
+      "subtitle": "Most of these can also be triggered through AI chat — once your model is set up, just describe what you want in one sentence.",
+      "monitoring": {
+        "title": "Real-time Monitoring & Visualization",
+        "description": "Build real-time dashboards by drag-and-drop with 20+ built-in widgets: value cards, trend charts, LED indicators, maps, video feeds, AI analyst, and more. Supports data-source binding and shareable public links (read-only or interactive).",
+        "example": "Create a temperature monitoring dashboard"
+      },
       "automation": {
-        "title": "Smart Automation",
-        "description": "Set up rules to auto-respond, or just tell AI to create them for you."
+        "title": "Automation & AI Agents",
+        "description": "Set rules like \"notify me when temperature exceeds a threshold,\" or create scheduled / event-driven AI Agents that inspect devices, generate reports, and push anomalies proactively. Supports 7 channels: DingTalk, WeCom, Feishu, Telegram, Email, and more.",
+        "example": "Notify me on DingTalk when temperature exceeds 35°C"
       },
-      "dashboard": {
-        "title": "Visual Dashboards",
-        "description": "Build real-time dashboards with drag-and-drop: charts, device status, alert lists."
+      "extensions": {
+        "title": "Extension Ecosystem",
+        "description": "One-click install from the marketplace: AI vision (YOLO detection, face recognition, OCR), weather forecasts, third-party integrations. Tools and metrics from extensions are auto-discovered by the AI — just ask after installing. Also supports local .nep uploads and SDK development.",
+        "example": "Install the weather forecast extension"
       },
-      "agent": {
-        "title": "AI Agents",
-        "description": "Create scheduled agents: routine inspections, reports, proactive anomaly alerts."
-      },
-      "notification": {
-        "title": "Notifications",
-        "description": "Supports DingTalk, WeCom, Email, and more channels for timely alerts and reports."
+      "customDev": {
+        "title": "Custom Component Development",
+        "description": "Design your own dashboard widgets with React — IIFE format, pure frontend, no backend code needed. Scaffold with neomind widget create, package as ZIP, install locally or publish to the community marketplace. Light/dark themes are auto-adapted.",
+        "example": "Help me create a dashboard widget"
       }
     }
   }

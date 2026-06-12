@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Onboarding Wizard Redesign
+
+Rewrote the getting-started dialog from a single page into a **3-step paginated wizard** (Platform Intro → Core Setup → Capability Panorama). Users can freely browse steps via clickable progress dots; finishing or skipping marks the guide as seen.
+
+**Step 1 — Platform Intro:** positioning statement, AI-first differentiator callout, data-flow ribbon (Devices → Data → AI → Dashboards/Alerts), and 3 value pillars (chat / unified / edge).
+
+**Step 2 — Core Setup:** two status-aware cards (LLM + Device) that auto-detect completion from backend state. Each card includes a collapsible CLI quick-start helper:
+- **LLM helper:** 7-provider selector (Ollama, OpenAI, Anthropic, DeepSeek, GLM, Qwen, xAI) generates a ready-to-copy `neomind llm create` command with correct endpoints and models, plus followup `llm test` / `llm activate` commands.
+- **Device helper:** single `curl` command that POSTs telemetry to the webhook endpoint — triggers auto-discovery for unregistered devices (no MQTT tools needed). Followup shows `device drafts list` → `drafts approve` to complete the closed loop.
+
+**Step 3 — Capability Panorama:** 4 cards covering all platform modules:
+1. Real-time Monitoring & Visualization (20+ built-in dashboard widgets, shareable links)
+2. Automation & AI Agents (rules, scheduled/event-driven agents, 7 notification channels)
+3. Extension Ecosystem (marketplace: YOLO vision, OCR, weather, integrations; tools auto-discovered by AI)
+4. Custom Component Development (React IIFE widgets, `neomind widget create` scaffold, ZIP install / marketplace publish)
+
+Full i18n support (zh/en). All design-token compliant (no hardcoded colors, valid tint tokens throughout).
+
 ## [0.8.11] - 2026-06-11
 
 ### Dead Code Cleanup (51 rounds, compiler-verified)

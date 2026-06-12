@@ -743,42 +743,87 @@
   "days": "天",
   "week": "周",
   "onboarding": {
-    "title": "开始使用 NeoMind",
-    "subtitle": "边缘智能平台 — 快速配置核心功能，开启你的 IoT 智能之旅",
     "dismiss": "跳过引导",
     "completed": "已完成",
-    "moreCapabilities": "更多能力",
-    "hint": "配置好 AI 模型后，试试在对话框中说「帮我连接一个温度传感器」或「创建一个仪表盘」。",
-    "steps": {
+    "nav": {
+      "prev": "上一步",
+      "next": "下一步",
+      "finish": "完成"
+    },
+    "cli": {
+      "toggle": "用命令行快速配置",
+      "provider": "厂商",
+      "keyHint": "运行前请把 YOUR_API_KEY 换成你的密钥",
+      "copy": "复制命令",
+      "copied": "命令已复制到剪贴板",
+      "copyFailed": "复制失败，请手动选择复制",
+      "followup": "创建成功后会返回后端 ID，把下方 <ID> 替换掉即可验证连接并设为默认后端："
+    },
+    "deviceCli": {
+      "toggle": "用命令行快速体验设备接入",
+      "note": "向下方 webhook 地址 POST 一条模拟遥测数据，系统会自动发现该未知设备并生成草稿——无需预注册，无需安装额外工具。",
+      "followup": "发布数据后，系统会自动发现该设备并生成草稿。执行以下命令查看并批准，即可完成接入："
+    },
+    "stepLabels": {
+      "intro": "平台介绍",
+      "setup": "核心设置",
+      "capabilities": "能力全景"
+    },
+    "intro": {
+      "positioning": "NeoMind 是一款面向物联网的边缘 AI 平台。连接设备、运行 AI 分析、设置自动化、用实时仪表盘可视化一切——数据在本地采集、本地决策、本地响应。",
+      "diffTitle": "AI 优先的交互方式",
+      "diffBody": "传统平台需要你在每个页面手动配置；NeoMind 让你用自然语言完成大部分操作。配好 AI 模型后，连接设备、创建规则、搭建看板都能一句话搞定。",
+      "flow": {
+        "s1": "设备 / 摄像头",
+        "s2": "实时数据采集",
+        "s3": "AI 分析与决策",
+        "s4": "仪表盘 · 自动化 · 通知"
+      },
+      "pillars": {
+        "chat": { "title": "对话即操作", "desc": "用自然语言管理设备、数据、规则和看板" },
+        "unified": { "title": "设备与视觉统一", "desc": "MQTT 设备 + 摄像头 AI 识别，数据汇聚一处" },
+        "edge": { "title": "边缘实时响应", "desc": "数据本地处理，自动决策、即时告警" }
+      }
+    },
+    "setup": {
+      "title": "开始你的第一步",
+      "subtitle": "完成这两项，NeoMind 就能运转起来。",
+      "hint": "配好 AI 模型后，回到对话框试试说「帮我连接一个温度传感器」或「创建一个仪表盘」。",
       "llm": {
         "title": "配置 AI 模型",
-        "description": "NeoMind 内置 AI 助手，通过自然语言与系统交互。配置模型后，你可以用对话管理设备、查询数据、创建自动化规则 — 不需要手动操作每个页面。",
-        "purpose": "AI 是 NeoMind 的核心交互方式。配置好模型后，后续几乎所有操作都可以通过对话完成。",
+        "description": "NeoMind 的核心是 AI 助手。配置一个 LLM 后端——支持 Ollama 本地（免费、隐私），或 OpenAI / Anthropic / Google 等云端——就能用自然语言管理整个系统。",
+        "purpose": "AI 是 NeoMind 的主要交互入口。配好后，连接设备、创建规则、搭建看板都能通过对话完成，不必逐页手动配置。",
         "action": "配置 AI 模型"
       },
       "device": {
         "title": "连接设备",
-        "description": "设备通过 MQTT 连接后会被自动识别，在草稿列表中一键批准即可。也支持手动添加设备、BLE 配网等方式。",
-        "purpose": "设备是数据的来源。没有设备，监控、告警、分析都无从谈起。",
+        "description": "通过 MQTT 接入设备（内置代理端口 1883），连接后自动发现、一键批准。也支持 Webhook、手动添加、BLE 配网。NE101 / NE301 等 AI 摄像头开箱即用。",
+        "purpose": "设备是所有数据的来源。没有设备，监控、告警、分析都无从谈起——这是整个系统的起点。",
         "action": "查看设备"
       }
     },
     "capabilities": {
+      "title": "你还能做什么",
+      "subtitle": "这些能力大多也能通过 AI 对话触发——配好模型后，试着用一句话描述你想做的事。",
+      "monitoring": {
+        "title": "实时监控与可视化",
+        "description": "拖拽搭建实时仪表盘：数值卡片、趋势图表、LED 状态灯、地图、视频流、AI 分析师等 20+ 内置组件开箱即用。支持数据源绑定与公开链接分享（只读或可交互）。",
+        "example": "帮我创建一个温度监控看板"
+      },
       "automation": {
-        "title": "智能自动化",
-        "description": "设置规则让系统自动响应，或直接告诉 AI 帮你创建。"
+        "title": "自动化与智能 Agent",
+        "description": "设「当温度超阈值就通知」等规则，或创建定时 / 事件驱动的 AI Agent 自主巡检设备、生成报告、主动推送异常。支持钉钉、企业微信、飞书、Telegram、邮件等 7 种通知渠道。",
+        "example": "温度超过 35 度就在钉钉通知我"
       },
-      "dashboard": {
-        "title": "可视化仪表盘",
-        "description": "拖拽搭建实时看板：数据图表、设备状态、告警列表。"
+      "extensions": {
+        "title": "扩展生态",
+        "description": "从扩展市场一键安装 AI 视觉（YOLO 目标检测、人脸识别、OCR）、天气预报、第三方集成等能力。扩展提供的工具和指标会被 AI 自动识别——安装后直接对话调用。也支持上传本地 .nep 包或用 SDK 开发。",
+        "example": "帮我安装天气预报扩展"
       },
-      "agent": {
-        "title": "AI Agent",
-        "description": "创建定时执行的智能体：定期巡检、生成报告、主动推送异常。"
-      },
-      "notification": {
-        "title": "消息通知",
-        "description": "支持钉钉、企业微信、邮件等通道，及时推送告警和报告。"
+      "customDev": {
+        "title": "自定义组件开发",
+        "description": "用 React 独立设计自己的仪表盘组件：IIFE 格式、纯前端、无需写后端代码。用 neomind widget create 脚手架创建，打包成 ZIP 安装或发布到社区市场，平台自动适配亮色 / 暗色主题。",
+        "example": "帮我创建一个仪表盘组件"
       }
     }
   }
