@@ -38,6 +38,8 @@ export interface BuilderShellProps {
   workspace: ReactNode
   /** Footer actions. Container is justify-between: put secondary actions first, primary last. */
   footer: ReactNode
+  /** Optional label for mobile config collapse (defaults to '配置'). */
+  mobileConfigLabel?: string
 }
 
 export function BuilderShell({
@@ -51,6 +53,7 @@ export function BuilderShell({
   config,
   workspace,
   footer,
+  mobileConfigLabel,
 }: BuilderShellProps) {
   const isMobile = useIsMobile()
   const a = accentIcon[accent]
@@ -70,7 +73,7 @@ export function BuilderShell({
           <FullScreenDialogMain className="p-4 md:p-5">
             <details className="mb-4 rounded-lg border border-border bg-background">
               <summary className="cursor-pointer px-4 py-2.5 text-sm font-medium text-foreground">
-                配置
+                {mobileConfigLabel ?? '配置'}
               </summary>
               <div className="space-y-3.5 p-4 pt-0">{config}</div>
             </details>
