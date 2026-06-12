@@ -62,32 +62,9 @@ fn main() {
         println!("cargo:warning=   Run: cargo build --release -p neomind-extension-runner");
     }
 
-    // Setup CLI binary for Tauri bundling
-    let source_cli = workspace_root
-        .join("target")
-        .join(&profile)
-        .join("neomind");
-
-    let platform_cli = binaries_dir.join(format!("neomind-cli-{}", target_triple));
-
-    if source_cli.exists() {
-        let _ = fs::remove_file(&platform_cli);
-        fs::copy(&source_cli, &platform_cli).expect("Failed to copy CLI binary");
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&platform_cli).unwrap().permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&platform_cli, perms).expect("Failed to set permissions");
-        }
-
-        println!("cargo:warning=✅ CLI binary ready: {}", target_triple);
-    } else {
-        println!(
-            "cargo:warning=⚠️  CLI binary not found at: {:?}",
-            source_cli
-        );
-        println!("cargo:warning=   Run: cargo build --release -p neomind-cli");
-    }
+    // NOTE: neomind-cli is no longer bundled as a Tauri sidecar. The agent's
+    // shell tool dispatches data commands in-process via neomind-cli-ops
+    // (compiled into this binary), eliminating the need for a separate CLI
+    // binary in PATH or bundled as a sidecar. The standalone neomind-cli is
+    // still built for server/Docker distributions via CI.
 }

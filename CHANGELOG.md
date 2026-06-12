@@ -116,6 +116,30 @@ Unified all CLI domain tools (device, agent, rule, message, transform, alert) to
 - **tool_exec integration** — `execute_with_retry_impl()` converts CLI domain calls to shell commands before execution, handling timeout inheritance correctly
 - **Removed `format_for_llm`** — No longer needed; tool descriptions now come from the shell tool's embedded CLI reference
 
+### In-Process CLI Dispatch (eliminate stale-binary class of bugs)
+
+The agent's shell tool no longer depends on whatever `neomind` binary happens to be in PATH. Data commands now run in-process via a shared dispatcher, returning structured `CliResponse` directly — no subprocess, no PATH binary dependency, no version drift.
+
+**Root cause eliminated:** the agent shell tool executed `neomind` commands by spawning `$SHELL -l -c "neomind ..."`, which resolved `neomind` from PATH. The PATH binary had drifted to v0.7.8/v0.8.2 while the server ran v0.8.11, causing truncated/incorrect output (e.g. `dashboard list` emitted full JSON, exceeded the 10000-char shell truncation, got cut mid-array, and the LLM saw an incomplete list).
+
+**Architecture:**
+- `neomind-cli-ops` now owns the clap command types (`dispatch/commands.rs`), data-command handlers (`dispatch/handlers.rs`), and the top-level dispatcher (`dispatch::dispatch(argv) -> Result<CliResponse, DispatchError>`)
+- `neomind-cli` binary thinned from ~4700 to ~1500 lines — delegates data commands to cli-ops handlers, keeps interactive functions (serve/chat/logs)
+- Agent `shell.rs` intercepts `neomind ` commands via `try_in_process_dispatch()` — calls `dispatch(argv)` directly in-process; falls back to subprocess on `DispatchError::NotInProcess` (side-effecting/interactive/local-only commands)
+- `try_parse_from` (not `parse`) prevents `exit()`-ing the agent process on malformed arguments
+- Per-command timeout via `tokio::time::timeout` matches subprocess lifecycle behavior
+
+**Verification:** all 7 `--help` outputs byte-identical before/after; in-process dispatch returns correct data (e.g. `dashboard list` → total=16) against running server; fallback to subprocess works for side-effecting commands; parse errors return gracefully instead of killing the process.
+
+### Tauri Sidecar Removal (-99 MB)
+
+Removed the `neomind-cli` binary from the Tauri app bundle (`externalBin`). The 99 MB sidecar was bundled but never actually used — the agent shell tool resolved `neomind` from PATH, not from the app bundle. With in-process dispatch, data commands now use `neomind-cli-ops` compiled directly into the Tauri binary (always version-synced with the running server).
+
+- Removed `binaries/neomind-cli` from `tauri.conf.json` externalBin
+- Removed CLI binary copy logic from `build.rs`
+- Deleted `scripts/build-cli.sh`
+- CI Tauri build job no longer builds/copies CLI (standalone CLI for Docker/server distribution unchanged)
+
 ### Fixed
 
 - **Re-export completeness** — Added missing `cleanup_thinking_content` and `format_tool_results` re-exports in `agent/mod.rs`

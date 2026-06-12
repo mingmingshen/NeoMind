@@ -104,6 +104,115 @@ impl ShellTool {
         })
     }
 
+    /// Attempt in-process dispatch for `neomind` data commands.
+    ///
+    /// Returns `Some(output)` if the command was handled in-process (either
+    /// success, a parse error, or an API error); returns `None` for
+    /// [`DispatchError::NotInProcess`] (side-effecting / interactive /
+    /// local-only subcommands) so the caller falls back to spawning a real
+    /// subprocess.
+    ///
+    /// Non-`neomind` commands and malformed input (unbalanced quotes) also
+    /// yield `None` so they hit the subprocess path unchanged.
+    async fn try_in_process_dispatch(&self, command: &str, timeout: Duration) -> Option<CommandOutput> {
+        let trimmed = command.trim();
+        // Only intercept commands that start with `neomind ` (or are exactly
+        // `neomind`). Anything else goes to the subprocess path.
+        if !trimmed.starts_with("neomind ") && trimmed != "neomind" {
+            return None;
+        }
+
+        // Tokenize. `neomind` data commands are simple enough that a basic
+        // quote-respecting whitespace split is sufficient. We do NOT need
+        // full shell syntax (pipes / redirections / $ expansions) because
+        // those constructs are never part of a pure data query — they'd hit
+        // the subprocess path by design.
+        let argv = match tokenize_neomind_command(trimmed) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!(
+                    target: "neomind::agent::shell",
+                    in_process = false,
+                    command = %command,
+                    reason = %e,
+                    "in-process dispatch skipped (tokenize error)"
+                );
+                return None;
+            }
+        };
+
+        if argv.is_empty() || argv[0] != "neomind" {
+            return None;
+        }
+
+        // Make auth + JSON-output env visible to the in-process handler.
+        // `dispatch`'s `ApiClient` reads `NEOMIND_API_KEY` (via auto_auth)
+        // and the handlers read `NEOMIND_JSON` to pick the output format.
+        // This mirrors the env injection done for the subprocess in
+        // `build_command`.
+        if let Some(key) = Self::resolve_api_key() {
+            // NOTE: env mutation is process-global. The agent runtime is
+            // single-tenancy and is the only concurrent writer of this var,
+            // so this is equivalent to the existing subprocess env injection.
+            std::env::set_var("NEOMIND_API_KEY", key);
+        }
+        std::env::set_var("NEOMIND_JSON", "1");
+
+        tracing::debug!(
+            target: "neomind::agent::shell",
+            in_process = true,
+            command = %command,
+            "dispatching neomind command in-process"
+        );
+
+        // Apply the same per-command timeout as the subprocess path. The
+        // ApiClient has its own 30s HTTP timeout, but a handler may issue
+        // multiple requests; this guarantees the in-process path cannot hang
+        // longer than the subprocess equivalent would.
+        match tokio::time::timeout(timeout, neomind_cli_ops::dispatch::dispatch(&argv)).await {
+            Ok(Ok(resp)) => {
+                let exit_code = if resp.success { 0 } else { 1 };
+                let stdout = serde_json::to_string_pretty(&resp).unwrap_or_else(|e| {
+                    format!("{{\"success\":false,\"error\":\"serialize failed: {}\"}}", e)
+                });
+                Some(CommandOutput {
+                    exit_code: Some(exit_code),
+                    stdout,
+                    stderr: String::new(),
+                    timed_out: false,
+                })
+            }
+            Ok(Err(neomind_cli_ops::dispatch::DispatchError::NotInProcess)) => {
+                tracing::debug!(
+                    target: "neomind::agent::shell",
+                    in_process = false,
+                    command = %command,
+                    "falling back to subprocess (NotInProcess)"
+                );
+                None
+            }
+            Ok(Err(neomind_cli_ops::dispatch::DispatchError::Parse(msg))) => Some(CommandOutput {
+                exit_code: Some(2),
+                stdout: String::new(),
+                stderr: format!("error: {}", msg),
+                timed_out: false,
+            }),
+            Ok(Err(neomind_cli_ops::dispatch::DispatchError::Api(msg))) => Some(CommandOutput {
+                exit_code: Some(1),
+                stdout: String::new(),
+                stderr: msg,
+                timed_out: false,
+            }),
+            // Timeout (outer Err = elapsed) — mirror the subprocess timeout behavior.
+            Err(_) => Some(CommandOutput {
+                exit_code: None,
+                stdout: String::new(),
+                stderr: format!("Command timed out after {}s", timeout.as_secs()),
+                timed_out: true,
+            }),
+        }
+    }
+
     /// Execute a command with timeout and output capture.
     async fn execute_command(
         &self,
@@ -111,6 +220,16 @@ impl ShellTool {
         working_dir: Option<&str>,
         timeout: Duration,
     ) -> Result<CommandOutput> {
+        // Fast path: route `neomind` data commands through the in-process
+        // dispatcher so the agent gets structured `CliResponse` directly,
+        // without depending on whatever `neomind` binary happens to be in
+        // PATH (eliminates version drift between the running server and the
+        // CLI binary). Side-effecting/interactive/local-only commands return
+        // `NotInProcess` and fall through to the subprocess path below.
+        if let Some(output) = self.try_in_process_dispatch(command, timeout).await {
+            return Ok(output);
+        }
+
         let mut cmd = Self::build_command(command);
 
         if let Some(dir) = working_dir {
@@ -241,6 +360,57 @@ fn kill_process_by_pid(pid: Option<u32>) {
             }
         }
     }
+}
+
+/// Tokenize a `neomind` command line into an argv vector, respecting single
+/// and double quotes and backslash escapes.
+///
+/// This is NOT a full shell parser — it deliberately ignores pipes,
+/// redirections, `$` expansions, and command separators, because those
+/// constructs are never part of a pure `neomind` data query. A command that
+/// uses them is left for the real shell (subprocess path) to interpret.
+///
+/// The first token is expected to be `neomind`. Returns an error if the input
+/// has unbalanced quotes (so the caller can fall back to the subprocess and
+/// surface the real shell error message).
+fn tokenize_neomind_command(input: &str) -> std::result::Result<Vec<String>, String> {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if !in_single => {
+                // Backslash escape: take the next char literally. (Inside
+                // single quotes, backslash has no special meaning.)
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            '\'' if !in_double => {
+                in_single = !in_single;
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+            }
+            c if c.is_whitespace() && !in_single && !in_double => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(c),
+        }
+    }
+
+    if in_single || in_double {
+        return Err("unbalanced quotes".to_string());
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    Ok(tokens)
 }
 
 /// Truncate stdout + stderr to fit within max_total chars, with truncation notices.

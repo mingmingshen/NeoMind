@@ -12,6 +12,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true }
 
 # Auto-auth: read API key from local redb database
 redb = { workspace = true }

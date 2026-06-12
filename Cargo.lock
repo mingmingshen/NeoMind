@@ -3242,6 +3242,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "chrono",
+ "clap",
  "hex",
  "neomind-core",
  "redb",
