@@ -10,7 +10,13 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License">
-  <img src="https://img.shields.io/badge/v-0.8.11-information.svg" alt="Version">
+  <a href="https://github.com/camthink-ai/NeoMind/releases/latest">
+    <img src="https://img.shields.io/github/v/release/camthink-ai/NeoMind?color=informational&label=release" alt="Release">
+  </a>
+  <a href="https://github.com/camthink-ai/NeoMind/stargazers">
+    <img src="https://img.shields.io/github/stars/camthink-ai/NeoMind?style=social" alt="Stars">
+  </a>
+  <img src="https://img.shields.io/github/last-commit/camthink-ai/NeoMind?label=last%20commit&color=success" alt="Last Commit">
   <img src="https://img.shields.io/badge/Rust-1.85+-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Server-informational.svg" alt="Platform">
 </p>
