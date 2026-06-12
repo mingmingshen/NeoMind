@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-06-11
+
 ### Onboarding Wizard Redesign
 
 Rewrote the getting-started dialog from a single page into a **3-step paginated wizard** (Platform Intro → Core Setup → Capability Panorama). Users can freely browse steps via clickable progress dots; finishing or skipping marks the guide as seen.
@@ -26,8 +28,6 @@ Rewrote the getting-started dialog from a single page into a **3-step paginated 
 4. Custom Component Development (React IIFE widgets, `neomind widget create` scaffold, ZIP install / marketplace publish)
 
 Full i18n support (zh/en). All design-token compliant (no hardcoded colors, valid tint tokens throughout).
-
-## [0.8.11] - 2026-06-11
 
 ### Dead Code Cleanup (51 rounds, compiler-verified)
 
