@@ -64,107 +64,41 @@ pub mod vector;
 // Re-exports
 pub use error::{Error, Result};
 
-pub use timeseries::{
-    compress_series_adaptive, BatchWriteRequest, DataPoint, PerformanceStats, RetentionPolicy,
-    RetentionPolicyCleanupResult, TimeSeriesBucket, TimeSeriesConfig, TimeSeriesResult,
-    TimeSeriesStore,
-};
+pub use timeseries::{compress_series_adaptive, DataPoint, TimeSeriesStore};
 
-pub use vector::{
-    Embedding, PersistentVectorStore, SearchResult, SimilarityMetric, VectorDocument, VectorStore,
-};
+pub use vector::{VectorDocument, VectorStore};
 
 pub use session::{
-    PendingStreamState, SessionMessage, SessionMessageImage, SessionMetadata, SessionStore,
-    StreamStage,
+    PendingStreamState, SessionMessage, SessionMessageImage, SessionStore, StreamStage,
 };
 
-pub use messages::{MessageStats, MessageStore, StoredMessage};
+pub use messages::{MessageStore, StoredMessage};
 
 pub use settings::{
-    ConfigChangeEntry,
-    ExternalBroker,
-    LlmBackendType,
-    LlmSettings,
-    MqttSettings,
-    SecurityLevel,
-    SecurityWarning,
-    SettingsStore,
-    // Timezone settings
+    ExternalBroker, LlmBackendType, LlmSettings, MqttSettings, SecurityLevel, SettingsStore,
     DEFAULT_GLOBAL_TIMEZONE,
-    KEY_GLOBAL_TIMEZONE,
-    KEY_LLM_CONFIG,
-    KEY_MQTT_CONFIG,
 };
 
 pub use llm_backends::{
-    BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStats, LlmBackendStore,
+    BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore,
 };
 
-pub use instances::{InstanceRecord, InstanceStore};
+pub use instances::InstanceRecord;
 
-pub use extensions::{ExtensionRecord, ExtensionStats, ExtensionStore};
-
-pub use frontend_components::{
-    ComponentManifest, FrontendComponentStore, MarketComponentEntry, MarketIndex, SizeConstraints,
-};
+pub use extensions::{ExtensionRecord, ExtensionStore};
 
 pub use agents::{
-    ActionExecuted,
-    AgentExecutionRecord,
-    AgentFilter,
-    AgentMemory,
-    AgentResource,
-    AgentSchedule,
-    AgentStats,
-    AgentStatus,
-    AgentStore,
-    AgentToolConfig,
-    AiAgent,
-    // Conversation types
-    DataCollected,
-    DataSummary,
-    Decision,
-    DecisionProcess,
-    ExecutionFilter,
-    ExecutionJournal,
-    ExecutionMode,
-    ExecutionRecord,
-    ExecutionResult,
-    ExecutionStatus,
-    GeneratedReport,
-    IntentType,
-    KnowledgeFileRef,
-    NotificationSent,
-    ParsedIntent,
-    ReasoningStep,
-    ResourceType,
-    ScheduleType,
-    UserMessage,
+    ActionExecuted, AgentExecutionRecord, AgentFilter, AgentMemory, AgentResource, AgentSchedule,
+    AgentStats, AgentStatus, AgentStore, AgentToolConfig, AiAgent, DataCollected, DataSummary,
+    Decision, DecisionProcess, ExecutionJournal, ExecutionMode, ExecutionRecord, ExecutionResult,
+    ExecutionStatus, GeneratedReport, IntentType, KnowledgeFileRef, NotificationSent, ParsedIntent,
+    ReasoningStep, ResourceType, ScheduleType, UserMessage,
 };
 
-pub use business::{
-    Alert, AlertFilter, AlertStatus, AlertStore, EventSeverity, RuleExecution, RuleExecutionResult,
-    RuleExecutionStats, RuleHistoryStore,
-};
-
-pub use device_registry::{
-    CommandDefinition, CommandHistoryRecord, CommandStatus, ConnectionConfig, DeviceConfig,
-    DeviceRegistryStore, DeviceTypeTemplate, MetricDataType, MetricDefinition, ParamMetricValue,
-    ParameterDefinition,
-};
-
-pub use dashboards::{
-    default_templates, ComponentPosition, Dashboard, DashboardLayout, DashboardStore,
-    DashboardTemplate, LayoutBreakpoints, RequiredResources, RowsValue,
-};
+pub use device_registry::DeviceRegistryStore;
 
 // System memory exports (Markdown-based)
-pub use system_memory::{
-    AggregatedMemory, CategoryStats, MarkdownMemoryStore, MemoryCategory,
-    MemoryEntry as SystemMemoryEntry, MemoryFileInfo, MemorySource, DEFAULT_MIN_IMPORTANCE,
-    MAX_MEMORY_ENTRIES,
-};
+pub use system_memory::{CategoryStats, MarkdownMemoryStore, MemoryCategory, MemoryFileInfo};
 
 // Memory configuration exports
 pub use memory_config::MemoryConfig;
