@@ -12,7 +12,6 @@ pub mod eventbus;
 pub mod extension;
 pub mod llm;
 pub mod message;
-pub mod storage;
 pub mod tools;
 
 pub use llm::LlmError;
