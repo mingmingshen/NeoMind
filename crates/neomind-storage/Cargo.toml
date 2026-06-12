@@ -40,13 +40,12 @@ default = ["redb"]
 
 # Storage backends
 redb = []
-memory = []
 
 # Settings migration support
 settings = []
 
 # All features
-all = ["redb", "memory", "settings"]
+all = ["redb", "settings"]
 
 [lints.clippy]
 # Temporarily suppress clippy warnings for neomind-storage

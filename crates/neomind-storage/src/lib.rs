@@ -7,16 +7,8 @@
 //! | Feature | Default | Description |
 //! |---------|---------|-------------|
 //! | `redb` | ✅ | Persistent storage using redb |
-//! | `memory` | ❌ | In-memory storage for testing |
 //! | `hnsw` | ❌ | Vector search with HNSW |
 //! | `all` | ❌ | All features |
-//!
-//! ## Storage Backends
-//!
-//! This crate provides pluggable storage backends through the `StorageBackend` trait:
-//!
-//! - **RedbBackend**: Persistent embedded database (default)
-//! - **MemoryBackend**: In-memory storage for testing
 //!
 //! ## Example
 //!
@@ -25,14 +17,10 @@
 //!     TimeSeriesStore, DataPoint,
 //!     VectorStore, VectorDocument,
 //!     SessionStore, SessionMessage,
-//!     backends::create_backend,
 //! };
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Create a storage backend
-//!     let backend = create_backend("redb", &serde_json::json!({"path": "./data"}))?;
-//!
 //!     // Time series storage
 //!     let ts_store = TimeSeriesStore::memory()?;
 //!     let point = DataPoint::new(1234567890, 23.5);
@@ -56,11 +44,7 @@
 //! }
 //! ```
 
-// Storage backends module
-pub mod backends;
-
 pub mod agents;
-pub mod backend;
 pub mod business;
 pub mod dashboards;
 pub mod device_registry;
@@ -73,7 +57,6 @@ pub mod memory_config;
 pub mod messages;
 pub mod session;
 pub mod settings;
-pub mod singleton;
 pub mod system_memory;
 pub mod timeseries;
 pub mod vector;
@@ -185,18 +168,6 @@ pub use system_memory::{
 
 // Memory configuration exports
 pub use memory_config::MemoryConfig;
-
-// Re-exports from core (backward compatibility)
-pub use neomind_core::storage::{StorageBackend, StorageError, StorageFactory};
-
-// Backends module exports
-pub use backends::{available_backends, create_backend, RedbBackend, RedbBackendConfig};
-
-// Singleton module exports
-pub use singleton::{cache_size, clear_cache, close_db, get_or_open_db, is_cached};
-
-#[cfg(feature = "memory")]
-pub use backends::{MemoryBackend, MemoryBackendConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
