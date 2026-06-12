@@ -588,6 +588,8 @@
     "overview": "概览",
     "conditions": "条件",
     "actions": "动作",
+    "form": "表单",
+    "dsl": "DSL",
     "noCondition": "暂无触发条件",
     "untitled": "未命名规则",
     "forDuration": "持续时间",

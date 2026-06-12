@@ -590,6 +590,8 @@
     "overview": "Overview",
     "conditions": "Conditions",
     "actions": "Actions",
+    "form": "Form",
+    "dsl": "DSL",
     "noCondition": "No trigger condition",
     "untitled": "Untitled Rule",
     "forDuration": "Duration",

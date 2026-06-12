@@ -1458,37 +1458,6 @@ function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensio
   )
 }
 
-interface DslPreviewStripProps {
-  previewDSL: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}
-
-function DslPreviewStrip({ previewDSL, open, onOpenChange }: DslPreviewStripProps) {
-  return (
-    <div className="border-t border-border">
-      <button
-        type="button"
-        onClick={() => onOpenChange(!open)}
-        className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left hover:bg-muted-30 transition-colors"
-      >
-        <span className="flex items-center gap-2">
-          <Code className="h-4 w-4" />
-          {open ? 'Hide DSL' : 'Show DSL'}
-        </span>
-        <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="p-4 bg-muted-30 border-t">
-          <pre className={cn(textNano, "font-mono overflow-x-auto whitespace-pre-wrap break-all")}>
-            {previewDSL || '// No DSL generated'}
-          </pre>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function ConditionTypeButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
   return (
     <button
@@ -1520,8 +1489,7 @@ export function SimpleRuleBuilderSplit({
   const isMobile = useIsMobile()
 
   // Workspace state
-  const [workspaceTab, setWorkspaceTab] = useState<'condition' | 'action'>('condition')
-  const [dslPreviewOpen, setDslPreviewOpen] = useState(false)
+  const [workspaceTab, setWorkspaceTab] = useState<'form' | 'dsl'>('form')
 
   // Form data
   const [name, setName] = useState('')
@@ -1817,63 +1785,57 @@ export function SimpleRuleBuilderSplit({
         <WorkspaceSegmentedControl
           accent="indigo"
           segments={[
-            {
-              value: 'condition',
-              label: tBuilder('conditions') || 'Conditions',
-              count: triggerType === 'device_state' ? (condition ? 1 : 0) : undefined,
-            },
-            {
-              value: 'action',
-              label: tBuilder('actions') || 'Actions',
-              count: actions.length,
-            },
+            { value: 'form', label: tBuilder('form') || 'Form' },
+            { value: 'dsl', label: tBuilder('dsl') || 'DSL' },
           ]}
           value={workspaceTab}
-          onChange={(v) => setWorkspaceTab(v as 'condition' | 'action')}
+          onChange={(v) => setWorkspaceTab(v as 'form' | 'dsl')}
         />
 
-        {workspaceTab === 'condition' && (
-          <ConditionCanvas
-            triggerType={triggerType}
-            cronExpression={cronExpression}
-            onCronExpressionChange={setCronExpression}
-            selectedCronTemplate={selectedCronTemplate}
-            onSelectedCronTemplateChange={setSelectedCronTemplate}
-            condition={condition}
-            onConditionChange={setCondition}
-            onAddCondition={createDefaultCondition}
-            devices={resources.devices}
-            deviceTypes={resources.deviceTypes}
-            extensions={resources.extensions}
-            extensionDataSources={resources.extensionDataSources}
-            forDuration={forDuration}
-            onForDurationChange={setForDuration}
-            forUnit={forUnit}
-            onForUnitChange={setForUnit}
-            errors={formErrors}
-            t={t}
-            tBuilder={tBuilder}
-          />
+        {workspaceTab === 'form' && (
+          <div className="space-y-6">
+            <ConditionCanvas
+              triggerType={triggerType}
+              cronExpression={cronExpression}
+              onCronExpressionChange={setCronExpression}
+              selectedCronTemplate={selectedCronTemplate}
+              onSelectedCronTemplateChange={setSelectedCronTemplate}
+              condition={condition}
+              onConditionChange={setCondition}
+              onAddCondition={createDefaultCondition}
+              devices={resources.devices}
+              deviceTypes={resources.deviceTypes}
+              extensions={resources.extensions}
+              extensionDataSources={resources.extensionDataSources}
+              forDuration={forDuration}
+              onForDurationChange={setForDuration}
+              forUnit={forUnit}
+              onForUnitChange={setForUnit}
+              errors={formErrors}
+              t={t}
+              tBuilder={tBuilder}
+            />
+            <div className="border-t border-border" />
+            <ActionCanvas
+              actions={actions}
+              onActionsChange={setActions}
+              devices={resources.devices}
+              deviceTypes={resources.deviceTypes}
+              extensions={resources.extensions}
+              messageChannels={resources.messageChannels}
+              t={t}
+              tBuilder={tBuilder}
+            />
+          </div>
         )}
 
-        {workspaceTab === 'action' && (
-          <ActionCanvas
-            actions={actions}
-            onActionsChange={setActions}
-            devices={resources.devices}
-            deviceTypes={resources.deviceTypes}
-            extensions={resources.extensions}
-            messageChannels={resources.messageChannels}
-            t={t}
-            tBuilder={tBuilder}
-          />
+        {workspaceTab === 'dsl' && (
+          <div className="rounded-lg border border-border bg-muted-30 p-4">
+            <pre className={cn(textNano, "font-mono overflow-x-auto whitespace-pre-wrap break-all")}>
+              {previewDSL || '// No DSL generated'}
+            </pre>
+          </div>
         )}
-
-        <DslPreviewStrip
-          previewDSL={previewDSL}
-          open={dslPreviewOpen}
-          onOpenChange={setDslPreviewOpen}
-        />
       </div>
     )
   }
@@ -1979,7 +1941,6 @@ export function SimpleRuleBuilderSplit({
             <Button variant="outline" onClick={() => onOpenChange(false)}>{t('automation:ruleBuilder.cancel')}</Button>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setDslPreviewOpen(v => !v)}>{t('automation:ruleBuilder.previewDSL')}</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('automation:ruleBuilder.save')}
