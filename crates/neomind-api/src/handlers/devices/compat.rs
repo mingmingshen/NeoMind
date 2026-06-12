@@ -34,7 +34,7 @@ pub fn device_instance_to_config(instance: &DeviceInstance) -> DeviceConfig {
         adapter_type: "mqtt".to_string(), // Default to mqtt for old instances
         connection_config,
         adapter_id: instance.adapter_id.clone(),
-                last_seen: 0,
+        last_seen: 0,
     }
 }
 

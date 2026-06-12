@@ -42,11 +42,7 @@ impl PushManager {
     pub fn memory() -> Result<Self> {
         let store = Arc::new(DataPushStore::memory()?);
         let renderer = Arc::new(TemplateRenderer::new());
-        let scheduler = Arc::new(PushScheduler::new(
-            store.clone(),
-            None,
-            renderer.clone(),
-        ));
+        let scheduler = Arc::new(PushScheduler::new(store.clone(), None, renderer.clone()));
         Ok(Self {
             store,
             scheduler,
@@ -258,7 +254,12 @@ impl PushManager {
     }
 
     /// List delivery logs for a target.
-    pub fn list_delivery_logs(&self, target_id: &str, limit: usize, offset: usize) -> Result<(Vec<DeliveryLog>, usize)> {
+    pub fn list_delivery_logs(
+        &self,
+        target_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<DeliveryLog>, usize)> {
         self.store.list_delivery_logs(target_id, limit, offset)
     }
 
@@ -275,8 +276,7 @@ impl PushManager {
 
     /// Cleanup old delivery logs.
     pub fn cleanup_logs(&self, older_than_days: u32) -> Result<usize> {
-        let before_ts = chrono::Utc::now().timestamp()
-            - (older_than_days as i64 * 24 * 60 * 60);
+        let before_ts = chrono::Utc::now().timestamp() - (older_than_days as i64 * 24 * 60 * 60);
         self.store.cleanup_logs(before_ts)
     }
 }

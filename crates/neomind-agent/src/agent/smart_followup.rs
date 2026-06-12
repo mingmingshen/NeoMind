@@ -90,9 +90,7 @@ pub struct SmartFollowUpManager {
 impl SmartFollowUpManager {
     /// 创建新的智能追问管理器
     pub fn new() -> Self {
-        Self {
-            max_followups: 2,
-        }
+        Self { max_followups: 2 }
     }
 
     /// 分析用户输入，判断是否需要追问

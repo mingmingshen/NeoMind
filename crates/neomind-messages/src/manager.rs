@@ -272,7 +272,12 @@ impl MessageManager {
         let severity = message.severity;
 
         // Deduplication: skip if same title+source+severity was sent recently
-        let dedup_key = format!("{}|{}|{}", message.title, message.source, message.severity.as_str());
+        let dedup_key = format!(
+            "{}|{}|{}",
+            message.title,
+            message.source,
+            message.severity.as_str()
+        );
         {
             let cache = self.dedup_cache.read().await;
             if let Some(last_sent) = cache.get(&dedup_key) {
@@ -284,7 +289,10 @@ impl MessageManager {
                         elapsed
                     );
                     // Still store the message, just don't send to channels
-                    self.messages.write().await.insert(id.clone(), message.clone());
+                    self.messages
+                        .write()
+                        .await
+                        .insert(id.clone(), message.clone());
                     if let Some(store) = self.storage.read().await.as_ref() {
                         let stored = Self::message_to_stored(&message);
                         let _ = store.insert_async(stored).await;
@@ -594,12 +602,15 @@ impl MessageManager {
         let (count, id_strings): (usize, Vec<String>) = {
             let mut messages = self.messages.write().await;
             let mut count = 0;
-            let id_strings: Vec<String> = ids.iter().map(|id| {
-                if messages.remove(id).is_some() {
-                    count += 1;
-                }
-                id.to_string()
-            }).collect();
+            let id_strings: Vec<String> = ids
+                .iter()
+                .map(|id| {
+                    if messages.remove(id).is_some() {
+                        count += 1;
+                    }
+                    id.to_string()
+                })
+                .collect();
             (count, id_strings)
         };
 
@@ -1026,7 +1037,11 @@ mod tests {
             "Test message".to_string(),
             "test_source".to_string(),
         )
-        .with_tags(vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()]);
+        .with_tags(vec![
+            "tag1".to_string(),
+            "tag2".to_string(),
+            "tag3".to_string(),
+        ]);
 
         let created = manager.create_message(msg).await.unwrap();
         assert_eq!(created.tags.len(), 3);
@@ -1220,7 +1235,10 @@ mod tests {
             .unwrap();
 
         manager
-            .create_message(Message::system("System1".to_string(), "System message".to_string()))
+            .create_message(Message::system(
+                "System1".to_string(),
+                "System message".to_string(),
+            ))
             .await
             .unwrap();
 
@@ -1491,14 +1509,20 @@ mod tests {
         let manager = MessageManager::new();
 
         // Create a message and manually age it
-        let mut msg = Message::system("Old Message".to_string(), "This should be cleaned up".to_string());
+        let mut msg = Message::system(
+            "Old Message".to_string(),
+            "This should be cleaned up".to_string(),
+        );
         msg.timestamp = chrono::Utc::now() - chrono::Duration::days(10);
 
         let old_msg = manager.create_message(msg).await.unwrap();
 
         // Create a recent message
         manager
-            .create_message(Message::system("Recent".to_string(), "This should stay".to_string()))
+            .create_message(Message::system(
+                "Recent".to_string(),
+                "This should stay".to_string(),
+            ))
             .await
             .unwrap();
 
@@ -1627,5 +1651,4 @@ mod tests {
         assert_eq!(msg.source_type, "system");
         assert_eq!(msg.severity, MessageSeverity::Info);
     }
-
 }

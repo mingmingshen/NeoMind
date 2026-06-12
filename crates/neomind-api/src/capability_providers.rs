@@ -65,8 +65,9 @@ impl DeviceCapabilityProvider {
         let mut metrics = serde_json::Map::new();
         if let Some(template) = device_service.get_template(&device.device_type) {
             for metric_def in &template.metrics {
-                if let Ok(Some(latest)) =
-                    telemetry_storage.latest(&format!("device:{}", device_id), &metric_def.name).await
+                if let Ok(Some(latest)) = telemetry_storage
+                    .latest(&format!("device:{}", device_id), &metric_def.name)
+                    .await
                 {
                     metrics.insert(
                         metric_def.name.clone(),
@@ -246,9 +247,7 @@ impl DeviceCapabilityProvider {
         let device_type = params
             .get("device_type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                CapabilityError::InvalidParameters("Missing device_type".to_string())
-            })?;
+            .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_type".to_string()))?;
 
         let name = params
             .get("name")
@@ -274,21 +273,13 @@ impl DeviceCapabilityProvider {
         let metrics = params
             .get("metrics")
             .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(parse_metric_from_json)
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(parse_metric_from_json).collect())
             .unwrap_or_default();
 
         let commands = params
             .get("commands")
             .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(parse_command_from_json)
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(parse_command_from_json).collect())
             .unwrap_or_default();
 
         let device_service: Arc<DeviceService> = self
@@ -334,9 +325,7 @@ impl DeviceCapabilityProvider {
         let device_type = params
             .get("device_type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                CapabilityError::InvalidParameters("Missing device_type".to_string())
-            })?;
+            .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_type".to_string()))?;
 
         let connection_config: neomind_devices::ConnectionConfig = params
             .get("connection_config")
@@ -452,8 +441,9 @@ impl ExtensionCapabilityProvider for DeviceCapabilityProvider {
 /// Provider for event-related capabilities
 pub struct EventCapabilityProvider {
     event_bus: Arc<EventBus>,
-    subscriptions:
-        std::sync::Arc<parking_lot::RwLock<std::collections::HashMap<String, EventSubscriptionInfo>>>,
+    subscriptions: std::sync::Arc<
+        parking_lot::RwLock<std::collections::HashMap<String, EventSubscriptionInfo>>,
+    >,
     /// Event dispatcher for registering dynamic subscriptions
     event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
 }
@@ -602,11 +592,7 @@ impl EventCapabilityProvider {
     }
 
     pub fn get_subscriptions(&self) -> Vec<EventSubscriptionInfo> {
-        self.subscriptions
-            .read()
-            .values()
-            .cloned()
-            .collect()
+        self.subscriptions.read().values().cloned().collect()
     }
 
     pub fn remove_extension_subscriptions(&self, extension_id: &str) {
@@ -1088,8 +1074,9 @@ impl StorageCapabilityProvider {
                     let mut metrics = serde_json::Map::new();
                     if let Some(template) = device_service.get_template(&device.device_type) {
                         for metric_def in &template.metrics {
-                            if let Ok(Some(latest)) =
-                                telemetry_storage.latest(&format!("device:{}", device_id), &metric_def.name).await
+                            if let Ok(Some(latest)) = telemetry_storage
+                                .latest(&format!("device:{}", device_id), &metric_def.name)
+                                .await
                             {
                                 metrics.insert(
                                     metric_def.name.clone(),

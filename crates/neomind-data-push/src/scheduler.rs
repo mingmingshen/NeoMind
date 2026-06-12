@@ -66,18 +66,14 @@ impl PushScheduler {
             PushSchedule::EventDriven { event_types } => {
                 ScheduleInfo::EventDriven(event_types.clone())
             }
-            PushSchedule::Interval { interval_secs } => {
-                ScheduleInfo::Interval(*interval_secs)
-            }
+            PushSchedule::Interval { interval_secs } => ScheduleInfo::Interval(*interval_secs),
         };
 
         let handle = match schedule_info {
             ScheduleInfo::EventDriven(event_types) => {
                 self.spawn_event_driven(target, event_types, rx)
             }
-            ScheduleInfo::Interval(interval_secs) => {
-                self.spawn_interval(target, interval_secs, rx)
-            }
+            ScheduleInfo::Interval(interval_secs) => self.spawn_interval(target, interval_secs, rx),
         };
 
         let mut handles = self.handles.write().await;
@@ -138,7 +134,8 @@ impl PushScheduler {
 
             let batch_enabled = target.batch_config.is_enabled();
             let batch_size = target.batch_config.batch_size;
-            let batch_interval = std::time::Duration::from_millis(target.batch_config.batch_interval_ms);
+            let batch_interval =
+                std::time::Duration::from_millis(target.batch_config.batch_interval_ms);
 
             tracing::info!(
                 target_id = %target.id,
@@ -318,7 +315,9 @@ fn metric_to_json(value: &neomind_core::MetricValue) -> serde_json::Value {
 }
 
 /// Extract data from a NeoMindEvent for push delivery.
-fn extract_event_data(event: &neomind_core::NeoMindEvent) -> Option<(String, serde_json::Value, i64)> {
+fn extract_event_data(
+    event: &neomind_core::NeoMindEvent,
+) -> Option<(String, serde_json::Value, i64)> {
     match event {
         neomind_core::NeoMindEvent::DeviceMetric {
             device_id,
@@ -399,8 +398,7 @@ async fn deliver_with_retry(
                 if attempt < max_retries {
                     log.status = DeliveryStatus::Retrying;
                     let _ = store.save_delivery_log(&log);
-                    let effective_backoff =
-                        backoff.min(target.retry_config.max_backoff_secs);
+                    let effective_backoff = backoff.min(target.retry_config.max_backoff_secs);
                     tracing::warn!(
                         target_id = %target.id,
                         attempt,

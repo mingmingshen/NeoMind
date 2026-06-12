@@ -118,13 +118,11 @@ pub struct IsolatedExtensionManager {
     /// Optional callback invoked after crash recovery restart, to apply saved config etc.
     /// Parameters: (extension_id, extension_path)
     #[allow(clippy::type_complexity)]
-    on_crash_recovery_restart:
-        std::sync::RwLock<Option<Arc<dyn Fn(&str, &Path) + Send + Sync>>>,
+    on_crash_recovery_restart: std::sync::RwLock<Option<Arc<dyn Fn(&str, &Path) + Send + Sync>>>,
     /// Optional callback invoked when crash recovery restart fails.
     /// Parameters: (extension_id, error_message)
     #[allow(clippy::type_complexity)]
-    on_crash_recovery_failed:
-        std::sync::RwLock<Option<Arc<dyn Fn(&str, &str) + Send + Sync>>>,
+    on_crash_recovery_failed: std::sync::RwLock<Option<Arc<dyn Fn(&str, &str) + Send + Sync>>>,
     /// Per-extension loading locks to prevent race conditions during concurrent loads
     /// Maps extension ID to a mutex that must be held during loading
     loading_locks: AsyncRwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -168,10 +166,7 @@ impl IsolatedExtensionManager {
     /// Set a callback to be invoked after crash recovery restart.
     /// The callback receives (extension_id, extension_path) and can apply saved config, etc.
     #[allow(clippy::type_complexity)]
-    pub fn set_on_crash_recovery_restart(
-        &self,
-        callback: Arc<dyn Fn(&str, &Path) + Send + Sync>,
-    ) {
+    pub fn set_on_crash_recovery_restart(&self, callback: Arc<dyn Fn(&str, &Path) + Send + Sync>) {
         if let Ok(mut guard) = self.on_crash_recovery_restart.write() {
             *guard = Some(callback);
         }
@@ -180,10 +175,7 @@ impl IsolatedExtensionManager {
     /// Set a callback to be invoked when crash recovery restart fails.
     /// The callback receives (extension_id, error_message).
     #[allow(clippy::type_complexity)]
-    pub fn set_on_crash_recovery_failed(
-        &self,
-        callback: Arc<dyn Fn(&str, &str) + Send + Sync>,
-    ) {
+    pub fn set_on_crash_recovery_failed(&self, callback: Arc<dyn Fn(&str, &str) + Send + Sync>) {
         if let Ok(mut guard) = self.on_crash_recovery_failed.write() {
             *guard = Some(callback);
         }
@@ -324,7 +316,10 @@ impl IsolatedExtensionManager {
                                 // Notify that this extension is dead and won't be restarted
                                 if let Ok(guard) = self.on_crash_recovery_failed.read() {
                                     if let Some(ref callback) = *guard {
-                                        callback(&ext_id, "Crash recovery skipped: restart policy limit reached");
+                                        callback(
+                                            &ext_id,
+                                            "Crash recovery skipped: restart policy limit reached",
+                                        );
                                     }
                                 }
                                 continue;
@@ -417,7 +412,10 @@ impl IsolatedExtensionManager {
                                 // Notify that this extension is dead with no path for recovery
                                 if let Ok(guard) = self.on_crash_recovery_failed.read() {
                                     if let Some(ref callback) = *guard {
-                                        callback(&ext_id, "Cannot restart: extension path not found in cache");
+                                        callback(
+                                            &ext_id,
+                                            "Cannot restart: extension path not found in cache",
+                                        );
                                     }
                                 }
                             }
@@ -737,25 +735,26 @@ impl IsolatedExtensionManager {
     ///
     /// Uses the same per-extension loading_lock as `load()` to avoid racing
     /// with the death monitoring task.
-    async fn try_lazy_restart(
-        &self,
-        id: &str,
-    ) -> Option<std::sync::Arc<IsolatedExtension>> {
+    async fn try_lazy_restart(&self, id: &str) -> Option<std::sync::Arc<IsolatedExtension>> {
         // Check restart policy (cooldown + max attempts)
         let should_restart = {
             let info_cache = self.info_cache.read();
             let config = &self.config.extension_config;
-            info_cache.get(id).map(|info| {
-                let can_restart = config.restart_on_crash;
-                let within_limit = info.runtime.restart_count < config.max_restart_attempts as u64;
-                let past_cooldown = if let Some(last_restart) = info.runtime.last_restart_at {
-                    let now = chrono::Utc::now().timestamp();
-                    (now - last_restart) >= config.restart_cooldown_secs as i64
-                } else {
-                    true
-                };
-                can_restart && within_limit && past_cooldown
-            }).unwrap_or(false)
+            info_cache
+                .get(id)
+                .map(|info| {
+                    let can_restart = config.restart_on_crash;
+                    let within_limit =
+                        info.runtime.restart_count < config.max_restart_attempts as u64;
+                    let past_cooldown = if let Some(last_restart) = info.runtime.last_restart_at {
+                        let now = chrono::Utc::now().timestamp();
+                        (now - last_restart) >= config.restart_cooldown_secs as i64
+                    } else {
+                        true
+                    };
+                    can_restart && within_limit && past_cooldown
+                })
+                .unwrap_or(false)
         };
 
         if !should_restart {
@@ -896,7 +895,10 @@ impl IsolatedExtensionManager {
     }
 
     /// Get log entries from an isolated extension
-    pub async fn get_logs(&self, id: &str) -> IsolatedResult<Vec<super::process::ExtensionLogEntry>> {
+    pub async fn get_logs(
+        &self,
+        id: &str,
+    ) -> IsolatedResult<Vec<super::process::ExtensionLogEntry>> {
         let extensions = self.extensions.read().await;
 
         let isolated = extensions.get(id).ok_or_else(|| {

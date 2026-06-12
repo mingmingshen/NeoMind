@@ -2,8 +2,8 @@
 //! Settings are now managed via the plugin system.
 
 pub mod broker_config;
-pub mod cert_gen;
 pub mod brokers;
+pub mod cert_gen;
 pub mod models;
 pub mod status;
 pub mod subscriptions;

@@ -15,13 +15,14 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new() -> Self {
-        let base_url = std::env::var("NEOMIND_API_BASE")
-            .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        let base_url =
+            std::env::var("NEOMIND_API_BASE").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
         Self::with_base_url(&base_url)
     }
 
     pub fn with_base_url(base_url: &str) -> Self {
-        let api_key = std::env::var("NEOMIND_API_KEY").ok()
+        let api_key = std::env::var("NEOMIND_API_KEY")
+            .ok()
             .or_else(crate::auto_auth::read_default_api_key);
         let client = Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
@@ -49,7 +50,8 @@ impl ApiClient {
 
     /// Refresh the API key from storage (re-read from env or redb).
     fn refresh_api_key(&self) {
-        let new_key = std::env::var("NEOMIND_API_KEY").ok()
+        let new_key = std::env::var("NEOMIND_API_KEY")
+            .ok()
             .or_else(crate::auto_auth::read_default_api_key);
         *self.api_key.write().unwrap() = new_key;
     }
@@ -75,7 +77,10 @@ impl ApiClient {
     pub async fn post(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
         for attempt in 0..=MAX_RETRIES {
             let url = format!("{}{}", self.base_url, path);
-            let resp = self.add_auth(self.client.post(&url).json(body)).send().await?;
+            let resp = self
+                .add_auth(self.client.post(&url).json(body))
+                .send()
+                .await?;
             let status = resp.status();
             if status.as_u16() == 401 && attempt < MAX_RETRIES {
                 self.refresh_api_key();
@@ -83,7 +88,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }
@@ -101,7 +110,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }
@@ -111,7 +124,10 @@ impl ApiClient {
     pub async fn put(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
         for attempt in 0..=MAX_RETRIES {
             let url = format!("{}{}", self.base_url, path);
-            let resp = self.add_auth(self.client.put(&url).json(body)).send().await?;
+            let resp = self
+                .add_auth(self.client.put(&url).json(body))
+                .send()
+                .await?;
             let status = resp.status();
             if status.as_u16() == 401 && attempt < MAX_RETRIES {
                 self.refresh_api_key();
@@ -119,7 +135,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }
@@ -137,7 +157,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }
@@ -151,7 +175,10 @@ impl ApiClient {
     ) -> Result<serde_json::Value> {
         for attempt in 0..=MAX_RETRIES {
             let url = format!("{}{}", self.base_url, path);
-            let resp = self.add_auth(self.client.delete(&url).json(body)).send().await?;
+            let resp = self
+                .add_auth(self.client.delete(&url).json(body))
+                .send()
+                .await?;
             let status = resp.status();
             if status.as_u16() == 401 && attempt < MAX_RETRIES {
                 self.refresh_api_key();
@@ -159,7 +186,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }
@@ -173,9 +204,9 @@ impl ApiClient {
         file_path: &str,
         field_name: &str,
     ) -> Result<serde_json::Value> {
+        use reqwest::multipart;
         use std::fs::File;
         use std::io::Read;
-        use reqwest::multipart;
 
         let url = format!("{}{}", self.base_url, path);
         let mut file = File::open(file_path)?;
@@ -189,11 +220,14 @@ impl ApiClient {
 
         for attempt in 0..=MAX_RETRIES {
             let form = {
-                let part = multipart::Part::bytes(file_content.clone())
-                    .file_name(file_name.to_string());
+                let part =
+                    multipart::Part::bytes(file_content.clone()).file_name(file_name.to_string());
                 multipart::Form::new().part(field_name.to_string(), part)
             };
-            let resp = self.add_auth(self.client.post(&url).multipart(form)).send().await?;
+            let resp = self
+                .add_auth(self.client.post(&url).multipart(form))
+                .send()
+                .await?;
             let status = resp.status();
             if status.as_u16() == 401 && attempt < MAX_RETRIES {
                 self.refresh_api_key();
@@ -201,7 +235,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }
@@ -240,7 +278,11 @@ impl ApiClient {
             }
             let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
             if !status.is_success() {
-                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+                anyhow::bail!(
+                    "API error ({}): {}",
+                    status,
+                    extract_error_message(&resp_body)
+                );
             }
             return Ok(resp_body);
         }

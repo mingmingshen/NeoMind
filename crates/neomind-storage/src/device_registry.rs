@@ -2,9 +2,9 @@
 //!
 //! Provides persistent storage for device type templates and device configurations.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,11 @@ pub struct DeviceTypeTemplate {
     pub uplink_samples: Vec<serde_json::Value>,
     #[serde(default)]
     pub commands: Vec<CommandDefinition>,
+    /// Builtin template version (e.g. "1.0.0"). Only set for official templates.
+    /// When present, the seeder will update the template if a newer version is bundled.
+    /// User-created templates have this as None and are never overwritten by the seeder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin_version: Option<String>,
 }
 
 /// Metric definition (matches neomind_devices::mdl_format::MetricDefinition)
@@ -73,15 +78,22 @@ pub struct MetricDefinition {
 }
 
 /// Metric data type.
+/// Accepts both lowercase ("integer") and PascalCase ("Integer") forms.
+/// "Array" is mapped to String (stored as JSON string).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum MetricDataType {
+    #[serde(alias = "Float")]
     Float,
+    #[serde(alias = "Integer")]
     Integer,
+    #[serde(alias = "Boolean")]
     Boolean,
+    #[serde(alias = "String", alias = "Array")]
     #[default]
     String,
+    #[serde(alias = "Binary")]
     Binary,
     Enum {
         options: Vec<String>,
@@ -119,8 +131,8 @@ pub struct ParameterDefinition {
     pub display_name: String,
     #[serde(default)]
     pub data_type: MetricDataType,
-    /// Default value (serialized as JSON)
-    #[serde(default)]
+    /// Default value — accepts both tagged format `{"boolean": true}` and bare values `true`, `0`.
+    #[serde(default, deserialize_with = "deserialize_default_value")]
     pub default_value: Option<ParamMetricValue>,
     #[serde(default)]
     pub min: Option<f64>,
@@ -205,6 +217,39 @@ pub enum ParamMetricValue {
     Null,
 }
 
+/// Custom deserializer for `default_value` that accepts both:
+/// - Externally-tagged: `{"boolean": true}` (standard serde format)
+/// - Bare JSON values: `true`, `0`, `"hello"` (official DeviceTypes format)
+fn deserialize_default_value<'de, D>(deserializer: D) -> Result<Option<ParamMetricValue>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(json_val) => {
+            // Try externally-tagged format first: {"boolean": true}
+            if let Ok(v) = serde_json::from_value::<ParamMetricValue>(json_val.clone()) {
+                return Ok(Some(v));
+            }
+            // Fallback: interpret as bare JSON value
+            Ok(match json_val {
+                serde_json::Value::Bool(b) => Some(ParamMetricValue::Boolean(b)),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        Some(ParamMetricValue::Integer(i))
+                    } else {
+                        n.as_f64().map(ParamMetricValue::Float)
+                    }
+                }
+                serde_json::Value::String(s) => Some(ParamMetricValue::String(s)),
+                serde_json::Value::Null => Some(ParamMetricValue::Null),
+                _ => None,
+            })
+        }
+    }
+}
+
 /// Device configuration (simplified version matching neomind_devices::registry::DeviceConfig)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceConfig {
@@ -271,6 +316,26 @@ pub enum CommandStatus {
 pub struct DeviceRegistryStore {
     db: Arc<Database>,
     path: String,
+}
+
+/// Compare semver-style version strings (e.g. "1.2.3" > "1.2.0").
+/// Returns true if `new_ver` is strictly newer than `old_ver`.
+fn is_newer_version(new_ver: &str, old_ver: &str) -> bool {
+    let parse = |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse().ok()).collect() };
+    let new_parts = parse(new_ver);
+    let old_parts = parse(old_ver);
+    let len = new_parts.len().max(old_parts.len());
+    for i in 0..len {
+        let n = new_parts.get(i).copied().unwrap_or(0);
+        let o = old_parts.get(i).copied().unwrap_or(0);
+        if n > o {
+            return true;
+        }
+        if n < o {
+            return false;
+        }
+    }
+    false
 }
 
 /// Global device registry store singleton (thread-safe).
@@ -777,6 +842,61 @@ impl DeviceRegistryStore {
         Ok(commands)
     }
 
+    // ========== Builtin Templates ==========
+
+    /// Seed built-in device type templates (NE101, NE301, etc.).
+    ///
+    /// Behavior:
+    /// - Template doesn't exist → **insert** (fresh install)
+    /// - Template exists AND has a `builtin_version` → **update** if bundled version is newer
+    /// - Template exists but has NO `builtin_version` → **skip** (user-created or user-modified)
+    ///
+    /// This allows official template updates to propagate while preserving user customizations.
+    pub fn seed_builtin_templates(&self) -> Result<usize, Error> {
+        let templates: &[(&str, &str)] = &[
+            (
+                "ne101_camera",
+                include_str!("builtin_types/ne101_camera.json"),
+            ),
+            (
+                "ne301_camera",
+                include_str!("builtin_types/ne301_camera.json"),
+            ),
+        ];
+
+        let mut changed = 0;
+        for (device_type, json) in templates {
+            let mut bundled: DeviceTypeTemplate = serde_json::from_str(json).map_err(|e| {
+                Error::Serialization(format!("Invalid builtin template {}: {}", device_type, e))
+            })?;
+            // Builtin template version. Bump when pulling updated templates from
+            // camthink-ai/NeoMind-DeviceTypes to propagate updates to existing installs.
+            bundled.builtin_version = Some("1.0.0".to_string());
+
+            match self.load_template(device_type)? {
+                // Doesn't exist → insert
+                None => {
+                    self.save_template(&bundled)?;
+                    changed += 1;
+                }
+                // Exists → check if it's a builtin that needs updating
+                Some(existing) => {
+                    // Only update if the stored template was seeded by the builtin system
+                    if let Some(ref stored_ver) = existing.builtin_version {
+                        if let Some(ref bundled_ver) = bundled.builtin_version {
+                            if is_newer_version(bundled_ver, stored_ver) {
+                                self.save_template(&bundled)?;
+                                changed += 1;
+                            }
+                        }
+                    }
+                    // else: user-created template (no builtin_version) → skip
+                }
+            }
+        }
+        Ok(changed)
+    }
+
     // ========== Bulk Operations ==========
 
     /// Load all templates into memory.
@@ -896,6 +1016,7 @@ mod tests {
             }],
             uplink_samples: vec![],
             commands: vec![],
+            builtin_version: None,
         };
 
         store.save_template(&template).unwrap();
@@ -1055,5 +1176,66 @@ mod tests {
         let loaded_templates = store.load_all_templates().unwrap();
         assert_eq!(loaded_templates.len(), 1);
         assert!(loaded_templates.contains_key("dht22"));
+    }
+
+    #[test]
+    fn test_seed_builtin_templates() {
+        let store = create_temp_store();
+
+        // First seed should insert NE101 and NE301
+        let seeded = store.seed_builtin_templates().unwrap();
+        assert_eq!(seeded, 2);
+
+        // Templates should exist
+        assert!(store.template_exists("ne101_camera").unwrap());
+        assert!(store.template_exists("ne301_camera").unwrap());
+
+        // Verify NE101 content
+        let ne101 = store.load_template("ne101_camera").unwrap().unwrap();
+        assert_eq!(ne101.device_type, "ne101_camera");
+        assert!(ne101.name.contains("NE101") || ne101.name.contains("Sensing"));
+        assert!(!ne101.metrics.is_empty());
+        // Builtin templates should have version set
+        assert_eq!(ne101.builtin_version.as_deref(), Some("1.0.0"));
+
+        // Verify NE301 content
+        let ne301 = store.load_template("ne301_camera").unwrap().unwrap();
+        assert_eq!(ne301.device_type, "ne301_camera");
+        assert!(ne301.name.contains("NE301") || ne301.name.contains("Edge AI"));
+        assert!(!ne301.metrics.is_empty());
+        assert!(!ne301.commands.is_empty()); // NE301 has capture/sleep commands
+        assert_eq!(ne301.builtin_version.as_deref(), Some("1.0.0"));
+
+        // Second seed should not overwrite (same version = idempotent)
+        let seeded_again = store.seed_builtin_templates().unwrap();
+        assert_eq!(seeded_again, 0);
+    }
+
+    #[test]
+    fn test_seed_builtin_preserves_user_templates() {
+        let store = create_temp_store();
+
+        // Pre-insert a user-created template with the same device_type as a builtin
+        let user_template = DeviceTypeTemplate {
+            device_type: "ne101_camera".to_string(),
+            name: "My Custom Camera".to_string(),
+            description: "User-modified".to_string(),
+            categories: vec![],
+            mode: DeviceTypeMode::Full,
+            metrics: vec![],
+            uplink_samples: vec![],
+            commands: vec![],
+            builtin_version: None, // No version = user-created
+        };
+        store.save_template(&user_template).unwrap();
+
+        // Seed should NOT overwrite the user template
+        let seeded = store.seed_builtin_templates().unwrap();
+        assert_eq!(seeded, 1); // Only NE301 was inserted, NE101 was skipped
+
+        // Verify user template is preserved
+        let loaded = store.load_template("ne101_camera").unwrap().unwrap();
+        assert_eq!(loaded.name, "My Custom Camera");
+        assert!(loaded.builtin_version.is_none());
     }
 }

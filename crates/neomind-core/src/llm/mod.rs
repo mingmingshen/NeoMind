@@ -10,8 +10,8 @@ pub mod models;
 pub mod registry;
 
 pub use backend::{
-    BackendCapabilities, BackendId, FinishReason, GenerationParams, LlmError,
-    LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
+    BackendCapabilities, BackendId, FinishReason, GenerationParams, LlmError, LlmInput, LlmOutput,
+    LlmRuntime, StreamChunk, TokenUsage,
 };
 pub use capability::{
     detect_vision_capability, get_max_context, model_supports, CapabilityDetectionResult,
@@ -22,4 +22,3 @@ pub use compaction::{
 };
 pub use modality::{ImageContent, ImageInput, ModalityContent};
 pub use models::*;
-

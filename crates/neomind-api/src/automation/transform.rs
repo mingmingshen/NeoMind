@@ -41,8 +41,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // Import ExtensionRegistry for extension invoke support
-use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::event::MetricValue;
+use neomind_core::extension::registry::ExtensionRegistry;
 
 /// JavaScript-based transform executor using Boa engine
 ///
@@ -130,10 +130,7 @@ impl JsTransformExecutor {
                     // Single-key object: unwrap it
                     // e.g. {"value": 42} → input = 42 (auto-unwrapped)
                     // Multi-key objects like {"temperature": 25, "humidity": 60} stay as-is
-                    format!(
-                        "var __obj = {}; var input = __obj['{}'];",
-                        input_json, key
-                    )
+                    format!("var __obj = {}; var input = __obj['{}'];", input_json, key)
                 } else {
                     format!("var input = {};", input_json)
                 }
@@ -244,7 +241,10 @@ impl JsTransformExecutor {
 
                         // Try to find extension_id (single or double quoted)
                         if after_open[parse_pos..].find(['\'', '"']).is_some() {
-                            let quote_char = after_open.chars().nth(parse_pos).expect("parse_pos within bounds verified by find");
+                            let quote_char = after_open
+                                .chars()
+                                .nth(parse_pos)
+                                .expect("parse_pos within bounds verified by find");
                             let ext_id_start = parse_pos + 1;
                             parse_pos = ext_id_start;
 
@@ -274,7 +274,10 @@ impl JsTransformExecutor {
 
                                 // Find command quote
                                 if after_open[parse_pos..].find(['\'', '"']).is_some() {
-                                    let cmd_quote_char = after_open.chars().nth(parse_pos).expect("parse_pos within bounds verified by find");
+                                    let cmd_quote_char = after_open
+                                        .chars()
+                                        .nth(parse_pos)
+                                        .expect("parse_pos within bounds verified by find");
                                     let cmd_start = parse_pos + 1;
                                     parse_pos = cmd_start;
 
@@ -338,15 +341,19 @@ impl JsTransformExecutor {
                                                 }
                                                 // Fallback: evaluate as JavaScript expression
                                                 // (input_raw, __imageData, etc. are already in context)
-                                                let eval_expr = format!(
-                                                    "JSON.stringify({{{}}})",
-                                                    params_str
-                                                );
-                                                match context.eval(Source::from_bytes(eval_expr.as_bytes())) {
+                                                let eval_expr =
+                                                    format!("JSON.stringify({{{}}})", params_str);
+                                                match context
+                                                    .eval(Source::from_bytes(eval_expr.as_bytes()))
+                                                {
                                                     Ok(val) => {
                                                         if let Some(s) = val.as_string() {
                                                             let std_str = s.to_std_string_escaped();
-                                                            if let Ok(v) = serde_json::from_str::<Value>(&std_str) {
+                                                            if let Ok(v) =
+                                                                serde_json::from_str::<Value>(
+                                                                    &std_str,
+                                                                )
+                                                            {
                                                                 break v;
                                                             }
                                                         }
@@ -360,7 +367,8 @@ impl JsTransformExecutor {
                                                 || next_char == Some('"')
                                             {
                                                 // String parameter - could be nested JSON
-                                                let quote = next_char.expect("quote position verified by find");
+                                                let quote = next_char
+                                                    .expect("quote position verified by find");
                                                 parse_pos += 1;
                                                 let str_start = parse_pos;
 
@@ -638,9 +646,13 @@ impl JsTransformExecutor {
                         // Truncate for logging
                         match &metric_value {
                             MetricValue::Json(j) => {
-                                serde_json::to_string(j).unwrap_or_default().chars().take(100).collect::<String>()
+                                serde_json::to_string(j)
+                                    .unwrap_or_default()
+                                    .chars()
+                                    .take(100)
+                                    .collect::<String>()
                             }
-                            _ => format!("{:?}", metric_value)
+                            _ => format!("{:?}", metric_value),
                         },
                         device_id
                     );
@@ -673,9 +685,7 @@ impl JsTransformExecutor {
                         }
                         Value::String(s) => MetricValue::String(s.clone()),
                         Value::Bool(b) => MetricValue::Boolean(*b),
-                        Value::Array(_) | Value::Object(_) => {
-                            MetricValue::Json(val.clone())
-                        }
+                        Value::Array(_) | Value::Object(_) => MetricValue::Json(val.clone()),
                         Value::Null => MetricValue::Integer(0),
                     };
 
@@ -1081,7 +1091,9 @@ impl TransformEngine {
         let started_at = Utc::now().timestamp_millis();
 
         // Execute and capture result for execution recording
-        let result = self.execute_transform_inner(transform, device_id, raw_data).await;
+        let result = self
+            .execute_transform_inner(transform, device_id, raw_data)
+            .await;
 
         // Record execution history
         if let Some(ref store) = self.automation_store {
@@ -1097,11 +1109,7 @@ impl TransformEngine {
                     };
                     (ExecutionStatus::Completed, None, output)
                 }
-                Err(e) => (
-                    ExecutionStatus::Failed,
-                    Some(e.to_string()),
-                    None,
-                ),
+                Err(e) => (ExecutionStatus::Failed, Some(e.to_string()), None),
             };
 
             let record = ExecutionRecord {
@@ -1357,9 +1365,9 @@ impl TransformEngine {
                                             .map(|m| {
                                                 (
                                                     m.clone(),
-                                                    MetricValue::Float(
-                                                        Self::extract_metric_value(&result, m),
-                                                    ),
+                                                    MetricValue::Float(Self::extract_metric_value(
+                                                        &result, m,
+                                                    )),
                                                 )
                                             })
                                             .collect()
@@ -1373,9 +1381,9 @@ impl TransformEngine {
                                         .map(|m| {
                                             (
                                                 m.clone(),
-                                                MetricValue::Float(
-                                                    Self::extract_metric_value(&result, m),
-                                                ),
+                                                MetricValue::Float(Self::extract_metric_value(
+                                                    &result, m,
+                                                )),
                                             )
                                         })
                                         .collect()
@@ -2678,16 +2686,21 @@ async fn resolve_input_mapping(
                                 if s.starts_with("data:image/") || is_likely_base64(s) {
                                     // Decode base64 to get image dimensions if possible
                                     use base64::Engine;
-                                    let b64_data = if let Some(rest) = s.strip_prefix("data:image/") {
+                                    let b64_data = if let Some(rest) = s.strip_prefix("data:image/")
+                                    {
                                         // data:image/png;base64,xxxxx
                                         rest.find(';')
                                             .and_then(|pos| rest.get(pos + 1..))
-                                            .and_then(|after_semi| after_semi.strip_prefix("base64,"))
+                                            .and_then(|after_semi| {
+                                                after_semi.strip_prefix("base64,")
+                                            })
                                             .unwrap_or(s)
                                     } else {
                                         s
                                     };
-                                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64_data) {
+                                    if let Ok(bytes) =
+                                        base64::engine::general_purpose::STANDARD.decode(b64_data)
+                                    {
                                         if let Ok(reader) =
                                             image::ImageReader::new(std::io::Cursor::new(&bytes))
                                                 .with_guessed_format()
@@ -2709,9 +2722,10 @@ async fn resolve_input_mapping(
                                                 resolved.insert(key.clone(), Value::String(b64));
 
                                                 // Try to get image dimensions for normalization
-                                                if let Ok(reader) =
-                                                    image::ImageReader::new(std::io::Cursor::new(&bytes))
-                                                        .with_guessed_format()
+                                                if let Ok(reader) = image::ImageReader::new(
+                                                    std::io::Cursor::new(&bytes),
+                                                )
+                                                .with_guessed_format()
                                                 {
                                                     if let Ok(dims) = reader.into_dimensions() {
                                                         image_dimensions.insert(key.clone(), dims);
@@ -2721,7 +2735,8 @@ async fn resolve_input_mapping(
                                             Err(e) => {
                                                 tracing::warn!(
                                                     "Failed to read response bytes for {}: {}",
-                                                    key, e
+                                                    key,
+                                                    e
                                                 );
                                                 resolved.insert(key.clone(), extracted);
                                             }
@@ -2729,7 +2744,8 @@ async fn resolve_input_mapping(
                                         Err(e) => {
                                             tracing::warn!(
                                                 "Failed to fetch URL for {}: {}",
-                                                key, e
+                                                key,
+                                                e
                                             );
                                             resolved.insert(key.clone(), extracted);
                                         }
@@ -2768,7 +2784,9 @@ fn is_likely_base64(s: &str) -> bool {
         return false;
     }
     // Check that all chars are valid base64
-    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r')
+    s.chars().all(|c| {
+        c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r'
+    })
 }
 
 /// Extract a value from a JSON object using a dot-separated path.
@@ -2976,9 +2994,9 @@ fn filter_boxes_by_roi(boxes_value: &Value, roi: Option<&Value>) -> Value {
     };
 
     match boxes_value {
-        Value::Array(arr) => Value::Array(
-            arr.iter().filter(|b| is_inside_roi(b)).cloned().collect(),
-        ),
+        Value::Array(arr) => {
+            Value::Array(arr.iter().filter(|b| is_inside_roi(b)).cloned().collect())
+        }
         Value::Object(_) => {
             if is_inside_roi(boxes_value) {
                 boxes_value.clone()

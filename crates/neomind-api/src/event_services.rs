@@ -303,11 +303,23 @@ impl TransformEventService {
                                                 transformed_metric.storage_device_id();
                                             // Convert neomind_core::MetricValue → neomind_devices::MetricValue for storage
                                             let storage_value = match &transformed_metric.value {
-                                                MetricValue::Float(f) => neomind_devices::MetricValue::Float(*f),
-                                                MetricValue::Integer(i) => neomind_devices::MetricValue::Integer(*i),
-                                                MetricValue::Boolean(b) => neomind_devices::MetricValue::Boolean(*b),
-                                                MetricValue::String(s) => neomind_devices::MetricValue::String(s.clone()),
-                                                MetricValue::Json(v) => neomind_devices::MetricValue::String(v.to_string()),
+                                                MetricValue::Float(f) => {
+                                                    neomind_devices::MetricValue::Float(*f)
+                                                }
+                                                MetricValue::Integer(i) => {
+                                                    neomind_devices::MetricValue::Integer(*i)
+                                                }
+                                                MetricValue::Boolean(b) => {
+                                                    neomind_devices::MetricValue::Boolean(*b)
+                                                }
+                                                MetricValue::String(s) => {
+                                                    neomind_devices::MetricValue::String(s.clone())
+                                                }
+                                                MetricValue::Json(v) => {
+                                                    neomind_devices::MetricValue::String(
+                                                        v.to_string(),
+                                                    )
+                                                }
                                             };
                                             let data_point = neomind_devices::DataPoint {
                                                 timestamp: transformed_metric.timestamp,

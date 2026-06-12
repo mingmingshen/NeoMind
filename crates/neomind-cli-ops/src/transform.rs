@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List all transforms with compact summary.
 ///
@@ -37,10 +37,16 @@ pub async fn list_transforms(client: &ApiClient) -> Result<CliResponse> {
 
 /// Helper: extract an array from API response, trying common nesting patterns.
 fn extract_list_array(data: &serde_json::Value, key: &str) -> Option<Vec<serde_json::Value>> {
-    data.as_array().cloned()
+    data.as_array()
+        .cloned()
         .or_else(|| data.get(key).and_then(|v| v.as_array()).cloned())
         .or_else(|| data.get("data").and_then(|d| d.as_array()).cloned())
-        .or_else(|| data.get("data").and_then(|d| d.get(key)).and_then(|v| v.as_array()).cloned())
+        .or_else(|| {
+            data.get("data")
+                .and_then(|d| d.get(key))
+                .and_then(|v| v.as_array())
+                .cloned()
+        })
 }
 
 /// Get transform by ID
@@ -98,7 +104,11 @@ pub async fn create_transform(
         entity_name: Some(name.to_string()),
         undo_command: format!("neomind transform delete {}", transform_id),
     };
-    Ok(CliResponse::success_with_meta(data, "Transform created", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "Transform created",
+        meta,
+    ))
 }
 
 /// Update transform
@@ -133,7 +143,11 @@ pub async fn update_transform(
     if let Some(e) = enabled {
         body["enabled"] = json!(e);
     }
-    if definition.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+    if definition
+        .as_object()
+        .map(|o| !o.is_empty())
+        .unwrap_or(false)
+    {
         body["definition"] = definition;
     }
     let data = client.put(&format!("/automations/{}", id), &body).await?;
@@ -143,7 +157,10 @@ pub async fn update_transform(
 /// Delete transform
 pub async fn delete_transform(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/automations/{}", id)).await?;
-    Ok(CliResponse::success(json!({ "id": id }), "Transform deleted"))
+    Ok(CliResponse::success(
+        json!({ "id": id }),
+        "Transform deleted",
+    ))
 }
 
 /// List virtual metrics from transforms
@@ -162,11 +179,16 @@ pub async fn test_transform_code(
         "code": code,
         "input_data": input_data,
     });
-    let data = client.post("/automations/transforms/test-code", &body).await?;
+    let data = client
+        .post("/automations/transforms/test-code", &body)
+        .await?;
     // Flatten: API returns {success:false, error:"..."} on execution failure
     // wrapped inside the outer success response — detect and surface as error
     if data.get("success").and_then(|v| v.as_bool()) == Some(false) {
-        let error_msg = data.get("error").and_then(|v| v.as_str()).unwrap_or("Transform code execution failed");
+        let error_msg = data
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Transform code execution failed");
         return Ok(CliResponse::error(error_msg, "TRANSFORM_TEST_FAILED"));
     }
     Ok(CliResponse::success(data, "Transform code tested"))

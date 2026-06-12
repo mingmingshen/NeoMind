@@ -75,11 +75,7 @@ fn validate_component_id(id: &str) -> Result<(), ErrorResponse> {
             id
         )));
     }
-    if id.contains('.')
-        || id.contains('/')
-        || id.contains('\\')
-        || id.contains("..")
-    {
+    if id.contains('.') || id.contains('/') || id.contains('\\') || id.contains("..") {
         return Err(ErrorResponse::bad_request(
             "Component ID contains invalid characters",
         ));
@@ -88,11 +84,7 @@ fn validate_component_id(id: &str) -> Result<(), ErrorResponse> {
 }
 
 /// Publish a lifecycle event for a frontend component.
-async fn publish_lifecycle_event(
-    state: &ServerState,
-    component_id: &str,
-    lifecycle_state: &str,
-) {
+async fn publish_lifecycle_event(state: &ServerState, component_id: &str, lifecycle_state: &str) {
     if let Some(bus) = &state.core.event_bus {
         let _ = bus
             .publish(neomind_core::event::NeoMindEvent::Custom {
@@ -115,9 +107,7 @@ fn http_client() -> Result<reqwest::Client, ErrorResponse> {
 }
 
 /// Fetch the marketplace index from GitHub.
-async fn fetch_market_index(
-    client: &reqwest::Client,
-) -> Result<MarketIndex, ErrorResponse> {
+async fn fetch_market_index(client: &reqwest::Client) -> Result<MarketIndex, ErrorResponse> {
     let cache_buster = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -125,7 +115,9 @@ async fn fetch_market_index(
 
     let index_url = format!(
         "{}/{}/index.json?t={}",
-        market_base_url(), MARKET_BRANCH, cache_buster
+        market_base_url(),
+        MARKET_BRANCH,
+        cache_buster
     );
 
     let response = client
@@ -148,13 +140,10 @@ async fn fetch_market_index(
         )));
     }
 
-    response
-        .json::<MarketIndex>()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to parse marketplace index: {}", e);
-            ErrorResponse::internal(format!("Invalid marketplace index: {}", e))
-        })
+    response.json::<MarketIndex>().await.map_err(|e| {
+        tracing::error!("Failed to parse marketplace index: {}", e);
+        ErrorResponse::internal(format!("Invalid marketplace index: {}", e))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -345,8 +334,8 @@ pub async fn market_install_handler(
     let store = state.frontend_component_store.clone();
     let id_for_event = manifest.id.clone();
     let manifest_for_response = manifest.clone();
-    let install_result = tokio::task::spawn_blocking(move || store.install(&manifest, &bundle_bytes))
-        .await;
+    let install_result =
+        tokio::task::spawn_blocking(move || store.install(&manifest, &bundle_bytes)).await;
 
     match install_result {
         Ok(Ok(())) => {}
@@ -417,17 +406,9 @@ pub async fn install_component_handler(
                 );
             }
             "manifest" => {
-                manifest_text = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            ErrorResponse::bad_request(format!(
-                                "Failed to read manifest field: {}",
-                                e
-                            ))
-                        })?,
-                );
+                manifest_text = Some(field.text().await.map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to read manifest field: {}", e))
+                })?);
             }
             "bundle" => {
                 bundle_bytes = Some(
@@ -449,26 +430,25 @@ pub async fn install_component_handler(
 
     // Mode 1: ZIP package
     if let Some(zip_data) = package_bytes {
-        let (m_text, b_bytes) = tokio::task::spawn_blocking(move || {
-            extract_zip_contents(&zip_data)
-        })
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("ZIP extraction task failed: {}", e)))??;
+        let (m_text, b_bytes) =
+            tokio::task::spawn_blocking(move || extract_zip_contents(&zip_data))
+                .await
+                .map_err(|e| {
+                    ErrorResponse::internal(format!("ZIP extraction task failed: {}", e))
+                })??;
 
         manifest_text = Some(m_text);
         bundle_bytes = Some(b_bytes);
     }
 
-    let manifest_text =
-        manifest_text.ok_or_else(|| ErrorResponse::bad_request("Missing 'manifest' or 'package' field"))?;
-    let bundle_bytes =
-        bundle_bytes.ok_or_else(|| ErrorResponse::bad_request("Missing 'bundle' or 'package' field"))?;
+    let manifest_text = manifest_text
+        .ok_or_else(|| ErrorResponse::bad_request("Missing 'manifest' or 'package' field"))?;
+    let bundle_bytes = bundle_bytes
+        .ok_or_else(|| ErrorResponse::bad_request("Missing 'bundle' or 'package' field"))?;
 
     // Parse manifest
-    let mut manifest: ComponentManifest =
-        serde_json::from_str(&manifest_text).map_err(|e| {
-            ErrorResponse::bad_request(format!("Invalid manifest JSON: {}", e))
-        })?;
+    let mut manifest: ComponentManifest = serde_json::from_str(&manifest_text)
+        .map_err(|e| ErrorResponse::bad_request(format!("Invalid manifest JSON: {}", e)))?;
 
     validate_component_id(&manifest.id)?;
 
@@ -508,17 +488,13 @@ fn extract_zip_contents(zip_data: &[u8]) -> Result<(String, Vec<u8>), ErrorRespo
     let mut bundle_bytes: Option<Vec<u8>> = None;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| {
-            ErrorResponse::bad_request(format!("Failed to read ZIP entry: {}", e))
-        })?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| ErrorResponse::bad_request(format!("Failed to read ZIP entry: {}", e)))?;
 
         // Normalize path: strip directory prefixes
         let name = file.name().to_string();
-        let filename = name
-            .rsplit('/')
-            .next()
-            .unwrap_or(&name)
-            .to_string();
+        let filename = name.rsplit('/').next().unwrap_or(&name).to_string();
 
         match filename.as_str() {
             "manifest.json" => {
@@ -539,12 +515,10 @@ fn extract_zip_contents(zip_data: &[u8]) -> Result<(String, Vec<u8>), ErrorRespo
         }
     }
 
-    let manifest_text = manifest_text.ok_or_else(|| {
-        ErrorResponse::bad_request("ZIP must contain manifest.json")
-    })?;
-    let bundle_bytes = bundle_bytes.ok_or_else(|| {
-        ErrorResponse::bad_request("ZIP must contain bundle.js")
-    })?;
+    let manifest_text = manifest_text
+        .ok_or_else(|| ErrorResponse::bad_request("ZIP must contain manifest.json"))?;
+    let bundle_bytes =
+        bundle_bytes.ok_or_else(|| ErrorResponse::bad_request("ZIP must contain bundle.js"))?;
 
     Ok((manifest_text, bundle_bytes))
 }
@@ -804,7 +778,9 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
                 }
             }
         })),
-        default_config: Some(json!({"display": {"showLegend": true, "showGrid": true}, "config": {"smooth": true}})),
+        default_config: Some(
+            json!({"display": {"showLegend": true, "showGrid": true}, "config": {"smooth": true}}),
+        ),
         variants: None,
         global_name: "line_chart".into(),
         export_name: None,
@@ -847,7 +823,9 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
                 }
             }
         })),
-        default_config: Some(json!({"display": {"showLegend": true, "fillArea": true}, "config": {"smooth": true}})),
+        default_config: Some(
+            json!({"display": {"showLegend": true, "fillArea": true}, "config": {"smooth": true}}),
+        ),
         variants: None,
         global_name: "area_chart".into(),
         export_name: None,

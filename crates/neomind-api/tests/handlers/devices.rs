@@ -150,10 +150,7 @@ mod tests {
         let state = crate::common::create_test_server_state().await;
 
         // Test with a non-existent device
-        let result = state
-            .devices
-            .service
-            .get_device("non-existent-device");
+        let result = state.devices.service.get_device("non-existent-device");
         assert!(result.is_none());
     }
 

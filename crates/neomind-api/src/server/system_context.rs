@@ -6,9 +6,7 @@
 use std::sync::Arc;
 
 use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
-use neomind_storage::{
-    AgentFilter, AgentStore, MarkdownMemoryStore, SessionStore,
-};
+use neomind_storage::{AgentFilter, AgentStore, MarkdownMemoryStore, SessionStore};
 
 use super::types::ServerState;
 
@@ -148,11 +146,7 @@ pub async fn gather_system_context(state: &ServerState) -> String {
             }
             if keep_count == 0 {
                 // Removed all devices, reconstruct
-                result = format!(
-                    "{}{}",
-                    &result[..header_end],
-                    &result[next_section..]
-                );
+                result = format!("{}{}", &result[..header_end], &result[next_section..]);
             }
         }
         // Final hard truncate if still over
@@ -265,14 +259,7 @@ pub async fn summarize_agent_context(
     // Collect recent execution records from active agents
     let mut agent_data = String::new();
     for agent in active {
-        let records: Vec<_> = agent
-            .memory
-            .journal
-            .records
-            .iter()
-            .rev()
-            .take(5)
-            .collect();
+        let records: Vec<_> = agent.memory.journal.records.iter().rev().take(5).collect();
         if !records.is_empty() {
             agent_data.push_str(&format!("### {}\n", agent.name));
             for record in records {

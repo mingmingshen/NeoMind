@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List all extensions with compact summary.
 ///
@@ -13,7 +13,13 @@ pub async fn list_extensions(client: &ApiClient) -> Result<CliResponse> {
     let extensions = data
         .as_array()
         .or_else(|| data.get("extensions").and_then(|v| v.as_array()))
-        .or_else(|| data.get("data").and_then(|d| d.as_array()).or_else(|| data.get("data").and_then(|d| d.get("extensions")).and_then(|v| v.as_array())));
+        .or_else(|| {
+            data.get("data").and_then(|d| d.as_array()).or_else(|| {
+                data.get("data")
+                    .and_then(|d| d.get("extensions"))
+                    .and_then(|v| v.as_array())
+            })
+        });
 
     let Some(extensions) = extensions else {
         return Ok(CliResponse::success(data, "Extensions listed"));
@@ -70,10 +76,7 @@ pub async fn get_extension_logs(
 }
 
 /// Install extension from file
-pub async fn install_extension_file(
-    client: &ApiClient,
-    file_path: &str,
-) -> Result<CliResponse> {
+pub async fn install_extension_file(client: &ApiClient, file_path: &str) -> Result<CliResponse> {
     // Extension upload API expects JSON body with base64-encoded file data
     use std::io::Read;
     let mut file = std::fs::File::open(file_path)?;
@@ -101,7 +104,11 @@ pub async fn install_extension_file(
         undo_command: format!("neomind extension uninstall {}", ext_id),
     };
 
-    Ok(CliResponse::success_with_meta(data, "Extension installed", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "Extension installed",
+        meta,
+    ))
 }
 
 /// Install extension from marketplace
@@ -128,12 +135,18 @@ pub async fn install_extension_market(
         undo_command: format!("neomind extension uninstall {}", ext_id),
     };
 
-    Ok(CliResponse::success_with_meta(data, "Extension installed from marketplace", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "Extension installed from marketplace",
+        meta,
+    ))
 }
 
 /// Uninstall extension
 pub async fn uninstall_extension(client: &ApiClient, id: &str) -> Result<CliResponse> {
-    client.delete(&format!("/extensions/{}/uninstall", id)).await?;
+    client
+        .delete(&format!("/extensions/{}/uninstall", id))
+        .await?;
     Ok(CliResponse::success(
         json!({ "id": id }),
         "Extension uninstalled",
@@ -142,7 +155,9 @@ pub async fn uninstall_extension(client: &ApiClient, id: &str) -> Result<CliResp
 
 /// Reload an extension (restart from file)
 pub async fn reload_extension(client: &ApiClient, id: &str) -> Result<CliResponse> {
-    let data = client.post_raw(&format!("/extensions/{}/reload", id)).await?;
+    let data = client
+        .post_raw(&format!("/extensions/{}/reload", id))
+        .await?;
     Ok(CliResponse::success(data, "Extension reloaded"))
 }
 
@@ -164,6 +179,8 @@ pub async fn update_extension_config(
     id: &str,
     config: serde_json::Value,
 ) -> Result<CliResponse> {
-    let data = client.put(&format!("/extensions/{}/config", id), &config).await?;
+    let data = client
+        .put(&format!("/extensions/{}/config", id), &config)
+        .await?;
     Ok(CliResponse::success(data, "Extension config updated"))
 }

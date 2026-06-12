@@ -11,9 +11,7 @@
 
 use std::path::PathBuf;
 
-use neomind_agent::toolkit::{
-    FileEditTool, FileWriteTool, Tool, ToolOutput, WebFetchTool,
-};
+use neomind_agent::toolkit::{FileEditTool, FileWriteTool, Tool, ToolOutput, WebFetchTool};
 
 // ============================================================================
 // Helpers
@@ -57,7 +55,7 @@ fn assert_success(result: Result<ToolOutput, neomind_agent::toolkit::ToolError>)
 fn assert_failure(result: Result<ToolOutput, neomind_agent::toolkit::ToolError>) {
     match result {
         Ok(output) if !output.success => {} // expected failure via ToolOutput
-        Err(_) => {}                         // expected failure via Error
+        Err(_) => {}                        // expected failure via Error
         Ok(output) => panic!("expected failure but got success: {:?}", output.data),
     }
 }
@@ -231,7 +229,11 @@ async fn file_write_allows_code_files() {
             }))
             .await;
         let output = assert_success(result);
-        assert!(output.data["bytes_written"].as_u64().unwrap() > 0, "should allow {}", name);
+        assert!(
+            output.data["bytes_written"].as_u64().unwrap() > 0,
+            "should allow {}",
+            name
+        );
     }
 }
 
@@ -294,8 +296,7 @@ triggers:
         .await;
 
     assert_success(result);
-    let written =
-        std::fs::read_to_string(env.data_dir.join("skills/my-skill.md")).unwrap();
+    let written = std::fs::read_to_string(env.data_dir.join("skills/my-skill.md")).unwrap();
     assert!(written.contains("my-skill"));
 }
 
@@ -683,7 +684,10 @@ async fn web_fetch_real_example_com() {
 
     let output = assert_success(result);
     let content = output.data["content"].as_str().unwrap();
-    assert!(content.contains("Example Domain"), "should contain page text");
+    assert!(
+        content.contains("Example Domain"),
+        "should contain page text"
+    );
     assert!(!content.contains("<html>"), "should strip HTML tags");
 }
 
@@ -722,7 +726,10 @@ async fn web_fetch_truncation() {
         .await;
 
     let output = assert_success(result);
-    assert!(output.data["truncated"].as_bool().unwrap(), "should be truncated");
+    assert!(
+        output.data["truncated"].as_bool().unwrap(),
+        "should be truncated"
+    );
 }
 
 /// Real network test — JSON API
@@ -806,9 +813,11 @@ async fn e2e_write_edit_chain() {
     assert_eq!(output.data["replacements"].as_u64().unwrap(), 1);
 
     // Verify final state
-    let final_manifest =
-        std::fs::read_to_string(env.data_dir.join("frontend-components/my-widget/manifest.json"))
-            .unwrap();
+    let final_manifest = std::fs::read_to_string(
+        env.data_dir
+            .join("frontend-components/my-widget/manifest.json"),
+    )
+    .unwrap();
     assert!(final_manifest.contains("1.1.0"));
     assert!(!final_manifest.contains("1.0.0"));
     assert!(env
@@ -836,9 +845,17 @@ fn tool_definitions_are_valid() {
     assert_eq!(fetch_tool.name(), "web_fetch");
 
     // Verify parameters are valid JSON Schema
-    for tool in [&write_tool as &dyn Tool, &edit_tool as &dyn Tool, &fetch_tool as &dyn Tool] {
+    for tool in [
+        &write_tool as &dyn Tool,
+        &edit_tool as &dyn Tool,
+        &fetch_tool as &dyn Tool,
+    ] {
         let params = tool.parameters();
-        assert!(params.is_object(), "{} params should be object", tool.name());
+        assert!(
+            params.is_object(),
+            "{} params should be object",
+            tool.name()
+        );
         assert!(
             params.get("properties").is_some(),
             "{} should have properties",
@@ -937,7 +954,10 @@ async fn web_fetch_rejects_ipv4_compatible_ipv6() {
             "url": "http://[::192.168.1.1]/"
         }))
         .await;
-    assert!(result.is_err(), "should reject IPv4-compatible IPv6 to private IP");
+    assert!(
+        result.is_err(),
+        "should reject IPv4-compatible IPv6 to private IP"
+    );
 }
 
 #[tokio::test]
@@ -948,7 +968,10 @@ async fn web_fetch_rejects_ipv4_mapped_ipv6() {
             "url": "http://[::ffff:127.0.0.1]:9375/"
         }))
         .await;
-    assert!(result.is_err(), "should reject IPv4-mapped IPv6 to localhost");
+    assert!(
+        result.is_err(),
+        "should reject IPv4-mapped IPv6 to localhost"
+    );
 }
 
 // ============================================================================
@@ -977,7 +1000,10 @@ async fn file_edit_handles_crlf_endings() {
 
     // Verify content — CRLF preserved for non-edited lines
     let updated = std::fs::read_to_string(env.data_dir.join("crlf.txt")).unwrap();
-    assert!(updated.contains("line1\r\n"), "CRLF should be preserved on line1");
+    assert!(
+        updated.contains("line1\r\n"),
+        "CRLF should be preserved on line1"
+    );
     assert!(updated.contains("line2_updated"), "replacement applied");
 }
 
@@ -1035,7 +1061,10 @@ async fn file_write_empty_content_allowed() {
         .await;
     let output = assert_success(result);
     assert_eq!(output.data["bytes_written"].as_u64().unwrap(), 0);
-    assert_eq!(std::fs::read_to_string(env.data_dir.join("empty.txt")).unwrap(), "");
+    assert_eq!(
+        std::fs::read_to_string(env.data_dir.join("empty.txt")).unwrap(),
+        ""
+    );
 }
 
 #[tokio::test]
@@ -1062,5 +1091,8 @@ async fn file_edit_not_found_helpful_error() {
     assert!(!result.success);
     let error = result.error.unwrap();
     assert!(error.contains("not found"), "error should say not found");
-    assert!(error.contains("preview"), "should include file preview for context");
+    assert!(
+        error.contains("preview"),
+        "should include file preview for context"
+    );
 }

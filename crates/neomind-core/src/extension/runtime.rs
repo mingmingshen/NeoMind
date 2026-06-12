@@ -84,16 +84,14 @@ impl ExtensionRuntime {
         &self,
         callback: Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>,
     ) {
-        self.isolated_manager.set_on_crash_recovery_restart(callback);
+        self.isolated_manager
+            .set_on_crash_recovery_restart(callback);
     }
 
     /// Set a callback to be invoked when crash recovery restart fails.
     /// The callback receives (extension_id, error_message).
     #[allow(clippy::type_complexity)]
-    pub fn set_on_crash_recovery_failed(
-        &self,
-        callback: Arc<dyn Fn(&str, &str) + Send + Sync>,
-    ) {
+    pub fn set_on_crash_recovery_failed(&self, callback: Arc<dyn Fn(&str, &str) + Send + Sync>) {
         self.isolated_manager.set_on_crash_recovery_failed(callback);
     }
 

@@ -68,7 +68,10 @@ pub(crate) fn user_message_requires_action(msg: &str) -> bool {
 /// Check if ALL executed tool calls so far were read-only (list/get/query).
 /// Takes the actual shell command strings (not tool names) for accurate detection.
 /// Returns true if no mutation command was found in any tool call.
-pub(crate) fn all_tools_were_read_only(executed_commands: &[&str], _all_results: &[(String, String)]) -> bool {
+pub(crate) fn all_tools_were_read_only(
+    executed_commands: &[&str],
+    _all_results: &[(String, String)],
+) -> bool {
     // Mutation command patterns — if ANY of these appear, it's NOT read-only
     const MUTATION_COMMANDS: &[&str] = &[
         " create",
@@ -242,9 +245,18 @@ mod tests {
 
     #[test]
     fn test_all_tools_were_read_only() {
-        assert!(all_tools_were_read_only(&["neomind device list", "neomind rule list"], &[]));
-        assert!(!all_tools_were_read_only(&["neomind device create sensor1"], &[]));
-        assert!(!all_tools_were_read_only(&["neomind device list", "neomind device delete sensor1"], &[]));
+        assert!(all_tools_were_read_only(
+            &["neomind device list", "neomind rule list"],
+            &[]
+        ));
+        assert!(!all_tools_were_read_only(
+            &["neomind device create sensor1"],
+            &[]
+        ));
+        assert!(!all_tools_were_read_only(
+            &["neomind device list", "neomind device delete sensor1"],
+            &[]
+        ));
         assert!(!all_tools_were_read_only(&[], &[])); // empty = not read-only
     }
 
@@ -252,7 +264,10 @@ mod tests {
     fn test_extract_action_hint() {
         assert_eq!(extract_action_hint("创建新规则"), "neomind rule create");
         assert_eq!(extract_action_hint("删除设备"), "neomind device delete");
-        assert_eq!(extract_action_hint("创建仪表盘"), "neomind dashboard create");
+        assert_eq!(
+            extract_action_hint("创建仪表盘"),
+            "neomind dashboard create"
+        );
         assert_eq!(extract_action_hint("查看状态"), "");
     }
 }

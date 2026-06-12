@@ -3,9 +3,9 @@
 //! This module provides storage for multiple LLM backend instances,
 //! supporting dynamic backend switching and multi-configuration management.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};

@@ -2629,28 +2629,24 @@ fn cleanup_old_logs() {
                 continue;
             }
 
-            let should_remove =
-                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                    if let Some(date_str) = filename.strip_prefix("neomind.log.") {
-                        // Parse date from filename: neomind.log.YYYY-MM-DD
-                        if let Ok(file_date) =
-                            chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                        {
-                            let file_datetime = file_date
-                                .and_time(chrono::NaiveTime::default())
-                                .and_utc();
-                            (now - file_datetime).num_seconds() > max_age_secs
-                        } else {
-                            // Non-date suffix, fall back to mtime
-                            is_file_older_than(&path, max_age_secs)
-                        }
+            let should_remove = if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                if let Some(date_str) = filename.strip_prefix("neomind.log.") {
+                    // Parse date from filename: neomind.log.YYYY-MM-DD
+                    if let Ok(file_date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                        let file_datetime =
+                            file_date.and_time(chrono::NaiveTime::default()).and_utc();
+                        (now - file_datetime).num_seconds() > max_age_secs
                     } else {
-                        // Not a rotated log file (e.g., current neomind.log), skip
-                        false
+                        // Non-date suffix, fall back to mtime
+                        is_file_older_than(&path, max_age_secs)
                     }
                 } else {
+                    // Not a rotated log file (e.g., current neomind.log), skip
                     false
-                };
+                }
+            } else {
+                false
+            };
 
             if should_remove {
                 if fs::remove_file(&path).is_ok() {
@@ -2757,7 +2753,9 @@ async fn run_health() -> Result<()> {
                             println!("  ✅ Active backend: {}", id);
                         } else {
                             println!("  ⚠️  No active backend selected");
-                            println!("  Hint: Use 'neomind llm activate <id>' to activate a backend");
+                            println!(
+                                "  Hint: Use 'neomind llm activate <id>' to activate a backend"
+                            );
                         }
                     } else {
                         println!("  ⚠️  No LLM backend configured");
@@ -2814,38 +2812,36 @@ async fn run_logs(
         std::path::PathBuf::from(&home)
             .join("Library/Application Support/com.neomind.neomind/logs"),
         // Linux: ~/.local/share/com.neomind.neomind/logs/
-        std::path::PathBuf::from(&home)
-            .join(".local/share/com.neomind.neomind/logs"),
+        std::path::PathBuf::from(&home).join(".local/share/com.neomind.neomind/logs"),
         // Windows: %APPDATA%/com.neomind.neomind/logs/
-        std::path::PathBuf::from(&appdata)
-            .join("com.neomind.neomind/logs"),
+        std::path::PathBuf::from(&appdata).join("com.neomind.neomind/logs"),
         // Fallback: ~/.neomind/logs/
         std::path::PathBuf::from(&home).join(".neomind/logs"),
     ];
 
-    let log_dir = log_dirs
-        .iter()
-        .find(|d| d.exists())
-        .ok_or_else(|| {
-            let paths: String = log_dirs
-                .iter()
-                .filter(|d| !d.as_os_str().is_empty())
-                .map(|d| format!("  {}", d.display()))
-                .collect::<Vec<_>>()
-                .join("\n");
-            anyhow::anyhow!(
-                "Log directory not found. Searched in:\n{}\n\
+    let log_dir = log_dirs.iter().find(|d| d.exists()).ok_or_else(|| {
+        let paths: String = log_dirs
+            .iter()
+            .filter(|d| !d.as_os_str().is_empty())
+            .map(|d| format!("  {}", d.display()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        anyhow::anyhow!(
+            "Log directory not found. Searched in:\n{}\n\
                  Hint: Start the server with 'neomind serve' or run the Tauri desktop app.",
-                paths
-            )
-        })?;
+            paths
+        )
+    })?;
 
     // Find the newest log file
     let log_path = find_newest_log(log_dir)?;
 
     if follow {
         // Follow mode (like tail -f)
-        println!("Following log file: {} (Ctrl+C to stop)\n", log_path.display());
+        println!(
+            "Following log file: {} (Ctrl+C to stop)\n",
+            log_path.display()
+        );
 
         let file = File::open(&log_path)?;
         let mut reader = BufReader::new(file);
@@ -2964,7 +2960,12 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
             unreachable!()
         }
         ExtensionCommand::Create { .. } => {
-            if let ExtensionCommand::Create { name, extension_type, output } = cmd {
+            if let ExtensionCommand::Create {
+                name,
+                extension_type,
+                output,
+            } = cmd
+            {
                 create_extension_scaffold(&name, &extension_type, output)?;
                 return Ok(());
             }
@@ -3007,10 +3008,16 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
         ExtensionCommand::Logs { id, lines } => {
             neomind_cli_ops::extension::get_extension_logs(&client, &id, lines).await?
         }
-        ExtensionCommand::MarketInstall { extension_id, version } => {
+        ExtensionCommand::MarketInstall {
+            extension_id,
+            version,
+        } => {
             neomind_cli_ops::extension::install_extension_market(
-                &client, &extension_id, version.as_deref(),
-            ).await?
+                &client,
+                &extension_id,
+                version.as_deref(),
+            )
+            .await?
         }
         ExtensionCommand::MarketList => {
             neomind_cli_ops::extension::list_marketplace(&client).await?
@@ -3018,16 +3025,13 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
         ExtensionCommand::Reload { id } => {
             neomind_cli_ops::extension::reload_extension(&client, &id).await?
         }
-        ExtensionCommand::Config { id, set } => {
-            match set {
-                Some(json_str) => {
-                    let config = serde_json::from_str(&json_str)
-                        .unwrap_or(serde_json::json!(json_str));
-                    neomind_cli_ops::extension::update_extension_config(&client, &id, config).await?
-                }
-                None => neomind_cli_ops::extension::get_extension_config(&client, &id).await?,
+        ExtensionCommand::Config { id, set } => match set {
+            Some(json_str) => {
+                let config = serde_json::from_str(&json_str).unwrap_or(serde_json::json!(json_str));
+                neomind_cli_ops::extension::update_extension_config(&client, &id, config).await?
             }
-        }
+            None => neomind_cli_ops::extension::get_extension_config(&client, &id).await?,
+        },
         // Already handled above — unreachable here but required by match exhaustiveness
         _ => unreachable!(),
     };
@@ -3316,14 +3320,20 @@ fn create_extension_scaffold(
     use std::fs;
 
     // Validate name is kebab-case (lowercase, digits, hyphens, no spaces)
-    if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         anyhow::bail!(
             "Extension name must be kebab-case (lowercase letters, digits, and hyphens only). Got: '{}'",
             name
         );
     }
     if name.starts_with('-') || name.ends_with('-') {
-        anyhow::bail!("Extension name must not start or end with a hyphen. Got: '{}'", name);
+        anyhow::bail!(
+            "Extension name must not start or end with a hyphen. Got: '{}'",
+            name
+        );
     }
 
     // Derive Rust identifiers
@@ -3556,30 +3566,50 @@ async fn run_llm_cmd(cmd: LlmCommand) -> Result<()> {
     };
 
     let response = match cmd {
-        LlmCommand::List { json: _ } => {
-            list_backends(&client).await?
+        LlmCommand::List { json: _ } => list_backends(&client).await?,
+        LlmCommand::Get { id } => get_backend(&client, &id).await?,
+        LlmCommand::Models { endpoint: _ } => list_ollama_models(&client).await?,
+        LlmCommand::Create {
+            name,
+            r#type,
+            endpoint,
+            model,
+            api_key,
+            temperature,
+        } => {
+            create_backend(
+                &client,
+                &name,
+                &r#type,
+                &endpoint,
+                &model,
+                api_key.as_deref(),
+                temperature,
+            )
+            .await?
         }
-        LlmCommand::Get { id } => {
-            get_backend(&client, &id).await?
+        LlmCommand::Update {
+            id,
+            name,
+            model,
+            endpoint,
+            api_key,
+            temperature,
+        } => {
+            update_backend(
+                &client,
+                &id,
+                name.as_deref(),
+                model.as_deref(),
+                endpoint.as_deref(),
+                api_key.as_deref(),
+                temperature,
+            )
+            .await?
         }
-        LlmCommand::Models { endpoint: _ } => {
-            list_ollama_models(&client).await?
-        }
-        LlmCommand::Create { name, r#type, endpoint, model, api_key, temperature } => {
-            create_backend(&client, &name, &r#type, &endpoint, &model, api_key.as_deref(), temperature).await?
-        }
-        LlmCommand::Update { id, name, model, endpoint, api_key, temperature } => {
-            update_backend(&client, &id, name.as_deref(), model.as_deref(), endpoint.as_deref(), api_key.as_deref(), temperature).await?
-        }
-        LlmCommand::Delete { id } => {
-            delete_backend(&client, &id).await?
-        }
-        LlmCommand::Activate { id } => {
-            activate_backend(&client, &id).await?
-        }
-        LlmCommand::Test { id } => {
-            test_backend(&client, &id).await?
-        }
+        LlmCommand::Delete { id } => delete_backend(&client, &id).await?,
+        LlmCommand::Activate { id } => activate_backend(&client, &id).await?,
+        LlmCommand::Test { id } => test_backend(&client, &id).await?,
     };
 
     format_output(&response, output_format);
@@ -3611,7 +3641,10 @@ async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
                 return Ok(());
             }
 
-            println!("{:<36} {:<20} {:<12} {:<20}", "ID", "Name", "Active", "Created");
+            println!(
+                "{:<36} {:<20} {:<12} {:<20}",
+                "ID", "Name", "Active", "Created"
+            );
             println!("{}", "-".repeat(90));
             for (_hash, info) in keys {
                 let created = {
@@ -3621,7 +3654,13 @@ async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
                     let minutes = (time % 3600) / 60;
                     format!("{}-{:02}:{:02}", days, hours, minutes)
                 };
-                println!("{:<36} {:<20} {:<12} {}", info.id, info.name, if info.active { "yes" } else { "no" }, created);
+                println!(
+                    "{:<36} {:<20} {:<12} {}",
+                    info.id,
+                    info.name,
+                    if info.active { "yes" } else { "no" },
+                    created
+                );
             }
         }
         ApiKeyCommand::Delete { name, data_dir } => {
@@ -3649,8 +3688,8 @@ async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
 
 /// Run device management commands.
 async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, device::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{device::*, output::format_output, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -3667,58 +3706,155 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
     };
 
     let (response, output_format) = match cmd {
-        DeviceCommand::List { device_type, status, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
-            (list_devices(&client, device_type.as_deref(), status.as_deref()).await?, output_format)
+        DeviceCommand::List {
+            device_type,
+            status,
+            json,
+        } => {
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
+            (
+                list_devices(&client, device_type.as_deref(), status.as_deref()).await?,
+                output_format,
+            )
         }
         DeviceCommand::Get { id, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             (get_device(&client, &id).await?, output_format)
         }
-        DeviceCommand::Create { name, device_type, adapter_type, config, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+        DeviceCommand::Create {
+            name,
+            device_type,
+            adapter_type,
+            config,
+            json,
+        } => {
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
                 None
             };
-            (create_device(&client, &name, &device_type, &adapter_type, connection_config).await?, output_format)
+            (
+                create_device(
+                    &client,
+                    &name,
+                    &device_type,
+                    &adapter_type,
+                    connection_config,
+                )
+                .await?,
+                output_format,
+            )
         }
-        DeviceCommand::Update { id, name, config, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+        DeviceCommand::Update {
+            id,
+            name,
+            config,
+            json,
+        } => {
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
                 None
             };
-            (update_device(&client, &id, name.as_deref(), connection_config).await?, output_format)
+            (
+                update_device(&client, &id, name.as_deref(), connection_config).await?,
+                output_format,
+            )
         }
         DeviceCommand::Delete { id, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             (delete_device(&client, &id).await?, output_format)
         }
         DeviceCommand::Latest { id, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             (get_device(&client, &id).await?, output_format)
         }
-        DeviceCommand::History { id, metric, time_range, compress, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
-            (get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref(), compress).await?, output_format)
+        DeviceCommand::History {
+            id,
+            metric,
+            time_range,
+            compress,
+            json,
+        } => {
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
+            (
+                get_telemetry_history(
+                    &client,
+                    &id,
+                    metric.as_deref(),
+                    time_range.as_deref(),
+                    compress,
+                )
+                .await?,
+                output_format,
+            )
         }
-        DeviceCommand::Control { id, command, params, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+        DeviceCommand::Control {
+            id,
+            command,
+            params,
+            json,
+        } => {
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let params_json = if let Some(params_str) = params {
                 serde_json::from_str(&params_str)?
             } else {
                 serde_json::json!({})
             };
-            (control_device(&client, &id, &command, params_json).await?, output_format)
+            (
+                control_device(&client, &id, &command, params_json).await?,
+                output_format,
+            )
         }
         DeviceCommand::Types { type_cmd } => {
             return run_device_type_cmd(client, type_cmd, base_format).await;
         }
-        DeviceCommand::WriteMetric { id, metric, value, timestamp, json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+        DeviceCommand::WriteMetric {
+            id,
+            metric,
+            value,
+            timestamp,
+            json,
+        } => {
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             // Try parsing value as number, bool, then fallback to string
             let value_json = if let Ok(n) = value.parse::<f64>() {
                 serde_json::json!(n)
@@ -3727,11 +3863,12 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             } else {
                 serde_json::json!(value)
             };
-            (write_metric(&client, &id, &metric, value_json, timestamp).await?, output_format)
+            (
+                write_metric(&client, &id, &metric, value_json, timestamp).await?,
+                output_format,
+            )
         }
-        DeviceCommand::WebhookUrl { id } => {
-            (get_webhook_url(&client, &id).await?, base_format)
-        }
+        DeviceCommand::WebhookUrl { id } => (get_webhook_url(&client, &id).await?, base_format),
         DeviceCommand::Drafts { draft_cmd } => {
             return run_draft_cmd(draft_cmd).await;
         }
@@ -3749,24 +3886,36 @@ async fn run_draft_cmd(cmd: DraftCommand) -> Result<()> {
     use neomind_cli_ops::types::OutputFormat;
 
     let client = neomind_cli_ops::ApiClient::new();
-    let base_format = if std::env::var("NEOMIND_JSON").is_ok() { OutputFormat::Json } else { OutputFormat::Human };
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
     let response = match cmd {
         DraftCommand::List { json } => {
-            let output_format = if json { OutputFormat::Json } else { base_format };
+            let output_format = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             (list_drafts(&client).await?, output_format)
         }
-        DraftCommand::Get { id } => {
-            (get_draft(&client, &id).await?, base_format)
-        }
-        DraftCommand::Approve { id, name, r#type } => {
-            (approve_draft(&client, &id, name.as_deref(), r#type.as_deref()).await?, base_format)
-        }
-        DraftCommand::Reject { id } => {
-            (reject_draft(&client, &id).await?, base_format)
-        }
-        DraftCommand::Config { enabled, auto_approve, max_samples } => {
+        DraftCommand::Get { id } => (get_draft(&client, &id).await?, base_format),
+        DraftCommand::Approve { id, name, r#type } => (
+            approve_draft(&client, &id, name.as_deref(), r#type.as_deref()).await?,
+            base_format,
+        ),
+        DraftCommand::Reject { id } => (reject_draft(&client, &id).await?, base_format),
+        DraftCommand::Config {
+            enabled,
+            auto_approve,
+            max_samples,
+        } => {
             if enabled.is_some() || auto_approve.is_some() || max_samples.is_some() {
-                (update_onboard_config(&client, enabled, max_samples, auto_approve).await?, base_format)
+                (
+                    update_onboard_config(&client, enabled, max_samples, auto_approve).await?,
+                    base_format,
+                )
             } else {
                 (get_onboard_config(&client).await?, base_format)
             }
@@ -3787,13 +3936,14 @@ async fn run_device_type_cmd(
     use neomind_cli_ops::output::format_output;
 
     let response = match cmd {
-        DeviceTypeCommand::List => {
-            list_device_types(&client).await?
-        }
-        DeviceTypeCommand::Get { id } => {
-            get_device_type(&client, &id).await?
-        }
-        DeviceTypeCommand::Create { id, name, metrics, commands } => {
+        DeviceTypeCommand::List => list_device_types(&client).await?,
+        DeviceTypeCommand::Get { id } => get_device_type(&client, &id).await?,
+        DeviceTypeCommand::Create {
+            id,
+            name,
+            metrics,
+            commands,
+        } => {
             let metrics_json = serde_json::from_str(&metrics)?;
             let commands_json = if let Some(cmds_str) = commands {
                 Some(serde_json::from_str(&cmds_str)?)
@@ -3802,9 +3952,7 @@ async fn run_device_type_cmd(
             };
             create_device_type(&client, id.as_deref(), &name, metrics_json, commands_json).await?
         }
-        DeviceTypeCommand::Delete { id } => {
-            delete_device_type(&client, &id).await?
-        }
+        DeviceTypeCommand::Delete { id } => delete_device_type(&client, &id).await?,
     };
 
     // Format and print output
@@ -3814,8 +3962,8 @@ async fn run_device_type_cmd(
 
 /// Run dashboard management commands.
 async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, dashboard::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{dashboard::*, output::format_output, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -3833,30 +3981,59 @@ async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
 
     let response = match cmd {
         DashboardCommand::List { json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = list_dashboards(&client).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
         DashboardCommand::Get { id, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = get_dashboard(&client, &id).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
-        DashboardCommand::Create { name, description, layout, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+        DashboardCommand::Create {
+            name,
+            description,
+            layout,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let layout_json = if let Some(layout_str) = layout {
                 Some(serde_json::from_str(&layout_str)?)
             } else {
                 None
             };
-            let resp = create_dashboard(&client, &name, description.as_deref(), layout_json).await?;
+            let resp =
+                create_dashboard(&client, &name, description.as_deref(), layout_json).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
-        DashboardCommand::Update { id, name, description, layout, components, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+        DashboardCommand::Update {
+            id,
+            name,
+            description,
+            layout,
+            components,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let layout_json = if let Some(layout_str) = layout {
                 Some(serde_json::from_str(&layout_str)?)
             } else {
@@ -3867,29 +4044,56 @@ async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
             } else {
                 None
             };
-            let resp = update_dashboard(&client, &id, name.as_deref(), description.as_deref(), layout_json, components_json).await?;
+            let resp = update_dashboard(
+                &client,
+                &id,
+                name.as_deref(),
+                description.as_deref(),
+                layout_json,
+                components_json,
+            )
+            .await?;
             format_output(&resp, fmt);
             return Ok(());
         }
-        DashboardCommand::Delete { id } => {
-            delete_dashboard(&client, &id).await?
-        }
-        DashboardCommand::AddComponents { id, components, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+        DashboardCommand::Delete { id } => delete_dashboard(&client, &id).await?,
+        DashboardCommand::AddComponents {
+            id,
+            components,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let comps = serde_json::from_str(&components).unwrap_or(serde_json::json!([]));
             let resp = add_components(&client, &id, comps).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
         DashboardCommand::RemoveComponents { id, ids, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let ids_val = serde_json::from_str(&ids).unwrap_or(serde_json::json!([]));
             let resp = remove_components(&client, &id, ids_val).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
-        DashboardCommand::Share { id, public, expires, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+        DashboardCommand::Share {
+            id,
+            public,
+            expires,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = share_dashboard(&client, &id, public, expires.as_deref()).await?;
             format_output(&resp, fmt);
             return Ok(());
@@ -3903,8 +4107,8 @@ async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
 
 /// Run rule management commands.
 async fn run_rule_cmd(cmd: RuleCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, rule::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{output::format_output, rule::*, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -3921,34 +4125,20 @@ async fn run_rule_cmd(cmd: RuleCommand) -> Result<()> {
     };
 
     let response = match cmd {
-        RuleCommand::List => {
-            list_rules(&client).await?
-        }
-        RuleCommand::Get { id } => {
-            get_rule(&client, &id).await?
-        }
-        RuleCommand::Create { name, dsl } => {
-            create_rule(&client, name.as_deref(), &dsl).await?
-        }
+        RuleCommand::List => list_rules(&client).await?,
+        RuleCommand::Get { id } => get_rule(&client, &id).await?,
+        RuleCommand::Create { name, dsl } => create_rule(&client, name.as_deref(), &dsl).await?,
         RuleCommand::Update { id, name, dsl } => {
             update_rule(&client, &id, name.as_deref(), dsl.as_deref()).await?
         }
-        RuleCommand::Delete { id } => {
-            delete_rule(&client, &id).await?
-        }
-        RuleCommand::Enable { id } => {
-            enable_rule(&client, &id).await?
-        }
-        RuleCommand::Disable { id } => {
-            disable_rule(&client, &id).await?
-        }
+        RuleCommand::Delete { id } => delete_rule(&client, &id).await?,
+        RuleCommand::Enable { id } => enable_rule(&client, &id).await?,
+        RuleCommand::Disable { id } => disable_rule(&client, &id).await?,
         RuleCommand::Test { id, input } => {
             let input_json = serde_json::from_str(&input)?;
             test_rule(&client, &id, input_json).await?
         }
-        RuleCommand::History { id } => {
-            get_rule_history(&client, &id).await?
-        }
+        RuleCommand::History { id } => get_rule_history(&client, &id).await?,
     };
 
     // Format and print output
@@ -3958,8 +4148,8 @@ async fn run_rule_cmd(cmd: RuleCommand) -> Result<()> {
 
 /// Run transform management commands.
 async fn run_transform_cmd(cmd: TransformCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, transform::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{output::format_output, transform::*, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -3976,38 +4166,55 @@ async fn run_transform_cmd(cmd: TransformCommand) -> Result<()> {
     };
 
     let response = match cmd {
-        TransformCommand::List => {
-            list_transforms(&client).await?
-        }
-        TransformCommand::Get { id } => {
-            get_transform(&client, &id).await?
-        }
-        TransformCommand::Create { name, scope, code, output_prefix, description, enabled } => {
+        TransformCommand::List => list_transforms(&client).await?,
+        TransformCommand::Get { id } => get_transform(&client, &id).await?,
+        TransformCommand::Create {
+            name,
+            scope,
+            code,
+            output_prefix,
+            description,
+            enabled,
+        } => {
             create_transform(
-                &client, &name, &scope, &code,
-                output_prefix.as_deref(), description.as_deref(), enabled,
-            ).await?
+                &client,
+                &name,
+                &scope,
+                &code,
+                output_prefix.as_deref(),
+                description.as_deref(),
+                enabled,
+            )
+            .await?
         }
-        TransformCommand::Update { id, name, description, code, scope, output_prefix, enabled } => {
+        TransformCommand::Update {
+            id,
+            name,
+            description,
+            code,
+            scope,
+            output_prefix,
+            enabled,
+        } => {
             update_transform(
-                &client, &id,
-                name.as_deref(), description.as_deref(), code.as_deref(),
-                scope.as_deref(), output_prefix.as_deref(), enabled,
-            ).await?
+                &client,
+                &id,
+                name.as_deref(),
+                description.as_deref(),
+                code.as_deref(),
+                scope.as_deref(),
+                output_prefix.as_deref(),
+                enabled,
+            )
+            .await?
         }
-        TransformCommand::Delete { id } => {
-            delete_transform(&client, &id).await?
-        }
-        TransformCommand::Metrics => {
-            list_virtual_metrics(&client).await?
-        }
+        TransformCommand::Delete { id } => delete_transform(&client, &id).await?,
+        TransformCommand::Metrics => list_virtual_metrics(&client).await?,
         TransformCommand::TestCode { code, input } => {
             let input_json = serde_json::from_str(&input)?;
             test_transform_code(&client, &code, input_json).await?
         }
-        TransformCommand::DataSources => {
-            list_transform_data_sources(&client).await?
-        }
+        TransformCommand::DataSources => list_transform_data_sources(&client).await?,
     };
 
     // Format and print output
@@ -4017,8 +4224,8 @@ async fn run_transform_cmd(cmd: TransformCommand) -> Result<()> {
 
 /// Run agent management commands.
 async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, agent_cmd::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{agent_cmd::*, output::format_output, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -4035,13 +4242,29 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
     };
 
     let response = match cmd {
-        AgentCommand::List => {
-            list_agents(&client).await?
-        }
-        AgentCommand::Get { id } => {
-            get_agent(&client, &id).await?
-        }
-        AgentCommand::Create { name, prompt, description, schedule_type, schedule_config, every, event_filter, timezone, llm_backend, system_prompt, execution_mode, device_ids, resources, metrics, commands, enable_tool_chaining, max_chain_depth, priority, context_window_size } => {
+        AgentCommand::List => list_agents(&client).await?,
+        AgentCommand::Get { id } => get_agent(&client, &id).await?,
+        AgentCommand::Create {
+            name,
+            prompt,
+            description,
+            schedule_type,
+            schedule_config,
+            every,
+            event_filter,
+            timezone,
+            llm_backend,
+            system_prompt,
+            execution_mode,
+            device_ids,
+            resources,
+            metrics,
+            commands,
+            enable_tool_chaining,
+            max_chain_depth,
+            priority,
+            context_window_size,
+        } => {
             // Handle --every shortcut: parse duration to interval schedule
             let (resolved_st, resolved_sc) = if let Some(dur) = &every {
                 let secs = parse_duration(dur);
@@ -4069,9 +4292,28 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
                 max_chain_depth,
                 priority,
                 context_window_size,
-            ).await?
+            )
+            .await?
         }
-        AgentCommand::Update { id, name, prompt, description, llm_backend, system_prompt, schedule_type, schedule_config, execution_mode, device_ids, resources, metrics, commands, enable_tool_chaining, max_chain_depth, priority, context_window_size } => {
+        AgentCommand::Update {
+            id,
+            name,
+            prompt,
+            description,
+            llm_backend,
+            system_prompt,
+            schedule_type,
+            schedule_config,
+            execution_mode,
+            device_ids,
+            resources,
+            metrics,
+            commands,
+            enable_tool_chaining,
+            max_chain_depth,
+            priority,
+            context_window_size,
+        } => {
             update_agent(
                 &client,
                 &id,
@@ -4091,35 +4333,24 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
                 max_chain_depth,
                 priority,
                 context_window_size,
-            ).await?
+            )
+            .await?
         }
-        AgentCommand::Delete { id } => {
-            delete_agent(&client, &id).await?
-        }
-        AgentCommand::Control { id, status } => {
-            control_agent(&client, &id, &status).await?
-        }
-        AgentCommand::Invoke { id, input } => {
-            invoke_agent(&client, &id, &input).await?
-        }
-        AgentCommand::Memory { id } => {
-            get_agent_memory(&client, &id).await?
-        }
-        AgentCommand::ClearMemory { id } => {
-            clear_agent_memory(&client, &id).await?
-        }
+        AgentCommand::Delete { id } => delete_agent(&client, &id).await?,
+        AgentCommand::Control { id, status } => control_agent(&client, &id, &status).await?,
+        AgentCommand::Invoke { id, input } => invoke_agent(&client, &id, &input).await?,
+        AgentCommand::Memory { id } => get_agent_memory(&client, &id).await?,
+        AgentCommand::ClearMemory { id } => clear_agent_memory(&client, &id).await?,
         AgentCommand::Executions { id, limit, offset } => {
             get_agent_executions(&client, &id, limit, offset).await?
         }
-        AgentCommand::LatestExecution { id } => {
-            get_latest_execution(&client, &id).await?
-        }
-        AgentCommand::Conversation { id, limit } => {
-            get_conversation(&client, &id, limit).await?
-        }
-        AgentCommand::SendMessage { id, message, message_type } => {
-            send_message(&client, &id, &message, message_type.as_deref()).await?
-        }
+        AgentCommand::LatestExecution { id } => get_latest_execution(&client, &id).await?,
+        AgentCommand::Conversation { id, limit } => get_conversation(&client, &id, limit).await?,
+        AgentCommand::SendMessage {
+            id,
+            message,
+            message_type,
+        } => send_message(&client, &id, &message, message_type.as_deref()).await?,
     };
 
     // Format and print output
@@ -4129,8 +4360,8 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
 
 /// Run message management commands.
 async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, message::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{message::*, output::format_output, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -4147,42 +4378,45 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
     };
 
     let response = match cmd {
-        MessageCommand::List { limit, offset, severity, status } => {
-            list_messages(&client, limit, offset, severity.as_deref(), status.as_deref()).await?
+        MessageCommand::List {
+            limit,
+            offset,
+            severity,
+            status,
+        } => {
+            list_messages(
+                &client,
+                limit,
+                offset,
+                severity.as_deref(),
+                status.as_deref(),
+            )
+            .await?
         }
-        MessageCommand::Get { id } => {
-            get_message(&client, &id).await?
-        }
-        MessageCommand::Send { title, body, severity, source } => {
-            send_message(&client, &title, &body, &severity, source.as_deref()).await?
-        }
-        MessageCommand::Read { id } => {
-            acknowledge_message(&client, &id).await?
-        }
-        MessageCommand::ChannelList => {
-            list_channels(&client).await?
-        }
-        MessageCommand::ChannelGet { name } => {
-            get_channel(&client, &name).await?
-        }
-        MessageCommand::ChannelTypes => {
-            list_channel_types(&client).await?
-        }
+        MessageCommand::Get { id } => get_message(&client, &id).await?,
+        MessageCommand::Send {
+            title,
+            body,
+            severity,
+            source,
+        } => send_message(&client, &title, &body, &severity, source.as_deref()).await?,
+        MessageCommand::Read { id } => acknowledge_message(&client, &id).await?,
+        MessageCommand::ChannelList => list_channels(&client).await?,
+        MessageCommand::ChannelGet { name } => get_channel(&client, &name).await?,
+        MessageCommand::ChannelTypes => list_channel_types(&client).await?,
         MessageCommand::ChannelTypeSchema { channel_type } => {
             get_channel_type_schema(&client, &channel_type).await?
         }
-        MessageCommand::ChannelCreate { name, channel_type, config } => {
-            create_channel(&client, &name, &channel_type, &config).await?
-        }
+        MessageCommand::ChannelCreate {
+            name,
+            channel_type,
+            config,
+        } => create_channel(&client, &name, &channel_type, &config).await?,
         MessageCommand::ChannelUpdate { name, config } => {
             update_channel(&client, &name, &config).await?
         }
-        MessageCommand::ChannelDelete { name } => {
-            delete_channel(&client, &name).await?
-        }
-        MessageCommand::ChannelTest { name } => {
-            test_channel(&client, &name).await?
-        }
+        MessageCommand::ChannelDelete { name } => delete_channel(&client, &name).await?,
+        MessageCommand::ChannelTest { name } => test_channel(&client, &name).await?,
     };
 
     // Format and print output
@@ -4192,8 +4426,8 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
 
 /// Run push management commands.
 async fn run_push_cmd(cmd: PushCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, data_push::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{data_push::*, output::format_output, ApiClient};
 
     let api_base = std::env::var("NEOMIND_API_BASE")
         .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
@@ -4207,16 +4441,25 @@ async fn run_push_cmd(cmd: PushCommand) -> Result<()> {
     let response = match cmd {
         PushCommand::List => list_targets(&client).await?,
         PushCommand::Get { id } => get_target(&client, &id).await?,
-        PushCommand::Create { name, target_type, config, schedule, sources } => {
+        PushCommand::Create {
+            name,
+            target_type,
+            config,
+            schedule,
+            sources,
+        } => {
             let t_type = target_type.as_deref().unwrap_or("webhook");
             let cfg = config.as_deref().unwrap_or("{}");
             let sched = schedule.as_deref().unwrap_or("event");
             let src = sources.as_deref().unwrap_or("");
             create_target(&client, &name, t_type, cfg, sched, src).await?
         }
-        PushCommand::Update { id, name, config, enabled } => {
-            update_target(&client, &id, name.as_deref(), config.as_deref(), enabled).await?
-        }
+        PushCommand::Update {
+            id,
+            name,
+            config,
+            enabled,
+        } => update_target(&client, &id, name.as_deref(), config.as_deref(), enabled).await?,
         PushCommand::Delete { id } => delete_target(&client, &id).await?,
         PushCommand::Start { id } => start_target(&client, &id).await?,
         PushCommand::Stop { id } => stop_target(&client, &id).await?,
@@ -4231,8 +4474,8 @@ async fn run_push_cmd(cmd: PushCommand) -> Result<()> {
 
 /// Run widget management commands.
 async fn run_widget_cmd(cmd: WidgetCommand) -> Result<()> {
-    use neomind_cli_ops::{ApiClient, widget::*, output::format_output};
     use neomind_cli_ops::types::OutputFormat;
+    use neomind_cli_ops::{output::format_output, widget::*, ApiClient};
 
     // Get API base URL from environment or use default
     let api_base = std::env::var("NEOMIND_API_BASE")
@@ -4250,37 +4493,58 @@ async fn run_widget_cmd(cmd: WidgetCommand) -> Result<()> {
 
     let response = match cmd {
         WidgetCommand::List { json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = list_widgets(&client).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
         WidgetCommand::Get { id, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = get_widget(&client, &id).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
         WidgetCommand::Bundle { id, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = get_widget_bundle(&client, &id).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
-        WidgetCommand::Create { name, widget_type, output, json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+        WidgetCommand::Create {
+            name,
+            widget_type,
+            output,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = create_widget(&name, &widget_type, output.as_deref())?;
             format_output(&resp, fmt);
             return Ok(());
         }
-        WidgetCommand::Install { file } => {
-            install_widget_file(&client, &file).await?
-        }
-        WidgetCommand::Uninstall { id } => {
-            uninstall_widget(&client, &id).await?
-        }
+        WidgetCommand::Install { file } => install_widget_file(&client, &file).await?,
+        WidgetCommand::Uninstall { id } => uninstall_widget(&client, &id).await?,
         WidgetCommand::MarketList { json } => {
-            let fmt = if json { OutputFormat::Json } else { output_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                output_format
+            };
             let resp = list_marketplace_widgets(&client).await?;
             format_output(&resp, fmt);
             return Ok(());
@@ -4299,11 +4563,19 @@ async fn run_system_cmd(cmd: SystemCommand) -> Result<()> {
     use neomind_cli_ops::output::format_output;
     use neomind_cli_ops::types::OutputFormat;
     let client = neomind_cli_ops::ApiClient::new();
-    let base_format = if std::env::var("NEOMIND_JSON").is_ok() { OutputFormat::Json } else { OutputFormat::Human };
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
 
     match cmd {
         SystemCommand::Info { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let resp = neomind_cli_ops::system::system_info(&client).await?;
             format_output(&resp, fmt);
         }
@@ -4315,35 +4587,93 @@ async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<()> {
     use neomind_cli_ops::output::format_output;
     use neomind_cli_ops::types::OutputFormat;
     let client = neomind_cli_ops::ApiClient::new();
-    let base_format = if std::env::var("NEOMIND_JSON").is_ok() { OutputFormat::Json } else { OutputFormat::Human };
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
 
     match cmd {
         ConnectorCommand::List { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let resp = neomind_cli_ops::connector::list_connectors(&client).await?;
             format_output(&resp, fmt);
         }
         ConnectorCommand::Get { id, json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let resp = neomind_cli_ops::connector::get_connector(&client, &id).await?;
             format_output(&resp, fmt);
         }
-        ConnectorCommand::Create { connector_type, name, host, port, tls, username, password, topics, json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        ConnectorCommand::Create {
+            connector_type,
+            name,
+            host,
+            port,
+            tls,
+            username,
+            password,
+            topics,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let resp = neomind_cli_ops::connector::create_connector(
-                &client, &name, Some(&connector_type), &host, port, tls,
-                username.as_deref(), password.as_deref(), topics.as_deref(),
-            ).await?;
+                &client,
+                &name,
+                Some(&connector_type),
+                &host,
+                port,
+                tls,
+                username.as_deref(),
+                password.as_deref(),
+                topics.as_deref(),
+            )
+            .await?;
             format_output(&resp, fmt);
         }
-        ConnectorCommand::Update { id, name, host, port, tls, username, password, topics, disable, json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        ConnectorCommand::Update {
+            id,
+            name,
+            host,
+            port,
+            tls,
+            username,
+            password,
+            topics,
+            disable,
+            json,
+        } => {
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let enabled = if disable { Some(false) } else { None };
             let tls_val = if tls { Some(true) } else { None };
             let resp = neomind_cli_ops::connector::update_connector(
-                &client, &id, name.as_deref(), host.as_deref(), port, tls_val,
-                username.as_deref(), password.as_deref(), topics.as_deref(), enabled,
-            ).await?;
+                &client,
+                &id,
+                name.as_deref(),
+                host.as_deref(),
+                port,
+                tls_val,
+                username.as_deref(),
+                password.as_deref(),
+                topics.as_deref(),
+                enabled,
+            )
+            .await?;
             format_output(&resp, fmt);
         }
         ConnectorCommand::Delete { id } => {
@@ -4355,12 +4685,17 @@ async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<()> {
             format_output(&resp, base_format);
         }
         ConnectorCommand::Subscriptions { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+            let fmt = if json {
+                OutputFormat::Json
+            } else {
+                base_format
+            };
             let resp = neomind_cli_ops::connector::list_subscriptions(&client).await?;
             format_output(&resp, fmt);
         }
         ConnectorCommand::Subscribe { topic, qos } => {
-            let resp = neomind_cli_ops::connector::subscribe_topic(&client, &topic, Some(qos)).await?;
+            let resp =
+                neomind_cli_ops::connector::subscribe_topic(&client, &topic, Some(qos)).await?;
             format_output(&resp, base_format);
         }
         ConnectorCommand::Unsubscribe { topic } => {

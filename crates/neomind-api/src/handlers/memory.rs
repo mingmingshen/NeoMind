@@ -196,21 +196,30 @@ pub async fn get_stats(State(state): State<ServerState>) -> Response {
         Ok(mem_stats) => {
             use std::collections::HashMap as Map;
             let mut files: Map<String, serde_json::Value> = Map::new();
-            files.insert("user".to_string(), serde_json::json!({
-                "chars": mem_stats.user.chars,
-                "modified_at": 0,
-            }));
-            files.insert("knowledge".to_string(), serde_json::json!({
-                "chars": mem_stats.knowledge.chars,
-                "modified_at": 0,
-            }));
+            files.insert(
+                "user".to_string(),
+                serde_json::json!({
+                    "chars": mem_stats.user.chars,
+                    "modified_at": 0,
+                }),
+            );
+            files.insert(
+                "knowledge".to_string(),
+                serde_json::json!({
+                    "chars": mem_stats.knowledge.chars,
+                    "modified_at": 0,
+                }),
+            );
 
-            let custom_files: Vec<serde_json::Value> = mem_stats.custom_files
+            let custom_files: Vec<serde_json::Value> = mem_stats
+                .custom_files
                 .into_iter()
-                .map(|cf| serde_json::json!({
-                    "name": cf.name,
-                    "chars": cf.chars,
-                }))
+                .map(|cf| {
+                    serde_json::json!({
+                        "name": cf.name,
+                        "chars": cf.chars,
+                    })
+                })
                 .collect();
 
             Json(serde_json::json!({
@@ -249,7 +258,6 @@ pub async fn update_config(
         ),
     }
 }
-
 
 /// POST /api/memory/add - Manually add a memory entry
 #[allow(deprecated)]
@@ -336,7 +344,10 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
     let knowledge_content = store.read_file("knowledge").await.unwrap_or_default();
     let knowledge_result = evict_to_limit(&knowledge_content, config.knowledge_char_limit);
     if knowledge_result.evicted {
-        if let Err(e) = store.write_file("knowledge", &knowledge_result.content).await {
+        if let Err(e) = store
+            .write_file("knowledge", &knowledge_result.content)
+            .await
+        {
             tracing::warn!(error = %e, "Failed to write evicted knowledge content");
         } else {
             total_evicted += knowledge_result.lines_removed;

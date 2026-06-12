@@ -335,7 +335,8 @@ impl MessageChannel for EmailChannel {
                     .map_err(|e| Error::SendFailed(format!("Failed to send email: {}", e)))?;
             } else {
                 // Fallback: build transport on-the-fly (should not normally happen)
-                let mailer = build_smtp_transport(&smtp_server, smtp_port, username, password, use_tls)?;
+                let mailer =
+                    build_smtp_transport(&smtp_server, smtp_port, username, password, use_tls)?;
                 lettre::Transport::send(&mailer, &email)
                     .map_err(|e| Error::SendFailed(format!("Failed to send email: {}", e)))?;
             }

@@ -84,10 +84,7 @@ impl ChannelFilter {
 mod tests {
     use super::*;
 
-    fn make_test_message(
-        source_type: &str,
-        severity: MessageSeverity,
-    ) -> Message {
+    fn make_test_message(source_type: &str, severity: MessageSeverity) -> Message {
         let mut msg = Message::system("Test".to_string(), "Test".to_string());
         msg.source_type = source_type.to_string();
         msg.severity = severity;

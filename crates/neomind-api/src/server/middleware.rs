@@ -1,11 +1,7 @@
 //! Server middleware.
 
 use axum::{
-    body::Body,
-    extract::ConnectInfo,
-    extract::State,
-    http::Request,
-    middleware::Next,
+    body::Body, extract::ConnectInfo, extract::State, http::Request, middleware::Next,
     response::IntoResponse,
 };
 use std::net::SocketAddr;

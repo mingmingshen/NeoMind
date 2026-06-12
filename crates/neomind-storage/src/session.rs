@@ -5,9 +5,9 @@
 //! NOTE: Uses JSON serialization instead of Bincode for better schema compatibility.
 //! JSON is more forgiving when fields are added/removed from structs over time.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -1115,7 +1115,9 @@ mod tests {
             SessionMessage::assistant("Response 2"),
             SessionMessage::user("Third"),
         ];
-        let count2 = store.append_messages("test-session", &more_messages).unwrap();
+        let count2 = store
+            .append_messages("test-session", &more_messages)
+            .unwrap();
         assert_eq!(count2, 2);
 
         // Verify all messages are stored
@@ -1193,7 +1195,9 @@ mod tests {
         assert_eq!(count, 3);
 
         // Add more messages via append
-        store.append_message("test-session", &SessionMessage::assistant("Response 2")).unwrap();
+        store
+            .append_message("test-session", &SessionMessage::assistant("Response 2"))
+            .unwrap();
 
         // Count should be 4
         let count = store.message_count("test-session").unwrap();
@@ -1277,7 +1281,9 @@ mod tests {
             memory_enabled: true,
             ..Default::default()
         };
-        store.save_session_metadata("test-session", &metadata).unwrap();
+        store
+            .save_session_metadata("test-session", &metadata)
+            .unwrap();
 
         // Verify metadata exists
         let meta = store.get_session_metadata("test-session").unwrap();
@@ -1414,13 +1420,18 @@ mod tests {
             summary_up_to_index: Some(5),
             preview: None,
         };
-        store.save_session_metadata("test-session", &metadata).unwrap();
+        store
+            .save_session_metadata("test-session", &metadata)
+            .unwrap();
 
         // Retrieve and verify
         let loaded = store.get_session_metadata("test-session").unwrap();
         assert_eq!(loaded.title, Some("Test Session".to_string()));
         assert!(loaded.memory_enabled);
-        assert_eq!(loaded.conversation_summary, Some("This is a summary".to_string()));
+        assert_eq!(
+            loaded.conversation_summary,
+            Some("This is a summary".to_string())
+        );
         assert_eq!(loaded.summary_up_to_index, Some(5));
     }
 
@@ -1498,7 +1509,8 @@ mod tests {
         let store = create_temp_store();
 
         // Create a stale stream state (manually set old timestamp)
-        let mut stale_state = PendingStreamState::new("stale-session".to_string(), "Old".to_string());
+        let mut stale_state =
+            PendingStreamState::new("stale-session".to_string(), "Old".to_string());
         stale_state.updated_at = chrono::Utc::now().timestamp() - 700; // 11.6 minutes ago
         store.save_pending_stream(&stale_state).unwrap();
 
@@ -1603,7 +1615,10 @@ mod tests {
         let handle2 = tokio::spawn(async move {
             for i in 0..5 {
                 store_clone
-                    .append_message("test-session", &SessionMessage::assistant(format!("Msg2-{}", i)))
+                    .append_message(
+                        "test-session",
+                        &SessionMessage::assistant(format!("Msg2-{}", i)),
+                    )
                     .unwrap();
             }
         });
@@ -1612,10 +1627,7 @@ mod tests {
         let handle3 = tokio::spawn(async move {
             for i in 0..5 {
                 store_clone
-                    .append_message(
-                        "test-session",
-                        &SessionMessage::user(format!("Msg3-{}", i)),
-                    )
+                    .append_message("test-session", &SessionMessage::user(format!("Msg3-{}", i)))
                     .unwrap();
             }
         });
@@ -1743,12 +1755,18 @@ mod tests {
         assert_eq!(count, 100);
 
         // Verify first and last messages
-        assert_eq!(loaded[0].content, "This is message number 0 with some content");
+        assert_eq!(
+            loaded[0].content,
+            "This is message number 0 with some content"
+        );
         assert_eq!(
             loaded[99].content,
             "This is message number 99 with some content"
         );
-        assert_eq!(loaded[0].thinking, Some("Thinking about message 0".to_string()));
+        assert_eq!(
+            loaded[0].thinking,
+            Some("Thinking about message 0".to_string())
+        );
         assert_eq!(
             loaded[99].thinking,
             Some("Thinking about message 99".to_string())

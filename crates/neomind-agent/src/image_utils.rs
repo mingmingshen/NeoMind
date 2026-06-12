@@ -32,7 +32,10 @@ pub fn parse_image_data(s: &str) -> Option<ParsedImage<'_>> {
     }
     // Raw base64 path — detect mime from magic prefix.
     let mime_type = infer_mime_from_base64_prefix(s).unwrap_or("image/png");
-    Some(ParsedImage { mime_type, base64: s })
+    Some(ParsedImage {
+        mime_type,
+        base64: s,
+    })
 }
 
 /// Try to parse a `data:image/<subtype>;base64,<data>` URL.
@@ -52,7 +55,10 @@ pub fn parse_data_image_url(s: &str) -> Option<ParsedImage<'_>> {
     }
     let subtype = &mime_part["image/".len()..];
     let mime_type = normalize_mime_subtype(subtype)?;
-    Some(ParsedImage { mime_type, base64: data })
+    Some(ParsedImage {
+        mime_type,
+        base64: data,
+    })
 }
 
 /// Normalize a MIME subtype (e.g. `"jpeg"`, `"jpg"`, `"png"`) into a

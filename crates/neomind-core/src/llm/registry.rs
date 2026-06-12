@@ -41,7 +41,10 @@ impl RegistryEntry {
     }
 
     fn usize_field(&self, key: &str) -> Option<usize> {
-        self.raw.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
+        self.raw
+            .get(key)
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize)
     }
 }
 
@@ -51,8 +54,8 @@ static REGISTRY: OnceLock<HashMap<String, RegistryEntry>> = OnceLock::new();
 fn registry() -> &'static HashMap<String, RegistryEntry> {
     REGISTRY.get_or_init(|| {
         // Parse as raw JSON first to tolerate per-entry type mismatches.
-        let parsed: HashMap<String, serde_json::Value> =
-            serde_json::from_str(REGISTRY_JSON).unwrap_or_else(|e| {
+        let parsed: HashMap<String, serde_json::Value> = serde_json::from_str(REGISTRY_JSON)
+            .unwrap_or_else(|e| {
                 tracing::error!(
                     error = %e,
                     "Failed to parse embedded model_registry.json — falling back to empty registry"
@@ -75,8 +78,14 @@ fn registry() -> &'static HashMap<String, RegistryEntry> {
 
 fn stats_internal(map: &HashMap<String, RegistryEntry>) -> RegistryStats {
     let total = map.len();
-    let vision_count = map.values().filter(|e| e.bool_field("supports_vision") == Some(true)).count();
-    let non_vision_count = map.values().filter(|e| e.bool_field("supports_vision") == Some(false)).count();
+    let vision_count = map
+        .values()
+        .filter(|e| e.bool_field("supports_vision") == Some(true))
+        .count();
+    let non_vision_count = map
+        .values()
+        .filter(|e| e.bool_field("supports_vision") == Some(false))
+        .count();
     RegistryStats {
         total,
         vision_count,
@@ -178,7 +187,8 @@ pub fn heuristic_vision_match(model: &str) -> bool {
         || m.contains("cogvlm")
         || m.contains("internvl")
         || m.contains("yi-vl")
-        || m.contains("qvq") // Qwen visual reasoning family
+        || m.contains("qvq")
+    // Qwen visual reasoning family
     {
         return true;
     }
@@ -190,7 +200,11 @@ pub fn heuristic_vision_match(model: &str) -> bool {
     // Native multimodal families — ALL variants in these series support vision.
     // Qwen 3.5/3.6: native multimodal (early fusion), all sizes support vision.
     // Gemma 3: native multimodal, all sizes support vision.
-    if m.starts_with("qwen3.5") || m.starts_with("qwen3.6") || m.starts_with("qwen3.7") || m.starts_with("gemma3") {
+    if m.starts_with("qwen3.5")
+        || m.starts_with("qwen3.6")
+        || m.starts_with("qwen3.7")
+        || m.starts_with("gemma3")
+    {
         return true;
     }
     false

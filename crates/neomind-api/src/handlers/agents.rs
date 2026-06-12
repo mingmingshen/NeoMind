@@ -580,22 +580,33 @@ impl From<&AiAgent> for AgentDetailDto {
             }),
             memory: Some(AgentMemoryDto {
                 journal: ExecutionJournalDto {
-                    records: agent.memory.journal.records.iter().map(|r| ExecutionRecordDto {
-                        timestamp: format_datetime(r.timestamp),
-                        execution_id: r.execution_id.clone(),
-                        outcome: r.outcome.clone(),
-                        action_taken: r.action_taken.clone(),
-                        success: r.success,
-                    }).collect(),
+                    records: agent
+                        .memory
+                        .journal
+                        .records
+                        .iter()
+                        .map(|r| ExecutionRecordDto {
+                            timestamp: format_datetime(r.timestamp),
+                            execution_id: r.execution_id.clone(),
+                            outcome: r.outcome.clone(),
+                            action_taken: r.action_taken.clone(),
+                            success: r.success,
+                        })
+                        .collect(),
                     max_records: agent.memory.journal.max_records,
                 },
-                knowledge_files: agent.memory.knowledge_files.iter().map(|f| KnowledgeFileRefDto {
-                    name: f.name.clone(),
-                    description: f.description.clone(),
-                    content: None,
-                    created_at: format_datetime(f.created_at),
-                    updated_at: format_datetime(f.updated_at),
-                }).collect(),
+                knowledge_files: agent
+                    .memory
+                    .knowledge_files
+                    .iter()
+                    .map(|f| KnowledgeFileRefDto {
+                        name: f.name.clone(),
+                        description: f.description.clone(),
+                        content: None,
+                        created_at: format_datetime(f.created_at),
+                        updated_at: format_datetime(f.updated_at),
+                    })
+                    .collect(),
                 updated_at: format_datetime(agent.memory.updated_at),
             }),
             resources: agent
@@ -1123,10 +1134,7 @@ async fn init_agent_knowledge_file(state: &crate::server::ServerState, agent: &A
         "You are an intelligent IoT agent named '{}' monitoring edge devices.",
         agent.name
     );
-    let identity_section = agent
-        .system_prompt
-        .as_deref()
-        .unwrap_or(&default_identity);
+    let identity_section = agent.system_prompt.as_deref().unwrap_or(&default_identity);
 
     // Schedule info
     let schedule_info = match &agent.schedule.schedule_type {
@@ -1179,7 +1187,8 @@ async fn init_agent_knowledge_file(state: &crate::server::ServerState, agent: &A
     );
 
     // Write the knowledge file
-    if let Err(e) = memory_store.write_agent_custom_file(&agent.id, "task-understanding", &content) {
+    if let Err(e) = memory_store.write_agent_custom_file(&agent.id, "task-understanding", &content)
+    {
         tracing::warn!(
             agent_id = %agent.id,
             "Failed to init knowledge file at creation: {}", e
@@ -1191,14 +1200,21 @@ async fn init_agent_knowledge_file(state: &crate::server::ServerState, agent: &A
     let mut updated_memory = agent.memory.clone();
     updated_memory.knowledge_files.push(KnowledgeFileRef {
         name: "task-understanding".to_string(),
-        description: format!("Task context: {}",
-            agent.user_prompt.chars().take(80).collect::<String>()),
+        description: format!(
+            "Task context: {}",
+            agent.user_prompt.chars().take(80).collect::<String>()
+        ),
         created_at: now,
         updated_at: now,
     });
 
     // Save updated memory back to storage (await to avoid TOCTOU with early executions)
-    if let Err(e) = state.agents.agent_store.update_agent_memory(&agent.id, updated_memory).await {
+    if let Err(e) = state
+        .agents
+        .agent_store
+        .update_agent_memory(&agent.id, updated_memory)
+        .await
+    {
         tracing::warn!(
             agent_id = %agent.id,
             "Failed to save knowledge file index: {}", e
@@ -1956,27 +1972,38 @@ pub async fn get_agent_memory(
 
     let memory = AgentMemoryDto {
         journal: ExecutionJournalDto {
-            records: agent.memory.journal.records.iter().map(|r| ExecutionRecordDto {
-                timestamp: format_datetime(r.timestamp),
-                execution_id: r.execution_id.clone(),
-                outcome: r.outcome.clone(),
-                action_taken: r.action_taken.clone(),
-                success: r.success,
-            }).collect(),
+            records: agent
+                .memory
+                .journal
+                .records
+                .iter()
+                .map(|r| ExecutionRecordDto {
+                    timestamp: format_datetime(r.timestamp),
+                    execution_id: r.execution_id.clone(),
+                    outcome: r.outcome.clone(),
+                    action_taken: r.action_taken.clone(),
+                    success: r.success,
+                })
+                .collect(),
             max_records: agent.memory.journal.max_records,
         },
-        knowledge_files: agent.memory.knowledge_files.iter().map(|f| {
-            let content = memory_store
-                .read_agent_custom_file(agent_id, &f.name)
-                .unwrap_or_default();
-            KnowledgeFileRefDto {
-                name: f.name.clone(),
-                description: f.description.clone(),
-                content: Some(content),
-                created_at: format_datetime(f.created_at),
-                updated_at: format_datetime(f.updated_at),
-            }
-        }).collect(),
+        knowledge_files: agent
+            .memory
+            .knowledge_files
+            .iter()
+            .map(|f| {
+                let content = memory_store
+                    .read_agent_custom_file(agent_id, &f.name)
+                    .unwrap_or_default();
+                KnowledgeFileRefDto {
+                    name: f.name.clone(),
+                    description: f.description.clone(),
+                    content: Some(content),
+                    created_at: format_datetime(f.created_at),
+                    updated_at: format_datetime(f.updated_at),
+                }
+            })
+            .collect(),
         updated_at: format_datetime(agent.memory.updated_at),
     };
 
@@ -2366,7 +2393,10 @@ pub async fn get_available_resources(
 
     let mut device_resources = Vec::new();
     for device in devices {
-        let status = device_statuses.get(&device.device_id).cloned().unwrap_or_default();
+        let status = device_statuses
+            .get(&device.device_id)
+            .cloned()
+            .unwrap_or_default();
         let is_connected = status.is_connected();
 
         device_resources.push(json!({

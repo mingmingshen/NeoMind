@@ -403,10 +403,13 @@ impl ExtensionRegistry {
         let start_time = std::time::Instant::now();
 
         // Execute with timeout protection
-        let result = tokio::time::timeout(std::time::Duration::from_secs(self.command_timeout_secs), async {
-            let ext_guard = ext_clone.read().await;
-            ext_guard.execute_command(command, args).await
-        })
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(self.command_timeout_secs),
+            async {
+                let ext_guard = ext_clone.read().await;
+                ext_guard.execute_command(command, args).await
+            },
+        )
         .await;
 
         // Calculate execution time
@@ -449,7 +452,10 @@ impl ExtensionRegistry {
                 self.safety_manager.record_failure(id).await;
 
                 // Update error stats for timeout
-                let error_msg = format!("Command '{}' timed out after {} seconds", command, self.command_timeout_secs);
+                let error_msg = format!(
+                    "Command '{}' timed out after {} seconds",
+                    command, self.command_timeout_secs
+                );
                 if let Some(info) = self.info_cache.write().get_mut(id) {
                     info.stats.error_count += 1;
                     info.stats.last_error = Some(error_msg.clone());

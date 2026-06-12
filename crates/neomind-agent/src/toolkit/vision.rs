@@ -24,14 +24,11 @@ const MAX_BASE64_LEN: usize = MAX_IMAGE_SIZE * 4 / 3 + 4;
 /// Allowed image file extensions (lowercase). Only binary raster formats
 /// that pass `detect_mime_from_bytes()` are included. SVG is excluded
 /// because it cannot pass the magic-bytes validation for local files.
-const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif",
-];
+const ALLOWED_IMAGE_EXTENSIONS: &[&str] =
+    &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif"];
 
 /// Allowed MIME subtypes in data URLs (the part after "image/").
-const ALLOWED_DATA_MIME_SUBTYPES: &[&str] = &[
-    "png", "jpeg", "jpg", "gif", "webp", "bmp", "tiff",
-];
+const ALLOWED_DATA_MIME_SUBTYPES: &[&str] = &["png", "jpeg", "jpg", "gif", "webp", "bmp", "tiff"];
 
 /// Configuration for the vision tool.
 #[derive(Debug, Clone)]
@@ -144,13 +141,12 @@ impl VisionTool {
             Some(inst) => {
                 let id = inst.id.clone();
                 tracing::debug!(backend_id = %id, "Using fallback VLM backend for vision");
-                self.llm_manager
-                    .get_runtime(&id)
-                    .await
-                    .map_err(|e| ToolError::Execution(format!(
+                self.llm_manager.get_runtime(&id).await.map_err(|e| {
+                    ToolError::Execution(format!(
                         "VLM backend '{}' unavailable: {}. Check if the model service is running.",
                         id, e
-                    )))
+                    ))
+                })
             }
             None => Err(ToolError::Execution(
                 "No vision model configured. Install a VLM (e.g., qwen2.5-vl) via Ollama.".into(),
@@ -163,9 +159,14 @@ impl VisionTool {
         // 1. Data URL: data:image/png;base64,... (case-insensitive prefix)
         //    Also handles incomplete data URLs missing the "data:" prefix
         //    (e.g. "image/jpeg;base64,/9j/...") which some callers produce.
-        let image_lower_prefix = image.chars().take(11).collect::<String>().to_ascii_lowercase();
+        let image_lower_prefix = image
+            .chars()
+            .take(11)
+            .collect::<String>()
+            .to_ascii_lowercase();
         let is_data_image_url = image_lower_prefix == "data:image/";
-        let is_incomplete_data_url = !is_data_image_url && image.contains(";base64,")
+        let is_incomplete_data_url = !is_data_image_url
+            && image.contains(";base64,")
             && image_lower_prefix.starts_with("image/");
 
         if is_data_image_url || is_incomplete_data_url {
@@ -184,14 +185,16 @@ impl VisionTool {
                     if b64.len() > MAX_BASE64_LEN {
                         return Err(ToolError::InvalidArguments(format!(
                             "Data URL base64 data too large ({} chars, max {} chars)",
-                            b64.len(), MAX_BASE64_LEN
+                            b64.len(),
+                            MAX_BASE64_LEN
                         )));
                     }
                     let subtype = mime_suffix.to_lowercase();
                     if !ALLOWED_DATA_MIME_SUBTYPES.contains(&subtype.as_str()) {
                         return Err(ToolError::InvalidArguments(format!(
                             "Unsupported image type '{}' in data URL. Allowed: {}",
-                            subtype, ALLOWED_DATA_MIME_SUBTYPES.join(", ")
+                            subtype,
+                            ALLOWED_DATA_MIME_SUBTYPES.join(", ")
                         )));
                     }
                     let mime = format!("image/{}", subtype);
@@ -203,12 +206,10 @@ impl VisionTool {
         // 2. HTTP/HTTPS URL
         if image.starts_with("http://") || image.starts_with("https://") {
             let bytes = self.fetch_http_image(image).await?;
-            let mime =
-                detect_mime_from_bytes(&bytes).unwrap_or("image/jpeg").to_string();
-            let b64 = base64::Engine::encode(
-                &base64::engine::general_purpose::STANDARD,
-                &bytes,
-            );
+            let mime = detect_mime_from_bytes(&bytes)
+                .unwrap_or("image/jpeg")
+                .to_string();
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
             return Ok((b64, mime));
         }
 
@@ -232,14 +233,13 @@ impl VisionTool {
         // long enough to plausibly be image data.
         if looks_like_raw_base64(image) {
             if image.is_empty() {
-                return Err(ToolError::InvalidArguments(
-                    "Image data is empty".into(),
-                ));
+                return Err(ToolError::InvalidArguments("Image data is empty".into()));
             }
             if image.len() > MAX_BASE64_LEN {
                 return Err(ToolError::InvalidArguments(format!(
                     "Base64 data too large ({} chars, max {} chars)",
-                    image.len(), MAX_BASE64_LEN
+                    image.len(),
+                    MAX_BASE64_LEN
                 )));
             }
             let mime = infer_mime_from_base64_prefix(image)
@@ -256,25 +256,22 @@ impl VisionTool {
         // 5. Local file path
         if image.starts_with('/') || image.starts_with("./") {
             let bytes = self.read_local_image(image).await?;
-            let mime =
-                detect_mime_from_bytes(&bytes).unwrap_or("image/jpeg").to_string();
-            let b64 = base64::Engine::encode(
-                &base64::engine::general_purpose::STANDARD,
-                &bytes,
-            );
+            let mime = detect_mime_from_bytes(&bytes)
+                .unwrap_or("image/jpeg")
+                .to_string();
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
             return Ok((b64, mime));
         }
 
         // 6. Fallback: treat as raw base64
         if image.is_empty() {
-            return Err(ToolError::InvalidArguments(
-                "Image data is empty".into(),
-            ));
+            return Err(ToolError::InvalidArguments("Image data is empty".into()));
         }
         if image.len() > MAX_BASE64_LEN {
             return Err(ToolError::InvalidArguments(format!(
                 "Base64 data too large ({} chars, max {} chars)",
-                image.len(), MAX_BASE64_LEN
+                image.len(),
+                MAX_BASE64_LEN
             )));
         }
         Ok((image.to_string(), "image/jpeg".to_string()))
@@ -302,8 +299,8 @@ impl VisionTool {
         // Block sensitive system paths (checked against canonical path)
         let canonical_lower = canonical_str.to_lowercase();
         let blocked_prefixes = [
-            "/etc/", "/proc/", "/sys/", "/dev/", "/run/", "/boot/", "/root/",
-            "/var/", "/tmp/", "/opt/", "/srv/",
+            "/etc/", "/proc/", "/sys/", "/dev/", "/run/", "/boot/", "/root/", "/var/", "/tmp/",
+            "/opt/", "/srv/",
         ];
         if blocked_prefixes
             .iter()
@@ -317,8 +314,7 @@ impl VisionTool {
         // Block hidden files (dotfiles) in home directories
         if let Some(name) = canonical.file_name().and_then(|n| n.to_str()) {
             if name.starts_with('.')
-                && (canonical_lower.starts_with("/home")
-                    || canonical_lower.starts_with("/users"))
+                && (canonical_lower.starts_with("/home") || canonical_lower.starts_with("/users"))
             {
                 return Err(ToolError::PermissionDenied(format!(
                     "Access to hidden file is not allowed"
@@ -581,9 +577,7 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> Option<&'static str> {
         [0x89, 0x50, 0x4E, 0x47] => Some("image/png"),
         [0xFF, 0xD8, 0xFF, _] => Some("image/jpeg"),
         [0x47, 0x49, 0x46, _] => Some("image/gif"),
-        [0x52, 0x49, 0x46, _]
-            if bytes.len() >= 12 && &bytes[8..12] == b"WEBP" =>
-        {
+        [0x52, 0x49, 0x46, _] if bytes.len() >= 12 && &bytes[8..12] == b"WEBP" => {
             Some("image/webp")
         }
         // BMP: starts with "BM"
@@ -634,7 +628,7 @@ fn looks_like_raw_base64(s: &str) -> bool {
             || s.starts_with("R0lGOD")      // GIF
             || s.starts_with("Qk")          // BMP
             || s.starts_with("SUkq")        // TIFF LE
-            || s.starts_with("TU0"));       // TIFF BE
+            || s.starts_with("TU0")); // TIFF BE
     if has_magic {
         return true;
     }
@@ -663,10 +657,7 @@ fn is_private_host(host: &str) -> bool {
         return is_private_ip(&ip);
     }
 
-    if host.ends_with(".local")
-        || host.ends_with(".localhost")
-        || host == "localhost.localdomain"
-    {
+    if host.ends_with(".local") || host.ends_with(".localhost") || host == "localhost.localdomain" {
         return true;
     }
 
@@ -857,7 +848,9 @@ mod tests {
 
     #[test]
     fn test_looks_like_raw_base64_webp_magic() {
-        assert!(looks_like_raw_base64("UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoB"));
+        assert!(looks_like_raw_base64(
+            "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoB"
+        ));
     }
 
     #[test]
@@ -915,7 +908,10 @@ mod tests {
 
     #[test]
     fn test_infer_mime_webp() {
-        assert_eq!(infer_mime_from_base64_prefix("UklGRiQA"), Some("image/webp"));
+        assert_eq!(
+            infer_mime_from_base64_prefix("UklGRiQA"),
+            Some("image/webp")
+        );
     }
 
     #[test]

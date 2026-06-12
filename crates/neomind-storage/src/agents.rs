@@ -1469,7 +1469,10 @@ mod tests {
         // Retrieve and verify
         let retrieved = store.get_agent("agent-1").await.unwrap().unwrap();
         assert_eq!(retrieved.memory.journal.records.len(), 1);
-        assert_eq!(retrieved.memory.journal.records[0].outcome, "Temperature normal");
+        assert_eq!(
+            retrieved.memory.journal.records[0].outcome,
+            "Temperature normal"
+        );
     }
 
     #[tokio::test]

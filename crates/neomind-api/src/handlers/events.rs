@@ -347,11 +347,7 @@ pub async fn event_stream_handler(
 ) -> Result<Sse<impl Stream<Item = Result<Event, axum::Error>>>, StatusCode> {
     // Validate authentication: JWT token or API key
     let authenticated = if let Some(token) = params.token.as_ref() {
-        state
-            .auth
-            .user_state
-            .validate_token(token)
-            .is_ok()
+        state.auth.user_state.validate_token(token).is_ok()
     } else if let Some(api_key) = params.api_key.as_ref() {
         state.auth.api_key_state.validate_key(api_key)
     } else {

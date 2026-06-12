@@ -20,10 +20,7 @@ pub struct MemoryScheduler {
 
 impl MemoryScheduler {
     /// Create a new scheduler
-    pub fn new(
-        store: Arc<RwLock<MarkdownMemoryStore>>,
-        config: MemoryConfig,
-    ) -> Self {
+    pub fn new(store: Arc<RwLock<MarkdownMemoryStore>>, config: MemoryConfig) -> Self {
         Self {
             store,
             config,

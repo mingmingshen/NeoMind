@@ -187,7 +187,6 @@ impl ConfirmActionTool {
         result.push_str("\n\nReply 'confirm' to proceed, or cancel.");
         result
     }
-
 }
 
 #[async_trait]

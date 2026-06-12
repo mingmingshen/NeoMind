@@ -29,8 +29,8 @@ use std::io::{Read, Write};
 use std::os::raw::c_char;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Arc;
 
 use clap::Parser;
 use serde_json::json;
@@ -250,9 +250,8 @@ unsafe extern "C" fn runner_native_capability_free(ptr: *mut c_char) {
 const PUSH_BUFFER_CAPACITY: usize = 16;
 
 /// Shared push-output buffer: newest frames survive, oldest get dropped.
-static PUSH_BUFFER: std::sync::OnceLock<
-    (std::sync::Mutex<VecDeque<Vec<u8>>>, std::sync::Condvar),
-> = std::sync::OnceLock::new();
+static PUSH_BUFFER: std::sync::OnceLock<(std::sync::Mutex<VecDeque<Vec<u8>>>, std::sync::Condvar)> =
+    std::sync::OnceLock::new();
 
 /// Counter for dropped push frames (diagnostics).
 static PUSH_DROPPED_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -292,7 +291,10 @@ fn push_stdout_writer_thread() {
         if seq.is_multiple_of(100) {
             let dropped = PUSH_DROPPED_COUNT.swap(0, AtomicOrdering::Relaxed);
             if dropped > 0 {
-                debug!("Push buffer: dropped {} frames in last 100 batches", dropped);
+                debug!(
+                    "Push buffer: dropped {} frames in last 100 batches",
+                    dropped
+                );
             }
         }
     }
@@ -740,9 +742,10 @@ impl NativeExtensionBridge {
     }
 
     fn call_json0(&self, func: JsonFn0) -> Result<serde_json::Value, String> {
-        let SendPtr(ptr) = safe_ffi_call_with_timeout("call_json0", AssertUnwindSafe(move || unsafe {
-            SendPtr(func())
-        }))?;
+        let SendPtr(ptr) = safe_ffi_call_with_timeout(
+            "call_json0",
+            AssertUnwindSafe(move || unsafe { SendPtr(func()) }),
+        )?;
         self.read_json_ptr(ptr)
     }
 
@@ -1008,9 +1011,9 @@ impl WasmRuntime {
 
         // Parse config_parameters from metadata JSON
         if let Some(config_params_json) = metadata_json.get("config_parameters") {
-            if let Ok(config_params) = serde_json::from_value::<Vec<ParameterDefinition>>(
-                config_params_json.clone(),
-            ) {
+            if let Ok(config_params) =
+                serde_json::from_value::<Vec<ParameterDefinition>>(config_params_json.clone())
+            {
                 metadata.config_parameters = Some(config_params);
             }
         }
@@ -2358,7 +2361,10 @@ impl Runner {
 
         // Start push-output stdout writer thread (drains buffer → stdout)
         PUSH_BUFFER
-            .set((std::sync::Mutex::new(VecDeque::with_capacity(PUSH_BUFFER_CAPACITY)), std::sync::Condvar::new()))
+            .set((
+                std::sync::Mutex::new(VecDeque::with_capacity(PUSH_BUFFER_CAPACITY)),
+                std::sync::Condvar::new(),
+            ))
             .expect("PUSH_BUFFER already initialized");
         std::thread::Builder::new()
             .name("push-stdout-writer".into())

@@ -710,11 +710,10 @@ impl SessionManager {
                     }
                 }
             }
-            None => {
-                self.create_session()
-                    .await
-                    .unwrap_or_else(|_| Uuid::new_v4().to_string())
-            }
+            None => self
+                .create_session()
+                .await
+                .unwrap_or_else(|_| Uuid::new_v4().to_string()),
         }
     }
 
@@ -1324,8 +1323,7 @@ impl SessionManager {
 
         // Update preview from first user message if not already set
         if let Ok(mut metadata) = self.store.get_session_metadata(session_id) {
-            if metadata.preview.is_none()
-                || metadata.preview.as_ref().is_none_or(|p| p.is_empty())
+            if metadata.preview.is_none() || metadata.preview.as_ref().is_none_or(|p| p.is_empty())
             {
                 if let Some(first_user_msg) = messages.iter().find(|m| m.role == "user") {
                     let content = first_user_msg.content.trim();
@@ -1421,7 +1419,6 @@ impl SessionManager {
 
         to_remove.len()
     }
-
 }
 
 impl Default for SessionManager {

@@ -47,8 +47,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// Trigger type for a rule.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum TriggerType {
     /// Triggered by device state changes (default, requires WHEN clause)
     #[default]
@@ -58,7 +57,6 @@ pub enum TriggerType {
     /// Triggered manually via API
     Manual,
 }
-
 
 /// Parsed rule from DSL.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,7 +138,9 @@ impl RuleCondition {
                 .collect(),
             RuleCondition::Not(condition) => condition.get_device_metrics(),
             // Extension conditions don't contribute device metrics
-            RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } | RuleCondition::Always => vec![],
+            RuleCondition::Extension { .. }
+            | RuleCondition::ExtensionRange { .. }
+            | RuleCondition::Always => vec![],
         }
     }
 
@@ -167,7 +167,9 @@ impl RuleCondition {
                 .collect(),
             RuleCondition::Not(condition) => condition.get_extension_metrics(),
             // Device conditions don't contribute extension metrics
-            RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } | RuleCondition::Always => vec![],
+            RuleCondition::Device { .. }
+            | RuleCondition::DeviceRange { .. }
+            | RuleCondition::Always => vec![],
         }
     }
 
@@ -179,7 +181,9 @@ impl RuleCondition {
                 conditions.iter().any(|c| c.has_extension())
             }
             RuleCondition::Not(condition) => condition.has_extension(),
-            RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } | RuleCondition::Always => false,
+            RuleCondition::Device { .. }
+            | RuleCondition::DeviceRange { .. }
+            | RuleCondition::Always => false,
         }
     }
 
@@ -191,7 +195,9 @@ impl RuleCondition {
                 conditions.iter().any(|c| c.has_device())
             }
             RuleCondition::Not(condition) => condition.has_device(),
-            RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } | RuleCondition::Always => false,
+            RuleCondition::Extension { .. }
+            | RuleCondition::ExtensionRange { .. }
+            | RuleCondition::Always => false,
         }
     }
 }
@@ -648,10 +654,7 @@ impl RuleDslParser {
                     ));
                 }
                 lines.remove(i);
-                return Ok((
-                    RuleCondition::Always,
-                    TriggerType::Schedule { cron },
-                ));
+                return Ok((RuleCondition::Always, TriggerType::Schedule { cron }));
             }
         }
 
@@ -927,7 +930,7 @@ impl RuleDslParser {
         if let Some(dot_pos) = input.find('.') {
             let source_id = input[..dot_pos].to_string();
             let metric = input[dot_pos + 1..].to_string(); // Everything after the first dot
-            // Validate that source_id is not empty and metric is not empty
+                                                           // Validate that source_id is not empty and metric is not empty
             if source_id.is_empty() || metric.is_empty() {
                 return Err(RuleError::Parse(format!(
                     "Invalid source.metric format '{}': both source ID and metric name are required",
@@ -2335,7 +2338,11 @@ DO NOTIFY \"High temperature\" END"#;
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.actions[0] {
-            RuleAction::TriggerAgent { agent_id, input, data } => {
+            RuleAction::TriggerAgent {
+                agent_id,
+                input,
+                data,
+            } => {
                 assert_eq!(agent_id, "weather_agent");
                 assert_eq!(input, &None);
                 assert_eq!(data, &None);
@@ -2356,7 +2363,9 @@ DO NOTIFY \"High temperature\" END"#;
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.actions[0] {
-            RuleAction::TriggerAgent { agent_id, input, .. } => {
+            RuleAction::TriggerAgent {
+                agent_id, input, ..
+            } => {
                 assert_eq!(agent_id, "weather_agent");
                 assert_eq!(input, &Some("Check weather conditions".to_string()));
             }
@@ -2566,7 +2575,10 @@ DO NOTIFY \"High temperature\" END"#;
         "#;
 
         let rule = RuleDslParser::parse(dsl).unwrap();
-        assert_eq!(rule.description, Some("This is a test rule description".to_string()));
+        assert_eq!(
+            rule.description,
+            Some("This is a test rule description".to_string())
+        );
     }
 
     #[test]
@@ -2583,7 +2595,11 @@ DO NOTIFY \"High temperature\" END"#;
         let rule = RuleDslParser::parse(dsl).unwrap();
         assert_eq!(
             rule.tags,
-            vec!["temperature".to_string(), "alert".to_string(), "critical".to_string()]
+            vec![
+                "temperature".to_string(),
+                "alert".to_string(),
+                "critical".to_string()
+            ]
         );
     }
 
@@ -2799,7 +2815,8 @@ DO NOTIFY \"High temperature\" END"#;
 
     #[test]
     fn test_parse_single_line_rule_with_for() {
-        let dsl = r#"RULE "Test" WHEN sensor.temperature > 50 FOR 5 minutes DO NOTIFY "High temp" END"#;
+        let dsl =
+            r#"RULE "Test" WHEN sensor.temperature > 50 FOR 5 minutes DO NOTIFY "High temp" END"#;
 
         let result = RuleDslParser::parse(dsl);
         // Single-line rule parsing is complex - may or may not work
@@ -2845,7 +2862,10 @@ DO NOTIFY \"High temperature\" END"#;
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         let metrics = rule.condition.get_device_metrics();
-        assert_eq!(metrics, vec![("sensor".to_string(), "temperature".to_string())]);
+        assert_eq!(
+            metrics,
+            vec![("sensor".to_string(), "temperature".to_string())]
+        );
     }
 
     #[test]
@@ -2962,7 +2982,10 @@ DO NOTIFY \"High temperature\" END"#;
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.actions[0] {
             RuleAction::Execute { params, .. } => {
-                assert_eq!(params.get("message").and_then(|v| v.as_str()), Some("Hello World"));
+                assert_eq!(
+                    params.get("message").and_then(|v| v.as_str()),
+                    Some("Hello World")
+                );
             }
             _ => panic!("Expected Execute action"),
         }
@@ -3232,7 +3255,8 @@ DO NOTIFY \"High temperature\" END"#;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("both source ID and metric name are required"),
+            err.to_string()
+                .contains("both source ID and metric name are required"),
             "Expected empty source rejection, got: {}",
             err
         );

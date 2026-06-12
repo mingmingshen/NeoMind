@@ -293,8 +293,7 @@ pub fn compact_messages(
                 true
             } else if priority == MessagePriority::Assistant {
                 // Chat path: Assistant messages containing tool results
-                content_text.contains("tool_call_id")
-                    || content_text.starts_with("Tool '")
+                content_text.contains("tool_call_id") || content_text.starts_with("Tool '")
             } else {
                 false
             };
@@ -530,14 +529,20 @@ fn summarize_json(value: &serde_json::Value, max_len: usize) -> String {
                         }
                         let summary = item_summaries.join(", ");
                         if items.len() > 3 {
-                            parts.push(format!("items=[{} ... +{} more]", summary, items.len() - 3));
+                            parts.push(format!(
+                                "items=[{} ... +{} more]",
+                                summary,
+                                items.len() - 3
+                            ));
                         } else {
                             parts.push(format!("items=[{}]", summary));
                         }
                     }
                     serde_json::Value::Object(obj) => {
                         // Show a few key-value pairs from the object
-                        let kv: Vec<String> = obj.iter().take(3)
+                        let kv: Vec<String> = obj
+                            .iter()
+                            .take(3)
                             .map(|(k, v)| format!("{}={}", k, summarize_value(v)))
                             .collect();
                         parts.push(format!("data={{{}}}", kv.join(", ")));

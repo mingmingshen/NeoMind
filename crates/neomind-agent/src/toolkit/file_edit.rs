@@ -148,7 +148,10 @@ Maximum file size: 10 MB. Use relative paths (e.g., 'skills/my-skill.md') or abs
 
             let mut preview = preview_lines.join("\n");
             if line_count > preview_limit {
-                preview.push_str(&format!("\n... ({} more lines)", line_count - preview_limit));
+                preview.push_str(&format!(
+                    "\n... ({} more lines)",
+                    line_count - preview_limit
+                ));
             }
 
             return Ok(ToolOutput::error(serde_json::json!({
@@ -247,8 +250,11 @@ mod tests {
         let tool = tool();
         for ext in &["so", "dll", "exe", "sys"] {
             assert!(
-                tool.validator.resolve_path(&format!("malicious.{}", ext)).is_err(),
-                "Should reject .{}", ext
+                tool.validator
+                    .resolve_path(&format!("malicious.{}", ext))
+                    .is_err(),
+                "Should reject .{}",
+                ext
             );
         }
     }

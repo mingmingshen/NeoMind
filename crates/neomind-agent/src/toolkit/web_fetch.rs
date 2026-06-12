@@ -43,20 +43,16 @@ impl WebFetchTool {
             let redirect_count = attempt.previous().len();
             if let Err(e) = Self::validate_url(&url) {
                 tracing::warn!(url = %url, error = %e, "Redirect blocked by SSRF check");
-                return attempt.error(
-                    std::io::Error::new(
-                        std::io::ErrorKind::PermissionDenied,
-                        format!("Redirect to '{}' blocked: {}", url, e)
-                    )
-                );
+                return attempt.error(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("Redirect to '{}' blocked: {}", url, e),
+                ));
             }
             if redirect_count >= 5 {
-                return attempt.error(
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Too many redirects"
-                    )
-                );
+                return attempt.error(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Too many redirects",
+                ));
             }
             attempt.follow()
         });
@@ -172,10 +168,7 @@ impl WebFetchTool {
             }
             std::net::IpAddr::V6(v6) => {
                 // Standard IPv6 checks
-                if v6.is_loopback()
-                    || v6.is_multicast()
-                    || v6.is_unspecified()
-                {
+                if v6.is_loopback() || v6.is_multicast() || v6.is_unspecified() {
                     return true;
                 }
                 // IPv6 unique local (fc00::/7 — includes fd00::/8)
@@ -202,14 +195,12 @@ impl WebFetchTool {
     fn find_tag_offset(html: &str, tag: &[u8]) -> Option<usize> {
         let html_bytes = html.as_bytes();
         let tag_lower: Vec<u8> = tag.iter().map(|b| b.to_ascii_lowercase()).collect();
-        html_bytes
-            .windows(tag_lower.len())
-            .position(|window| {
-                window
-                    .iter()
-                    .zip(tag_lower.iter())
-                    .all(|(a, b)| a.to_ascii_lowercase() == *b)
-            })
+        html_bytes.windows(tag_lower.len()).position(|window| {
+            window
+                .iter()
+                .zip(tag_lower.iter())
+                .all(|(a, b)| a.to_ascii_lowercase() == *b)
+        })
     }
 
     /// Strip HTML tags and extract body text.

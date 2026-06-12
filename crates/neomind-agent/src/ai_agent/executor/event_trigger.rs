@@ -99,7 +99,15 @@ impl AgentExecutor {
 
                     tokio::spawn(async move {
                         // Acquire per-backend semaphore (WAIT, not fail)
-                        Self::acquire_backend_permit(&executor_config.backend_semaphores, &agent_id_for_log, &agent_clone.llm_backend_id.clone().unwrap_or_else(|| "default".to_string())).await;
+                        Self::acquire_backend_permit(
+                            &executor_config.backend_semaphores,
+                            &agent_id_for_log,
+                            &agent_clone
+                                .llm_backend_id
+                                .clone()
+                                .unwrap_or_else(|| "default".to_string()),
+                        )
+                        .await;
 
                         // Create event trigger data
                         let event_trigger_data = EventTriggerData {
@@ -255,7 +263,15 @@ impl AgentExecutor {
 
             tokio::spawn(async move {
                 // Acquire per-backend semaphore (WAIT, not fail)
-                Self::acquire_backend_permit(&executor_config.backend_semaphores, &agent_id_for_log, &agent_clone.llm_backend_id.clone().unwrap_or_else(|| "default".to_string())).await;
+                Self::acquire_backend_permit(
+                    &executor_config.backend_semaphores,
+                    &agent_id_for_log,
+                    &agent_clone
+                        .llm_backend_id
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string()),
+                )
+                .await;
 
                 // Create event trigger data with unified DataSourceRef
                 let event_trigger_data = EventTriggerData {

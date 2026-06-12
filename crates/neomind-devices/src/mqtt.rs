@@ -294,9 +294,7 @@ impl MqttDevice {
             // Uses try_write to atomically check+update without race condition
             if let Ok(mut state) = self.state.try_write() {
                 let now = chrono::Utc::now();
-                let should_update = state
-                    .last_seen
-                    .is_none_or(|t| (now - t).num_seconds() >= 1);
+                let should_update = state.last_seen.is_none_or(|t| (now - t).num_seconds() >= 1);
                 if should_update {
                     state.last_seen = Some(now);
                 }

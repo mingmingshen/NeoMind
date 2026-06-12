@@ -97,7 +97,9 @@ impl ExtensionMetricsStorage {
 
     /// Flush buffered writes to disk.
     pub fn flush(&self) -> Result<(), String> {
-        self.inner.flush().map_err(|e| format!("Storage flush failed: {}", e))
+        self.inner
+            .flush()
+            .map_err(|e| format!("Storage flush failed: {}", e))
     }
 
     /// Query the latest value for a metric.
@@ -360,7 +362,10 @@ impl ExtensionState {
 
         // Collect results
         let results = join_all(handles).await;
-        let loaded_count = results.into_iter().filter(|r| r.is_ok() && r.as_ref().unwrap().is_ok()).count();
+        let loaded_count = results
+            .into_iter()
+            .filter(|r| r.is_ok() && r.as_ref().unwrap().is_ok())
+            .count();
 
         tracing::info!(
             total = total,

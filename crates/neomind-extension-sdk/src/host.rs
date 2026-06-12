@@ -337,7 +337,10 @@ impl ExtensionContext {
         let params = match capability {
             ExtensionCapability::DeviceRegister => {
                 let mut p = params.as_object().cloned().unwrap_or_default();
-                p.insert("_extension_id".to_string(), serde_json::json!(self.config.extension_id));
+                p.insert(
+                    "_extension_id".to_string(),
+                    serde_json::json!(self.config.extension_id),
+                );
                 serde_json::Value::Object(p)
             }
             _ => params.clone(),

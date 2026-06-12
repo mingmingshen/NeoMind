@@ -53,7 +53,7 @@ impl Default for ResourceLimitsConfig {
     fn default() -> Self {
         Self {
             memory_limit_mb: Some(4096), // 4GB default — needed for extensions loading ML models (e.g. ONNX Runtime) + rayon thread pools
-            memory_limit_hard_mb: None, // 2x soft limit
+            memory_limit_hard_mb: None,  // 2x soft limit
             cpu_affinity: None,
             nice_level: Some(10), // Lower priority
         }
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_config_large_memory_limit() {
         let config = ResourceLimitsConfig {
-            memory_limit_mb: Some(8192), // 8GB
+            memory_limit_mb: Some(8192),       // 8GB
             memory_limit_hard_mb: Some(16384), // 16GB
             cpu_affinity: None,
             nice_level: None,

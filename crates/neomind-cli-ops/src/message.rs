@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// Extract the inner `data` field from an API response.
 /// API returns `{"success":true,"data":{...},"meta":{...}}` — this returns the inner data.
@@ -39,13 +39,19 @@ pub async fn list_messages(
     }
 
     let data = client.get(&path).await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Messages listed"))
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Messages listed",
+    ))
 }
 
 /// Get message by ID
 pub async fn get_message(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/messages/{}", id)).await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Message retrieved"))
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Message retrieved",
+    ))
 }
 
 /// Send/create a new message
@@ -83,7 +89,9 @@ pub async fn send_message(
 
 /// Acknowledge/read a message
 pub async fn acknowledge_message(client: &ApiClient, id: &str) -> Result<CliResponse> {
-    client.post(&format!("/messages/{}/acknowledge", id), &json!({})).await?;
+    client
+        .post(&format!("/messages/{}/acknowledge", id), &json!({}))
+        .await?;
     Ok(CliResponse::success(
         json!({ "id": id }),
         "Message acknowledged",
@@ -95,13 +103,19 @@ pub async fn acknowledge_message(client: &ApiClient, id: &str) -> Result<CliResp
 /// List all message channels
 pub async fn list_channels(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/messages/channels").await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Channels listed"))
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Channels listed",
+    ))
 }
 
 /// Get channel by name
 pub async fn get_channel(client: &ApiClient, name: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/messages/channels/{}", name)).await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Channel retrieved"))
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Channel retrieved",
+    ))
 }
 
 /// List available channel types
@@ -112,8 +126,13 @@ pub async fn list_channel_types(client: &ApiClient) -> Result<CliResponse> {
 }
 
 /// Get channel type schema
-pub async fn get_channel_type_schema(client: &ApiClient, channel_type: &str) -> Result<CliResponse> {
-    let resp = client.get(&format!("/messages/channels/types/{}/schema", channel_type)).await?;
+pub async fn get_channel_type_schema(
+    client: &ApiClient,
+    channel_type: &str,
+) -> Result<CliResponse> {
+    let resp = client
+        .get(&format!("/messages/channels/types/{}/schema", channel_type))
+        .await?;
     let data = extract_inner_data(resp);
     Ok(CliResponse::success(data, "Channel type schema retrieved"))
 }
@@ -127,7 +146,10 @@ pub async fn create_channel(
 ) -> Result<CliResponse> {
     // 1. Validate name is non-empty
     if name.is_empty() {
-        return Ok(CliResponse::error("Channel name is required. Use --name <NAME>", "MISSING_NAME"));
+        return Ok(CliResponse::error(
+            "Channel name is required. Use --name <NAME>",
+            "MISSING_NAME",
+        ));
     }
 
     // 2. Validate channel_type is non-empty
@@ -146,7 +168,10 @@ pub async fn create_channel(
             return Ok(CliResponse::error_with_suggestion(
                 format!("Invalid config JSON: {}", e),
                 "INVALID_JSON",
-                format!("Example for {}: run `neomind message channel-type-schema {}`", channel_type, channel_type),
+                format!(
+                    "Example for {}: run `neomind message channel-type-schema {}`",
+                    channel_type, channel_type
+                ),
             ));
         }
     };
@@ -155,7 +180,8 @@ pub async fn create_channel(
     match client.get("/messages/channels/types").await {
         Ok(types_data) => {
             // API returns {"success":true,"data":{"types":[...]},...}
-            let types_list = types_data.get("data")
+            let types_list = types_data
+                .get("data")
                 .and_then(|d| d.get("types"))
                 .or_else(|| types_data.get("types"));
             let valid_types: Vec<&str> = types_list
@@ -166,7 +192,10 @@ pub async fn create_channel(
                 return Ok(CliResponse::error_with_suggestion(
                     format!("Unknown channel type '{}'.", channel_type),
                     "UNKNOWN_TYPE",
-                    format!("Available types: {}. Run `neomind message channel-types` for details.", valid_types.join(", ")),
+                    format!(
+                        "Available types: {}. Run `neomind message channel-types` for details.",
+                        valid_types.join(", ")
+                    ),
                 ));
             }
         }
@@ -176,11 +205,18 @@ pub async fn create_channel(
     }
 
     // 5. Validate required config fields via schema API
-    if let Ok(schema_resp) = client.get(&format!("/messages/channels/types/{}/schema", channel_type)).await {
+    if let Ok(schema_resp) = client
+        .get(&format!("/messages/channels/types/{}/schema", channel_type))
+        .await
+    {
         let schema_data = schema_resp.get("data").and_then(|d| d.get("config_schema"));
-        if let Some(required_fields) = schema_data.and_then(|s| s.get("required")).and_then(|r| r.as_array()) {
+        if let Some(required_fields) = schema_data
+            .and_then(|s| s.get("required"))
+            .and_then(|r| r.as_array())
+        {
             if let Some(config_obj) = config_value.as_object() {
-                let missing: Vec<&str> = required_fields.iter()
+                let missing: Vec<&str> = required_fields
+                    .iter()
                     .filter_map(|f| f.as_str())
                     .filter(|f| !config_obj.contains_key(*f))
                     .collect();
@@ -188,7 +224,10 @@ pub async fn create_channel(
                     return Ok(CliResponse::error_with_suggestion(
                         format!("Missing required config field(s): {}.", missing.join(", ")),
                         "MISSING_FIELDS",
-                        format!("Run `neomind message channel-type-schema {}` for field details.", channel_type),
+                        format!(
+                            "Run `neomind message channel-type-schema {}` for field details.",
+                            channel_type
+                        ),
                     ));
                 }
             }
@@ -213,29 +252,44 @@ pub async fn create_channel(
         entity_name: Some(name.to_string()),
         undo_command: format!("neomind message channel-delete {}", name),
     };
-    Ok(CliResponse::success_with_meta(data, "Channel created", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "Channel created",
+        meta,
+    ))
 }
 
 /// Update a channel's configuration
-pub async fn update_channel(
-    client: &ApiClient,
-    name: &str,
-    config: &str,
-) -> Result<CliResponse> {
+pub async fn update_channel(client: &ApiClient, name: &str, config: &str) -> Result<CliResponse> {
     let config_value = serde_json::from_str(config).unwrap_or(json!(config));
     let body = json!({ "config": config_value });
-    let data = client.put(&format!("/messages/channels/{}", name), &body).await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Channel updated"))
+    let data = client
+        .put(&format!("/messages/channels/{}", name), &body)
+        .await?;
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Channel updated",
+    ))
 }
 
 /// Delete a message channel
 pub async fn delete_channel(client: &ApiClient, name: &str) -> Result<CliResponse> {
-    let data = client.delete(&format!("/messages/channels/{}", name)).await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Channel deleted"))
+    let data = client
+        .delete(&format!("/messages/channels/{}", name))
+        .await?;
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Channel deleted",
+    ))
 }
 
 /// Test a channel
 pub async fn test_channel(client: &ApiClient, name: &str) -> Result<CliResponse> {
-    let data = client.post(&format!("/messages/channels/{}/test", name), &json!({})).await?;
-    Ok(CliResponse::success(extract_inner_data(data), "Channel test completed"))
+    let data = client
+        .post(&format!("/messages/channels/{}/test", name), &json!({}))
+        .await?;
+    Ok(CliResponse::success(
+        extract_inner_data(data),
+        "Channel test completed",
+    ))
 }

@@ -65,7 +65,11 @@ pub async fn list_messages_handler(
             }
             // Single category filter → use indexed query
             (None, Some(cat)) => {
-                state.core.message_manager.list_messages_by_category(cat).await
+                state
+                    .core
+                    .message_manager
+                    .list_messages_by_category(cat)
+                    .await
             }
             // Both status + category → use status query, then filter category
             (Some(st), Some(_cat)) => {
@@ -83,9 +87,7 @@ pub async fn list_messages_handler(
                 }
             }
             // No filters → list all
-            (None, None) => {
-                state.core.message_manager.list_messages().await
-            }
+            (None, None) => state.core.message_manager.list_messages().await,
         }
     } else {
         state.core.message_manager.list_messages().await

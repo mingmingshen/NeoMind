@@ -504,7 +504,8 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                         // For Push mode: bridge runner PushOutput IPC into the websocket router.
                                         if cap.mode == StreamMode::Push {
                                             // Create per-session channel for push outputs
-                                            let (tx, mut rx) = mpsc::channel::<PushOutputMessage>(32);
+                                            let (tx, mut rx) =
+                                                mpsc::channel::<PushOutputMessage>(32);
 
                                             // Register with router
                                             push_router.register(sid.clone(), tx).await;
@@ -569,7 +570,8 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 &mut socket,
                                                 &ServerMessage::SessionCreated {
                                                     session_id: sid.clone(),
-                                                    server_time: chrono::Utc::now().timestamp_millis(),
+                                                    server_time: chrono::Utc::now()
+                                                        .timestamp_millis(),
                                                 },
                                             )
                                             .await;
@@ -587,9 +589,11 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                             // most recent frame matters more than delivering every one.
                                             let (ws_out_tx, mut ws_out_rx) =
                                                 tokio::sync::watch::channel(String::new());
-                                            let (ws_in_tx, mut ws_in_rx) = mpsc::channel::<String>(8);
+                                            let (ws_in_tx, mut ws_in_rx) =
+                                                mpsc::channel::<String>(8);
                                             // Done signal: avoids JoinHandle panic on re-poll
-                                            let (ws_done_tx, mut ws_done_rx) = mpsc::channel::<()>(1);
+                                            let (ws_done_tx, mut ws_done_rx) =
+                                                mpsc::channel::<()>(1);
 
                                             let ws_task = tokio::spawn(async move {
                                                 let mut frame_count: u64 = 0;
@@ -706,8 +710,10 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 let msg = ServerMessage::SessionClosed {
                                                     session_id: sid.clone(),
                                                     total_frames: stats.input_chunks,
-                                                    duration_ms: (chrono::Utc::now().timestamp_millis()
-                                                        - stats.last_activity) as u64,
+                                                    duration_ms: (chrono::Utc::now()
+                                                        .timestamp_millis()
+                                                        - stats.last_activity)
+                                                        as u64,
                                                     stats: SessionStatsDto::from(&stats),
                                                 };
                                                 if let Ok(json) = serde_json::to_string(&msg) {

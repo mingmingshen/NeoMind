@@ -125,7 +125,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
 
     let app = app
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(20)))
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(120)));
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(120),
+        ));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
 
@@ -273,8 +276,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
             }
 
             // Record error in storage when crash recovery restart fails
-            bg_state.extensions.runtime.set_on_crash_recovery_failed(Arc::new(
-                move |extension_id: &str, error: &str| {
+            bg_state
+                .extensions
+                .runtime
+                .set_on_crash_recovery_failed(Arc::new(move |extension_id: &str, error: &str| {
                     let ext_id = extension_id.to_string();
                     let err_msg = error.to_string();
                     tokio::spawn(async move {
@@ -282,8 +287,7 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                             let _ = store.update_error_status(&ext_id, &err_msg);
                         }
                     });
-                },
-            ));
+                }));
 
             bg_state.extensions.runtime.clone().start_death_monitoring();
 
@@ -335,8 +339,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                     let context_interval = config.system_context_interval_secs.max(60);
                     let summary_interval = config.summary_interval_secs.max(600);
 
-                    let mut context_timer = tokio::time::interval(Duration::from_secs(context_interval));
-                    let mut summary_timer = tokio::time::interval(Duration::from_secs(summary_interval));
+                    let mut context_timer =
+                        tokio::time::interval(Duration::from_secs(context_interval));
+                    let mut summary_timer =
+                        tokio::time::interval(Duration::from_secs(summary_interval));
 
                     tracing::info!(
                         context_interval_secs = context_interval,

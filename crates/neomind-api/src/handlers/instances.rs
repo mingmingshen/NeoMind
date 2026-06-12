@@ -73,14 +73,10 @@ pub async fn create_instance_handler(
     Json(req): Json<CreateInstanceRequest>,
 ) -> HandlerResult<serde_json::Value> {
     let instance = InstanceRecord::new(req.name, req.url, req.api_key);
-    instance
-        .validate()
-        .map_err(ErrorResponse::bad_request)?;
+    instance.validate().map_err(ErrorResponse::bad_request)?;
 
     let id = instance.id.clone();
-    state
-        .instance_store
-        .save_instance(&instance)?;
+    state.instance_store.save_instance(&instance)?;
 
     // Load back to get consistent state
     let saved = state
@@ -116,13 +112,9 @@ pub async fn update_instance_handler(
         }
     }
 
-    instance
-        .validate()
-        .map_err(ErrorResponse::bad_request)?;
+    instance.validate().map_err(ErrorResponse::bad_request)?;
 
-    state
-        .instance_store
-        .save_instance(&instance)?;
+    state.instance_store.save_instance(&instance)?;
 
     ok(json!(instance.for_response()))
 }
@@ -132,16 +124,13 @@ pub async fn delete_instance_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    state
-        .instance_store
-        .delete_instance(&id)
-        .map_err(|e| {
-            if e.to_string().contains("Cannot delete") {
-                ErrorResponse::bad_request(e.to_string())
-            } else {
-                ErrorResponse::from(e)
-            }
-        })?;
+    state.instance_store.delete_instance(&id).map_err(|e| {
+        if e.to_string().contains("Cannot delete") {
+            ErrorResponse::bad_request(e.to_string())
+        } else {
+            ErrorResponse::from(e)
+        }
+    })?;
 
     ok(json!({"deleted": true}))
 }

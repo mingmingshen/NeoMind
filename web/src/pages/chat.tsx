@@ -32,6 +32,8 @@ import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { useToast } from "@/hooks/use-toast"
 import { mergeMessagesForDisplay, cleanToolCallJson } from "@/lib/messageUtils"
+import { useOnboarding } from "@/hooks/useOnboarding"
+import { OnboardingDialog } from "@/components/onboarding/OnboardingDialog"
 
 /** Image gallery component for user messages */
 function MessageImages({ images }: { images: ChatImage[] }) {
@@ -247,6 +249,21 @@ export function ChatPage() {
       loadSessions().then(() => setSessionsLoaded(true))
     }
   }, [loadBackends, loadSessions])
+
+  // Onboarding auto-detect: show getting-started dialog for new installations
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const hasShownOnboarding = useRef(false)
+  const { status: onboardingStatus, dismiss: dismissOnboarding, fetchStatus: fetchOnboardingStatus } = useOnboarding()
+
+  useEffect(() => {
+    if (hasShownOnboarding.current || !onboardingStatus) return
+    // Auto-open onboarding if not dismissed and has incomplete steps
+    if (!onboardingStatus.dismissed && (!onboardingStatus.steps.llm.completed || !onboardingStatus.steps.device.completed)) {
+      hasShownOnboarding.current = true
+      const timer = setTimeout(() => setOnboardingOpen(true), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [onboardingStatus])
 
   // Refresh backends when window gains focus (e.g., returning from settings page)
   useEffect(() => {
@@ -795,6 +812,7 @@ export function ChatPage() {
   }
 
   return (
+    <>
     <div className="fixed inset-0 flex flex-row overflow-hidden" style={{paddingTop: 'var(--topnav-height, calc(4rem + env(safe-area-inset-top, 0px)))'}}>
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && createPortal(
@@ -1388,5 +1406,13 @@ export function ChatPage() {
         </div>
       </div>
     </div>
+
+    <OnboardingDialog
+      open={onboardingOpen}
+      onOpenChange={setOnboardingOpen}
+      status={onboardingStatus}
+      onDismiss={dismissOnboarding}
+    />
+    </>
   )
 }

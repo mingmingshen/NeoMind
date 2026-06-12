@@ -70,11 +70,8 @@ impl MqttTarget {
                 uuid::Uuid::new_v4().as_simple()
             );
 
-            let mut mqtt_opts = rumqttc::MqttOptions::new(
-                client_id,
-                &self.config.broker,
-                self.config.port,
-            );
+            let mut mqtt_opts =
+                rumqttc::MqttOptions::new(client_id, &self.config.broker, self.config.port);
             mqtt_opts.set_keep_alive(std::time::Duration::from_secs(30));
 
             if let (Some(user), Some(pass)) = (&self.config.username, &self.config.password) {
@@ -116,11 +113,7 @@ impl PushDestination for MqttTarget {
         drop(client_guard);
         let mut el_guard = self.eventloop.lock().await;
         if let Some(ref mut eventloop) = *el_guard {
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                eventloop.poll(),
-            )
-            .await;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), eventloop.poll()).await;
         }
 
         Ok(())

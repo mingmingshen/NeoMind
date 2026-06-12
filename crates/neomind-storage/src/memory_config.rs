@@ -36,14 +36,30 @@ pub struct MemoryConfig {
     pub summary_backend_id: Option<String>,
 }
 
-fn default_enabled() -> bool { true }
-fn default_storage_path() -> String { "data/memory".to_string() }
-fn default_user_limit() -> usize { 2000 }
-fn default_knowledge_limit() -> usize { 3000 }
-fn default_agent_limit() -> usize { 5000 }
-fn default_ttl() -> u64 { 7 }
-fn default_context_interval() -> u64 { 600 }
-fn default_summary_interval() -> u64 { 7200 }
+fn default_enabled() -> bool {
+    true
+}
+fn default_storage_path() -> String {
+    "data/memory".to_string()
+}
+fn default_user_limit() -> usize {
+    2000
+}
+fn default_knowledge_limit() -> usize {
+    3000
+}
+fn default_agent_limit() -> usize {
+    5000
+}
+fn default_ttl() -> u64 {
+    7
+}
+fn default_context_interval() -> u64 {
+    600
+}
+fn default_summary_interval() -> u64 {
+    7200
+}
 
 impl Default for MemoryConfig {
     fn default() -> Self {

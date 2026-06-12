@@ -79,7 +79,12 @@ pub struct LayoutBreakpoints {
 
 impl Default for LayoutBreakpoints {
     fn default() -> Self {
-        Self { lg: 1200, md: 996, sm: 768, xs: 480 }
+        Self {
+            lg: 1200,
+            md: 996,
+            sm: 768,
+            xs: 480,
+        }
     }
 }
 
@@ -531,11 +536,10 @@ pub async fn update_dashboard_handler(
             Ok(parsed_components) => dashboard.components = parsed_components,
             Err(e) => {
                 return Err(
-                    ErrorResponse::bad_request(format!("Invalid component data: {}", e))
-                        .with_hint(
-                            "Each component needs: id, type, title, position {x,y,w,h}.\n\
+                    ErrorResponse::bad_request(format!("Invalid component data: {}", e)).with_hint(
+                        "Each component needs: id, type, title, position {x,y,w,h}.\n\
                              Use 'neomind dashboard add-components' instead of full replacement.",
-                        ),
+                    ),
                 )
             }
         }
@@ -610,9 +614,7 @@ pub async fn remove_components_handler(
         .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
 
     let before = dashboard.components.len();
-    dashboard
-        .components
-        .retain(|c| !req.ids.contains(&c.id));
+    dashboard.components.retain(|c| !req.ids.contains(&c.id));
     let removed = before - dashboard.components.len();
     dashboard.updated_at = chrono::Utc::now().timestamp();
 
@@ -781,9 +783,10 @@ pub async fn create_share_handler(
     let token_str = format!("ds_{}", hex::encode(random_bytes));
 
     let now = chrono::Utc::now().timestamp();
-    let expires_at = req
-        .expires_in_hours
-        .and_then(|h| h.checked_mul(3600).and_then(|seconds| now.checked_add(seconds)));
+    let expires_at = req.expires_in_hours.and_then(|h| {
+        h.checked_mul(3600)
+            .and_then(|seconds| now.checked_add(seconds))
+    });
 
     let share = StoredShareToken {
         token: token_str.clone(),
@@ -987,8 +990,12 @@ pub async fn share_proxy_handler(
         Method::PUT => client.put(&target_url),
         Method::DELETE => client.delete(&target_url),
         _ => {
-            return ErrorResponse::new("METHOD_NOT_ALLOWED", "Method not supported", StatusCode::METHOD_NOT_ALLOWED)
-                .into_response();
+            return ErrorResponse::new(
+                "METHOD_NOT_ALLOWED",
+                "Method not supported",
+                StatusCode::METHOD_NOT_ALLOWED,
+            )
+            .into_response();
         }
     };
 
@@ -1006,8 +1013,10 @@ pub async fn share_proxy_handler(
 
     match req_builder.send().await {
         Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            let ct = resp.headers()
+            let status = StatusCode::from_u16(resp.status().as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let ct = resp
+                .headers()
                 .get("content-type")
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("application/json")
@@ -1027,24 +1036,24 @@ pub async fn share_proxy_handler(
 /// Paths that are never allowed through the share proxy
 fn is_blocked_proxy_path(path: &str) -> bool {
     let blocked_prefixes = [
-        "auth/",           // Login, register, keys
-        "setup/",          // System initialization
-        "config/",         // Import/export config
-        "users/",          // User management
-        "dashboards/",     // Dashboard CRUD
-        "brokers/",        // MQTT broker management
-        "memory/",         // System memory management
-        "mqtt/subscribe",  // MQTT subscriptions
+        "auth/",          // Login, register, keys
+        "setup/",         // System initialization
+        "config/",        // Import/export config
+        "users/",         // User management
+        "dashboards/",    // Dashboard CRUD
+        "brokers/",       // MQTT broker management
+        "memory/",        // System memory management
+        "mqtt/subscribe", // MQTT subscriptions
         "mqtt/unsubscribe",
-        "sessions",        // Chat sessions
-        "skills/",         // Skills CRUD
-        "automations/",    // Automations CRUD
-        "rules/",          // Rules CRUD
+        "sessions",          // Chat sessions
+        "skills/",           // Skills CRUD
+        "automations/",      // Automations CRUD
+        "rules/",            // Rules CRUD
         "messages/channels", // Channel CRUD (read is fine)
-        "instances/",      // Remote instance management
-        "llm-backends/",   // LLM backend config
-        "llm/",            // LLM generate
-        "share/",          // Prevent recursive proxy
+        "instances/",        // Remote instance management
+        "llm-backends/",     // LLM backend config
+        "llm/",              // LLM generate
+        "share/",            // Prevent recursive proxy
     ];
     blocked_prefixes.iter().any(|p| path.starts_with(p))
 }
@@ -1085,9 +1094,9 @@ fn is_allowed_readonly_method(path: &str, method: &Method) -> bool {
     }
     if method == Method::POST {
         let allowed_post_patterns = [
-            "extensions/:id/command",         // Extension read-only commands
-            "devices/current-batch",          // Batch device current values
-            "agents/:id/executions/details",  // Batch get execution details
+            "extensions/:id/command",        // Extension read-only commands
+            "devices/current-batch",         // Batch device current values
+            "agents/:id/executions/details", // Batch get execution details
         ];
         return allowed_post_patterns
             .iter()

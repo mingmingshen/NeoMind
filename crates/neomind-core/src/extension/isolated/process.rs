@@ -1030,7 +1030,10 @@ impl IsolatedExtension {
                                 let params = match cap {
                                     super::super::context::ExtensionCapability::DeviceRegister => {
                                         let mut p = params.as_object().cloned().unwrap_or_default();
-                                        p.insert("_extension_id".to_string(), serde_json::json!(ext_id));
+                                        p.insert(
+                                            "_extension_id".to_string(),
+                                            serde_json::json!(ext_id),
+                                        );
                                         serde_json::Value::Object(p)
                                     }
                                     _ => params,
@@ -1316,7 +1319,11 @@ impl IsolatedExtension {
 
         let response = self
             .in_flight
-            .wait_with_timeout(request_id, rx, Duration::from_secs(self.config.command_timeout_secs))
+            .wait_with_timeout(
+                request_id,
+                rx,
+                Duration::from_secs(self.config.command_timeout_secs),
+            )
             .await
             .map_err(|e| match e {
                 super::in_flight::InFlightError::Timeout(ms) => {
@@ -2680,11 +2687,21 @@ fn infer_log_level(line: &str) -> &'static str {
     // Look for the log level keyword that appears right after the timestamp (after 'Z ' or at start)
     if let Some(pos) = lower.find("z  ") {
         let after_ts = &lower[pos + 3..];
-        if after_ts.starts_with("error") { return "error"; }
-        if after_ts.starts_with("warn")  { return "warn"; }
-        if after_ts.starts_with("info")  { return "info"; }
-        if after_ts.starts_with("debug") { return "debug"; }
-        if after_ts.starts_with("trace") { return "trace"; }
+        if after_ts.starts_with("error") {
+            return "error";
+        }
+        if after_ts.starts_with("warn") {
+            return "warn";
+        }
+        if after_ts.starts_with("info") {
+            return "info";
+        }
+        if after_ts.starts_with("debug") {
+            return "debug";
+        }
+        if after_ts.starts_with("trace") {
+            return "trace";
+        }
     }
 
     // Fallback: match prefix patterns

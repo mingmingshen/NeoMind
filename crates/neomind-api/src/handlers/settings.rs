@@ -299,7 +299,9 @@ pub async fn update_retention_config(
 
     // Validate interval
     if req.interval_hours == 0 {
-        return Err(ErrorResponse::bad_request("interval_hours must be greater than 0"));
+        return Err(ErrorResponse::bad_request(
+            "interval_hours must be greater than 0",
+        ));
     }
 
     let settings_store = SettingsStore::open(SETTINGS_DB_PATH)

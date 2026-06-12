@@ -190,7 +190,9 @@ pub async fn write_metric_handler(
     Json(req): Json<WriteMetricRequest>,
 ) -> HandlerResult<serde_json::Value> {
     let metric_value = json_to_metric_value(&req.value);
-    let timestamp = req.timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    let timestamp = req
+        .timestamp
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     let source_id = format!("device:{}", device_id);
     let point = DataPoint::new(timestamp, metric_value);
 

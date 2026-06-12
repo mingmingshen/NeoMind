@@ -72,9 +72,7 @@ fn test_extension_create_command() {
 #[test]
 fn test_extension_create_invalid_name() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("extension")
-        .arg("create")
-        .arg("Invalid Name");
+    cmd.arg("extension").arg("create").arg("Invalid Name");
 
     cmd.assert()
         .failure()
@@ -119,20 +117,16 @@ fn test_extension_list_command() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
     cmd.arg("extension").arg("list");
 
-    cmd.assert()
-        .success();
+    cmd.assert().success();
 }
 
 /// Test extension list with verbose flag.
 #[test]
 fn test_extension_list_verbose() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("extension")
-        .arg("list")
-        .arg("--verbose");
+    cmd.arg("extension").arg("list").arg("--verbose");
 
-    cmd.assert()
-        .success();
+    cmd.assert().success();
 }
 
 /// Test extension info command requires path.
@@ -185,8 +179,7 @@ fn test_extension_install_nonexistent() {
         .arg("install")
         .arg("/tmp/nonexistent-extension-12345.nep");
 
-    cmd.assert()
-        .failure();
+    cmd.assert().failure();
 }
 
 /// Test extension help shows all subcommands.

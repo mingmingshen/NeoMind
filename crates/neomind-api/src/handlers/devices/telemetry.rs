@@ -91,9 +91,7 @@ pub async fn get_device_telemetry_handler(
     // Cursor-based pagination: cursor = timestamp of the last point from previous page.
     // When provided, we scan from cursor timestamp (exclusive) to end, giving O(1) seek
     // instead of O(n) offset skip. Falls back to offset pagination when no cursor.
-    let cursor = params
-        .get("cursor")
-        .and_then(|s| s.parse::<i64>().ok());
+    let cursor = params.get("cursor").and_then(|s| s.parse::<i64>().ok());
 
     let offset = params
         .get("offset")
@@ -119,7 +117,11 @@ pub async fn get_device_telemetry_handler(
         .unwrap_or(false);
 
     // When compress mode is active, allow up to 90 days and skip limit
-    let effective_max_range = if compress { 90 * 86400 } else { MAX_TIME_RANGE_SECS };
+    let effective_max_range = if compress {
+        90 * 86400
+    } else {
+        MAX_TIME_RANGE_SECS
+    };
     if time_range > effective_max_range {
         return Err(ErrorResponse::bad_request(format!(
             "Time range too large: {} seconds (max {} days)",
@@ -146,7 +148,12 @@ pub async fn get_device_telemetry_handler(
         Ok((_, template)) => {
             if template.metrics.is_empty() {
                 // Device has no defined metrics - query actual metrics from storage
-                match state.devices.telemetry.list_metrics(&device_source_id).await {
+                match state
+                    .devices
+                    .telemetry
+                    .list_metrics(&device_source_id)
+                    .await
+                {
                     Ok(metrics) if !metrics.is_empty() => metrics,
                     _ => vec!["_raw".to_string()],
                 }
@@ -159,7 +166,11 @@ pub async fn get_device_telemetry_handler(
                 let transform_namespaces = get_transform_namespaces();
 
                 // Add Transform-generated AND sub-metrics from storage
-                if let Ok(storage_metrics) = state.devices.telemetry.list_metrics(&device_source_id).await
+                if let Ok(storage_metrics) = state
+                    .devices
+                    .telemetry
+                    .list_metrics(&device_source_id)
+                    .await
                 {
                     for metric in storage_metrics {
                         // Skip template metrics and _raw
@@ -172,9 +183,9 @@ pub async fn get_device_telemetry_handler(
                         // Add Transform-generated metrics or sub-metrics of template containers
                         let is_transform_metric =
                             transform_namespaces.iter().any(|p| metric.starts_with(p));
-                        let is_sub_metric = template_metric_names.iter().any(|t| {
-                            metric.starts_with(&format!("{}.", t))
-                        });
+                        let is_sub_metric = template_metric_names
+                            .iter()
+                            .any(|t| metric.starts_with(&format!("{}.", t)));
                         if is_transform_metric || is_sub_metric {
                             all_metrics.push(metric);
                         }
@@ -186,7 +197,12 @@ pub async fn get_device_telemetry_handler(
         }
         Err(_) => {
             // Device not found - try to query actual metrics from storage
-            match state.devices.telemetry.list_metrics(&device_source_id).await {
+            match state
+                .devices
+                .telemetry
+                .list_metrics(&device_source_id)
+                .await
+            {
                 Ok(metrics) if !metrics.is_empty() => metrics,
                 _ => vec!["_raw".to_string()],
             }
@@ -273,7 +289,12 @@ pub async fn get_device_telemetry_handler(
                             })]
                         }
                         Err(e) => {
-                            tracing::warn!("Aggregate query failed for {}/{}: {}", device_source_id, metric_name, e);
+                            tracing::warn!(
+                                "Aggregate query failed for {}/{}: {}",
+                                device_source_id,
+                                metric_name,
+                                e
+                            );
                             vec![]
                         }
                     };
@@ -315,7 +336,10 @@ pub async fn get_device_telemetry_handler(
                     // Use inner_store() to query raw storage DataPoints (serde_json::Value)
                     // directly, avoiding MetricValue→serde_json::Value round-trip conversion.
                     let store = telemetry.inner_store();
-                    match store.query_range(&device_source_id, &metric_name, start, end, None).await {
+                    match store
+                        .query_range(&device_source_id, &metric_name, start, end, None)
+                        .await
+                    {
                         Ok(result) => {
                             let total = result.total_count.unwrap_or(result.points.len());
                             let compressed = neomind_storage::compress_series_adaptive(
@@ -394,17 +418,30 @@ pub async fn get_device_telemetry_handler(
                         {
                             Ok((pts, total)) => (pts, total),
                             Err(e) => {
-                                tracing::warn!("query_bucketed failed for {}/{}: {}", device_source_id, metric_name, e);
+                                tracing::warn!(
+                                    "query_bucketed failed for {}/{}: {}",
+                                    device_source_id,
+                                    metric_name,
+                                    e
+                                );
                                 (Vec::new(), None)
                             }
                         };
-                        let data: Vec<_> = pts.into_iter().map(|p| {
-                            json!({
-                                "timestamp": p.timestamp,
-                                "value": metric_value_to_json(&p.value),
+                        let data: Vec<_> = pts
+                            .into_iter()
+                            .map(|p| {
+                                json!({
+                                    "timestamp": p.timestamp,
+                                    "value": metric_value_to_json(&p.value),
+                                })
                             })
-                        }).collect();
-                        return (metric_name, json!(data), total.unwrap_or(data.len()), None::<i64>);
+                            .collect();
+                        return (
+                            metric_name,
+                            json!(data),
+                            total.unwrap_or(data.len()),
+                            None::<i64>,
+                        );
                     }
 
                     // PERFORMANCE FIX: Add limit to prevent loading all historical data points
@@ -417,7 +454,13 @@ pub async fn get_device_telemetry_handler(
                         limit.saturating_mul(3).max(500) // Offset-based: 3x page size or min 500
                     };
                     let (points, total) = match device_service
-                        .query_telemetry(&device_id_for_service, &metric_name, Some(effective_start), Some(end), Some(fetch_limit))
+                        .query_telemetry(
+                            &device_id_for_service,
+                            &metric_name,
+                            Some(effective_start),
+                            Some(end),
+                            Some(fetch_limit),
+                        )
                         .await
                     {
                         Ok(all_points) => {
@@ -439,13 +482,24 @@ pub async fn get_device_telemetry_handler(
                             (paginated, total)
                         }
                         Err(e) => {
-                            tracing::debug!("query_telemetry failed for {}/{}: {}, trying direct fallback", device_id_for_service, metric_name, e);
+                            tracing::debug!(
+                                "query_telemetry failed for {}/{}: {}, trying direct fallback",
+                                device_id_for_service,
+                                metric_name,
+                                e
+                            );
                             // Fallback to direct telemetry query (with limit for performance)
                             // NOTE: We must NOT push limit to storage because storage returns
                             // ascending order (oldest first) and would give us the OLDEST N points
                             // instead of the NEWEST. Fetch limited data and reverse.
                             match telemetry
-                                .query_with_limit(&device_source_id, &metric_name, effective_start, end, Some(fetch_limit))
+                                .query_with_limit(
+                                    &device_source_id,
+                                    &metric_name,
+                                    effective_start,
+                                    end,
+                                    Some(fetch_limit),
+                                )
                                 .await
                             {
                                 Ok((all_points, total_from_db)) => {
@@ -467,7 +521,12 @@ pub async fn get_device_telemetry_handler(
                                     (paginated, total)
                                 }
                                 Err(e) => {
-                                    tracing::warn!("Telemetry query failed for {}/{}: {}", device_source_id, metric_name, e);
+                                    tracing::warn!(
+                                        "Telemetry query failed for {}/{}: {}",
+                                        device_source_id,
+                                        metric_name,
+                                        e
+                                    );
                                     (vec![], 0)
                                 }
                             }
@@ -475,7 +534,10 @@ pub async fn get_device_telemetry_handler(
                     };
 
                     // Extract next_cursor from the oldest point in the page (smallest timestamp)
-                    let next_cursor = points.last().as_ref().and_then(|p| p.get("timestamp").and_then(|t| t.as_i64()));
+                    let next_cursor = points
+                        .last()
+                        .as_ref()
+                        .and_then(|p| p.get("timestamp").and_then(|t| t.as_i64()));
                     (metric_name, json!(points), total, next_cursor)
                 }
             })
@@ -486,7 +548,8 @@ pub async fn get_device_telemetry_handler(
             .iter()
             .map(|(k, v, _, _)| (k.clone(), v.clone()))
             .collect();
-        let counts: HashMap<String, usize> = results.iter().map(|(k, _, c, _)| (k.clone(), *c)).collect();
+        let counts: HashMap<String, usize> =
+            results.iter().map(|(k, _, c, _)| (k.clone(), *c)).collect();
         // next_cursor from the first metric's oldest point
         let next_cursor: Option<i64> = results.first().and_then(|(_, _, _, nc)| *nc);
         (data, counts, next_cursor)
@@ -549,7 +612,12 @@ pub async fn get_device_telemetry_summary_handler(
         Ok((_, template)) => {
             if template.metrics.is_empty() {
                 // Device has no defined metrics - query actual metrics from storage
-                match state.devices.telemetry.list_metrics(&device_source_id).await {
+                match state
+                    .devices
+                    .telemetry
+                    .list_metrics(&device_source_id)
+                    .await
+                {
                     Ok(metrics) if !metrics.is_empty() => (metrics, true),
                     _ => (vec!["_raw".to_string()], true),
                 }
@@ -562,7 +630,12 @@ pub async fn get_device_telemetry_summary_handler(
         }
         Err(_) => {
             // Device not found - try actual metrics from storage
-            match state.devices.telemetry.list_metrics(&device_source_id).await {
+            match state
+                .devices
+                .telemetry
+                .list_metrics(&device_source_id)
+                .await
+            {
                 Ok(metrics) if !metrics.is_empty() => (metrics, true),
                 _ => (vec!["_raw".to_string()], true),
             }
@@ -578,7 +651,12 @@ pub async fn get_device_telemetry_summary_handler(
     // Transform-generated metric namespaces (with dot notation)
     let transform_namespaces = get_transform_namespaces();
 
-    if let Ok(all_storage_metrics) = state.devices.telemetry.list_metrics(&device_source_id).await {
+    if let Ok(all_storage_metrics) = state
+        .devices
+        .telemetry
+        .list_metrics(&device_source_id)
+        .await
+    {
         // Get template metric names for comparison
         let template_metric_names: std::collections::HashSet<String> = template_metrics
             .iter()
@@ -612,9 +690,9 @@ pub async fn get_device_telemetry_summary_handler(
 
                 // Check if this is a sub-metric of a template container metric
                 // e.g., template defines "values" and storage has "values.devName"
-                let is_sub_metric = template_metric_names.iter().any(|t| {
-                    metric.starts_with(&format!("{}.", t))
-                });
+                let is_sub_metric = template_metric_names
+                    .iter()
+                    .any(|t| metric.starts_with(&format!("{}.", t)));
 
                 tracing::debug!(
                     "Metric '{}': is_transform={}, is_sub_metric={}, in_storage=true",
@@ -879,7 +957,12 @@ pub async fn list_device_metrics_debug_handler(
     // For each metric, get the latest data point
     let mut metric_info = serde_json::Map::new();
     for metric in &metrics {
-        if let Ok(Some(point)) = state.devices.telemetry.latest(&device_source_id, metric).await {
+        if let Ok(Some(point)) = state
+            .devices
+            .telemetry
+            .latest(&device_source_id, metric)
+            .await
+        {
             metric_info.insert(
                 metric.clone(),
                 json!({
@@ -925,7 +1008,12 @@ pub async fn analyze_metric_timestamps_handler(
         m.clone()
     } else {
         // Try to guess the metric name
-        match state.devices.telemetry.list_metrics(&device_source_id).await {
+        match state
+            .devices
+            .telemetry
+            .list_metrics(&device_source_id)
+            .await
+        {
             Ok(m) if !m.is_empty() => m[0].clone(),
             _ => "_raw".to_string(),
         }

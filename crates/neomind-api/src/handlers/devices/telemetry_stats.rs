@@ -55,18 +55,28 @@ pub async fn get_telemetry_stats_handler(
 }
 
 /// Get performance recommendations based on stats
-fn get_performance_recommendations(avg_read_ms: f64, cache_hit_rate: f64, read_count: u64) -> Vec<String> {
+fn get_performance_recommendations(
+    avg_read_ms: f64,
+    cache_hit_rate: f64,
+    read_count: u64,
+) -> Vec<String> {
     let mut recommendations = Vec::new();
 
     if avg_read_ms > 200.0 {
-        recommendations.push("High read latency detected (>200ms). Consider optimizing database queries.".to_string());
+        recommendations.push(
+            "High read latency detected (>200ms). Consider optimizing database queries."
+                .to_string(),
+        );
         recommendations.push("Check if redb database file is fragmented.".to_string());
     } else if avg_read_ms > 50.0 {
         recommendations.push("Moderate read latency (>50ms). Monitor for degradation.".to_string());
     }
 
     if cache_hit_rate < 0.5 && read_count > 100 {
-        recommendations.push(format!("Low cache hit rate ({:.1}%). Consider increasing cache size.", cache_hit_rate * 100.0));
+        recommendations.push(format!(
+            "Low cache hit rate ({:.1}%). Consider increasing cache size.",
+            cache_hit_rate * 100.0
+        ));
     }
 
     if recommendations.is_empty() {

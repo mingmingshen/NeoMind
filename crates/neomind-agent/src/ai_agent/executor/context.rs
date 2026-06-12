@@ -81,8 +81,7 @@ pub(crate) fn build_history_context(
 
     // 2. Knowledge Files — inline content when available, index otherwise
     if !agent.memory.knowledge_files.is_empty() {
-        let kc = knowledge_content
-            .and_then(|m| if m.is_empty() { None } else { Some(m) });
+        let kc = knowledge_content.and_then(|m| if m.is_empty() { None } else { Some(m) });
         if let Some(content_map) = kc {
             // Inline mode: embed actual file contents directly
             let mut sections = Vec::new();
@@ -151,9 +150,7 @@ pub(crate) fn build_history_context(
 }
 
 /// Build knowledge file index section (name + description + tool commands).
-fn build_knowledge_index(
-    files: &[neomind_storage::KnowledgeFileRef],
-) -> String {
+fn build_knowledge_index(files: &[neomind_storage::KnowledgeFileRef]) -> String {
     let items: Vec<String> = files
         .iter()
         .map(|f| format!("- custom:{} — {}", f.name, f.description))

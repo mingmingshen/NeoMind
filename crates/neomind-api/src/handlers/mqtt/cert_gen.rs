@@ -22,8 +22,7 @@ pub struct CertPaths {
 /// Get the TLS directory for storing certificates.
 /// Uses `NEOMIND_DATA_DIR` env var (same as the rest of the project) or falls back to `data`.
 fn get_tls_dir() -> PathBuf {
-    let data_dir =
-        std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     PathBuf::from(data_dir).join("tls")
 }
 
@@ -74,8 +73,7 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
     let server_not_after = now + time::Duration::days(365);
 
     // --- CA key + self-signed cert ---
-    let ca_key =
-        KeyPair::generate().map_err(|e| format!("Failed to generate CA key: {}", e))?;
+    let ca_key = KeyPair::generate().map_err(|e| format!("Failed to generate CA key: {}", e))?;
 
     let mut ca_params = CertificateParams::new(Vec::<String>::new())
         .map_err(|e| format!("Failed to create CA params: {}", e))?;
@@ -111,7 +109,11 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
 
     // SANs: localhost, 127.0.0.1, local LAN IP, and hostname
     let mut sans = vec![
-        SanType::DnsName("localhost".try_into().map_err(|_| "Invalid DNS name".to_string())?),
+        SanType::DnsName(
+            "localhost"
+                .try_into()
+                .map_err(|_| "Invalid DNS name".to_string())?,
+        ),
         SanType::IpAddress(IpAddr::from([127, 0, 0, 1])),
     ];
     if let Some(local_ip) = get_local_ip() {
@@ -125,8 +127,12 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
     server_params.subject_alt_names = sans;
 
     // Server Key Usage: digital signature and key encipherment
-    server_params.key_usages.push(KeyUsagePurpose::DigitalSignature);
-    server_params.key_usages.push(KeyUsagePurpose::KeyEncipherment);
+    server_params
+        .key_usages
+        .push(KeyUsagePurpose::DigitalSignature);
+    server_params
+        .key_usages
+        .push(KeyUsagePurpose::KeyEncipherment);
     // Extended Key Usage: TLS server authentication
     server_params
         .extended_key_usages

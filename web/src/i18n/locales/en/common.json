@@ -741,5 +741,45 @@
     "showMore": "Show More"
   },
   "passwordNeedsLetter": "Password Needs Letter",
-  "passwordNeedsNumber": "Password Needs Number"
+  "passwordNeedsNumber": "Password Needs Number",
+  "onboarding": {
+    "title": "Get Started with NeoMind",
+    "subtitle": "Edge AI Platform — quickly configure core features and start your IoT journey",
+    "dismiss": "Skip Setup Guide",
+    "completed": "Done",
+    "moreCapabilities": "More Capabilities",
+    "hint": "Once you've configured an AI model, try saying \"help me connect a temperature sensor\" or \"create a dashboard\" in the chat.",
+    "steps": {
+      "llm": {
+        "title": "Configure AI Model",
+        "description": "NeoMind has a built-in AI assistant that lets you interact with the system through natural language. After configuring a model, you can manage devices, query data, and create automation rules through conversation — no need to navigate each page manually.",
+        "purpose": "AI is the core interaction method in NeoMind. Once configured, almost everything can be done through conversation.",
+        "action": "Configure AI Model"
+      },
+      "device": {
+        "title": "Connect Devices",
+        "description": "Devices connecting via MQTT are auto-discovered — just approve them from the drafts list. You can also add devices manually or use BLE provisioning.",
+        "purpose": "Devices are the source of data. Without devices, monitoring, alerting, and analysis aren't possible.",
+        "action": "View Devices"
+      }
+    },
+    "capabilities": {
+      "automation": {
+        "title": "Smart Automation",
+        "description": "Set up rules to auto-respond, or just tell AI to create them for you."
+      },
+      "dashboard": {
+        "title": "Visual Dashboards",
+        "description": "Build real-time dashboards with drag-and-drop: charts, device status, alert lists."
+      },
+      "agent": {
+        "title": "AI Agents",
+        "description": "Create scheduled agents: routine inspections, reports, proactive anomaly alerts."
+      },
+      "notification": {
+        "title": "Notifications",
+        "description": "Supports DingTalk, WeCom, Email, and more channels for timely alerts and reports."
+      }
+    }
+  }
 }

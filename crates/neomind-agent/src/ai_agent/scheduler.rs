@@ -89,7 +89,6 @@ pub enum SchedulerError {
 
     #[error("Schedule calculation error: {0}")]
     CalculationError(String),
-
 }
 
 /// A scheduled task.

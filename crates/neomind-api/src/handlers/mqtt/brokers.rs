@@ -370,7 +370,10 @@ pub async fn list_brokers_handler(
         if let Some(adapter) = state.devices.service.get_adapter(&aid).await {
             live_status.insert(
                 broker.id.clone(),
-                matches!(adapter.connection_status(), neomind_devices::adapter::ConnectionStatus::Connected),
+                matches!(
+                    adapter.connection_status(),
+                    neomind_devices::adapter::ConnectionStatus::Connected
+                ),
             );
         }
     }

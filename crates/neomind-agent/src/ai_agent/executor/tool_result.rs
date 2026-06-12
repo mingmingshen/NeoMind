@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::message::{Content, Message, MessageRole};
-use neomind_storage::{
-    AiAgent, DataCollected, Decision, DecisionProcess, ReasoningStep,
-};
+use neomind_storage::{AiAgent, DataCollected, Decision, DecisionProcess, ReasoningStep};
 
 use super::{
     resolve_role, summarize_tool_output, truncate_to, ToolLoopOutput, TOOL_RESULT_MAX_LEN,
@@ -40,15 +38,11 @@ impl AgentExecutor {
                     let raw = serde_json::to_string_pretty(&output.data)
                         .unwrap_or_else(|_| "Success".to_string());
                     // Sanitize base64/image data to prevent context bloat
-                    let sanitized =
-                        crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                    let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
                     // UTF-8 safe truncation (has fast-path for short strings)
                     // 128KB limit: large enough for compact time-series and multi-device
                     // queries. The compaction layer handles context window limits later.
-                    crate::agent::streaming::truncate_result_utf8(
-                        &sanitized,
-                        TOOL_RESULT_MAX_LEN,
-                    )
+                    crate::agent::streaming::truncate_result_utf8(&sanitized, TOOL_RESULT_MAX_LEN)
                 }
                 Err(e) => {
                     let err_msg = format!("Error: {}", e);
@@ -141,12 +135,8 @@ impl AgentExecutor {
                     let raw = serde_json::to_string_pretty(&output.data)
                         .unwrap_or_else(|_| "Success".to_string());
                     // Sanitize base64/image data to prevent context bloat
-                    let sanitized =
-                        crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
-                    crate::agent::streaming::truncate_result_utf8(
-                        &sanitized,
-                        TOOL_RESULT_MAX_LEN,
-                    )
+                    let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                    crate::agent::streaming::truncate_result_utf8(&sanitized, TOOL_RESULT_MAX_LEN)
                 }
                 Err(e) => format!("Error: {}", e),
             };
@@ -160,10 +150,7 @@ impl AgentExecutor {
         // Phase 2 summary: include agent role for domain-aware analysis.
         // The agent's custom system_prompt provides domain context (e.g. "temperature
         // monitoring agent") that produces more relevant summaries than a generic role.
-        let default_role = format!(
-            "You are an intelligent IoT agent named '{}'.",
-            agent.name
-        );
+        let default_role = format!("You are an intelligent IoT agent named '{}'.", agent.name);
         let agent_role = resolve_role(agent, &default_role);
         let summary_role = format!(
             "{}\n\nAnalyze the tool execution results and provide a comprehensive, \
@@ -172,10 +159,7 @@ impl AgentExecutor {
             agent_role
         );
         let summary_messages = vec![
-            Message::new(
-                MessageRole::System,
-                Content::text(summary_role),
-            ),
+            Message::new(MessageRole::System, Content::text(summary_role)),
             Message::new(MessageRole::User, Content::text(&phase2_user)),
         ];
 
@@ -278,9 +262,8 @@ pub(crate) fn build_tool_result(
         });
 
     // --- conclusion: LLM's natural language response, directly ---
-    let is_generic = final_text.is_empty()
-        || final_text == "Completed tool execution rounds."
-        || llm_failed;
+    let is_generic =
+        final_text.is_empty() || final_text == "Completed tool execution rounds." || llm_failed;
 
     let conclusion = if !is_generic {
         final_text.clone()
@@ -404,8 +387,7 @@ pub(crate) fn build_tool_result(
     let success_rate = if actions_executed.is_empty() {
         1.0
     } else {
-        actions_executed.iter().filter(|a| a.success).count() as f32
-            / actions_executed.len() as f32
+        actions_executed.iter().filter(|a| a.success).count() as f32 / actions_executed.len() as f32
     };
 
     // summary: the actual LLM response text.

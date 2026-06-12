@@ -741,5 +741,45 @@
   "minutes": "分钟",
   "day": "天",
   "days": "天",
-  "week": "周"
+  "week": "周",
+  "onboarding": {
+    "title": "开始使用 NeoMind",
+    "subtitle": "边缘智能平台 — 快速配置核心功能，开启你的 IoT 智能之旅",
+    "dismiss": "跳过引导",
+    "completed": "已完成",
+    "moreCapabilities": "更多能力",
+    "hint": "配置好 AI 模型后，试试在对话框中说「帮我连接一个温度传感器」或「创建一个仪表盘」。",
+    "steps": {
+      "llm": {
+        "title": "配置 AI 模型",
+        "description": "NeoMind 内置 AI 助手，通过自然语言与系统交互。配置模型后，你可以用对话管理设备、查询数据、创建自动化规则 — 不需要手动操作每个页面。",
+        "purpose": "AI 是 NeoMind 的核心交互方式。配置好模型后，后续几乎所有操作都可以通过对话完成。",
+        "action": "配置 AI 模型"
+      },
+      "device": {
+        "title": "连接设备",
+        "description": "设备通过 MQTT 连接后会被自动识别，在草稿列表中一键批准即可。也支持手动添加设备、BLE 配网等方式。",
+        "purpose": "设备是数据的来源。没有设备，监控、告警、分析都无从谈起。",
+        "action": "查看设备"
+      }
+    },
+    "capabilities": {
+      "automation": {
+        "title": "智能自动化",
+        "description": "设置规则让系统自动响应，或直接告诉 AI 帮你创建。"
+      },
+      "dashboard": {
+        "title": "可视化仪表盘",
+        "description": "拖拽搭建实时看板：数据图表、设备状态、告警列表。"
+      },
+      "agent": {
+        "title": "AI Agent",
+        "description": "创建定时执行的智能体：定期巡检、生成报告、主动推送异常。"
+      },
+      "notification": {
+        "title": "消息通知",
+        "description": "支持钉钉、企业微信、邮件等通道，及时推送告警和报告。"
+      }
+    }
+  }
 }

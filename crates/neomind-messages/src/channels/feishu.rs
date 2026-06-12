@@ -19,8 +19,8 @@ pub fn compute_hmac_sha256_sign(secret: &str, timestamp: i64) -> String {
 
     let string_to_sign = format!("{}\n{}", timestamp, secret);
 
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
     mac.update(string_to_sign.as_bytes());
     let result = mac.finalize().into_bytes();
 
@@ -173,7 +173,10 @@ impl super::ChannelFactory for FeishuChannelFactory {
             .unwrap_or("feishu")
             .to_string();
 
-        let secret = config.get("secret").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let secret = config
+            .get("secret")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let mut channel = FeishuChannel::new(name, hook_id.to_string(), secret);
 
@@ -204,7 +207,10 @@ mod tests {
 
         // Different inputs should produce different outputs
         let sign3 = compute_hmac_sha256_sign(secret, timestamp + 1);
-        assert_ne!(sign1, sign3, "Different timestamps should produce different signs");
+        assert_ne!(
+            sign1, sign3,
+            "Different timestamps should produce different signs"
+        );
 
         // Output should be valid base64
         use base64::Engine;

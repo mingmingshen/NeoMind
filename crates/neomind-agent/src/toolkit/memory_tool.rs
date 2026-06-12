@@ -101,7 +101,10 @@ impl MemoryTool {
 
     /// Swap in a fresh per-execution knowledge_files handle.
     /// Returns the new handle for the executor to use.
-    pub fn swap_knowledge_files_handle(&self, new_handle: KnowledgeFilesHandle) -> KnowledgeFilesHandle {
+    pub fn swap_knowledge_files_handle(
+        &self,
+        new_handle: KnowledgeFilesHandle,
+    ) -> KnowledgeFilesHandle {
         let mut guard = self.knowledge_files.write();
         *guard = new_handle;
         guard.clone()
@@ -147,15 +150,9 @@ impl MemoryTool {
 
     /// Validate that session_id is set for session-scoped operations.
     async fn require_session_id(&self) -> Result<String> {
-        self.session_id
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| {
-                ToolError::Execution(
-                    "Session ID required for session-scoped operations.".into(),
-                )
-            })
+        self.session_id.read().await.clone().ok_or_else(|| {
+            ToolError::Execution("Session ID required for session-scoped operations.".into())
+        })
     }
 
     /// Parse a target string. Returns Some(name) for custom:{name}, None for built-in targets.
@@ -181,7 +178,12 @@ impl MemoryTool {
     }
 
     /// Read a custom file, respecting agent scope.
-    fn read_custom(&self, store: &MarkdownMemoryStore, agent_id: Option<&str>, name: &str) -> Result<String> {
+    fn read_custom(
+        &self,
+        store: &MarkdownMemoryStore,
+        agent_id: Option<&str>,
+        name: &str,
+    ) -> Result<String> {
         if let Some(aid) = agent_id {
             store
                 .read_agent_custom_file(aid, name)
@@ -194,7 +196,13 @@ impl MemoryTool {
     }
 
     /// Write a custom file, respecting agent scope.
-    fn write_custom(&self, store: &MarkdownMemoryStore, agent_id: Option<&str>, name: &str, content: &str) -> Result<()> {
+    fn write_custom(
+        &self,
+        store: &MarkdownMemoryStore,
+        agent_id: Option<&str>,
+        name: &str,
+        content: &str,
+    ) -> Result<()> {
         if let Some(aid) = agent_id {
             store
                 .write_agent_custom_file(aid, name, content)

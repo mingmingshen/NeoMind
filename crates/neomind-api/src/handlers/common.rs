@@ -79,9 +79,7 @@ impl PaginationQuery {
     /// Get the effective limit for cursor-based pagination.
     /// Falls back to `page_size` (capped at 100) when `limit` is not set.
     pub fn cursor_limit(&self) -> usize {
-        self.limit
-            .unwrap_or(self.page_size as u32)
-            .min(100) as usize
+        self.limit.unwrap_or(self.page_size as u32).min(100) as usize
     }
 
     /// Get the offset for database queries (offset-based mode).
@@ -134,14 +132,23 @@ impl PaginationQuery {
     /// `total_count` is the total number of items (may be approximate for some stores).
     /// `last_key` is the key of the last item returned; it will be encoded as `next_cursor`
     /// when there are more results.
-    pub fn to_cursor_meta(&self, total_count: u32, returned_count: usize, last_key: Option<&str>) -> PaginationMeta {
+    pub fn to_cursor_meta(
+        &self,
+        total_count: u32,
+        returned_count: usize,
+        last_key: Option<&str>,
+    ) -> PaginationMeta {
         let effective_limit = self.cursor_limit();
         let has_more = returned_count >= effective_limit;
         PaginationMeta {
             page: 0, // not applicable in cursor mode
             page_size: effective_limit as u32,
             total_count,
-            total_pages: if effective_limit > 0 { total_count.div_ceil(effective_limit as u32) } else { 0 },
+            total_pages: if effective_limit > 0 {
+                total_count.div_ceil(effective_limit as u32)
+            } else {
+                0
+            },
             has_next: has_more,
             has_prev: false, // cursor pagination is forward-only
             next_cursor: if has_more {
@@ -277,9 +284,7 @@ fn detect_local_ip() -> String {
 
 /// Check if IPv4 octets represent a private/RFC1918 address.
 fn is_private_ip(o: [u8; 4]) -> bool {
-    (o[0] == 192 && o[1] == 168)
-        || o[0] == 10
-        || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
+    (o[0] == 192 && o[1] == 168) || o[0] == 10 || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
 }
 
 /// Create a successful response with data.
@@ -515,7 +520,10 @@ mod tests {
         assert!(!meta.has_prev);
         assert!(meta.next_cursor.is_some());
         // Verify the cursor encodes the last key
-        assert_eq!(meta.next_cursor.unwrap(), PaginationQuery::encode_cursor("last-key-123"));
+        assert_eq!(
+            meta.next_cursor.unwrap(),
+            PaginationQuery::encode_cursor("last-key-123")
+        );
     }
 
     #[test]

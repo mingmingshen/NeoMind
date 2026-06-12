@@ -9,9 +9,9 @@
 //! - **Linux/Windows**: Basic file existence and format checks
 
 use std::path::Path;
+use tracing::info;
 #[cfg(target_os = "macos")]
 use tracing::warn;
-use tracing::info;
 
 /// Validation error types
 #[derive(Debug, thiserror::Error)]
@@ -92,9 +92,7 @@ fn validate_macos_dylib(path: &Path) -> Result<(), ValidationError> {
         .arg(path)
         .output()
         .map_err(|e| {
-            ValidationError::IoError(std::io::Error::other(
-                format!("Failed to run otool: {}", e),
-            ))
+            ValidationError::IoError(std::io::Error::other(format!("Failed to run otool: {}", e)))
         })?;
 
     if !output.status.success() {

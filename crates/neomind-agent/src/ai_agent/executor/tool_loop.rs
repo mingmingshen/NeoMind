@@ -10,11 +10,11 @@ use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::message::{Content, ContentPart, Message, MessageRole};
 use neomind_storage::AiAgent;
 
+use super::super::AgentExecutor;
 use super::{
     compact, summarize_tool_output, truncate_to, DedupOutcome, RoundData, ToolCallRecord,
     ToolLoopOutput,
 };
-use super::super::AgentExecutor;
 use crate::agent::types::ToolCall;
 
 // ---------------------------------------------------------------------------
@@ -143,7 +143,8 @@ impl AgentExecutor {
                         .enumerate()
                         .filter_map(|(i, tc)| {
                             // Try "name" first, then "tool"/"function" for consistency with text parser
-                            let name = tc.get("name")
+                            let name = tc
+                                .get("name")
                                 .and_then(|v| v.as_str())
                                 .or_else(|| tc.get("tool").and_then(|v| v.as_str()))
                                 .or_else(|| tc.get("function").and_then(|v| v.as_str()));
@@ -156,7 +157,10 @@ impl AgentExecutor {
                                         .filter(|s| !s.is_empty())
                                         .map(|s| s.to_string())
                                         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-                                    arguments: tc.get("arguments").cloned().unwrap_or(serde_json::json!({})),
+                                    arguments: tc
+                                        .get("arguments")
+                                        .cloned()
+                                        .unwrap_or(serde_json::json!({})),
                                     result: None,
                                     round: None,
                                 }),
@@ -276,7 +280,8 @@ impl AgentExecutor {
                 let deferred_names: Vec<String> = tool_calls[MAX_TOOL_CALLS_PER_ROUND..]
                     .iter()
                     .map(|tc| {
-                        tc.arguments.get("command")
+                        tc.arguments
+                            .get("command")
                             .and_then(|v| v.as_str())
                             .unwrap_or(&tc.name)
                             .split_whitespace()
@@ -330,7 +335,10 @@ impl AgentExecutor {
             }
 
             // --- Partial-dedup hint: some calls were skipped, some survived ---
-            if let DedupOutcome::HasNew { skipped_cross_round } = &dedup_outcome {
+            if let DedupOutcome::HasNew {
+                skipped_cross_round,
+            } = &dedup_outcome
+            {
                 if !skipped_cross_round.is_empty() {
                     let skipped_summary: Vec<String> = skipped_cross_round
                         .iter()
@@ -430,11 +438,7 @@ impl AgentExecutor {
                 registry.execute_parallel(calls).await
             };
 
-            let round_tool_calls = build_round_tool_calls(
-                &tool_calls,
-                &results,
-                tool_name_map,
-            );
+            let round_tool_calls = build_round_tool_calls(&tool_calls, &results, tool_name_map);
 
             round_data_list.push(RoundData {
                 thought: if remaining_text.is_empty() {
@@ -445,16 +449,18 @@ impl AgentExecutor {
                 tool_calls: round_tool_calls,
             });
 
-            let new_step_num = self.process_tool_results(
-                &results,
-                messages,
-                &mut all_tool_results,
-                &mut skill_reference,
-                &original_to_sanitized,
-                &agent.id,
-                execution_id,
-                step_num,
-            ).await;
+            let new_step_num = self
+                .process_tool_results(
+                    &results,
+                    messages,
+                    &mut all_tool_results,
+                    &mut skill_reference,
+                    &original_to_sanitized,
+                    &agent.id,
+                    execution_id,
+                    step_num,
+                )
+                .await;
             step_num = new_step_num;
 
             // --- Messages compaction ---
@@ -471,10 +477,8 @@ impl AgentExecutor {
             if msg_count_after < msg_count_before {
                 let sig_count = all_executed_signatures.len();
                 if sig_count > 0 && sig_count <= 30 {
-                    let sigs: Vec<&str> = all_executed_signatures
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect();
+                    let sigs: Vec<&str> =
+                        all_executed_signatures.iter().map(|s| s.as_str()).collect();
                     messages.push(Message::new(
                         MessageRole::User,
                         Content::text(&format!(
@@ -499,7 +503,9 @@ impl AgentExecutor {
             // At the current max_rounds boundary, if the LLM was still making
             // tool calls this round (didn't naturally finish), extend the loop
             // so the agent can complete its work instead of being cut off mid-task.
-            let had_tool_calls = !round_data_list.last().map_or(true, |rd| rd.tool_calls.is_empty());
+            let had_tool_calls = !round_data_list
+                .last()
+                .map_or(true, |rd| rd.tool_calls.is_empty());
             if round + 1 == max_rounds && had_tool_calls {
                 let extension = MAX_CONTINUATION_ROUNDS;
                 max_rounds += extension;
@@ -522,12 +528,14 @@ impl AgentExecutor {
             || final_text == "Completed tool execution rounds.";
         if needs_summary && !all_tool_results.is_empty() {
             final_text.clear();
-            let summary = self.generate_phase2_summary(
-                agent,
-                llm_runtime,
-                &all_tool_results,
-                round_data_list.len(),
-            ).await;
+            let summary = self
+                .generate_phase2_summary(
+                    agent,
+                    llm_runtime,
+                    &all_tool_results,
+                    round_data_list.len(),
+                )
+                .await;
             if let Some(text) = summary {
                 final_text = text;
             } else {
@@ -537,7 +545,9 @@ impl AgentExecutor {
                 let total_count = all_tool_results.len();
                 let mut lines = vec![format!(
                     "Tool execution completed: {}/{} calls succeeded across {} round(s).",
-                    success_count, total_count, round_data_list.len()
+                    success_count,
+                    total_count,
+                    round_data_list.len()
                 )];
                 // Include brief summaries of last few successful results
                 for r in all_tool_results.iter().rev().take(5) {
@@ -625,7 +635,9 @@ pub(crate) fn deduplicate_tool_calls(
         );
         DedupOutcome::AllDuplicate
     } else {
-        DedupOutcome::HasNew { skipped_cross_round }
+        DedupOutcome::HasNew {
+            skipped_cross_round,
+        }
     }
 }
 
@@ -673,9 +685,8 @@ pub(crate) fn normalize_shell_command(cmd: &str) -> String {
     }
 
     // Check if this is a `neomind <domain> <action>` with action safe to truncate
-    let action_safe_to_truncate = parts.len() >= 3
-        && parts[0] == "neomind"
-        && matches!(parts[2], "get");
+    let action_safe_to_truncate =
+        parts.len() >= 3 && parts[0] == "neomind" && matches!(parts[2], "get");
 
     let mut filtered = Vec::new();
     let mut skip_next = false;
@@ -732,8 +743,7 @@ pub(crate) fn detect_duplicate_round(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 let mut sig = format!("{}|{}", tc.name, action);
-                for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"]
-                {
+                for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"] {
                     if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
                         sig.push_str(&format!("|{}", val));
                     }
@@ -781,19 +791,18 @@ pub(crate) fn build_round_tool_calls(
 ) -> Vec<ToolCallRecord> {
     let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
     for (i, tc) in tool_calls.iter().enumerate() {
-        let result =
-            results
-                .get(i)
-                .cloned()
-                .unwrap_or_else(|| crate::toolkit::ToolResult {
-                    name: tool_name_map
-                        .get(&tc.name)
-                        .cloned()
-                        .unwrap_or_else(|| tc.name.clone()),
-                    result: Err(crate::toolkit::error::ToolError::Execution(
-                        "No result".to_string(),
-                    )),
-                });
+        let result = results
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| crate::toolkit::ToolResult {
+                name: tool_name_map
+                    .get(&tc.name)
+                    .cloned()
+                    .unwrap_or_else(|| tc.name.clone()),
+                result: Err(crate::toolkit::error::ToolError::Execution(
+                    "No result".to_string(),
+                )),
+            });
         // Use original name for history display
         let display_name = tool_name_map
             .get(&tc.name)

@@ -240,7 +240,10 @@ mod tests {
         let (store, _dir) = create_test_store();
 
         store.write_file("user", "test user").await.unwrap();
-        store.write_file("knowledge", "test knowledge").await.unwrap();
+        store
+            .write_file("knowledge", "test knowledge")
+            .await
+            .unwrap();
 
         // Create agent files — should NOT appear in snapshot
         let agents_dir = store.base_path().join("agents");
@@ -248,7 +251,9 @@ mod tests {
         std::fs::write(agents_dir.join("agent1.md"), "Agent summary").unwrap();
 
         // Create custom files — should NOT appear in snapshot
-        store.write_custom_file("test-file", "Custom content").unwrap();
+        store
+            .write_custom_file("test-file", "Custom content")
+            .unwrap();
 
         let snapshot = MemorySnapshot::load(&store);
         let content = &snapshot.content;

@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::CliResponse;
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// Get system infrastructure info: MQTT broker, network, webhook URLs
 pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
@@ -61,10 +61,12 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .map(|cred| json!({
-                    "username": cred.get("username").and_then(|v| v.as_str()).unwrap_or(""),
-                    "password": cred.get("password").and_then(|v| v.as_str()).unwrap_or(""),
-                }))
+                .map(|cred| {
+                    json!({
+                        "username": cred.get("username").and_then(|v| v.as_str()).unwrap_or(""),
+                        "password": cred.get("password").and_then(|v| v.as_str()).unwrap_or(""),
+                    })
+                })
                 .collect()
         })
         .unwrap_or_default();

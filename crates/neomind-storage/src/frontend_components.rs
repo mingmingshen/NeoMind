@@ -33,12 +33,24 @@ pub struct SizeConstraints {
     pub max_h: u32,
 }
 
-fn default_min_w() -> u32 { 1 }
-fn default_min_h() -> u32 { 1 }
-fn default_default_w() -> u32 { 2 }
-fn default_default_h() -> u32 { 2 }
-fn default_max_w() -> u32 { 12 }
-fn default_max_h() -> u32 { 12 }
+fn default_min_w() -> u32 {
+    1
+}
+fn default_min_h() -> u32 {
+    1
+}
+fn default_default_w() -> u32 {
+    2
+}
+fn default_default_h() -> u32 {
+    2
+}
+fn default_max_w() -> u32 {
+    12
+}
+fn default_max_h() -> u32 {
+    12
+}
 
 impl Default for SizeConstraints {
     fn default() -> Self {
@@ -270,10 +282,7 @@ mod tests {
     use super::*;
 
     fn test_store() -> FrontendComponentStore {
-        let dir = std::env::temp_dir().join(format!(
-            "neomind-test-fc-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir = std::env::temp_dir().join(format!("neomind-test-fc-{}", uuid::Uuid::new_v4()));
         FrontendComponentStore::open(&dir).expect("failed to open test store")
     }
 
@@ -312,7 +321,10 @@ mod tests {
         store.install(&manifest, bundle).unwrap();
 
         // Manifest loads correctly
-        let loaded = store.load_manifest("clock").unwrap().expect("manifest should exist");
+        let loaded = store
+            .load_manifest("clock")
+            .unwrap()
+            .expect("manifest should exist");
         assert_eq!(loaded.id, "clock");
         assert_eq!(loaded.icon, "Box");
         assert_eq!(loaded.global_name, "TestComponent");

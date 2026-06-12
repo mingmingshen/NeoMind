@@ -19,9 +19,7 @@
 //! └─ set_interval command    ──→ sensor/${id}/command
 //! ```
 
-use crate::adapter::{
-    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
-};
+use crate::adapter::{AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
 use crate::mdl::MetricValue;
 use crate::mqtt::MqttConfig;
 use crate::protocol::ProtocolMapping;
@@ -117,7 +115,6 @@ impl MqttAdapterConfig {
         self.mqtt = self.mqtt.with_port(port);
         self
     }
-
 }
 
 /// Single MQTT broker connection
@@ -314,7 +311,10 @@ impl MqttAdapter {
                 self.config.mqtt.client_key.as_deref(),
             )?;
             mqttoptions.set_transport(transport);
-            info!("MQTT adapter configured with TLS for broker '{}'", broker_id);
+            info!(
+                "MQTT adapter configured with TLS for broker '{}'",
+                broker_id
+            );
         }
 
         // Create client
@@ -458,9 +458,7 @@ impl MqttAdapter {
                         error_count += 1;
                         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
                         // rumqttc handles reconnection internally — just keep polling
-                        let backoff = Duration::from_secs(
-                            (1u64 << error_count.min(5)).min(30),
-                        );
+                        let backoff = Duration::from_secs((1u64 << error_count.min(5)).min(30));
                         warn!(
                             "MQTT broker {} error ({}), reconnecting in {:?}: {}",
                             broker_id_clone, error_count, backoff, e
@@ -690,9 +688,7 @@ impl MqttAdapter {
                         error_count += 1;
                         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
                         // rumqttc handles reconnection internally — just keep polling
-                        let backoff = Duration::from_secs(
-                            (1u64 << error_count.min(5)).min(30),
-                        );
+                        let backoff = Duration::from_secs((1u64 << error_count.min(5)).min(30));
                         warn!(
                             "MQTT broker {} error ({}), reconnecting in {:?}: {}",
                             broker_id_clone2, error_count, backoff, e
@@ -1090,11 +1086,7 @@ impl DeviceAdapter for MqttAdapter {
         info!("subscribe_device called for device_id: {}", device_id);
 
         // Get the device configuration to find its telemetry topic
-        let device_opt = self
-            .device_registry
-            .read()
-            .await
-            .get_device(device_id);
+        let device_opt = self.device_registry.read().await.get_device(device_id);
         info!(
             "Device lookup result for {}: {:?}",
             device_id,
@@ -1171,11 +1163,7 @@ impl DeviceAdapter for MqttAdapter {
 
     async fn unsubscribe_device(&self, device_id: &str) -> AdapterResult<()> {
         // Get the device configuration to find its telemetry topic
-        let device_opt = self
-            .device_registry
-            .read()
-            .await
-            .get_device(device_id);
+        let device_opt = self.device_registry.read().await.get_device(device_id);
         if let Some(device) = device_opt {
             // Unsubscribe from the device's telemetry topic if configured
             if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
@@ -1388,7 +1376,11 @@ impl MqttAdapter {
                                             quality: None,
                                         };
                                         if let Err(e) = storage
-                                            .write(&format!("device:{}", device_id), &metric.name, data_point)
+                                            .write(
+                                                &format!("device:{}", device_id),
+                                                &metric.name,
+                                                data_point,
+                                            )
                                             .await
                                         {
                                             error!(
@@ -1594,8 +1586,13 @@ impl MqttAdapter {
                                             value: metric.value.clone(),
                                             quality: None,
                                         };
-                                        if let Err(e) =
-                                            storage.write(&format!("device:{}", device_id), &metric.name, data_point).await
+                                        if let Err(e) = storage
+                                            .write(
+                                                &format!("device:{}", device_id),
+                                                &metric.name,
+                                                data_point,
+                                            )
+                                            .await
                                         {
                                             error!(
                                                 "Failed to write telemetry for {}/{}: {}",
@@ -1639,8 +1636,13 @@ impl MqttAdapter {
                                             value: value.clone(),
                                             quality: None,
                                         };
-                                        let _ =
-                                            storage.write(&format!("device:{}", device_id), metric_name, data_point).await;
+                                        let _ = storage
+                                            .write(
+                                                &format!("device:{}", device_id),
+                                                metric_name,
+                                                data_point,
+                                            )
+                                            .await;
                                     }
 
                                     // Emit to device event channel - event forwarding task will publish to EventBus
@@ -1742,7 +1744,8 @@ impl MqttAdapter {
                                     sample,
                                     is_binary,
                                     timestamp: chrono::Utc::now().timestamp(),
-                                }).await;
+                                })
+                                .await;
                             }
                         }
                     }
@@ -1947,7 +1950,9 @@ pub async fn test_mqtt_connection(
 
     if tls {
         match MqttAdapter::build_tls_transport(ca_cert, client_cert, client_key) {
-            Ok(transport) => { mqttoptions.set_transport(transport); }
+            Ok(transport) => {
+                mqttoptions.set_transport(transport);
+            }
             Err(e) => {
                 return MqttTestResult {
                     success: false,

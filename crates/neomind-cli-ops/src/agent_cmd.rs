@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List all agents with compact summary.
 ///
@@ -13,7 +13,13 @@ pub async fn list_agents(client: &ApiClient) -> Result<CliResponse> {
     let agents = data
         .as_array()
         .or_else(|| data.get("agents").and_then(|v| v.as_array()))
-        .or_else(|| data.get("data").and_then(|d| d.as_array()).or_else(|| data.get("data").and_then(|d| d.get("agents")).and_then(|v| v.as_array())));
+        .or_else(|| {
+            data.get("data").and_then(|d| d.as_array()).or_else(|| {
+                data.get("data")
+                    .and_then(|d| d.get("agents"))
+                    .and_then(|v| v.as_array())
+            })
+        });
 
     let Some(agents) = agents else {
         return Ok(CliResponse::success(data, "Agents listed"));
@@ -99,8 +105,7 @@ pub async fn create_agent(
     }
 
     let exec_mode = execution_mode.unwrap_or("free");
-    let has_resources = resources.is_some()
-        || device_ids.map(|d| !d.is_empty()).unwrap_or(false);
+    let has_resources = resources.is_some() || device_ids.map(|d| !d.is_empty()).unwrap_or(false);
 
     let mut body = json!({
         "name": name,
@@ -118,7 +123,11 @@ pub async fn create_agent(
         body["system_prompt"] = json!(prompt);
     }
     if let Some(ids) = device_ids {
-        let id_list: Vec<&str> = ids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        let id_list: Vec<&str> = ids
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
         if !id_list.is_empty() {
             body["device_ids"] = json!(id_list);
         }
@@ -153,7 +162,9 @@ pub async fn create_agent(
 
     // focused mode requires resources
     if exec_mode == "focused" && !has_resources {
-        anyhow::bail!("Focused mode requires --resources or --device-ids to bind at least one resource");
+        anyhow::bail!(
+            "Focused mode requires --resources or --device-ids to bind at least one resource"
+        );
     }
 
     let data = client.post("/agents", &body).await?;
@@ -231,7 +242,11 @@ pub async fn update_agent(
         body["execution_mode"] = json!(em);
     }
     if let Some(ids) = device_ids {
-        let id_list: Vec<&str> = ids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        let id_list: Vec<&str> = ids
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
         body["device_ids"] = json!(id_list);
     }
     if let Some(res_str) = resources {
@@ -269,48 +284,35 @@ pub async fn update_agent(
 /// Delete agent
 pub async fn delete_agent(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/agents/{}", id)).await?;
-    Ok(CliResponse::success(
-        json!({ "id": id }),
-        "Agent deleted",
-    ))
+    Ok(CliResponse::success(json!({ "id": id }), "Agent deleted"))
 }
 
 /// Control agent status (active/paused)
-pub async fn control_agent(
-    client: &ApiClient,
-    id: &str,
-    status: &str,
-) -> Result<CliResponse> {
+pub async fn control_agent(client: &ApiClient, id: &str, status: &str) -> Result<CliResponse> {
     let body = json!({ "status": status });
-    let data = client.post(&format!("/agents/{}/status", id), &body).await?;
+    let data = client
+        .post(&format!("/agents/{}/status", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "Agent status updated"))
 }
 
 /// Invoke agent with input
-pub async fn invoke_agent(
-    client: &ApiClient,
-    id: &str,
-    input: &str,
-) -> Result<CliResponse> {
+pub async fn invoke_agent(client: &ApiClient, id: &str, input: &str) -> Result<CliResponse> {
     let body = json!({ "input": input });
-    let data = client.post(&format!("/agents/{}/execute", id), &body).await?;
+    let data = client
+        .post(&format!("/agents/{}/execute", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "Agent invoked"))
 }
 
 /// Get agent memory
-pub async fn get_agent_memory(
-    client: &ApiClient,
-    id: &str,
-) -> Result<CliResponse> {
+pub async fn get_agent_memory(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/agents/{}/memory", id)).await?;
     Ok(CliResponse::success(data, "Agent memory retrieved"))
 }
 
 /// Clear agent memory
-pub async fn clear_agent_memory(
-    client: &ApiClient,
-    id: &str,
-) -> Result<CliResponse> {
+pub async fn clear_agent_memory(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/agents/{}/memory", id)).await?;
     Ok(CliResponse::success(json!({}), "Agent memory cleared"))
 }
@@ -347,7 +349,11 @@ pub async fn get_latest_execution(client: &ApiClient, id: &str) -> Result<CliRes
 }
 
 /// Get agent conversation (user messages)
-pub async fn get_conversation(client: &ApiClient, id: &str, limit: Option<usize>) -> Result<CliResponse> {
+pub async fn get_conversation(
+    client: &ApiClient,
+    id: &str,
+    limit: Option<usize>,
+) -> Result<CliResponse> {
     let mut path = format!("/agents/{}/messages", id);
     if let Some(l) = limit {
         path.push_str(&format!("?limit={}", l));
@@ -369,6 +375,8 @@ pub async fn send_message(
     if let Some(mt) = message_type {
         body["type"] = json!(mt);
     }
-    let data = client.post(&format!("/agents/{}/messages", id), &body).await?;
+    let data = client
+        .post(&format!("/agents/{}/messages", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "Message sent"))
 }

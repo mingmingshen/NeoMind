@@ -103,10 +103,7 @@ impl AgentExecutor {
             "You are an intelligent IoT agent named '{}' monitoring edge devices.",
             agent.name
         );
-        let identity_section = agent
-            .system_prompt
-            .as_deref()
-            .unwrap_or(&default_identity);
+        let identity_section = agent.system_prompt.as_deref().unwrap_or(&default_identity);
 
         // Build schedule info
         let schedule_info = match &agent.schedule.schedule_type {
@@ -159,12 +156,14 @@ impl AgentExecutor {
         }
 
         // Register in knowledge_files index
-        updated_memory.knowledge_files.push(neomind_storage::KnowledgeFileRef {
-            name: "task-understanding".to_string(),
-            description: "Auto-created task summary and first execution record".to_string(),
-            created_at: now,
-            updated_at: now,
-        });
+        updated_memory
+            .knowledge_files
+            .push(neomind_storage::KnowledgeFileRef {
+                name: "task-understanding".to_string(),
+                description: "Auto-created task summary and first execution record".to_string(),
+                created_at: now,
+                updated_at: now,
+            });
 
         // Also update the per-execution handle so the MemoryTool sees it
         // Note: The handle is passed to update_memory from the caller (execute_internal)

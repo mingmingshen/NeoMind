@@ -362,6 +362,11 @@ impl CloudRuntime {
     /// For Anthropic, uses their image format. For OpenAI/Google, uses OpenAI-style format.
     fn messages_to_api(&self, messages: &[Message]) -> Vec<ApiMessage> {
         let is_anthropic = matches!(self.config.provider, CloudProvider::Anthropic);
+        // Whether this model can accept image input. Image parts in history
+        // (e.g. an earlier turn with a vision model, or a previous attachment)
+        // are stripped for text-only models — otherwise the API rejects the
+        // whole request with `unknown variant image_url, expected text`.
+        let can_multimodal = self.supports_multimodal();
 
         messages
             .iter()
@@ -369,33 +374,37 @@ impl CloudRuntime {
                 let content = match &msg.content {
                     Content::Text(text) => ApiContent::Text(text.clone()),
                     Content::Parts(parts) => {
-                        let api_parts: Vec<ApiContentPart> = parts
+                        let mut api_parts: Vec<ApiContentPart> = parts
                             .iter()
-                            .map(|part| match part {
+                            .filter_map(|part| match part {
                                 ContentPart::Text { text } => {
-                                    ApiContentPart::Text { text: text.clone() }
+                                    Some(ApiContentPart::Text { text: text.clone() })
                                 }
                                 ContentPart::ImageUrl { url, detail } => {
+                                    // Drop image parts entirely for text-only models.
+                                    if !can_multimodal {
+                                        return None;
+                                    }
                                     if is_anthropic {
                                         // Anthropic format: {"type": "image", "source": {...}}
                                         let (media_type, data) = extract_data_url(url);
-                                        ApiContentPart::AnthropicImage {
+                                        Some(ApiContentPart::AnthropicImage {
                                             source: AnthropicImageSource {
                                                 typ: "base64".to_string(),
                                                 media_type,
                                                 data,
                                             },
-                                        }
+                                        })
                                     } else {
                                         // OpenAI/Google format: {"type": "image_url", "image_url": {"url": "...", "detail": "auto"}}
-                                        ApiContentPart::ImageUrl {
+                                        Some(ApiContentPart::ImageUrl {
                                             image_url: ImageUrlContent {
                                                 url: url.clone(),
                                                 detail: Some(image_detail_to_string(
                                                     detail.as_ref().unwrap_or(&ImageDetail::Auto),
                                                 )),
                                             },
-                                        }
+                                        })
                                     }
                                 }
                                 ContentPart::ImageBase64 {
@@ -403,27 +412,44 @@ impl CloudRuntime {
                                     mime_type,
                                     detail: _,
                                 } => {
+                                    if !can_multimodal {
+                                        return None;
+                                    }
                                     if is_anthropic {
                                         // Anthropic format: raw base64 data
-                                        ApiContentPart::AnthropicImage {
+                                        Some(ApiContentPart::AnthropicImage {
                                             source: AnthropicImageSource {
                                                 typ: "base64".to_string(),
                                                 media_type: mime_type.clone(),
                                                 data: data.clone(),
                                             },
-                                        }
+                                        })
                                     } else {
                                         // OpenAI/Google format: data URL
-                                        ApiContentPart::ImageUrl {
+                                        Some(ApiContentPart::ImageUrl {
                                             image_url: ImageUrlContent {
-                                                url: format!("data:{};base64,{}", mime_type, data),
+                                                url: format!(
+                                                    "data:{};base64,{}",
+                                                    mime_type, data
+                                                ),
                                                 detail: Some("auto".to_string()),
                                             },
-                                        }
+                                        })
                                     }
                                 }
                             })
                             .collect();
+
+                        // If every part was a stripped image (image-only message),
+                        // leave a text placeholder so the message is non-empty (some
+                        // APIs reject empty content) and the model knows context was
+                        // dropped.
+                        if api_parts.is_empty() {
+                            api_parts.push(ApiContentPart::Text {
+                                text: "[image content omitted — current model does not support image input]"
+                                    .to_string(),
+                            });
+                        }
 
                         ApiContent::Parts(api_parts)
                     }
@@ -1882,104 +1908,68 @@ struct AnthropicMessageDeltaBody {
 
 /// Check if a model supports vision (image input) based on provider and model name.
 /// This uses name-based heuristic detection for common vision-capable models.
-fn is_vision_model(provider: &CloudProvider, model_name: &str) -> bool {
-    let name_lower = model_name.to_lowercase();
-
-    match provider {
-        CloudProvider::OpenAI => {
-            // OpenAI vision-capable models:
-            // - gpt-4o, gpt-4o-mini (all GPT-4o models support vision)
-            // - gpt-4-turbo, gpt-4-1106-vision-preview, gpt-4-vision-preview
-            // - gpt-4.*vision
-            // - o1 models (o1, o1-mini, o1-preview) - some support vision
-            // NOT: gpt-4 (base), gpt-4-32k, gpt-3.5-turbo, gpt-3.5
-            name_lower.contains("gpt-4o")
-                || name_lower.contains("gpt-4-turbo")
-                || name_lower.contains("gpt-4-vision")
-                || name_lower.contains("gpt-4.1") // gpt-4.1 models
-                || (name_lower.starts_with("gpt-4") && name_lower.contains("vision"))
-                || (name_lower.starts_with("o1") && !name_lower.contains("o1-preview"))
-            // o1 and o1-mini support vision
-        }
-        CloudProvider::Anthropic => {
-            // All Claude 3 and later models support vision
-            // claude-3-opus, claude-3-sonnet, claude-3-haiku, claude-3.5-sonnet, etc.
-            name_lower.contains("claude-3") || name_lower.contains("claude-4")
-        }
-        CloudProvider::Google => {
-            // All Gemini models support vision
-            // gemini-1.5-flash, gemini-1.5-pro, gemini-pro-vision, etc.
-            name_lower.contains("gemini")
-        }
-        CloudProvider::Qwen => {
-            // Qwen vision models:
-            // - qwen-vl, qwen2-vl, qwen3-vl, qwen-max-vl (explicit VL models)
-            // - qwen3.5-* series (all support vision: qwen3.5-turbo, qwen3.5-plus, qwen3.5-max)
-            // - qwen3-* series (all support vision: qwen3-turbo, qwen3-plus, qwen3-max)
-            // - qwen-max, qwen-plus, qwen-turbo (newer versions support vision)
-            // Note: Model names can be formatted as "qwen3.5-plus" or "qwen-3.5-plus"
-            name_lower.contains("vl")
-                || name_lower.contains("vision")
-                || name_lower.contains("qwen3.5")
-                || name_lower.contains("qwen-3.5")
-                || name_lower.contains("qwen3-")
-                || name_lower.contains("qwen-3-")
-                || name_lower.contains("qwen3_")
-                || name_lower.contains("qwen-max")
-                || name_lower.contains("qwen-plus")
-                || name_lower.contains("qwen-turbo")
-        }
-        CloudProvider::DeepSeek => {
-            // DeepSeek vision models
-            name_lower.contains("vl") || name_lower.contains("vision")
-        }
-        CloudProvider::GLM => {
-            // GLM vision models: glm-4v, glm-4v-plus, etc.
-            name_lower.contains("4v") || name_lower.contains("vision") || name_lower.contains("vl")
-        }
-        CloudProvider::MiniMax => {
-            // MiniMax vision models (check documentation for specific models)
-            name_lower.contains("vl")
-                || name_lower.contains("vision")
-                || name_lower.contains("multimodal")
-        }
-        CloudProvider::Grok => {
-            // Grok vision support (check xAI documentation)
-            // Currently grok-2-vision supports vision
-            name_lower.contains("vision")
-        }
-        CloudProvider::Custom => {
-            // For custom providers, assume vision support if model name suggests it
-            // Include patterns from all major providers since custom endpoints may proxy any model
-            name_lower.contains("vision")
-                || name_lower.contains("vl")
-                || name_lower.contains("multimodal")
-                // OpenAI patterns
-                || name_lower.contains("gpt-4o")
-                || name_lower.contains("gpt-4-turbo")
-                // Anthropic patterns
-                || name_lower.contains("claude-3")
-                || name_lower.contains("claude-4")
-                // Google patterns
-                || name_lower.contains("gemini")
-                // Qwen patterns (qwen3.5, qwen3, qwen-max, qwen-plus, qwen-turbo all support vision)
-                || name_lower.contains("qwen3.5")
-                || name_lower.contains("qwen-3.5")
-                || name_lower.contains("qwen3-")
-                || name_lower.contains("qwen-3-")
-                || name_lower.contains("qwen-max")
-                || name_lower.contains("qwen-plus")
-                || name_lower.contains("qwen-turbo")
-                // DeepSeek patterns
-                || name_lower.contains("deepseek-vl")
-                // GLM patterns
-                || name_lower.contains("glm-4v")
-                // MiniMax patterns
-                || name_lower.contains("minimax-vl")
-                // Grok patterns
-                || name_lower.contains("grok-vision")
-        }
+fn is_vision_model(_provider: &CloudProvider, model_name: &str) -> bool {
+    // Primary: centralized layered detection (LiteLLM registry → conservative
+    // heuristic). This is authoritative when the registry has an entry.
+    if neomind_core::llm::detect_vision_capability(model_name) {
+        return true;
     }
+
+    // Fallback: well-known vision families the LiteLLM registry misses under
+    // bare aliases (e.g. `claude-3-sonnet`, `gemini-1.5-flash`, `o1`).
+    //
+    // This MUST stay narrow. The previous version matched bare Qwen
+    // text-only commercial tiers (`qwen-max`, `qwen-plus`, `qwen-turbo`,
+    // `qwen3-*`, `qwen-3-*`) as vision-capable. Cloud backends built via the
+    // instance manager do not receive a `capabilities_override`, so they fell
+    // back to this function, reported `supports_multimodal == true` for text
+    // models, the chat gating let `image_url` content parts through, and the
+    // upstream API rejected the request with
+    // `unknown variant image_url, expected text`.
+    //
+    // The Qwen text tiers are deliberately excluded below — only explicit
+    // `-vl`/`vision` variants and the native-multimodal qwen3.5/3.6/3.7
+    // series match.
+    known_vision_family(model_name)
+}
+
+/// Narrow fallback of unambiguous vision-family name patterns. Used only when
+/// the layered registry/heuristic detection returns false, to cover cloud
+/// models whose bare aliases are absent from the LiteLLM registry.
+fn known_vision_family(model_name: &str) -> bool {
+    let m = model_name.to_lowercase();
+    // Explicit vision markers (suffixes / branding) — unambiguous.
+    if m.contains("-vl")
+        || m.contains(":vl")
+        || m.contains("_vl")
+        || m.contains("vision")
+        || m.contains("multimodal")
+        || m.contains("glm-4v")
+        || m.contains("glm-5v")
+    {
+        return true;
+    }
+    // OpenAI vision families. o1-preview and o1-mini are text-only.
+    if m.contains("gpt-4o")
+        || m.contains("gpt-4-turbo")
+        || m.contains("gpt-4.1")
+        || m.contains("gpt-4-vision")
+        || (m.starts_with("gpt-4") && m.contains("vision"))
+        || (m.starts_with("o1") && !m.contains("o1-preview") && !m.contains("o1-mini"))
+    {
+        return true;
+    }
+    // Anthropic Claude 3+ and Google Gemini are universally multimodal.
+    if m.contains("claude-3") || m.contains("claude-4") || m.contains("gemini") {
+        return true;
+    }
+    // Qwen native-multimodal early-fusion series. The bare text tiers
+    // (`qwen-max`/`qwen-plus`/`qwen-turbo`, `qwen3-*`, `qwen-3-*`) are
+    // intentionally NOT matched here.
+    if m.starts_with("qwen3.5") || m.starts_with("qwen3.6") || m.starts_with("qwen3.7") {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -2031,7 +2021,10 @@ mod tests {
             "gpt-4-1106-vision-preview"
         ));
         assert!(is_vision_model(&CloudProvider::OpenAI, "o1"));
-        assert!(is_vision_model(&CloudProvider::OpenAI, "o1-mini"));
+        // o1-mini is text-only (no vision) — must NOT be reported as multimodal,
+        // otherwise image parts get sent and the API rejects them.
+        assert!(!is_vision_model(&CloudProvider::OpenAI, "o1-mini"));
+        assert!(!is_vision_model(&CloudProvider::OpenAI, "o1-preview"));
 
         // OpenAI non-vision models
         assert!(!is_vision_model(&CloudProvider::OpenAI, "gpt-4"));
@@ -2086,26 +2079,155 @@ mod tests {
         assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-vl"));
         assert!(is_vision_model(&CloudProvider::Qwen, "qwen-max-vl"));
 
-        // Qwen3.5 series (all support vision)
+        // Qwen 3.5/3.6/3.7 native-multimodal series (early fusion, all vision)
         assert!(is_vision_model(&CloudProvider::Qwen, "qwen3.5-turbo"));
         assert!(is_vision_model(&CloudProvider::Qwen, "qwen3.5-plus"));
         assert!(is_vision_model(&CloudProvider::Qwen, "qwen3.5-max"));
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-3.5-plus"));
 
-        // Qwen3 series (all support vision)
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-turbo"));
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-plus"));
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-max"));
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-3-plus"));
-
-        // Qwen max/plus/turbo (newer versions support vision)
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-max"));
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-plus"));
-        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-turbo"));
+        // Text-only commercial tiers — MUST stay text. Reporting these as
+        // vision causes the API to reject image parts with
+        // `unknown variant image_url, expected text`.
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-3.5-plus"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen3-turbo"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen3-plus"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen3-max"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-3-plus"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-max"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-plus"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-turbo"));
 
         // Non-vision models (older qwen versions without vision support)
         assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-7b"));
         assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-14b"));
         assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-72b"));
+    }
+
+    /// Regression: a text-only model must never receive `image_url` content
+    /// parts. The original production bug was DeepSeek (text-only) rejecting a
+    /// whole request with `unknown variant image_url, expected text` because a
+    /// earlier conversation turn contained an image and the history was replayed
+    /// verbatim. `messages_to_api` now strips image parts when
+    /// `supports_multimodal()` is false.
+    #[test]
+    fn test_messages_to_api_strips_images_for_text_model() {
+        let runtime = CloudRuntime::new(
+            CloudConfig::deepseek("sk-test").with_model("deepseek-chat"),
+        )
+        .expect("runtime builds");
+        // Sanity: this is a text-only model.
+        assert!(
+            !runtime.supports_multimodal(),
+            "deepseek-chat must be detected as text-only for this test to be meaningful"
+        );
+
+        // History entry: a user turn with a text part + an image part (e.g. an
+        // image that was attached earlier in the conversation).
+        let history_msg = Message::new(
+            MessageRole::User,
+            Content::Parts(vec![
+                ContentPart::Text {
+                    text: "what is in this picture".to_string(),
+                },
+                ContentPart::ImageBase64 {
+                    data: "ZmFrZS1pbWFnZS1kYXRh".to_string(),
+                    mime_type: "image/png".to_string(),
+                    detail: None,
+                },
+            ]),
+        );
+        // An image-only history turn (text was empty / dropped earlier).
+        let image_only_msg = Message::new(
+            MessageRole::User,
+            Content::Parts(vec![ContentPart::ImageBase64 {
+                data: "ZmFrZS1pbWFnZS1kYXRh".to_string(),
+                mime_type: "image/png".to_string(),
+                detail: None,
+            }]),
+        );
+        // Current turn: plain text follow-up sent to the text-only model.
+        let followup = Message::new(
+            MessageRole::User,
+            Content::Text("summarize our conversation".to_string()),
+        );
+
+        let api_msgs = runtime.messages_to_api(&[history_msg, image_only_msg, followup]);
+
+        // Walk every content part of every message and assert no image variant
+        // survives serialization for a text-only model.
+        let mut saw_image = false;
+        let mut saw_placeholder = false;
+        let mut saw_history_text = false;
+        for msg in &api_msgs {
+            if let ApiContent::Parts(parts) = &msg.content {
+                for part in parts {
+                    match part {
+                        ApiContentPart::ImageUrl { .. }
+                        | ApiContentPart::AnthropicImage { .. } => saw_image = true,
+                        ApiContentPart::Text { text } => {
+                            if text.starts_with("[image content omitted") {
+                                saw_placeholder = true;
+                            }
+                            if text == "what is in this picture" {
+                                saw_history_text = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            !saw_image,
+            "text-only model must not receive image parts in history replay"
+        );
+        // The text part of a mixed message is preserved (not dropped with the image).
+        assert!(
+            saw_history_text,
+            "text part of a mixed text+image history turn must survive image stripping"
+        );
+        // The image-only turn collapses to a placeholder so the message is non-empty.
+        assert!(
+            saw_placeholder,
+            "image-only message should be replaced with a text placeholder"
+        );
+    }
+
+    /// Counter-test: a vision-capable model keeps the image parts intact.
+    #[test]
+    fn test_messages_to_api_keeps_images_for_vision_model() {
+        let runtime =
+            CloudRuntime::new(CloudConfig::openai("sk-test").with_model("gpt-4o"))
+                .expect("runtime builds");
+        assert!(
+            runtime.supports_multimodal(),
+            "gpt-4o must be detected as multimodal for this test to be meaningful"
+        );
+
+        let msg = Message::new(
+            MessageRole::User,
+            Content::Parts(vec![
+                ContentPart::Text {
+                    text: "describe this".to_string(),
+                },
+                ContentPart::ImageBase64 {
+                    data: "ZmFrZS1pbWFnZS1kYXRh".to_string(),
+                    mime_type: "image/png".to_string(),
+                    detail: None,
+                },
+            ]),
+        );
+
+        let api_msgs = runtime.messages_to_api(&[msg]);
+        let mut saw_image = false;
+        if let ApiContent::Parts(parts) = &api_msgs[0].content {
+            for part in parts {
+                if matches!(part, ApiContentPart::ImageUrl { .. }) {
+                    saw_image = true;
+                }
+            }
+        }
+        assert!(
+            saw_image,
+            "vision model must retain image parts in serialized output"
+        );
     }
 }

@@ -33,8 +33,7 @@ impl DataPushStore {
 
     /// Create an in-memory store for testing.
     pub fn memory() -> Result<Self> {
-        let db = Database::builder()
-            .create_with_backend(redb::backends::InMemoryBackend::new())?;
+        let db = Database::builder().create_with_backend(redb::backends::InMemoryBackend::new())?;
         let write_tx = db.begin_write()?;
         write_tx.open_table(TARGETS_TABLE)?;
         write_tx.open_table(LOGS_TABLE)?;
@@ -107,7 +106,12 @@ impl DataPushStore {
         self.save_delivery_log(log)
     }
 
-    pub fn list_delivery_logs(&self, target_id: &str, limit: usize, offset: usize) -> Result<(Vec<DeliveryLog>, usize)> {
+    pub fn list_delivery_logs(
+        &self,
+        target_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<DeliveryLog>, usize)> {
         let read_tx = self.db.begin_read()?;
         let table = read_tx.open_table(LOGS_TABLE)?;
         let mut all = Vec::new();

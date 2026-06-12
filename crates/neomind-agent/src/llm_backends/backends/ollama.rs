@@ -193,7 +193,11 @@ impl OllamaRuntime {
                         let supports_tools = true; // Most modern Ollama models support tools
                         let supports_thinking = show_response.has_attention_heads();
                         let max_context = show_response.context_length().unwrap_or(128000);
-                        let max_context = std::env::var("NEOMIND_MAX_CONTEXT").ok().and_then(|v| v.parse::<usize>().ok()).map(|cap| max_context.min(cap)).unwrap_or(max_context);
+                        let max_context = std::env::var("NEOMIND_MAX_CONTEXT")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .map(|cap| max_context.min(cap))
+                            .unwrap_or(max_context);
 
                         tracing::info!(
                             model = %self.model,
@@ -538,7 +542,13 @@ impl LlmRuntime for OllamaRuntime {
         // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
         let num_ctx = input.params.max_context.or({
             if caps.max_context > 0 {
-                { let cap = std::env::var("NEOMIND_MAX_CONTEXT").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX); Some(caps.max_context.min(cap)) }
+                {
+                    let cap = std::env::var("NEOMIND_MAX_CONTEXT")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX);
+                    Some(caps.max_context.min(cap))
+                }
             } else {
                 None // Let Ollama use its default
             }
@@ -777,7 +787,13 @@ impl LlmRuntime for OllamaRuntime {
         // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
         let num_ctx = input.params.max_context.or({
             if caps.max_context > 0 {
-                { let cap = std::env::var("NEOMIND_MAX_CONTEXT").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX); Some(caps.max_context.min(cap)) }
+                {
+                    let cap = std::env::var("NEOMIND_MAX_CONTEXT")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX);
+                    Some(caps.max_context.min(cap))
+                }
             } else {
                 None // Let Ollama use its default
             }

@@ -233,7 +233,6 @@ impl ToolNameMapper {
 
         None
     }
-
 }
 
 /// 全局工具名称映射器
@@ -300,10 +299,7 @@ pub fn build_cli_command(original_tool_name: &str, arguments: &Value) -> Option<
     let mapped = map_tool_parameters(original_tool_name, arguments);
     let obj = mapped.as_object()?;
 
-    let action = obj
-        .get("action")
-        .and_then(|v| v.as_str())
-        .unwrap_or("list");
+    let action = obj.get("action").and_then(|v| v.as_str()).unwrap_or("list");
     let mut cmd = format!("neomind {} {}", original_tool_name, action);
 
     // Special case: device control takes device_id and command as positional args

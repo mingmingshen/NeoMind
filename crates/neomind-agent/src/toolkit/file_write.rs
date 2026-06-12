@@ -175,7 +175,10 @@ mod tests {
     #[test]
     fn test_accepts_rs_file() {
         let tool = tool();
-        assert!(tool.validator.resolve_path("extensions/my-ext/src/lib.rs").is_ok());
+        assert!(tool
+            .validator
+            .resolve_path("extensions/my-ext/src/lib.rs")
+            .is_ok());
     }
 
     #[test]

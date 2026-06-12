@@ -32,8 +32,7 @@
 //! ```
 
 use crate::adapter::{
-    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
-    DiscoveredDeviceInfo,
+    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
 };
 use crate::mdl::MetricValue;
 use crate::registry::DeviceRegistry;
@@ -356,9 +355,9 @@ impl WebhookAdapter {
                 }),
             };
 
-            let _ = self.event_tx.send(DeviceEvent::Discovery {
-                device: discovered,
-            });
+            let _ = self
+                .event_tx
+                .send(DeviceEvent::Discovery { device: discovered });
 
             if let Some(bus) = &self.event_bus {
                 use neomind_core::NeoMindEvent;

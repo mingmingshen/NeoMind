@@ -21,8 +21,8 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use super::mdl::DeviceError;
 use super::mdl::MetricDataType;
@@ -511,7 +511,8 @@ impl DeviceRegistry {
                     .collect(),
             };
 
-            self.templates.insert(template.device_type.clone(), template);
+            self.templates
+                .insert(template.device_type.clone(), template);
         }
 
         // Load devices
@@ -697,7 +698,8 @@ impl DeviceRegistry {
 
     /// Enable or disable auto-save
     pub fn set_auto_save(&self, enabled: bool) {
-        self.auto_save.store(enabled, std::sync::atomic::Ordering::Relaxed);
+        self.auto_save
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Check if storage is enabled
@@ -891,14 +893,12 @@ impl DeviceRegistry {
     /// Register a device configuration
     pub async fn register_device(&self, config: DeviceConfig) -> Result<(), DeviceError> {
         // Validate that the template exists
-        let _template = self
-            .get_template(&config.device_type)
-            .ok_or_else(|| {
-                DeviceError::NotFoundStr(format!(
-                    "Device type template '{}' not found",
-                    config.device_type
-                ))
-            })?;
+        let _template = self.get_template(&config.device_type).ok_or_else(|| {
+            DeviceError::NotFoundStr(format!(
+                "Device type template '{}' not found",
+                config.device_type
+            ))
+        })?;
 
         // Validate device_id format
         if config.device_id.is_empty() {
@@ -1014,10 +1014,7 @@ impl DeviceRegistry {
 
     /// Find a device by its telemetry topic
     /// This is used by MQTT adapters to route messages from custom topics
-    pub fn find_device_by_telemetry_topic(
-        &self,
-        topic: &str,
-    ) -> Option<(String, DeviceConfig)> {
+    pub fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
         for entry in self.devices.iter() {
             if let Some(ref telemetry_topic) = entry.value().connection_config.telemetry_topic {
                 if telemetry_topic == topic {
@@ -1059,7 +1056,11 @@ impl DeviceRegistry {
             type_entry.retain(|id| id != device_id);
         }
         // Clean up empty type index entries
-        if self.type_index.get(&device_type).is_some_and(|e| e.is_empty()) {
+        if self
+            .type_index
+            .get(&device_type)
+            .is_some_and(|e| e.is_empty())
+        {
             self.type_index.remove(&device_type);
         }
 
@@ -1117,10 +1118,7 @@ impl DeviceRegistry {
         })?;
 
         // Get old device type for index update
-        let old_device_type = self
-            .devices
-            .get(device_id)
-            .map(|d| d.device_type.clone());
+        let old_device_type = self.devices.get(device_id).map(|d| d.device_type.clone());
 
         // Update device
         self.devices.insert(device_id.to_string(), config);

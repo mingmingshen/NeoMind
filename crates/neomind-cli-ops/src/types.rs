@@ -22,8 +22,8 @@ pub struct CliResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BuildMeta {
-    pub r#type: String,       // "device" | "dashboard" | "rule" | ...
-    pub action: String,       // "create" | "update" | "delete"
+    pub r#type: String, // "device" | "dashboard" | "rule" | ...
+    pub action: String, // "create" | "update" | "delete"
     pub entity_id: String,
     pub entity_name: Option<String>,
     pub undo_command: String,
@@ -140,7 +140,10 @@ mod tests {
         );
         assert!(!response.success);
         assert_eq!(response.error, Some("Device not found".to_string()));
-        assert_eq!(response.suggestion, Some("Run 'neomind device list' to see available devices".to_string()));
+        assert_eq!(
+            response.suggestion,
+            Some("Run 'neomind device list' to see available devices".to_string())
+        );
     }
 
     #[test]

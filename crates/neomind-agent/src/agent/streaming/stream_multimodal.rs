@@ -11,14 +11,16 @@ use futures::{Stream, StreamExt};
 
 use super::context::{build_context_window_with_summary, ToolExecutionResult};
 use super::dedup::deduplicate_tool_results;
+use super::resolve::resolve_cached_arguments;
 use super::result_format::format_tool_results;
 use super::sanitize::sanitize_tool_result_for_prompt;
 use super::stream_core::StreamSafeguards;
 use super::tool_detect::detect_json_tool_calls;
 use super::tool_exec::execute_tool_with_retry;
-use super::resolve::resolve_cached_arguments;
 use crate::agent::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
-use crate::agent::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, ToolCall};
+use crate::agent::types::{
+    AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, ToolCall,
+};
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
 
@@ -104,8 +106,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     let user_images: Vec<AgentMessageImage> = images
         .into_iter()
         .map(|data_url| {
-            let mime_type = crate::image_utils::parse_image_data(&data_url)
-                .map(|p| p.mime_type.to_string());
+            let mime_type =
+                crate::image_utils::parse_image_data(&data_url).map(|p| p.mime_type.to_string());
             AgentMessageImage {
                 data: data_url,
                 mime_type,

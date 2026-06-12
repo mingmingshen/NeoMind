@@ -3,12 +3,12 @@
 //! The rule engine manages rule lifecycle, evaluates conditions,
 //! and executes actions when rules are triggered.
 
+use parking_lot::RwLock as StdRwLock;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 use std::sync::Arc;
-use parking_lot::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -1754,7 +1754,11 @@ mod tests {
         mem_provider.set_value("sensor1", "temp", 75.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when temp >= 50 (greater)");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when temp >= 50 (greater)"
+        );
 
         // Test: value below threshold should not trigger
         mem_provider.set_value("sensor1", "temp", 25.0);
@@ -1975,28 +1979,41 @@ mod tests {
         mem_provider.set_value("sensor2", "humidity", 50.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when neither condition met");
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when neither condition met"
+        );
 
         // Test: only first condition met
         mem_provider.set_value("sensor1", "temp", 75.0);
         mem_provider.set_value("sensor2", "humidity", 50.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when only first condition met");
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when only first condition met"
+        );
 
         // Test: only second condition met
         mem_provider.set_value("sensor1", "temp", 25.0);
         mem_provider.set_value("sensor2", "humidity", 20.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when only second condition met");
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when only second condition met"
+        );
 
         // Test: both conditions met
         mem_provider.set_value("sensor1", "temp", 75.0);
         mem_provider.set_value("sensor2", "humidity", 20.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when both conditions met");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when both conditions met"
+        );
     }
 
     #[tokio::test]
@@ -2049,28 +2066,43 @@ mod tests {
         mem_provider.set_value("sensor2", "temp", 30.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when neither condition met");
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when neither condition met"
+        );
 
         // Test: only first condition met
         mem_provider.set_value("sensor1", "temp", 75.0);
         mem_provider.set_value("sensor2", "temp", 30.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when only first condition met");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when only first condition met"
+        );
 
         // Test: only second condition met
         mem_provider.set_value("sensor1", "temp", 25.0);
         mem_provider.set_value("sensor2", "temp", 75.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when only second condition met");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when only second condition met"
+        );
 
         // Test: both conditions met
         mem_provider.set_value("sensor1", "temp", 75.0);
         mem_provider.set_value("sensor2", "temp", 75.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when both conditions met");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when both conditions met"
+        );
     }
 
     #[tokio::test]
@@ -2123,7 +2155,11 @@ mod tests {
         mem_provider.set_value("sensor1", "temp", 25.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when inner condition is false");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when inner condition is false"
+        );
     }
 
     #[tokio::test]
@@ -2167,13 +2203,20 @@ mod tests {
         mem_provider.set_value("sensor1", "temp", 15.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when value below range");
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when value below range"
+        );
 
         // Test: value at lower bound
         mem_provider.set_value("sensor1", "temp", 20.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when value at lower bound");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when value at lower bound"
+        );
 
         // Test: value in range
         mem_provider.set_value("sensor1", "temp", 22.5);
@@ -2185,13 +2228,20 @@ mod tests {
         mem_provider.set_value("sensor1", "temp", 25.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when value at upper bound");
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger when value at upper bound"
+        );
 
         // Test: value above range
         mem_provider.set_value("sensor1", "temp", 30.0);
         engine.update_states().await;
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when value above range");
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when value above range"
+        );
     }
 
     #[tokio::test]
@@ -2491,7 +2541,10 @@ mod tests {
 
         // No rules added
         let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "No rules should trigger with empty rule set");
+        assert!(
+            triggered.is_empty(),
+            "No rules should trigger with empty rule set"
+        );
 
         let rules = engine.list_rules().await;
         assert!(rules.is_empty(), "Rule list should be empty");
@@ -2582,10 +2635,7 @@ mod tests {
         let triggered = engine.evaluate_rules().await;
 
         // Paused rules should not be evaluated
-        assert!(
-            triggered.is_empty(),
-            "Paused rules should not trigger"
-        );
+        assert!(triggered.is_empty(), "Paused rules should not trigger");
     }
 
     #[tokio::test]
@@ -2630,10 +2680,7 @@ mod tests {
         let triggered = engine.evaluate_rules().await;
 
         // Disabled rules should not be evaluated
-        assert!(
-            triggered.is_empty(),
-            "Disabled rules should not trigger"
-        );
+        assert!(triggered.is_empty(), "Disabled rules should not trigger");
     }
 
     #[tokio::test]

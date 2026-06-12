@@ -150,17 +150,29 @@ pub async fn get_system_stats_handler(
         async {
             // Device stats
             let configs = state.devices.service.list_devices();
-            let metrics_futures: Vec<_> = configs.iter()
+            let metrics_futures: Vec<_> = configs
+                .iter()
                 .map(|c| state.devices.service.get_current_metrics(&c.device_id))
                 .collect();
             let metrics_results = futures::future::join_all(metrics_futures).await;
-            let devices_with_metrics = metrics_results.iter()
+            let devices_with_metrics = metrics_results
+                .iter()
                 .filter(|r| r.as_ref().is_ok_and(|m| !m.is_empty()))
                 .count();
 
             use neomind_devices::adapter::ConnectionStatus;
-            let online = state.devices.service.get_devices_by_status(ConnectionStatus::Connected).await.len();
-            let offline = state.devices.service.get_devices_by_status(ConnectionStatus::Disconnected).await.len();
+            let online = state
+                .devices
+                .service
+                .get_devices_by_status(ConnectionStatus::Connected)
+                .await
+                .len();
+            let offline = state
+                .devices
+                .service
+                .get_devices_by_status(ConnectionStatus::Disconnected)
+                .await
+                .len();
 
             DeviceStats {
                 total_devices: configs.len(),
@@ -179,8 +191,14 @@ pub async fn get_system_stats_handler(
             };
             RuleStats {
                 total_rules: rules.len(),
-                enabled_rules: rules.iter().filter(|r| matches!(r.status, neomind_rules::RuleStatus::Active)).count(),
-                disabled_rules: rules.iter().filter(|r| matches!(r.status, neomind_rules::RuleStatus::Disabled)).count(),
+                enabled_rules: rules
+                    .iter()
+                    .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Active))
+                    .count(),
+                disabled_rules: rules
+                    .iter()
+                    .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Disabled))
+                    .count(),
                 triggered_today,
             }
         },

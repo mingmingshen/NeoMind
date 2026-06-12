@@ -159,14 +159,18 @@ impl TimeSeriesStorage {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, DeviceError> {
         let store = StorageTimeSeriesStore::open(path)
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
-        Ok(Self { store: std::sync::RwLock::new(store) })
+        Ok(Self {
+            store: std::sync::RwLock::new(store),
+        })
     }
 
     /// Create an in-memory time series storage
     pub fn memory() -> Result<Self, DeviceError> {
         let store = StorageTimeSeriesStore::memory()
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
-        Ok(Self { store: std::sync::RwLock::new(store) })
+        Ok(Self {
+            store: std::sync::RwLock::new(store),
+        })
     }
 
     /// Swap the underlying store (used for deferred persistent storage loading).
@@ -213,7 +217,9 @@ impl TimeSeriesStorage {
 
     /// Flush buffered writes to disk.
     pub fn flush(&self) -> Result<(), DeviceError> {
-        self.store().flush().map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))
+        self.store()
+            .flush()
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))
     }
 
     /// Query data points for a time range
@@ -224,7 +230,8 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<Vec<DataPoint>, DeviceError> {
-        self.query_limited(source_id, metric, start_timestamp, end_timestamp, None).await
+        self.query_limited(source_id, metric, start_timestamp, end_timestamp, None)
+            .await
     }
 
     /// Query data points with optional limit pushed down to storage.
@@ -243,45 +250,61 @@ impl TimeSeriesStorage {
     ) -> Result<Vec<DataPoint>, DeviceError> {
         tracing::debug!(
             "TimeSeriesStorage::query: source_id={}, metric={}, start={}, end={}, limit={:?}",
-            source_id, metric, start_timestamp, end_timestamp, limit,
+            source_id,
+            metric,
+            start_timestamp,
+            end_timestamp,
+            limit,
         );
 
         let result = if limit.is_some() {
             // Reverse scan → newest N points, then reverse to ASC for callers.
-            let rev = self.store()
+            let rev = self
+                .store()
                 .query_range_rev(source_id, metric, start_timestamp, end_timestamp, limit)
                 .await
                 .map_err(|e| {
                     tracing::error!("query_range_rev failed for {}/{}: {}", source_id, metric, e);
                     DeviceError::Io(std::io::Error::other(e.to_string()))
                 })?;
-            let mut pts: Vec<DataPoint> = rev.points.into_iter()
+            let mut pts: Vec<DataPoint> = rev
+                .points
+                .into_iter()
                 .filter_map(DataPoint::from_storage)
                 .collect();
             pts.reverse(); // DESC → ASC
             pts
         } else {
             // No limit → standard ASC scan (unchanged behaviour).
-            let fwd = self.store()
+            let fwd = self
+                .store()
                 .query_range(source_id, metric, start_timestamp, end_timestamp, None)
                 .await
                 .map_err(|e| {
                     tracing::error!("query_range failed for {}/{}: {}", source_id, metric, e);
                     DeviceError::Io(std::io::Error::other(e.to_string()))
                 })?;
-            fwd.points.into_iter().filter_map(DataPoint::from_storage).collect()
+            fwd.points
+                .into_iter()
+                .filter_map(DataPoint::from_storage)
+                .collect()
         };
 
         if result.is_empty() {
             tracing::debug!(
                 "No points found for {}/{} (timestamp range {} to {})",
-                source_id, metric, start_timestamp, end_timestamp
+                source_id,
+                metric,
+                start_timestamp,
+                end_timestamp
             );
         }
 
         tracing::debug!(
             "query result: {} points for {}/{}",
-            result.len(), source_id, metric
+            result.len(),
+            source_id,
+            metric
         );
 
         Ok(result)
@@ -307,7 +330,8 @@ impl TimeSeriesStorage {
         );
 
         let (filtered, total_count) = if limit.is_some() {
-            let rev = self.store()
+            let rev = self
+                .store()
                 .query_range_rev(source_id, metric, start_timestamp, end_timestamp, limit)
                 .await
                 .map_err(|e| {
@@ -315,13 +339,16 @@ impl TimeSeriesStorage {
                     DeviceError::Io(std::io::Error::other(e.to_string()))
                 })?;
             let total = rev.total_count;
-            let mut pts: Vec<DataPoint> = rev.points.into_iter()
+            let mut pts: Vec<DataPoint> = rev
+                .points
+                .into_iter()
                 .filter_map(DataPoint::from_storage)
                 .collect();
             pts.reverse(); // DESC → ASC
             (pts, total)
         } else {
-            let fwd = self.store()
+            let fwd = self
+                .store()
                 .query_range(source_id, metric, start_timestamp, end_timestamp, None)
                 .await
                 .map_err(|e| {
@@ -329,13 +356,20 @@ impl TimeSeriesStorage {
                     DeviceError::Io(std::io::Error::other(e.to_string()))
                 })?;
             let total = fwd.total_count;
-            let pts = fwd.points.into_iter().filter_map(DataPoint::from_storage).collect();
+            let pts = fwd
+                .points
+                .into_iter()
+                .filter_map(DataPoint::from_storage)
+                .collect();
             (pts, total)
         };
 
         tracing::debug!(
             "query_with_limit result: {} points for {}/{} (total_count={:?})",
-            filtered.len(), source_id, metric, total_count
+            filtered.len(),
+            source_id,
+            metric,
+            total_count
         );
 
         Ok((filtered, total_count))
@@ -353,18 +387,30 @@ impl TimeSeriesStorage {
         end_timestamp: i64,
         target_count: usize,
     ) -> Result<(Vec<DataPoint>, Option<usize>), DeviceError> {
-        let result = self.store()
-            .query_range_bucketed(source_id, metric, start_timestamp, end_timestamp, target_count)
+        let result = self
+            .store()
+            .query_range_bucketed(
+                source_id,
+                metric,
+                start_timestamp,
+                end_timestamp,
+                target_count,
+            )
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
-        let pts: Vec<DataPoint> = result.points.into_iter()
+        let pts: Vec<DataPoint> = result
+            .points
+            .into_iter()
             .filter_map(DataPoint::from_storage)
             .collect();
 
         tracing::debug!(
             "query_bucketed result: {} points for {}/{} (total_count={:?})",
-            pts.len(), source_id, metric, result.total_count
+            pts.len(),
+            source_id,
+            metric,
+            result.total_count
         );
 
         Ok((pts, result.total_count))
@@ -376,7 +422,8 @@ impl TimeSeriesStorage {
         source_id: &str,
         metric: &str,
     ) -> Result<Option<DataPoint>, DeviceError> {
-        let result = self.store()
+        let result = self
+            .store()
             .query_latest(source_id, metric)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -392,7 +439,8 @@ impl TimeSeriesStorage {
         source_id: &str,
         metrics: &[&str],
     ) -> Result<std::collections::HashMap<String, DataPoint>, DeviceError> {
-        let results = self.store()
+        let results = self
+            .store()
             .query_latest_batch(source_id, metrics)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -413,7 +461,8 @@ impl TimeSeriesStorage {
         end_timestamp: i64,
     ) -> Result<AggregatedData, DeviceError> {
         // Use the storage layer's streaming aggregation to avoid materializing all points
-        let storage_result = self.store()
+        let storage_result = self
+            .store()
             .aggregate_range(source_id, metric, start_timestamp, end_timestamp)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -483,7 +532,8 @@ impl TimeSeriesStorage {
     /// List all sources with data
     pub async fn list_sources(&self) -> Result<Vec<String>, DeviceError> {
         // Get all metrics and extract unique source IDs
-        let metrics = self.store()
+        let metrics = self
+            .store()
             .list_metrics("")
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -505,7 +555,8 @@ impl TimeSeriesStorage {
 
     /// List all metrics for a device
     pub async fn list_metrics(&self, source_id: &str) -> Result<Vec<String>, DeviceError> {
-        let metrics = self.store()
+        let metrics = self
+            .store()
             .list_metrics(source_id)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;

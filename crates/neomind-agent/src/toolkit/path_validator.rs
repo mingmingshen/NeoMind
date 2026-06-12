@@ -177,7 +177,10 @@ impl PathValidator {
 /// Preserves existing file permissions on overwrite.
 pub fn atomic_write(path: &Path, content: &str) -> std::io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent directory")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path has no parent directory",
+        )
     })?;
 
     // Generate temp file name
@@ -308,7 +311,11 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             // Mask off file type bits, keep permission bits (0o777)
-            assert_eq!(mode & 0o777, 0o600, "Permissions should be preserved as 0600");
+            assert_eq!(
+                mode & 0o777,
+                0o600,
+                "Permissions should be preserved as 0600"
+            );
         }
     }
 

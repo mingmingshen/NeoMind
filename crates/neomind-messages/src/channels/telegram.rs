@@ -73,10 +73,7 @@ impl TelegramChannel {
     }
 
     fn api_url(&self) -> String {
-        format!(
-            "https://api.telegram.org/bot{}/sendMessage",
-            self.token
-        )
+        format!("https://api.telegram.org/bot{}/sendMessage", self.token)
     }
 }
 

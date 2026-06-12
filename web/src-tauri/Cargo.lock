@@ -3853,12 +3853,10 @@ dependencies = [
  "chrono",
  "hex",
  "neomind-core",
- "pbkdf2",
  "redb",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2",
  "tokio",
  "tracing",
 ]

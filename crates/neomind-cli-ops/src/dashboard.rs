@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List all dashboards with compact summary.
 ///
@@ -28,7 +28,10 @@ pub async fn list_dashboards(client: &ApiClient) -> Result<CliResponse> {
         .iter()
         .map(|d| {
             let id = d.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)");
+            let name = d
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(unnamed)");
             let comp_count = d
                 .get("components")
                 .and_then(|v| v.as_array())
@@ -105,7 +108,11 @@ pub async fn create_dashboard(
         undo_command: format!("neomind dashboard delete {}", dashboard_id),
     };
 
-    Ok(CliResponse::success_with_meta(data, "Dashboard created", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "Dashboard created",
+        meta,
+    ))
 }
 
 /// Update dashboard
@@ -157,10 +164,7 @@ pub async fn add_components(
         .post(&format!("/dashboards/{}/components", id), &body)
         .await?;
     let inner = data.get("data").unwrap_or(&data);
-    let count = inner["components"]
-        .as_array()
-        .map(|a| a.len())
-        .unwrap_or(0);
+    let count = inner["components"].as_array().map(|a| a.len()).unwrap_or(0);
     Ok(CliResponse::success(
         data,
         format!("Components added (total: {})", count),
@@ -202,6 +206,8 @@ pub async fn share_dashboard(
         body["expires_in_hours"] = json!(exp);
     }
 
-    let data = client.post(&format!("/dashboards/{}/share", id), &body).await?;
+    let data = client
+        .post(&format!("/dashboards/{}/share", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "Dashboard shared"))
 }

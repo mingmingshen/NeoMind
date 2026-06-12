@@ -1,8 +1,8 @@
+use crate::types::{BuildMeta, CliResponse};
+use crate::ApiClient;
 use anyhow::Result;
 use serde_json::json;
 use std::collections::BTreeMap;
-use crate::types::{BuildMeta, CliResponse};
-use crate::ApiClient;
 
 /// Maximum devices before skipping metric enrichment (token budget protection).
 const MAX_DEVICES_FOR_ENRICHMENT: usize = 50;
@@ -43,10 +43,13 @@ pub async fn list_devices(
     }
 
     // Count online/offline
-    let online_count = devices.iter().filter(|d| {
-        d.get("status").and_then(|v| v.as_str()) == Some("online")
-            || d.get("online").and_then(|v| v.as_bool()) == Some(true)
-    }).count();
+    let online_count = devices
+        .iter()
+        .filter(|d| {
+            d.get("status").and_then(|v| v.as_str()) == Some("online")
+                || d.get("online").and_then(|v| v.as_bool()) == Some(true)
+        })
+        .count();
     let offline_count = total - online_count;
 
     // Group by device_type
@@ -54,9 +57,16 @@ pub async fn list_devices(
     let mut ungrouped_devices: Vec<serde_json::Value> = Vec::new();
 
     for device in &devices {
-        match device.get("device_type").or_else(|| device.get("type")).and_then(|v| v.as_str()) {
+        match device
+            .get("device_type")
+            .or_else(|| device.get("type"))
+            .and_then(|v| v.as_str())
+        {
             Some(dt) if !dt.is_empty() => {
-                typed_groups.entry(dt.to_string()).or_default().push(device.clone());
+                typed_groups
+                    .entry(dt.to_string())
+                    .or_default()
+                    .push(device.clone());
             }
             _ => {
                 ungrouped_devices.push(device.clone());
@@ -71,12 +81,14 @@ pub async fn list_devices(
     let mut types_response = Vec::new();
     if enrich {
         // Collect example device IDs for parallel fetch
-        let example_ids: Vec<(String, String)> = typed_groups.iter()
+        let example_ids: Vec<(String, String)> = typed_groups
+            .iter()
             .filter_map(|(type_name, devs)| {
                 // Pick first online device as example
-                let example = devs.iter().find(|d| {
-                    d.get("status").and_then(|v| v.as_str()) == Some("online")
-                }).or_else(|| devs.first())?;
+                let example = devs
+                    .iter()
+                    .find(|d| d.get("status").and_then(|v| v.as_str()) == Some("online"))
+                    .or_else(|| devs.first())?;
                 let id = extract_device_id(example)?;
                 Some((type_name.clone(), id))
             })
@@ -86,9 +98,10 @@ pub async fn list_devices(
         let example_results = fetch_examples(client, &example_ids).await;
 
         for (type_name, devs) in &typed_groups {
-            let group_online = devs.iter().filter(|d| {
-                d.get("status").and_then(|v| v.as_str()) == Some("online")
-            }).count();
+            let group_online = devs
+                .iter()
+                .filter(|d| d.get("status").and_then(|v| v.as_str()) == Some("online"))
+                .count();
 
             let mut type_entry = json!({
                 "type": type_name,
@@ -98,9 +111,14 @@ pub async fn list_devices(
             });
 
             // Add example data if available
-            if let Some(example_id) = example_ids.iter().find(|(t, _)| t == type_name).map(|(_, id)| id.as_str()) {
+            if let Some(example_id) = example_ids
+                .iter()
+                .find(|(t, _)| t == type_name)
+                .map(|(_, id)| id.as_str())
+            {
                 if let Some(metrics) = example_results.get(example_id) {
-                    let (field_names, command_names, example_obj) = build_example(example_id, metrics, devs);
+                    let (field_names, command_names, example_obj) =
+                        build_example(example_id, metrics, devs);
                     type_entry["metric_fields"] = field_names;
                     type_entry["command_fields"] = command_names;
                     type_entry["example"] = example_obj;
@@ -114,9 +132,10 @@ pub async fn list_devices(
     } else {
         // Too many devices — skip enrichment, just return groups
         for (type_name, devs) in &typed_groups {
-            let group_online = devs.iter().filter(|d| {
-                d.get("status").and_then(|v| v.as_str()) == Some("online")
-            }).count();
+            let group_online = devs
+                .iter()
+                .filter(|d| d.get("status").and_then(|v| v.as_str()) == Some("online"))
+                .count();
             types_response.push(json!({
                 "type": type_name,
                 "metric_fields": [],
@@ -130,32 +149,46 @@ pub async fn list_devices(
 
     // Build ungrouped entries
     let ungrouped_response: Vec<serde_json::Value> = if enrich && !ungrouped_devices.is_empty() {
-        let ungrouped_ids: Vec<(String, String)> = ungrouped_devices.iter()
+        let ungrouped_ids: Vec<(String, String)> = ungrouped_devices
+            .iter()
             .filter_map(|d| extract_device_id(d).map(|id| ("_ungrouped".to_string(), id)))
             .collect();
-        let ungrouped_results: BTreeMap<String, serde_json::Value> = fetch_examples(client, &ungrouped_ids).await;
+        let ungrouped_results: BTreeMap<String, serde_json::Value> =
+            fetch_examples(client, &ungrouped_ids).await;
 
-        ungrouped_devices.iter().map(|d| {
-            let id = extract_device_id(d).unwrap_or_default();
-            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let dev_status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let mut entry = json!({
-                "id": id,
-                "name": name,
-                "status": dev_status,
-            });
-            if let Some(metrics) = ungrouped_results.get(&id) {
-                entry["metrics"] = compact_metric_values(metrics);
-            }
-            entry
-        }).collect()
+        ungrouped_devices
+            .iter()
+            .map(|d| {
+                let id = extract_device_id(d).unwrap_or_default();
+                let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let dev_status = d
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let mut entry = json!({
+                    "id": id,
+                    "name": name,
+                    "status": dev_status,
+                });
+                if let Some(metrics) = ungrouped_results.get(&id) {
+                    entry["metrics"] = compact_metric_values(metrics);
+                }
+                entry
+            })
+            .collect()
     } else {
-        ungrouped_devices.iter().map(|d| {
-            let id = extract_device_id(d).unwrap_or_default();
-            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let dev_status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-            json!({"id": id, "name": name, "status": dev_status})
-        }).collect()
+        ungrouped_devices
+            .iter()
+            .map(|d| {
+                let id = extract_device_id(d).unwrap_or_default();
+                let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let dev_status = d
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                json!({"id": id, "name": name, "status": dev_status})
+            })
+            .collect()
     };
 
     let response = json!({
@@ -181,7 +214,9 @@ async fn fetch_examples(
     let mut map = BTreeMap::new();
     for (_, id) in ids {
         match client.get(&format!("/devices/{}/current", id)).await {
-            Ok(data) => { map.insert(id.clone(), data); }
+            Ok(data) => {
+                map.insert(id.clone(), data);
+            }
             Err(_) => continue,
         }
     }
@@ -196,7 +231,11 @@ fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
             if s.len() > 80 {
                 // Truncate and mark as binary/large — LLM doesn't need the full payload
                 let prefix = &s[..s.floor_char_boundary(60)];
-                json!(format!("{}... <truncated, {} bytes total>", prefix, s.len()))
+                json!(format!(
+                    "{}... <truncated, {} bytes total>",
+                    prefix,
+                    s.len()
+                ))
             } else {
                 val.clone()
             }
@@ -233,7 +272,8 @@ fn extract_device_array(data: &serde_json::Value) -> Vec<serde_json::Value> {
 
 /// Extract device ID from a device object.
 fn extract_device_id(device: &serde_json::Value) -> Option<String> {
-    device.get("device_id")
+    device
+        .get("device_id")
         .or_else(|| device.get("id"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
@@ -252,9 +292,14 @@ fn build_example(
     let mut field_names = Vec::new();
     let mut example_values = serde_json::Map::new();
 
-    let example_name = devs.iter()
+    let example_name = devs
+        .iter()
         .find(|d| extract_device_id(d).as_deref() == Some(example_id))
-        .and_then(|d| d.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .and_then(|d| {
+            d.get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_default();
 
     // Extract metric field names + example values
@@ -282,12 +327,17 @@ fn build_example(
     example_values.insert("id".to_string(), json!(example_id));
     example_values.insert("name".to_string(), json!(example_name));
 
-    (json!(field_names), json!(command_names), json!(example_values))
+    (
+        json!(field_names),
+        json!(command_names),
+        json!(example_values),
+    )
 }
 
 /// Extract compact metric values from /current response (for ungrouped devices).
 fn compact_metric_values(current_data: &serde_json::Value) -> serde_json::Value {
-    let metrics = current_data.get("data")
+    let metrics = current_data
+        .get("data")
         .and_then(|d| d.get("metrics"))
         .or_else(|| current_data.get("metrics"));
 
@@ -309,12 +359,16 @@ fn compact_metric_values(current_data: &serde_json::Value) -> serde_json::Value 
 /// Build device list for a type group, truncated to MAX_DEVICES_PER_TYPE.
 fn build_device_list(devs: &[serde_json::Value]) -> serde_json::Value {
     let total = devs.len();
-    let list: Vec<serde_json::Value> = devs.iter()
+    let list: Vec<serde_json::Value> = devs
+        .iter()
         .take(MAX_DEVICES_PER_TYPE)
         .map(|d| {
             let id = extract_device_id(d).unwrap_or_default();
             let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let dev_status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let dev_status = d
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({"id": id, "name": name, "status": dev_status})
         })
         .collect();
@@ -353,7 +407,8 @@ pub async fn create_device(
     }
 
     let data = client.post("/devices", &body).await?;
-    let device_id = data.get("data")
+    let device_id = data
+        .get("data")
         .and_then(|d| d.get("device_id"))
         .and_then(|v| v.as_str())
         .or_else(|| data["id"].as_str())
@@ -393,10 +448,7 @@ pub async fn update_device(
 /// Delete device
 pub async fn delete_device(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/devices/{}", id)).await?;
-    Ok(CliResponse::success(
-        json!({ "id": id }),
-        "Device deleted",
-    ))
+    Ok(CliResponse::success(json!({ "id": id }), "Device deleted"))
 }
 
 /// Get latest metrics for a device
@@ -446,9 +498,10 @@ fn parse_time_range_to_timestamp(range: &str, now_ts: i64) -> Option<i64> {
     }
     // Extract number suffix: last char(s)
     let num_end = range.len()
-        - range.chars().last().map_or(0, |c| {
-            if c.is_ascii_alphabetic() { 1 } else { 0 }
-        });
+        - range
+            .chars()
+            .last()
+            .map_or(0, |c| if c.is_ascii_alphabetic() { 1 } else { 0 });
     let num: i64 = range[..num_end].parse().ok()?;
     let unit = &range[num_end..];
     let secs = match unit {
@@ -557,7 +610,11 @@ pub async fn create_device_type(
         undo_command: format!("neomind device types delete {}", device_type),
     };
 
-    Ok(CliResponse::success_with_meta(data, "Device type created", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "Device type created",
+        meta,
+    ))
 }
 
 /// Delete device type
@@ -577,7 +634,9 @@ pub async fn list_drafts(client: &ApiClient) -> Result<CliResponse> {
 
 /// Get a specific device draft
 pub async fn get_draft(client: &ApiClient, device_id: &str) -> Result<CliResponse> {
-    let data = client.get(&format!("/devices/drafts/{}", device_id)).await?;
+    let data = client
+        .get(&format!("/devices/drafts/{}", device_id))
+        .await?;
     Ok(CliResponse::success(data, "Device draft retrieved"))
 }
 
@@ -654,7 +713,9 @@ pub async fn write_metric(
     if let Some(ts) = timestamp {
         body["timestamp"] = json!(ts);
     }
-    let data = client.post(&format!("/devices/{}/metrics", id), &body).await?;
+    let data = client
+        .post(&format!("/devices/{}/metrics", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "Metric written"))
 }
 

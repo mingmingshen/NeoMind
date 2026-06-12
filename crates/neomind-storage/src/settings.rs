@@ -2,9 +2,9 @@
 //!
 //! Provides persistent storage for LLM and MQTT configuration.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -1191,8 +1191,8 @@ impl SettingsStore {
         let table = read_txn.open_table(SETTINGS_TABLE)?;
 
         if let Some(data) = table.get(KEY_SYSTEM_MQTT_CREDENTIAL)? {
-            let password =
-                std::str::from_utf8(data.value()).map_err(|e| Error::Serialization(e.to_string()))?;
+            let password = std::str::from_utf8(data.value())
+                .map_err(|e| Error::Serialization(e.to_string()))?;
             Ok(Some(password.to_string()))
         } else {
             Ok(None)

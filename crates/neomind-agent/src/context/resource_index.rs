@@ -678,7 +678,6 @@ impl ResourceIndex {
     pub async fn list_devices(&self) -> Vec<Resource> {
         self.list_by_type("device").await
     }
-
 }
 
 /// Helper trait to extract common data from ResourceData.

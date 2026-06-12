@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List all rules with compact summary.
 ///
@@ -13,7 +13,13 @@ pub async fn list_rules(client: &ApiClient) -> Result<CliResponse> {
     let rules = data
         .as_array()
         .or_else(|| data.get("rules").and_then(|v| v.as_array()))
-        .or_else(|| data.get("data").and_then(|d| d.as_array()).or_else(|| data.get("data").and_then(|d| d.get("rules")).and_then(|v| v.as_array())));
+        .or_else(|| {
+            data.get("data").and_then(|d| d.as_array()).or_else(|| {
+                data.get("data")
+                    .and_then(|d| d.get("rules"))
+                    .and_then(|v| v.as_array())
+            })
+        });
 
     let Some(rules) = rules else {
         return Ok(CliResponse::success(data, "Rules listed"));
@@ -45,11 +51,7 @@ pub async fn get_rule(client: &ApiClient, id: &str) -> Result<CliResponse> {
 }
 
 /// Create a new rule via DSL
-pub async fn create_rule(
-    client: &ApiClient,
-    name: Option<&str>,
-    dsl: &str,
-) -> Result<CliResponse> {
+pub async fn create_rule(client: &ApiClient, name: Option<&str>, dsl: &str) -> Result<CliResponse> {
     let mut body = json!({
         "dsl": dsl,
     });
@@ -93,10 +95,7 @@ pub async fn update_rule(
 /// Delete rule
 pub async fn delete_rule(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/rules/{}", id)).await?;
-    Ok(CliResponse::success(
-        json!({ "id": id }),
-        "Rule deleted",
-    ))
+    Ok(CliResponse::success(json!({ "id": id }), "Rule deleted"))
 }
 
 /// Enable rule

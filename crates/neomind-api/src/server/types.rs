@@ -24,7 +24,10 @@ impl std::fmt::Debug for CredentialCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CredentialCache")
             .field("users", &format!("{} entries", self.users.len()))
-            .field("system_password", &self.system_password.as_ref().map(|_| "***REDACTED***"))
+            .field(
+                "system_password",
+                &self.system_password.as_ref().map(|_| "***REDACTED***"),
+            )
             .finish()
     }
 }
@@ -46,9 +49,14 @@ impl CredentialCache {
         match store.list_mqtt_credentials() {
             Ok(creds) => {
                 for cred in &creds {
-                    cache.users.insert(cred.username.clone(), cred.password_hash.clone());
+                    cache
+                        .users
+                        .insert(cred.username.clone(), cred.password_hash.clone());
                 }
-                tracing::info!("Credential cache: loaded {} user credentials", cache.users.len());
+                tracing::info!(
+                    "Credential cache: loaded {} user credentials",
+                    cache.users.len()
+                );
             }
             Err(e) => {
                 return Err(format!("Failed to load user credentials: {}", e));
@@ -76,8 +84,8 @@ use crate::automation::{
     store::SharedAutomationStore, transform::TransformEngine, AutoOnboardManager,
 };
 
-use neomind_messages::MessageManager;
 use neomind_data_push::PushManager;
+use neomind_messages::MessageManager;
 
 use crate::auth::AuthState as ApiKeyAuthState;
 use crate::auth_users::AuthUserState;
@@ -229,9 +237,9 @@ impl ServerState {
     /// recreates the internal-mqtt adapter so it picks up new TLS/auth settings.
     #[cfg(feature = "embedded-broker")]
     pub async fn restart_embedded_broker(&self) -> Result<(), String> {
+        use crate::config::{get_embedded_broker_config, open_settings_store};
         use neomind_devices::adapter::DeviceAdapter;
         use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
-        use crate::config::{get_embedded_broker_config, open_settings_store};
 
         // Acquire restart lock to prevent concurrent restarts (C2 race condition fix).
         // If another restart is in progress, this waits until it completes.
@@ -245,7 +253,10 @@ impl ServerState {
             if let Some(ref broker) = old_broker {
                 if broker.is_running() {
                     tracing::info!("Stopping embedded broker for config change...");
-                    broker.stop().await.map_err(|e| format!("Broker stop failed: {}", e))?;
+                    broker
+                        .stop()
+                        .await
+                        .map_err(|e| format!("Broker stop failed: {}", e))?;
                 }
             }
             let config = old_broker.as_ref().map(|b| b.config());
@@ -259,7 +270,10 @@ impl ServerState {
             if let Err(e) = adapter.stop().await {
                 tracing::warn!("Adapter stop error: {}", e);
             }
-            self.devices.service.unregister_adapter("internal-mqtt").await;
+            self.devices
+                .service
+                .unregister_adapter("internal-mqtt")
+                .await;
         }
 
         // 3. Refresh credential cache and create new broker with cache-backed validator
@@ -268,7 +282,9 @@ impl ServerState {
                 Ok(cache) => {
                     *self.credential_cache.write().unwrap() = cache;
                 }
-                Err(e) => tracing::error!("Failed to refresh credential cache during restart: {}", e),
+                Err(e) => {
+                    tracing::error!("Failed to refresh credential cache during restart: {}", e)
+                }
             }
         }
 
@@ -289,7 +305,10 @@ impl ServerState {
                     return bcrypt::verify(password, hash).unwrap_or(false);
                 }
 
-                tracing::debug!("Credential validator: user '{}' not found in cache", username);
+                tracing::debug!(
+                    "Credential validator: user '{}' not found in cache",
+                    username
+                );
                 false
             });
 
@@ -298,7 +317,10 @@ impl ServerState {
         if let Err(e) = broker.start().await {
             // Attempt rollback: restart with the old config and rebuild adapter
             if let Some(ref old_cfg) = old_broker_config {
-                tracing::warn!("Broker restart failed ({}), attempting rollback with previous config...", e);
+                tracing::warn!(
+                    "Broker restart failed ({}), attempting rollback with previous config...",
+                    e
+                );
                 let rollback_cache = self.credential_cache.clone();
                 let rollback_validator: CredentialValidator =
                     std::sync::Arc::new(move |username: &str, password: &str| {
@@ -306,12 +328,14 @@ impl ServerState {
                         if username == "__neomind_internal__" {
                             return cache.system_password.as_deref() == Some(password);
                         }
-                        cache.users.get(username)
-                            .map_or(false, |hash| bcrypt::verify(password, hash).unwrap_or(false))
+                        cache.users.get(username).map_or(false, |hash| {
+                            bcrypt::verify(password, hash).unwrap_or(false)
+                        })
                     });
                 let rollback_broker = EmbeddedBroker::new(old_cfg.clone(), rollback_validator);
                 if let Ok(()) = rollback_broker.start().await {
-                    *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(rollback_broker));
+                    *self.devices.embedded_broker.write().unwrap() =
+                        Some(Arc::new(rollback_broker));
                     tracing::info!("Rollback successful: broker restarted with previous config");
 
                     // Also rebuild the internal-mqtt adapter with old config
@@ -327,7 +351,9 @@ impl ServerState {
                                 broker: "127.0.0.1".to_string(),
                                 port: old_cfg.port,
                                 client_id: Some("neomind-internal".to_string()),
-                                username: adapter_pass.as_ref().map(|_| "__neomind_internal__".to_string()),
+                                username: adapter_pass
+                                    .as_ref()
+                                    .map(|_| "__neomind_internal__".to_string()),
                                 password: adapter_pass,
                                 tls: old_cfg.tls_enabled,
                                 ca_cert: old_cfg.tls_ca_path.clone(),
@@ -349,7 +375,13 @@ impl ServerState {
                             if let Ok(val) = serde_json::to_value(&rollback_mqtt_config) {
                                 if let Ok(adapter) = create_adapter("mqtt", &val, event_bus) {
                                     adapter.set_telemetry_storage(self.devices.telemetry.clone());
-                                    self.devices.service.register_adapter("internal-mqtt".to_string(), adapter.clone()).await;
+                                    self.devices
+                                        .service
+                                        .register_adapter(
+                                            "internal-mqtt".to_string(),
+                                            adapter.clone(),
+                                        )
+                                        .await;
                                     if let Err(e) = adapter.start().await {
                                         tracing::warn!("Rollback adapter start failed: {}", e);
                                     } else {
@@ -367,8 +399,10 @@ impl ServerState {
         }
         tracing::info!(
             "Embedded broker restarted: listen={}, port={}, auth={}, tls={}",
-            broker_config.listen, broker_config.port,
-            broker_config.auth_enabled, broker_config.tls_enabled
+            broker_config.listen,
+            broker_config.port,
+            broker_config.auth_enabled,
+            broker_config.tls_enabled
         );
 
         *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(broker));
@@ -377,11 +411,11 @@ impl ServerState {
         let (adapter_username, adapter_password) = {
             if let Ok(store) = open_settings_store() {
                 match store.get_system_mqtt_credential() {
-                    Ok(Some(pass)) => {
-                        (Some("__neomind_internal__".to_string()), Some(pass))
-                    }
+                    Ok(Some(pass)) => (Some("__neomind_internal__".to_string()), Some(pass)),
                     _ => {
-                        tracing::warn!("No system credential found for adapter, connecting without auth");
+                        tracing::warn!(
+                            "No system credential found for adapter, connecting without auth"
+                        );
                         (None, None)
                     }
                 }
@@ -487,7 +521,6 @@ impl ServerState {
         self.automation.rule_history_store.clone()
     }
 
-
     /// Get agent store (backward compatibility).
     pub fn agent_store(&self) -> Arc<neomind_storage::AgentStore> {
         self.agents.agent_store.clone()
@@ -545,8 +578,8 @@ impl ServerState {
             }
         });
 
-        let agent_store_h = tokio::task::spawn_blocking(|| {
-            match neomind_storage::AgentStore::open("data/agents.redb") {
+        let agent_store_h = tokio::task::spawn_blocking(
+            || match neomind_storage::AgentStore::open("data/agents.redb") {
                 Ok(store) => {
                     tracing::info!("AI Agent store initialized at data/agents.redb");
                     store
@@ -558,8 +591,8 @@ impl ServerState {
                         std::process::exit(1);
                     })
                 }
-            }
-        });
+            },
+        );
 
         let dashboard_store_h = tokio::task::spawn_blocking(|| {
             match DashboardStore::open("data/dashboards.redb") {
@@ -599,8 +632,7 @@ impl ServerState {
         let frontend_component_store_h = tokio::task::spawn_blocking({
             let dir = data_dir.join("frontend-components");
             move || {
-                FrontendComponentStore::open(dir)
-                    .expect("Failed to init frontend component store")
+                FrontendComponentStore::open(dir).expect("Failed to init frontend component store")
             }
         });
 
@@ -643,10 +675,8 @@ impl ServerState {
         // Create time series storage — start with an in-memory placeholder and
         // load the persistent database in the background so that a large
         // telemetry.redb does not block server startup.
-        let time_series_storage = Arc::new(
-            TimeSeriesStorage::memory()
-                .expect("in-memory telemetry storage"),
-        );
+        let time_series_storage =
+            Arc::new(TimeSeriesStorage::memory().expect("in-memory telemetry storage"));
         let telemetry_for_bg = time_series_storage.clone();
         let telemetry_path = std::path::Path::new("data").join("telemetry.redb");
         tokio::spawn(async move {
@@ -698,7 +728,10 @@ impl ServerState {
         });
 
         // Create device service
-        let event_bus_for_service = (**event_bus.as_ref().expect("event_bus initialized during startup")).clone();
+        let event_bus_for_service = (**event_bus
+            .as_ref()
+            .expect("event_bus initialized during startup"))
+        .clone();
         let device_service = Arc::new(DeviceService::new(
             device_registry.clone(),
             event_bus_for_service,
@@ -755,7 +788,11 @@ impl ServerState {
             .expect("Failed to open extension store — ensure data/ directory exists");
 
         // Create the extension state with registry, storage, and persistent store
-        let extensions = ExtensionState::new(extension_registry.clone(), extension_metrics_storage, extension_store);
+        let extensions = ExtensionState::new(
+            extension_registry.clone(),
+            extension_metrics_storage,
+            extension_store,
+        );
 
         tracing::info!("Extension state initialized");
 
@@ -839,7 +876,10 @@ impl ServerState {
             .await;
 
         // Wire rule engine to device service
-        let event_bus_for_action = (**event_bus.as_ref().expect("event_bus initialized during startup")).clone();
+        let event_bus_for_action = (**event_bus
+            .as_ref()
+            .expect("event_bus initialized during startup"))
+        .clone();
         let device_service_for_action = devices.service.clone();
         let device_action_executor = Arc::new(DeviceActionExecutor::with_device_service(
             event_bus_for_action,
@@ -913,9 +953,7 @@ impl ServerState {
 
         // Create transform engine with extension registry and automation store support
         let transform_engine = {
-            let mut engine = TransformEngine::with_extension_registry(
-                extensions.registry.clone(),
-            );
+            let mut engine = TransformEngine::with_extension_registry(extensions.registry.clone());
             if let Some(ref store) = automation_store {
                 engine = engine.with_automation_store(store.clone());
             }
@@ -924,7 +962,9 @@ impl ServerState {
         tracing::info!("Transform engine initialized with extension registry");
 
         // Await parallel-opened rule history store
-        let rule_history_store = rule_history_store_h.await.expect("rule_history_store task panicked");
+        let rule_history_store = rule_history_store_h
+            .await
+            .expect("rule_history_store task panicked");
 
         let automation = AutomationState::new(
             rule_engine,
@@ -936,7 +976,9 @@ impl ServerState {
 
         // ========== Build AGENT STATE ==========
         // Await parallel-opened session manager
-        let session_manager = session_manager_h.await.expect("session_manager task panicked");
+        let session_manager = session_manager_h
+            .await
+            .expect("session_manager task panicked");
 
         // Await parallel-opened agent store
         let agent_store = agent_store_h.await.expect("agent_store task panicked");
@@ -973,8 +1015,12 @@ impl ServerState {
             Arc::new(std::sync::OnceLock::new());
 
         // Await parallel-opened stores
-        let dashboard_store = dashboard_store_h.await.expect("dashboard_store task panicked");
-        let instance_store = instance_store_h.await.expect("instance_store task panicked");
+        let dashboard_store = dashboard_store_h
+            .await
+            .expect("dashboard_store task panicked");
+        let instance_store = instance_store_h
+            .await
+            .expect("instance_store task panicked");
         let frontend_component_store = frontend_component_store_h
             .await
             .expect("frontend_component_store task panicked");
@@ -988,12 +1034,16 @@ impl ServerState {
         {
             let mm = core.message_manager.clone();
             tokio::spawn(async move {
-                let mut cleanup_interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 60 * 60));
+                let mut cleanup_interval =
+                    tokio::time::interval(tokio::time::Duration::from_secs(6 * 60 * 60));
                 loop {
                     cleanup_interval.tick().await;
                     if let Ok(cleaned_msgs) = mm.cleanup_old(30).await {
                         if cleaned_msgs > 0 {
-                            tracing::info!("Periodic cleanup: removed {} messages older than 30 days", cleaned_msgs);
+                            tracing::info!(
+                                "Periodic cleanup: removed {} messages older than 30 days",
+                                cleaned_msgs
+                            );
                         }
                     }
                 }
@@ -1111,7 +1161,11 @@ impl ServerState {
         ));
         let extension_store = ExtensionStore::open(":memory:")
             .expect("Failed to open in-memory extension store for testing");
-        let extensions = ExtensionState::new(extension_registry, extension_metrics_storage, extension_store);
+        let extensions = ExtensionState::new(
+            extension_registry,
+            extension_metrics_storage,
+            extension_store,
+        );
 
         // ========== Build AUTOMATION STATE ==========
         let rule_engine = Arc::new(RuleEngine::new(value_provider.clone()));
@@ -1184,10 +1238,7 @@ impl ServerState {
         let dashboard_store = DashboardStore::memory().unwrap();
         let instance_store = InstanceStore::memory().unwrap();
         let frontend_component_store = FrontendComponentStore::open(
-            std::env::temp_dir().join(format!(
-                "neomind-test-fc-{}",
-                uuid::Uuid::new_v4()
-            )),
+            std::env::temp_dir().join(format!("neomind-test-fc-{}", uuid::Uuid::new_v4())),
         )
         .expect("Failed to create test frontend component store");
 
@@ -1237,6 +1288,27 @@ impl ServerState {
 
         // Device registry storage is initialized automatically on first use
         tracing::info!(category = "storage", "Data directory created/verified");
+
+        // Seed built-in device type templates (NE101, NE301, etc.)
+        match neomind_storage::DeviceRegistryStore::open("data/devices.redb") {
+            Ok(store) => match store.seed_builtin_templates() {
+                Ok(seeded) => {
+                    if seeded > 0 {
+                        tracing::info!(
+                            category = "storage",
+                            seeded,
+                            "Seeded built-in device type templates"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(category = "storage", error = %e, "Failed to seed built-in templates");
+                }
+            },
+            Err(e) => {
+                tracing::warn!(category = "storage", error = %e, "Failed to open device registry for seeding");
+            }
+        }
     }
 
     /// Start enabled data push targets from persistent storage.
@@ -1381,9 +1453,7 @@ impl ServerState {
         // Always ensure system credential exists.
         if let Ok(store) = open_settings_store() {
             if let Ok(None) = store.get_system_mqtt_credential() {
-                let system_password = uuid::Uuid::new_v4()
-                    .to_string()
-                    .replace("-", "");
+                let system_password = uuid::Uuid::new_v4().to_string().replace("-", "");
 
                 if let Err(e) = store.set_system_mqtt_credential(&system_password) {
                     tracing::error!("Failed to set system MQTT credential: {}", e);
@@ -1425,7 +1495,10 @@ impl ServerState {
                     return result;
                 }
 
-                tracing::debug!("Credential validator: user '{}' not found in cache", username);
+                tracing::debug!(
+                    "Credential validator: user '{}' not found in cache",
+                    username
+                );
                 false
             });
 
@@ -1454,9 +1527,9 @@ impl ServerState {
     /// Starts the device service, creates adapter instances, and registers
     /// them with the DeviceService.
     pub async fn init_device_adapters(&self) {
+        use crate::config::get_embedded_broker_config;
         use neomind_devices::adapter::DeviceAdapter;
         use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
-        use crate::config::get_embedded_broker_config;
 
         // Start device service to listen for EventBus events
         self.devices.service.start().await;
@@ -1479,14 +1552,16 @@ impl ServerState {
                 }
             }
             #[cfg(not(feature = "embedded-broker"))]
-            { (None, None) }
+            {
+                (None, None)
+            }
         };
 
         let mqtt_config = MqttAdapterConfig {
             name: "internal-mqtt".to_string(),
             mqtt: neomind_devices::mqtt::MqttConfig {
                 broker: "127.0.0.1".to_string(), // Use IPv4 literal to avoid IPv6 resolution on Windows
-                port: broker_config.port, // Dynamic port from config
+                port: broker_config.port,        // Dynamic port from config
                 client_id: Some("neomind-internal".to_string()),
                 username: adapter_username,
                 password: adapter_password,
@@ -1583,8 +1658,8 @@ impl ServerState {
                     // Set shared device registry so token verification and device lookup work
                     if let Some(whk) = adapter
                         .as_any()
-                        .downcast_ref::<neomind_devices::adapters::webhook::WebhookAdapter>()
-                    {
+                        .downcast_ref::<neomind_devices::adapters::webhook::WebhookAdapter>(
+                    ) {
                         whk.set_shared_device_registry(self.devices.service.get_registry())
                             .await;
                     }
@@ -1702,7 +1777,6 @@ impl ServerState {
                 enabled: true,
                 timeout_secs: 30,
                 max_output_chars: 10000,
-
             }))
             // Scan extensions and register their tools (dynamic, keep)
             .with_extensions_scanned()
@@ -1723,31 +1797,41 @@ impl ServerState {
         // Web fetch tool — retrieves URL content
         registry.register(Arc::new(neomind_agent::toolkit::WebFetchTool::new()));
         // File write tool — creates/overwrites files in data/
-        registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(self.data_dir.clone())));
+        registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(
+            self.data_dir.clone(),
+        )));
         // File edit tool — precise string replacement in files
-        registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
+        registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(
+            self.data_dir.clone(),
+        )));
 
         // Vision tool — auto-detect VLM backend and register if available
         if let Ok(llm_manager) = neomind_agent::llm_backends::get_instance_manager() {
-            let has_vlm = llm_manager.list_instances().iter()
+            let has_vlm = llm_manager
+                .list_instances()
+                .iter()
                 .any(|inst| inst.capabilities.supports_multimodal);
             if has_vlm {
                 registry.register(Arc::new(neomind_agent::toolkit::VisionTool::new(
                     neomind_agent::toolkit::VisionConfig::default(),
                     llm_manager,
                 )));
-                tracing::info!(category = "ai", "Vision tool registered (VLM backend detected)");
+                tracing::info!(
+                    category = "ai",
+                    "Vision tool registered (VLM backend detected)"
+                );
             }
         } else {
-            tracing::debug!(category = "ai", "Vision tool skipped: LLM instance manager not available");
+            tracing::debug!(
+                category = "ai",
+                "Vision tool skipped: LLM instance manager not available"
+            );
         }
 
         // Memory tool — persistent memory across sessions
         // Uses per-execution handle swapping for concurrency safety
         {
-            let memory_store = tokio::sync::RwLock::new(
-                (*self.agents.system_memory_store).clone(),
-            );
+            let memory_store = tokio::sync::RwLock::new((*self.agents.system_memory_store).clone());
             let memory_tool = neomind_agent::toolkit::MemoryTool::with_session_handle(
                 std::sync::Arc::new(memory_store),
                 self.agents.memory_session_handle.clone(),
@@ -1785,7 +1869,6 @@ impl ServerState {
                 enabled: true,
                 timeout_secs: 30,
                 max_output_chars: 10000,
-
             }))
             .with_extensions_scanned()
             .await
@@ -1803,29 +1886,39 @@ impl ServerState {
 
         // Re-register web/file tools
         registry.register(Arc::new(neomind_agent::toolkit::WebFetchTool::new()));
-        registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(self.data_dir.clone())));
-        registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
+        registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(
+            self.data_dir.clone(),
+        )));
+        registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(
+            self.data_dir.clone(),
+        )));
 
         // Vision tool — auto-detect VLM backend and register if available
         if let Ok(llm_manager) = neomind_agent::llm_backends::get_instance_manager() {
-            let has_vlm = llm_manager.list_instances().iter()
+            let has_vlm = llm_manager
+                .list_instances()
+                .iter()
                 .any(|inst| inst.capabilities.supports_multimodal);
             if has_vlm {
                 registry.register(Arc::new(neomind_agent::toolkit::VisionTool::new(
                     neomind_agent::toolkit::VisionConfig::default(),
                     llm_manager,
                 )));
-                tracing::info!(category = "ai", "Vision tool registered (VLM backend detected)");
+                tracing::info!(
+                    category = "ai",
+                    "Vision tool registered (VLM backend detected)"
+                );
             }
         } else {
-            tracing::debug!(category = "ai", "Vision tool skipped: LLM instance manager not available");
+            tracing::debug!(
+                category = "ai",
+                "Vision tool skipped: LLM instance manager not available"
+            );
         }
 
         // Re-register memory tool (per-execution handle swapping for concurrency safety)
         {
-            let memory_store = tokio::sync::RwLock::new(
-                (*self.agents.system_memory_store).clone(),
-            );
+            let memory_store = tokio::sync::RwLock::new((*self.agents.system_memory_store).clone());
             let memory_tool = neomind_agent::toolkit::MemoryTool::with_session_handle(
                 std::sync::Arc::new(memory_store),
                 self.agents.memory_session_handle.clone(),

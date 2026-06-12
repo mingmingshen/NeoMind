@@ -252,10 +252,7 @@ pub async fn approve_draft_device(
                 device_type: existing_type.clone(),
                 adapter_type,
                 connection_config,
-                adapter_id: draft
-                    .adapter_id
-                    .clone()
-                    .or(Some(default_adapter_id)),
+                adapter_id: draft.adapter_id.clone().or(Some(default_adapter_id)),
                 last_seen: chrono::Utc::now().timestamp(),
             };
 
@@ -355,10 +352,7 @@ pub async fn approve_draft_device(
                 device_type: type_id.clone(),
                 adapter_type,
                 connection_config,
-                adapter_id: draft
-                    .adapter_id
-                    .clone()
-                    .or(Some(default_adapter_id)),
+                adapter_id: draft.adapter_id.clone().or(Some(default_adapter_id)),
                 last_seen: chrono::Utc::now().timestamp(),
             };
 

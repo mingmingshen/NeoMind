@@ -3,10 +3,10 @@
 //! Provides persistent storage for rule definitions and execution history.
 
 use crate::engine::{CompiledRule, RuleId};
+use parking_lot::Mutex;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 // Table definitions
 const RULES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rules");

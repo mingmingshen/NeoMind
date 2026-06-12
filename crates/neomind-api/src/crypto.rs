@@ -93,8 +93,7 @@ impl CryptoService {
                 if key_bytes.len() >= 32 {
                     info!(
                         category = "crypto",
-                        "Loaded encryption key from {}",
-                        ENCRYPTION_KEY_FILE
+                        "Loaded encryption key from {}", ENCRYPTION_KEY_FILE
                     );
                     return Self::new(&key_bytes).unwrap_or_else(|_| Self::generate_random());
                 }
@@ -123,8 +122,7 @@ impl CryptoService {
         } else {
             info!(
                 category = "crypto",
-                "Generated and persisted encryption key to {}",
-                ENCRYPTION_KEY_FILE
+                "Generated and persisted encryption key to {}", ENCRYPTION_KEY_FILE
             );
         }
 

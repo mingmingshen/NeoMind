@@ -25,9 +25,9 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
-        dashboards, data, data_push, devices, events, extension_stream, extensions, frontend_components,
-        instances, llm_backends, memory, message_channels, messages, mqtt, rules, sessions,
-        settings, setup, skills, stats, suggestions, tools,
+        dashboards, data, data_push, devices, events, extension_stream, extensions,
+        frontend_components, instances, llm_backends, memory, message_channels, messages, mqtt,
+        onboarding, rules, sessions, settings, setup, skills, stats, suggestions, tools,
     };
 
     // Public routes (no authentication required)
@@ -184,10 +184,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(frontend_components::get_bundle_handler),
         )
         // Webhook API (public endpoints for device data push - external devices cannot carry JWT)
-        .route(
-            "/api/devices/:id/webhook",
-            post(devices::webhook_handler),
-        )
+        .route("/api/devices/:id/webhook", post(devices::webhook_handler))
         .route(
             "/api/devices/webhook",
             post(devices::webhook_generic_handler),
@@ -196,7 +193,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/devices/:id/webhook-url",
             get(devices::get_webhook_url_handler),
         )
-        ;
+        // Onboarding API (public - system setup status)
+        .route(
+            "/api/onboarding/status",
+            get(onboarding::get_onboarding_status_handler),
+        )
+        .route(
+            "/api/onboarding/dismiss",
+            post(onboarding::dismiss_onboarding_handler),
+        )
+        .route(
+            "/api/onboarding/reset",
+            post(onboarding::reset_onboarding_handler),
+        );
 
     // JWT protected routes (require JWT token authentication)
     let jwt_routes = Router::new()
@@ -292,7 +301,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         .route(
             "/api/extensions/:id/logs",
-            get(extensions::get_extension_logs_handler).delete(extensions::clear_extension_logs_handler),
+            get(extensions::get_extension_logs_handler)
+                .delete(extensions::clear_extension_logs_handler),
         )
         .route(
             "/api/extensions/:id/descriptor",
@@ -551,15 +561,42 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         // Data Push API
         .route("/api/data-push", get(data_push::list_push_targets_handler))
-        .route("/api/data-push", post(data_push::create_push_target_handler))
-        .route("/api/data-push/stats", get(data_push::get_push_stats_handler))
-        .route("/api/data-push/:id", get(data_push::get_push_target_handler))
-        .route("/api/data-push/:id", put(data_push::update_push_target_handler))
-        .route("/api/data-push/:id", delete(data_push::delete_push_target_handler))
-        .route("/api/data-push/:id/test", post(data_push::test_push_target_handler))
-        .route("/api/data-push/:id/start", post(data_push::start_push_target_handler))
-        .route("/api/data-push/:id/stop", post(data_push::stop_push_target_handler))
-        .route("/api/data-push/:id/logs", get(data_push::list_delivery_logs_handler))
+        .route(
+            "/api/data-push",
+            post(data_push::create_push_target_handler),
+        )
+        .route(
+            "/api/data-push/stats",
+            get(data_push::get_push_stats_handler),
+        )
+        .route(
+            "/api/data-push/:id",
+            get(data_push::get_push_target_handler),
+        )
+        .route(
+            "/api/data-push/:id",
+            put(data_push::update_push_target_handler),
+        )
+        .route(
+            "/api/data-push/:id",
+            delete(data_push::delete_push_target_handler),
+        )
+        .route(
+            "/api/data-push/:id/test",
+            post(data_push::test_push_target_handler),
+        )
+        .route(
+            "/api/data-push/:id/start",
+            post(data_push::start_push_target_handler),
+        )
+        .route(
+            "/api/data-push/:id/stop",
+            post(data_push::stop_push_target_handler),
+        )
+        .route(
+            "/api/data-push/:id/logs",
+            get(data_push::list_delivery_logs_handler),
+        )
         // Message Channel Recipients API
         .route(
             "/api/messages/channels/:name/recipients",
@@ -594,8 +631,14 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/settings/timezone", put(settings::update_timezone))
         .route("/api/settings/timezones", get(settings::list_timezones))
         // Retention Configuration API
-        .route("/api/settings/retention", get(settings::get_retention_config))
-        .route("/api/settings/retention", put(settings::update_retention_config))
+        .route(
+            "/api/settings/retention",
+            get(settings::get_retention_config),
+        )
+        .route(
+            "/api/settings/retention",
+            put(settings::update_retention_config),
+        )
         .route(
             "/api/settings/retention/cleanup",
             post(settings::trigger_retention_cleanup),
@@ -782,13 +825,31 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/brokers/:id", delete(mqtt::delete_broker_handler))
         .route("/api/brokers/:id/test", post(mqtt::test_broker_handler))
         // Embedded Broker Config API
-        .route("/api/mqtt/broker-config", get(mqtt::get_broker_config_handler))
-        .route("/api/mqtt/broker-config", put(mqtt::update_broker_config_handler))
-        .route("/api/mqtt/broker-config/credentials", post(mqtt::add_credential_handler))
-        .route("/api/mqtt/broker-config/credentials/delete", post(mqtt::delete_credential_handler))
+        .route(
+            "/api/mqtt/broker-config",
+            get(mqtt::get_broker_config_handler),
+        )
+        .route(
+            "/api/mqtt/broker-config",
+            put(mqtt::update_broker_config_handler),
+        )
+        .route(
+            "/api/mqtt/broker-config/credentials",
+            post(mqtt::add_credential_handler),
+        )
+        .route(
+            "/api/mqtt/broker-config/credentials/delete",
+            post(mqtt::delete_credential_handler),
+        )
         .route("/api/mqtt/broker-config/tls", put(mqtt::upload_tls_handler))
-        .route("/api/mqtt/broker-config/tls/generate", post(mqtt::generate_tls_handler))
-        .route("/api/mqtt/broker-config/tls/ca-cert", get(mqtt::download_ca_cert_handler))
+        .route(
+            "/api/mqtt/broker-config/tls/generate",
+            post(mqtt::generate_tls_handler),
+        )
+        .route(
+            "/api/mqtt/broker-config/tls/ca-cert",
+            get(mqtt::download_ca_cert_handler),
+        )
         // Stats API (devices and rules require auth, system info is public)
         .route("/api/stats/devices", get(stats::get_device_stats_handler))
         .route("/api/stats/rules", get(stats::get_rule_stats_handler))
@@ -1095,10 +1156,9 @@ async fn cache_headers_middleware(
         } else {
             "public, max-age=3600"
         };
-        response.headers_mut().insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static(cc),
-        );
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static(cc));
     }
 
     response

@@ -552,8 +552,16 @@ pub fn compute_quick_stats(values: &[Value]) -> (Option<f64>, Option<f64>, Optio
         return (None, None, None);
     }
 
-    let min = nums.iter().cloned().reduce(f64::min).expect("called on non-empty slice");
-    let max = nums.iter().cloned().reduce(f64::max).expect("called on non-empty slice");
+    let min = nums
+        .iter()
+        .cloned()
+        .reduce(f64::min)
+        .expect("called on non-empty slice");
+    let max = nums
+        .iter()
+        .cloned()
+        .reduce(f64::max)
+        .expect("called on non-empty slice");
     let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
 
     (Some(min), Some(max), Some(mean))

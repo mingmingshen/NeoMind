@@ -4,7 +4,12 @@
 //! configuration, including authentication settings, TLS certificates, and
 //! credential management.
 
-use axum::{extract::State, http::{header, StatusCode}, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::{header, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -197,7 +202,9 @@ pub async fn update_broker_config_handler(
     }
     if let Some(port) = req.port {
         if !(1024..=65535).contains(&port) {
-            return Err(ErrorResponse::bad_request("Port must be between 1024 and 65535".to_string()));
+            return Err(ErrorResponse::bad_request(
+                "Port must be between 1024 and 65535".to_string(),
+            ));
         }
         config.port = port;
     }
@@ -224,16 +231,18 @@ pub async fn update_broker_config_handler(
 
     // Auto-generate system credential if enabling auth for the first time
     if config.auth_enabled {
-        let system_creds = store
-            .get_system_mqtt_credential()
-            .map_err(|e| ErrorResponse::internal(format!("Failed to check system credential: {}", e)))?;
+        let system_creds = store.get_system_mqtt_credential().map_err(|e| {
+            ErrorResponse::internal(format!("Failed to check system credential: {}", e))
+        })?;
 
         if system_creds.is_none() {
             // Generate random password
             let system_password = generate_random_password(16);
             store
                 .set_system_mqtt_credential(&system_password)
-                .map_err(|e| ErrorResponse::internal(format!("Failed to create system credential: {}", e)))?;
+                .map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to create system credential: {}", e))
+                })?;
 
             tracing::info!("Auto-generated system credential for embedded broker");
         }
@@ -262,9 +271,7 @@ pub async fn update_broker_config_handler(
     // — no broker restart needed, just update the flag.
     #[cfg(feature = "embedded-broker")]
     if needs_restart {
-        tracing::info!(
-            "Broker restart required (port/TLS changed). Applying restart..."
-        );
+        tracing::info!("Broker restart required (port/TLS changed). Applying restart...");
         match _state.restart_embedded_broker().await {
             Ok(()) => {
                 return ok(json!({
@@ -304,22 +311,28 @@ pub async fn update_broker_config_handler(
 /// Passwords are hashed with bcrypt before storage.
 pub async fn add_credential_handler(
     #[cfg(feature = "embedded-broker")] State(state): State<crate::server::types::ServerState>,
-    #[cfg(not(feature = "embedded-broker"))] State(_state): State<crate::server::types::ServerState>,
+    #[cfg(not(feature = "embedded-broker"))] State(_state): State<
+        crate::server::types::ServerState,
+    >,
     Json(req): Json<AddCredentialRequest>,
 ) -> HandlerResult<serde_json::Value> {
     // Validate username
     if req.username.is_empty() || req.username.len() > 64 {
-        return Err(ErrorResponse::bad_request("Username must be 1-64 characters".to_string()));
+        return Err(ErrorResponse::bad_request(
+            "Username must be 1-64 characters".to_string(),
+        ));
     }
     if req.username.starts_with("__neomind") {
         return Err(ErrorResponse::bad_request(
-            "Username cannot start with '__neomind' (reserved for system use)".to_string()
+            "Username cannot start with '__neomind' (reserved for system use)".to_string(),
         ));
     }
 
     // Validate password
     if req.password.len() < 4 {
-        return Err(ErrorResponse::bad_request("Password must be at least 4 characters".to_string()));
+        return Err(ErrorResponse::bad_request(
+            "Password must be at least 4 characters".to_string(),
+        ));
     }
 
     let store = config::open_settings_store()
@@ -332,12 +345,15 @@ pub async fn add_credential_handler(
 
     if creds.iter().any(|c| c.username == req.username) {
         return Err(ErrorResponse::bad_request(format!(
-            "Username '{}' already exists", req.username
+            "Username '{}' already exists",
+            req.username
         )));
     }
 
     if creds.len() >= 100 {
-        return Err(ErrorResponse::bad_request("Maximum credential limit (100) reached".to_string()));
+        return Err(ErrorResponse::bad_request(
+            "Maximum credential limit (100) reached".to_string(),
+        ));
     }
 
     // Hash password with bcrypt (cost factor 12)
@@ -377,7 +393,9 @@ pub async fn add_credential_handler(
 /// System credentials (starting with `__neomind`) cannot be deleted via this API.
 pub async fn delete_credential_handler(
     #[cfg(feature = "embedded-broker")] State(state): State<crate::server::types::ServerState>,
-    #[cfg(not(feature = "embedded-broker"))] State(_state): State<crate::server::types::ServerState>,
+    #[cfg(not(feature = "embedded-broker"))] State(_state): State<
+        crate::server::types::ServerState,
+    >,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     let username = req
@@ -387,7 +405,7 @@ pub async fn delete_credential_handler(
 
     if username.starts_with("__neomind") {
         return Err(ErrorResponse::bad_request(
-            "Cannot delete system credentials (starting with '__neomind')".to_string()
+            "Cannot delete system credentials (starting with '__neomind')".to_string(),
         ));
     }
 
@@ -399,7 +417,10 @@ pub async fn delete_credential_handler(
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete credential: {}", e)))?;
 
     if !deleted {
-        return Err(ErrorResponse::not_found(format!("Credential not found: {}", username)));
+        return Err(ErrorResponse::not_found(format!(
+            "Credential not found: {}",
+            username
+        )));
     }
 
     // Refresh in-memory credential cache
@@ -461,14 +482,16 @@ pub async fn upload_tls_handler(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| ErrorResponse::internal(format!("Failed to set key file permissions: {}", e)))?;
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600)).map_err(
+            |e| ErrorResponse::internal(format!("Failed to set key file permissions: {}", e)),
+        )?;
     }
 
     // Write CA certificate if provided
     if let Some(ca_pem) = &req.ca_pem {
-        std::fs::write(&ca_path, ca_pem)
-            .map_err(|e| ErrorResponse::internal(format!("Failed to write CA certificate: {}", e)))?;
+        std::fs::write(&ca_path, ca_pem).map_err(|e| {
+            ErrorResponse::internal(format!("Failed to write CA certificate: {}", e))
+        })?;
     }
 
     // Update broker config
@@ -531,7 +554,10 @@ pub async fn upload_tls_handler(
 fn validate_pem(pem: &str, label: &str) -> Result<(), ErrorResponse> {
     let trimmed = pem.trim();
     if trimmed.is_empty() {
-        return Err(ErrorResponse::bad_request(format!("{} PEM cannot be empty", label)));
+        return Err(ErrorResponse::bad_request(format!(
+            "{} PEM cannot be empty",
+            label
+        )));
     }
 
     // Check for PEM headers
@@ -654,7 +680,6 @@ pub async fn download_ca_cert_handler() -> Result<axum::response::Response, Erro
         serde_json::from_value::<EmbeddedBrokerConfig>(config_value)
             .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?
     } else {
-        
         config::get_embedded_broker_config()
     };
 
@@ -662,9 +687,8 @@ pub async fn download_ca_cert_handler() -> Result<axum::response::Response, Erro
         .tls_ca_path
         .ok_or_else(|| ErrorResponse::not_found("No CA certificate configured".to_string()))?;
 
-    let ca_pem = std::fs::read_to_string(&ca_path).map_err(|e| {
-        ErrorResponse::not_found(format!("CA certificate file not found: {}", e))
-    })?;
+    let ca_pem = std::fs::read_to_string(&ca_path)
+        .map_err(|e| ErrorResponse::not_found(format!("CA certificate file not found: {}", e)))?;
 
     Ok((
         StatusCode::OK,

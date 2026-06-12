@@ -3,7 +3,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use neomind_core::{config::{agent_env_vars, endpoints, models}, Message};
+use neomind_core::{
+    config::{agent_env_vars, endpoints, models},
+    Message,
+};
 
 /// Agent event emitted during streaming processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]

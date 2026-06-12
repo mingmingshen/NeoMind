@@ -33,7 +33,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -310,8 +310,7 @@ impl MemoryEntry {
 }
 
 /// Aggregated memory result (DEPRECATED)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AggregatedMemory {
     /// All memory entries
     pub entries: Vec<MemoryEntry>,
@@ -503,13 +502,20 @@ impl MarkdownMemoryStore {
         let limit = match target {
             "user" => self.config.user_char_limit,
             "knowledge" => self.config.knowledge_char_limit,
-            _ => return Err(Error::InvalidInput(format!("Invalid target: {}. Must be 'user' or 'knowledge'", target))),
+            _ => {
+                return Err(Error::InvalidInput(format!(
+                    "Invalid target: {}. Must be 'user' or 'knowledge'",
+                    target
+                )))
+            }
         };
 
         if content.chars().count() > limit {
             return Err(Error::InvalidInput(format!(
                 "Content exceeds {} char limit: {} > {}",
-                target, content.chars().count(), limit
+                target,
+                content.chars().count(),
+                limit
             )));
         }
 
@@ -534,7 +540,12 @@ impl MarkdownMemoryStore {
         let path = match target {
             "user" => self.base_path.join("USER.md"),
             "knowledge" => self.base_path.join("KNOWLEDGE.md"),
-            _ => return Err(Error::InvalidInput(format!("Invalid target: {}. Must be 'user' or 'knowledge'", target))),
+            _ => {
+                return Err(Error::InvalidInput(format!(
+                    "Invalid target: {}. Must be 'user' or 'knowledge'",
+                    target
+                )))
+            }
         };
 
         if !path.exists() {
@@ -556,7 +567,9 @@ impl MarkdownMemoryStore {
     /// * `new_body` - New content for the section (without the heading)
     pub async fn replace_section(&self, target: &str, heading: &str, new_body: &str) -> Result<()> {
         if target != "knowledge" {
-            return Err(Error::InvalidInput("Section replacement only works for 'knowledge' target".to_string()));
+            return Err(Error::InvalidInput(
+                "Section replacement only works for 'knowledge' target".to_string(),
+            ));
         }
 
         let path = self.base_path.join("KNOWLEDGE.md");
@@ -626,7 +639,8 @@ impl MarkdownMemoryStore {
             let after_open = start + open_tag.len();
             if let Some(end) = current[after_open..].find(&close_tag) {
                 let close_pos = after_open + end;
-                let mut result = String::with_capacity(start + new_content.len() + (current.len() - close_pos));
+                let mut result =
+                    String::with_capacity(start + new_content.len() + (current.len() - close_pos));
                 result.push_str(&current[..after_open]);
                 result.push('\n');
                 result.push_str(new_content);
@@ -635,7 +649,8 @@ impl MarkdownMemoryStore {
                 result
             } else {
                 // Open tag found but no close tag — recover by replacing everything after open tag
-                let mut result = String::with_capacity(after_open + new_content.len() + close_tag.len() + 4);
+                let mut result =
+                    String::with_capacity(after_open + new_content.len() + close_tag.len() + 4);
                 result.push_str(&current[..after_open]);
                 result.push('\n');
                 result.push_str(new_content);
@@ -736,7 +751,9 @@ impl MarkdownMemoryStore {
         };
 
         // Scan custom files
-        let custom_files = self.list_custom_files().unwrap_or_default()
+        let custom_files = self
+            .list_custom_files()
+            .unwrap_or_default()
             .into_iter()
             .map(|(name, chars)| CustomFileStats { name, chars })
             .collect();
@@ -769,7 +786,12 @@ impl MarkdownMemoryStore {
     /// * `session_id` - Unique session identifier
     /// * `target` - One of: "scratch", "notes", "todo"
     /// * `content` - Content to write (no char limit)
-    pub async fn write_session_file(&self, session_id: &str, target: &str, content: &str) -> Result<()> {
+    pub async fn write_session_file(
+        &self,
+        session_id: &str,
+        target: &str,
+        content: &str,
+    ) -> Result<()> {
         Self::validate_session_id(session_id)?;
         // Validate target
         if !matches!(target, "scratch" | "notes" | "todo") {
@@ -785,8 +807,9 @@ impl MarkdownMemoryStore {
             .map_err(|e| Error::Storage(format!("Failed to create session directory: {}", e)))?;
 
         let path = session_dir.join(&filename);
-        fs::write(&path, content)
-            .map_err(|e| Error::Storage(format!("Failed to write session file {}: {}", filename, e)))?;
+        fs::write(&path, content).map_err(|e| {
+            Error::Storage(format!("Failed to write session file {}: {}", filename, e))
+        })?;
 
         debug!(session_id = %session_id, target = %target, chars = content.chars().count(), "Wrote session temp file");
         Ok(())
@@ -800,7 +823,11 @@ impl MarkdownMemoryStore {
     pub async fn read_session_file(&self, session_id: &str, target: &str) -> Result<String> {
         Self::validate_session_id(session_id)?;
         let filename = format!("{}.md", target);
-        let path = self.base_path.join("sessions").join(session_id).join(&filename);
+        let path = self
+            .base_path
+            .join("sessions")
+            .join(session_id)
+            .join(&filename);
 
         if !path.exists() {
             return Ok(String::new());
@@ -840,8 +867,9 @@ impl MarkdownMemoryStore {
 
                     if let Some(dt) = modified_dt {
                         if now.signed_duration_since(dt) > ttl_duration {
-                            fs::remove_dir_all(&path)
-                                .map_err(|e| Error::Storage(format!("Failed to delete session directory: {}", e)))?;
+                            fs::remove_dir_all(&path).map_err(|e| {
+                                Error::Storage(format!("Failed to delete session directory: {}", e))
+                            })?;
                             deleted_count += 1;
                             debug!(path = %path.display(), "Deleted old session directory");
                         }
@@ -851,7 +879,11 @@ impl MarkdownMemoryStore {
         }
 
         if deleted_count > 0 {
-            info!(deleted = deleted_count, ttl_days = ttl_days, "Cleaned up old session directories");
+            info!(
+                deleted = deleted_count,
+                ttl_days = ttl_days,
+                "Cleaned up old session directories"
+            );
         }
 
         Ok(deleted_count)
@@ -868,7 +900,11 @@ impl MarkdownMemoryStore {
                 "session_id must be 1-128 characters".to_string(),
             ));
         }
-        if session_id.contains('\0') || session_id.contains("..") || session_id.contains('/') || session_id.contains('\\') {
+        if session_id.contains('\0')
+            || session_id.contains("..")
+            || session_id.contains('/')
+            || session_id.contains('\\')
+        {
             return Err(Error::InvalidInput(
                 "session_id contains invalid path characters".to_string(),
             ));
@@ -914,9 +950,7 @@ impl MarkdownMemoryStore {
         if char_count > limit {
             return Err(Error::InvalidInput(format!(
                 "Custom file content exceeds {} char limit: {} > {}",
-                name,
-                char_count,
-                limit
+                name, char_count, limit
             )));
         }
         let dir = self.base_path.join("custom");
@@ -954,8 +988,9 @@ impl MarkdownMemoryStore {
         Self::validate_custom_name(name)?;
         let path = self.base_path.join("custom").join(format!("{}.md", name));
         if path.exists() {
-            fs::remove_file(&path)
-                .map_err(|e| Error::Storage(format!("Failed to delete custom file {}: {}", name, e)))?;
+            fs::remove_file(&path).map_err(|e| {
+                Error::Storage(format!("Failed to delete custom file {}: {}", name, e))
+            })?;
             info!(name = %name, "Deleted custom memory file");
         }
         Ok(())
@@ -991,12 +1026,7 @@ impl MarkdownMemoryStore {
 
     /// Write an agent-scoped custom file. Enforces per-file char limit.
     /// Path: `agents/{agent_id}/custom/{name}.md`
-    pub fn write_agent_custom_file(
-        &self,
-        agent_id: &str,
-        name: &str,
-        content: &str,
-    ) -> Result<()> {
+    pub fn write_agent_custom_file(&self, agent_id: &str, name: &str, content: &str) -> Result<()> {
         Self::validate_custom_name(name)?;
         let limit = self.config.agent_char_limit;
         let char_count = content.chars().count();
@@ -1006,11 +1036,7 @@ impl MarkdownMemoryStore {
                 name, char_count, limit
             )));
         }
-        let dir = self
-            .base_path
-            .join("agents")
-            .join(agent_id)
-            .join("custom");
+        let dir = self.base_path.join("agents").join(agent_id).join("custom");
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{}.md", name));
         fs::write(&path, content).map_err(|e| {
@@ -1025,11 +1051,7 @@ impl MarkdownMemoryStore {
 
     /// List agent-scoped custom files. Returns (name, char_count) pairs.
     pub fn list_agent_custom_files(&self, agent_id: &str) -> Result<Vec<(String, usize)>> {
-        let custom_dir = self
-            .base_path
-            .join("agents")
-            .join(agent_id)
-            .join("custom");
+        let custom_dir = self.base_path.join("agents").join(agent_id).join("custom");
         if !custom_dir.exists() {
             return Ok(Vec::new());
         }
@@ -1878,14 +1900,23 @@ mod tests_new_layout {
 
         // Write session files
         let session_id = "test-session-123";
-        store.write_session_file(session_id, "notes", "Test notes").await.unwrap();
-        store.write_session_file(session_id, "scratch", "Scratch content").await.unwrap();
+        store
+            .write_session_file(session_id, "notes", "Test notes")
+            .await
+            .unwrap();
+        store
+            .write_session_file(session_id, "scratch", "Scratch content")
+            .await
+            .unwrap();
 
         // Read them back
         let notes = store.read_session_file(session_id, "notes").await.unwrap();
         assert_eq!(notes, "Test notes");
 
-        let scratch = store.read_session_file(session_id, "scratch").await.unwrap();
+        let scratch = store
+            .read_session_file(session_id, "scratch")
+            .await
+            .unwrap();
         assert_eq!(scratch, "Scratch content");
 
         // Non-existent file should return empty string
@@ -1903,7 +1934,10 @@ mod tests_new_layout {
 
         // Replace Domain Knowledge section
         let new_body = "- Device: TestDevice\n- Location: TestRoom\n";
-        store.replace_section("knowledge", "Domain Knowledge", new_body).await.unwrap();
+        store
+            .replace_section("knowledge", "Domain Knowledge", new_body)
+            .await
+            .unwrap();
 
         // Verify replacement
         let updated = store.read_file("knowledge").await.unwrap();
@@ -2232,7 +2266,9 @@ mod tests {
 
         // Write raw markdown
         let new_content = "# Test\n\nContent";
-        store.write_raw_markdown("system", "system", new_content).unwrap();
+        store
+            .write_raw_markdown("system", "system", new_content)
+            .unwrap();
         let read_back = store.read_raw_markdown("system", "system").unwrap();
         assert_eq!(read_back, new_content);
 

@@ -9,10 +9,10 @@
 //! - **Batch Optimization**: Group writes by device for efficiency
 //! - **Performance Monitoring**: Track operation latency and throughput
 
-use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -458,7 +458,8 @@ impl WriteBuffer {
 
     /// Signal the background flush task to stop.
     fn abort(&self) {
-        self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -536,10 +537,9 @@ impl TimeSeriesStore {
         });
 
         // Start background flush task
-        store.write_buffer.start_flush_task(
-            store.clone(),
-            config.write_buffer_flush_interval,
-        );
+        store
+            .write_buffer
+            .start_flush_task(store.clone(), config.write_buffer_flush_interval);
 
         *TIMESERIES_STORE_SINGLETON.lock() = Some(store.clone());
         Ok(store)
@@ -724,12 +724,7 @@ impl TimeSeriesStore {
         // Write each group in a single transaction
         for ((source_id, metric), points) in &groups {
             if let Err(e) = self.write_batch_sync(source_id, metric, points) {
-                tracing::error!(
-                    "Failed to flush batch for {}/{}: {}",
-                    source_id,
-                    metric,
-                    e
-                );
+                tracing::error!("Failed to flush batch for {}/{}: {}", source_id, metric, e);
             }
         }
 
@@ -784,7 +779,6 @@ impl TimeSeriesStore {
         self.write_buffer.abort();
         self.flush_buffer();
     }
-
 
     /// Update the latest value cache.
     async fn update_cache(&self, source_id: &str, metric: &str, point: DataPoint) {
@@ -1003,7 +997,11 @@ impl TimeSeriesStore {
             source_id: source_id.to_string(),
             metric: metric.to_string(),
             points,
-            total_count: if limit.is_some() { None } else { Some(total_count as usize) },
+            total_count: if limit.is_some() {
+                None
+            } else {
+                Some(total_count as usize)
+            },
         })
     }
 
@@ -1533,8 +1531,7 @@ impl TimeSeriesStore {
     /// Much faster than calling list_metrics() per source when you need all sources.
     pub async fn list_all_metrics_grouped(
         &self,
-    ) -> Result<std::collections::HashMap<String, std::collections::HashSet<String>>, Error>
-    {
+    ) -> Result<std::collections::HashMap<String, std::collections::HashSet<String>>, Error> {
         // Fast path: use metrics_info DashMap (populated on every write) instead of
         // full table scan. This turns an O(N) operation (N = total data points) into
         // O(M) where M = distinct (source_id, metric) pairs — typically 100-1000x fewer.
@@ -1547,8 +1544,10 @@ impl TimeSeriesStore {
                 // metrics_info key format: "{source_part}:{metric}"
                 // where source_part = "{type}:{id}" (e.g. "device:camera01").
                 // Split at the SECOND colon to correctly separate source_part from metric.
-                let colon_positions: Vec<usize> =
-                    key.char_indices().filter_map(|(i, c)| if c == ':' { Some(i) } else { None }).collect();
+                let colon_positions: Vec<usize> = key
+                    .char_indices()
+                    .filter_map(|(i, c)| if c == ':' { Some(i) } else { None })
+                    .collect();
                 if colon_positions.len() >= 2 {
                     let second_colon = colon_positions[1];
                     let source_id = &key[..second_colon];
@@ -1565,13 +1564,17 @@ impl TimeSeriesStore {
 
         // Cold-start fallback: metrics_info is empty (first call after process start).
         // Rebuild from database, then populate metrics_info for future fast-path calls.
-        tracing::info!("list_all_metrics_grouped: cold start, rebuilding metrics index from database");
+        tracing::info!(
+            "list_all_metrics_grouped: cold start, rebuilding metrics index from database"
+        );
 
         let read_txn = self.db.begin_read()?;
 
         let table = match read_txn.open_table(TIMESERIES_TABLE) {
             Ok(t) => t,
-            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(std::collections::HashMap::new()),
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Ok(std::collections::HashMap::new())
+            }
             Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
         };
 
@@ -1590,10 +1593,12 @@ impl TimeSeriesStore {
             // Populate metrics_info for future fast-path (only once per source:metric)
             let metric_key = format!("{}:{}", source_id, metric);
             if seen_keys.insert(metric_key.clone()) {
-                self.metrics_info.entry(metric_key).or_insert_with(|| MetricInfo {
-                    last_update: ts,
-                    point_count: 0, // We don't know exact count without counting; 0 is fine
-                });
+                self.metrics_info
+                    .entry(metric_key)
+                    .or_insert_with(|| MetricInfo {
+                        last_update: ts,
+                        point_count: 0, // We don't know exact count without counting; 0 is fine
+                    });
             } else {
                 // Update last_update to the latest timestamp for this metric
                 self.metrics_info
@@ -1825,7 +1830,8 @@ impl TimeSeriesStore {
 
         // If data fits within target, just return all points (no bucketing).
         if (total_count as usize) <= target_count {
-            let table2 = read_txn.open_table(TIMESERIES_TABLE)
+            let table2 = read_txn
+                .open_table(TIMESERIES_TABLE)
                 .map_err(|e| Error::Storage(format!("Failed to reopen table: {}", e)))?;
             let mut points = Vec::with_capacity(total_count as usize);
             for result in table2.range(start_key..=end_key)? {
@@ -1856,7 +1862,8 @@ impl TimeSeriesStore {
         let actual_buckets = actual_buckets.max(1);
         let mut buckets: Vec<Option<DataPoint>> = vec![None; actual_buckets];
 
-        let table2 = read_txn.open_table(TIMESERIES_TABLE)
+        let table2 = read_txn
+            .open_table(TIMESERIES_TABLE)
             .map_err(|e| Error::Storage(format!("Failed to reopen table: {}", e)))?;
 
         for result in table2.range(start_key..=end_key)? {
@@ -1888,8 +1895,14 @@ impl TimeSeriesStore {
         tracing::debug!(
             "query_range_bucketed: source_id={}, metric={}, start={}, end={}, \
              total={}, target={}, returned={}, bucket_size={}s",
-            source_id, metric, start, end,
-            total_count, target_count, points.len(), bucket_size,
+            source_id,
+            metric,
+            start,
+            end,
+            total_count,
+            target_count,
+            points.len(),
+            bucket_size,
         );
 
         Ok(TimeSeriesResult {
@@ -2261,10 +2274,7 @@ mod tests {
             .map(|i| DataPoint::new(1000 + i * 10, i as f64))
             .collect();
 
-        store
-            .write_batch("device1", "temp", points)
-            .await
-            .unwrap();
+        store.write_batch("device1", "temp", points).await.unwrap();
 
         // Verify all points are queryable
         let result = store
@@ -2644,21 +2654,19 @@ mod tests {
         // Get policy back
         let retrieved_policy = store.get_retention_policy().await;
         assert_eq!(retrieved_policy.default_hours, Some(24));
-        assert_eq!(
-            retrieved_policy.get_retention_hours("", "temp"),
-            Some(1)
-        );
+        assert_eq!(retrieved_policy.get_retention_hours("", "temp"), Some(1));
     }
 
     #[tokio::test]
     async fn test_data_point_with_quality_and_metadata() {
-        let point = DataPoint::new(1000, 42.0)
-            .with_quality(0.95)
-            .with_metadata(serde_json::json!({
-                "source": "sensor",
-                "unit": "celsius",
-                "location": "room1"
-            }));
+        let point =
+            DataPoint::new(1000, 42.0)
+                .with_quality(0.95)
+                .with_metadata(serde_json::json!({
+                    "source": "sensor",
+                    "unit": "celsius",
+                    "location": "room1"
+                }));
 
         assert_eq!(point.timestamp, 1000);
         assert_eq!(point.as_f64(), Some(42.0));

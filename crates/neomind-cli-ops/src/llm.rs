@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List configured LLM backends
 pub async fn list_backends(client: &ApiClient) -> Result<CliResponse> {
@@ -12,26 +12,54 @@ pub async fn list_backends(client: &ApiClient) -> Result<CliResponse> {
         for backend in backends.iter_mut() {
             let mut tags: Vec<String> = Vec::new();
 
-            if backend.get("is_active").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if backend
+                .get("is_active")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 tags.push("active".to_string());
             }
             if let Some(caps) = backend.get("capabilities") {
-                if caps.get("multimodal").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if caps
+                    .get("multimodal")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     tags.push("multimodal".to_string());
                 }
-                if caps.get("supports_images").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if caps
+                    .get("supports_images")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     tags.push("vision".to_string());
                 }
-                if caps.get("supports_audio").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if caps
+                    .get("supports_audio")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     tags.push("audio".to_string());
                 }
-                if caps.get("function_calling").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if caps
+                    .get("function_calling")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     tags.push("tool-use".to_string());
                 }
-                if caps.get("thinking_display").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if caps
+                    .get("thinking_display")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     tags.push("thinking".to_string());
                 }
-                if caps.get("streaming").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if caps
+                    .get("streaming")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     tags.push("streaming".to_string());
                 }
                 if let Some(ctx) = caps.get("max_context").and_then(|v| v.as_u64()) {
@@ -99,7 +127,11 @@ pub async fn create_backend(
         undo_command: format!("neomind llm delete {}", backend_id),
     };
 
-    Ok(CliResponse::success_with_meta(data, "LLM backend created", meta))
+    Ok(CliResponse::success_with_meta(
+        data,
+        "LLM backend created",
+        meta,
+    ))
 }
 
 /// Update an existing LLM backend
@@ -145,13 +177,17 @@ pub async fn delete_backend(client: &ApiClient, id: &str) -> Result<CliResponse>
 /// Activate an LLM backend (set as default)
 pub async fn activate_backend(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let body = json!({});
-    let data = client.post(&format!("/llm-backends/{}/activate", id), &body).await?;
+    let data = client
+        .post(&format!("/llm-backends/{}/activate", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "LLM backend activated"))
 }
 
 /// Test connection to an LLM backend
 pub async fn test_backend(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let body = json!({});
-    let data = client.post(&format!("/llm-backends/{}/test", id), &body).await?;
+    let data = client
+        .post(&format!("/llm-backends/{}/test", id), &body)
+        .await?;
     Ok(CliResponse::success(data, "LLM backend test completed"))
 }

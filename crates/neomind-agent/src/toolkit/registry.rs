@@ -177,7 +177,6 @@ impl ToolRegistry {
         let tool = self.tools.get("memory")?;
         tool.swap_agent_context(agent_id, knowledge_files)
     }
-
 }
 
 impl Default for ToolRegistry {

@@ -202,7 +202,10 @@ mod tests {
 
     #[test]
     fn test_channel_disabled_send() {
-        let channel = SlackChannel::new("test".to_string(), "https://hooks.slack.com/services/T/B/X".to_string());
+        let channel = SlackChannel::new(
+            "test".to_string(),
+            "https://hooks.slack.com/services/T/B/X".to_string(),
+        );
         let channel = channel.disabled();
         assert!(!channel.is_enabled());
 
@@ -214,7 +217,10 @@ mod tests {
 
     #[test]
     fn test_format_message() {
-        let channel = SlackChannel::new("test".to_string(), "https://hooks.slack.com/services/T/B/X".to_string());
+        let channel = SlackChannel::new(
+            "test".to_string(),
+            "https://hooks.slack.com/services/T/B/X".to_string(),
+        );
         let msg = make_test_message();
         let body = channel.format_message(&msg);
 

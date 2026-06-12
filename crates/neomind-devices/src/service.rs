@@ -20,16 +20,23 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Callback type for routing commands to extensions.
 /// Receives (extension_id, device_id, command_name, params) and returns Ok(()) on success.
-pub type ExtensionCommandRouter = dyn Fn(
-    String, // extension_id
-    String, // device_id
-    String, // command_name
-    HashMap<String, serde_json::Value>, // params
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
+pub type ExtensionCommandRouter =
+    dyn Fn(
+        String,                             // extension_id
+        String,                             // device_id
+        String,                             // command_name
+        HashMap<String, serde_json::Value>, // params
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
 
 /// Callback type for routing commands to extensions, Send + Sync version.
 pub type ExtensionCommandRouterFn = Arc<
-    dyn Fn(String, String, String, HashMap<String, serde_json::Value>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+    dyn Fn(
+            String,
+            String,
+            String,
+            HashMap<String, serde_json::Value>,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
         + Send
         + Sync,
 >;
@@ -406,8 +413,9 @@ impl DeviceService {
                         // Skip virtual metrics for device status tracking.
                         // Virtual metrics come from extensions/transforms, not real devices.
                         // We still write them to telemetry storage below.
-                        if !neomind_core::NeoMindEvent::is_virtual_device_metric(is_virtual, &metric)
-                        {
+                        if !neomind_core::NeoMindEvent::is_virtual_device_metric(
+                            is_virtual, &metric,
+                        ) {
                             let mut status = device_status.write().await;
                             let entry = status.entry(device_id.clone()).or_default();
                             let now_ts = chrono::Utc::now().timestamp();
@@ -473,7 +481,10 @@ impl DeviceService {
                                 quality: None,
                             };
 
-                            if let Err(e) = storage.write(&format!("device:{}", device_id), &metric, data_point).await {
+                            if let Err(e) = storage
+                                .write(&format!("device:{}", device_id), &metric, data_point)
+                                .await
+                            {
                                 tracing::warn!("Failed to write telemetry to storage: {}", e);
                             }
                         } else {
@@ -550,7 +561,9 @@ impl DeviceService {
                         // Check if this device is stale
                         // Use status field directly (not is_connected()) because is_connected()
                         // also checks last_seen timeout, making the conditions mutually exclusive
-                        if matches!(status.status, ConnectionStatus::Connected) && config.is_stale(status.last_seen) {
+                        if matches!(status.status, ConnectionStatus::Connected)
+                            && config.is_stale(status.last_seen)
+                        {
                             stale_devices.push((device_id.clone(), status.last_seen));
                         } else if status.last_seen == 0 {
                             // Device was never seen - mark as disconnected
@@ -694,7 +707,10 @@ impl DeviceService {
             match storage.list_metrics(&format!("device:{}", device_id)).await {
                 Ok(metrics) if !metrics.is_empty() => {
                     // Pick the first metric and get its latest data point
-                    if let Ok(Some(latest)) = storage.latest(&format!("device:{}", device_id), &metrics[0]).await {
+                    if let Ok(Some(latest)) = storage
+                        .latest(&format!("device:{}", device_id), &metrics[0])
+                        .await
+                    {
                         let ts = latest.timestamp;
                         tracing::debug!(
                             "Migrating last_seen for {} → {} from telemetry",
@@ -1041,10 +1057,7 @@ impl DeviceService {
 
     /// Find a device by its telemetry topic
     /// This is used by MQTT adapters to route messages from custom topics
-    pub fn find_device_by_telemetry_topic(
-        &self,
-        topic: &str,
-    ) -> Option<(String, DeviceConfig)> {
+    pub fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
         self.registry.find_device_by_telemetry_topic(topic)
     }
 
@@ -1128,12 +1141,11 @@ impl DeviceService {
         // Route extension devices through the extension command router
         // (skip payload building — extensions receive raw params, not MQTT payloads)
         if config.adapter_type == "extension" {
-            let extension_id = config
-                .adapter_id
-                .as_deref()
-                .ok_or_else(|| DeviceError::InvalidParameter(
+            let extension_id = config.adapter_id.as_deref().ok_or_else(|| {
+                DeviceError::InvalidParameter(
                     "Device has no adapter_id set. Re-install the extension to fix this.".into(),
-                ))?;
+                )
+            })?;
 
             let router = {
                 let r = self.extension_command_router.read().await;
@@ -1141,7 +1153,14 @@ impl DeviceService {
             };
 
             if let Some(router) = router {
-                match router(extension_id.to_string(), device_id.to_string(), command_name.to_string(), params).await {
+                match router(
+                    extension_id.to_string(),
+                    device_id.to_string(),
+                    command_name.to_string(),
+                    params,
+                )
+                .await
+                {
                     Ok(()) => {
                         self.update_command_status(
                             device_id,
@@ -1506,7 +1525,9 @@ impl DeviceService {
                     Err(e) => {
                         tracing::warn!(
                             "Failed to get latest values for {} ({} metrics): {}",
-                            device_id, metric_names.len(), e
+                            device_id,
+                            metric_names.len(),
+                            e
                         );
                     }
                 }
@@ -1565,7 +1586,9 @@ impl DeviceService {
 
     /// Update last_seen timestamp for a device (called when metrics are written by extensions)
     pub async fn update_last_seen(&self, device_id: &str, last_seen_secs: i64) {
-        self.registry.update_last_seen(device_id, last_seen_secs).await;
+        self.registry
+            .update_last_seen(device_id, last_seen_secs)
+            .await;
     }
 
     /// Get all device statuses

@@ -150,9 +150,7 @@ impl super::ChannelFactory for DingTalkChannelFactory {
         let access_token = config
             .get("access_token")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                Error::InvalidConfiguration("Missing access_token".to_string())
-            })?;
+            .ok_or_else(|| Error::InvalidConfiguration("Missing access_token".to_string()))?;
 
         let name = config
             .get("name")
@@ -246,11 +244,7 @@ mod tests {
 
     #[test]
     fn test_format_message() {
-        let channel = DingTalkChannel::new(
-            "test".to_string(),
-            "token".to_string(),
-            None,
-        );
+        let channel = DingTalkChannel::new("test".to_string(), "token".to_string(), None);
         let msg = make_test_message();
         let body = channel.format_body(&msg);
 

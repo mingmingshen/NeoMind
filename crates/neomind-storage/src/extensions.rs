@@ -3,9 +3,9 @@
 //! This module provides persistent storage for dynamically loaded extensions,
 //! ensuring that registered extensions survive server restarts.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -350,14 +350,13 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            let mut record: ExtensionRecord =
-                serde_json::from_slice(
-                    table
-                        .get(id)?
-                        .expect("extension record should exist (checked above)")
-                        .value(),
-                )
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let mut record: ExtensionRecord = serde_json::from_slice(
+                table
+                    .get(id)?
+                    .expect("extension record should exist (checked above)")
+                    .value(),
+            )
+            .map_err(|e| Error::Serialization(e.to_string()))?;
             record.last_error = Some(error.to_string());
             record.last_error_at = Some(Utc::now().timestamp());
             record.health_status = "error".to_string();
@@ -383,14 +382,13 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            let mut record: ExtensionRecord =
-                serde_json::from_slice(
-                    table
-                        .get(id)?
-                        .expect("extension record should exist (checked above)")
-                        .value(),
-                )
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let mut record: ExtensionRecord = serde_json::from_slice(
+                table
+                    .get(id)?
+                    .expect("extension record should exist (checked above)")
+                    .value(),
+            )
+            .map_err(|e| Error::Serialization(e.to_string()))?;
             record.health_status = status.to_string();
             if status == "ok" {
                 // Clear error if status is ok

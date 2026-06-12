@@ -134,7 +134,10 @@ impl AuthState {
         });
 
         let keys = if keys.is_empty() {
-            info!(category = "auth", "No API keys found, generating default key");
+            info!(
+                category = "auth",
+                "No API keys found, generating default key"
+            );
             Self::generate_default_key_silent(&crypto)
         } else {
             keys
@@ -282,7 +285,9 @@ impl AuthState {
     }
 
     /// Generate a default API key without printing banner (for CLI use).
-    fn generate_default_key_silent(crypto: &CryptoService) -> HashMap<String, (String, ApiKeyInfo)> {
+    fn generate_default_key_silent(
+        crypto: &CryptoService,
+    ) -> HashMap<String, (String, ApiKeyInfo)> {
         let key = format!("nmk_{}", Uuid::new_v4().to_string().replace("-", ""));
         let info = ApiKeyInfo {
             id: Uuid::new_v4().to_string(),
@@ -426,7 +431,11 @@ impl AuthState {
         if let Err(e) = self.save_to_db(&self.db_path) {
             error!(category = "auth", error = %e, "Failed to persist API keys to database");
         } else {
-            info!(category = "auth", count = self.api_keys.len(), "API keys persisted to storage");
+            info!(
+                category = "auth",
+                count = self.api_keys.len(),
+                "API keys persisted to storage"
+            );
         }
     }
 
@@ -577,7 +586,8 @@ pub async fn hybrid_auth_middleware(
     // handler already validated the share token, so we trust them.
     if headers
         .get("x-internal-proxy")
-        .and_then(|v| v.to_str().ok()) == Some("share")
+        .and_then(|v| v.to_str().ok())
+        == Some("share")
     {
         // Insert a service account session for logging purposes
         let proxy_session = crate::auth_users::SessionInfo {

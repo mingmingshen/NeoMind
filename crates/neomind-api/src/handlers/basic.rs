@@ -4,8 +4,8 @@ use axum::{extract::State, Json};
 use serde::Serialize;
 use serde_json::json;
 
-use super::ServerState;
 use super::common::{ok, HandlerResult};
+use super::ServerState;
 
 /// Health check response.
 #[derive(Debug, Clone, Serialize)]
@@ -163,4 +163,3 @@ fn get_wifi_ssid() -> Option<String> {
     }
     None
 }
-

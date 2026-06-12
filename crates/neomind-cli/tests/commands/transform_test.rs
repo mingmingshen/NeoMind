@@ -35,9 +35,9 @@ fn test_transform_metrics_help() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
     cmd.arg("transform").arg("metrics").arg("--help");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("List virtual metrics from transforms"));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "List virtual metrics from transforms",
+    ));
 }
 
 /// Test transform test-code help.

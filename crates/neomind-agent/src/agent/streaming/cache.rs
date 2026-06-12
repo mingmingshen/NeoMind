@@ -137,7 +137,9 @@ fn is_read_only_cli_command(command: &str) -> bool {
     }
     // `neomind <domain> <action> ...`
     let parts: Vec<&str> = trimmed.splitn(3, ' ').collect();
-    let action = parts.get(2).map(|s| s.split_whitespace().next().unwrap_or(""));
+    let action = parts
+        .get(2)
+        .map(|s| s.split_whitespace().next().unwrap_or(""));
     match action {
         Some(act) => READ_ONLY_ACTIONS.contains(&act),
         None => true, // `neomind <domain>` with no action defaults to list

@@ -22,6 +22,7 @@ pub mod memory;
 pub mod message_channels;
 pub mod messages;
 pub mod mqtt;
+pub mod onboarding;
 pub mod rules;
 pub mod sessions;
 pub mod settings;
@@ -69,11 +70,11 @@ pub use settings::llm_generate_handler;
 pub use stats::{get_device_stats_handler, get_rule_stats_handler, get_system_stats_handler};
 // Extensions API
 pub use extensions::{
+    clear_extension_logs_handler,
     execute_extension_command_handler,
     extension_health_handler,
     get_extension_handler,
     get_extension_logs_handler,
-    clear_extension_logs_handler,
     // Command-based extension handlers
     list_extension_commands_handler,
     list_extension_data_sources_handler,
@@ -94,8 +95,8 @@ pub use llm_backends::{
 };
 // Instances API
 pub use instances::{
-    create_instance_handler, delete_instance_handler, get_instance_handler,
-    list_instances_handler, test_instance_handler, update_instance_handler,
+    create_instance_handler, delete_instance_handler, get_instance_handler, list_instances_handler,
+    test_instance_handler, update_instance_handler,
 };
 // User Authentication API
 pub use auth_users::{
@@ -115,10 +116,9 @@ pub use messages::{
 pub use message_channels::{
     add_recipient_handler, create_channel_handler, delete_channel_handler,
     get_channel_filter_handler, get_channel_handler, get_channel_stats_handler,
-    get_channel_type_schema_handler, list_channel_types_handler,
-    list_channels_handler, list_recipients_handler,
-    remove_recipient_handler, test_channel_handler, toggle_enabled_handler,
-    update_channel_filter_handler, update_channel_handler,
+    get_channel_type_schema_handler, list_channel_types_handler, list_channels_handler,
+    list_recipients_handler, remove_recipient_handler, test_channel_handler,
+    toggle_enabled_handler, update_channel_filter_handler, update_channel_handler,
 };
 // Unified Data API
 pub use data::{list_all_data_sources_handler, query_telemetry_handler};
@@ -127,6 +127,6 @@ pub use tools::{get_tool_handler, list_tools_handler};
 // System Memory API
 pub use memory::{
     delete_memory_file, export_all, export_memory, get_all_memory, get_category, get_config,
-    get_memory_content, get_stats, trigger_compress, update_category,
-    update_config, update_memory_content,
+    get_memory_content, get_stats, trigger_compress, update_category, update_config,
+    update_memory_content,
 };

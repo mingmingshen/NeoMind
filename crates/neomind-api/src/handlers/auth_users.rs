@@ -103,7 +103,9 @@ pub async fn get_auth_status_handler(
         }
     }
 
-    Err(AuthError::InvalidToken("Authentication required".to_string()))
+    Err(AuthError::InvalidToken(
+        "Authentication required".to_string(),
+    ))
 }
 
 /// Change password handler.

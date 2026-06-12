@@ -73,10 +73,7 @@ unsafe impl<T> Send for SendPtr<T> {}
 /// safely cancelled) and an error is returned. The runner remains alive but
 /// the hung thread will eventually finish or be cleaned up when the process
 /// exits.
-pub(crate) fn safe_ffi_call_with_timeout<F, T>(
-    label: &str,
-    f: F,
-) -> Result<T, String>
+pub(crate) fn safe_ffi_call_with_timeout<F, T>(label: &str, f: F) -> Result<T, String>
 where
     F: FnOnce() -> T + UnwindSafe + Send + 'static,
     T: Send + 'static,
@@ -329,7 +326,10 @@ mod tests {
         // Verify response was received
         let received = rx.recv().unwrap();
         match received {
-            IpcResponse::Success { request_id: rid, data } => {
+            IpcResponse::Success {
+                request_id: rid,
+                data,
+            } => {
                 assert_eq!(rid, request_id);
                 assert_eq!(data["result"], "ok");
             }
@@ -623,9 +623,7 @@ mod tests {
 
         match parsed {
             IpcMessage::CapabilityResult {
-                request_id,
-                error,
-                ..
+                request_id, error, ..
             } => {
                 assert_eq!(request_id, 501);
                 assert_eq!(error.as_deref(), Some("Operation failed"));
@@ -791,7 +789,10 @@ mod tests {
         let parsed = IpcResponse::from_bytes(&bytes).unwrap();
 
         match parsed {
-            IpcResponse::Metrics { request_id, metrics } => {
+            IpcResponse::Metrics {
+                request_id,
+                metrics,
+            } => {
                 assert_eq!(request_id, 30);
                 assert_eq!(metrics.len(), 1);
                 assert_eq!(metrics[0].name, "temp");
@@ -811,7 +812,10 @@ mod tests {
         let parsed = IpcResponse::from_bytes(&bytes).unwrap();
 
         match parsed {
-            IpcResponse::Health { request_id, healthy } => {
+            IpcResponse::Health {
+                request_id,
+                healthy,
+            } => {
                 assert_eq!(request_id, 40);
                 assert_eq!(healthy, true);
             }
@@ -1131,7 +1135,6 @@ mod tests {
 
     #[test]
     fn test_ipc_response_request_id_extraction() {
-
         let test_cases = vec![
             (
                 IpcResponse::Success {

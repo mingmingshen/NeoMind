@@ -184,9 +184,10 @@ pub async fn list_devices_handler(
             chrono::DateTime::from_timestamp(effective_last_seen, 0).map(|dt| dt.to_rfc3339())
         };
 
-        let last_seen_dt =
-            chrono::DateTime::from_timestamp(effective_last_seen, 0).unwrap_or_else(chrono::Utc::now);
-        let instance = config_to_device_instance(&config, convert_status(device_status.status), last_seen_dt);
+        let last_seen_dt = chrono::DateTime::from_timestamp(effective_last_seen, 0)
+            .unwrap_or_else(chrono::Utc::now);
+        let instance =
+            config_to_device_instance(&config, convert_status(device_status.status), last_seen_dt);
 
         // Look up template from batch-fetched map (no per-device lock)
         let template = template_map.get(config.device_type.as_str());
@@ -566,10 +567,7 @@ pub async fn get_devices_current_batch_handler(
                 let mut values = std::collections::HashMap::new();
                 for (metric_name, result) in results {
                     if let Ok(Some(point)) = result {
-                        values.insert(
-                            metric_name,
-                            super::metrics::value_to_json(&point.value),
-                        );
+                        values.insert(metric_name, super::metrics::value_to_json(&point.value));
                     }
                 }
                 values

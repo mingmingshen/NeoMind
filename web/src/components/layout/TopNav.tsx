@@ -22,6 +22,7 @@ import {
   Bot,
   Check,
   Database,
+  Rocket,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -43,6 +44,8 @@ import {
 import { ThemeToggle } from "./ThemeToggle"
 import { InstanceSelector } from "./InstanceSelector"
 import { InstanceManagerDialog } from "@/components/instances/InstanceManagerDialog"
+import { OnboardingDialog } from "@/components/onboarding/OnboardingDialog"
+import { useOnboarding } from "@/hooks/useOnboarding"
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, startTransition } from "react"
 import { setTopNavHeight } from "@/hooks/useVisualViewport"
 import { useIsMobile } from "@/hooks/useMobile"
@@ -102,6 +105,15 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
   const acknowledgeAlert = useStore((state) => state.acknowledgeAlert)
   const [alertDropdownOpen, setAlertDropdownOpen] = useState(false)
   const [instanceManagerOpen, setInstanceManagerOpen] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
+
+  // Onboarding status for the Rocket button badge
+  const { status: onboardingStatus, dismiss: dismissOnboarding, fetchStatus: fetchOnboardingStatus } = useOnboarding()
+
+  // Fetch onboarding status on mount
+  useEffect(() => {
+    fetchOnboardingStatus()
+  }, [fetchOnboardingStatus])
 
   // Fetch alerts on mount and periodically (60s, reduced from 30s)
   useEffect(() => {
@@ -251,6 +263,29 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
             >
               {i18n.language === 'zh' ? '中' : 'EN'}
             </Button>
+
+            {/* Onboarding guide */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-10 h-10 rounded-lg relative"
+                  onClick={() => setOnboardingOpen(true)}
+                  aria-label={t('onboarding.title')}
+                >
+                  <Rocket className="h-4 w-4" />
+                  {onboardingStatus && !onboardingStatus.dismissed && (
+                    (!onboardingStatus.steps.llm.completed || !onboardingStatus.steps.device.completed)
+                  ) && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs px-2 py-1">
+                {t('onboarding.title')}
+              </TooltipContent>
+            </Tooltip>
 
             {/* Theme toggle */}
             <ThemeToggle />
@@ -419,6 +454,14 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
       <InstanceManagerDialog
         open={instanceManagerOpen}
         onOpenChange={setInstanceManagerOpen}
+      />
+
+      {/* Onboarding Dialog */}
+      <OnboardingDialog
+        open={onboardingOpen}
+        onOpenChange={setOnboardingOpen}
+        status={onboardingStatus}
+        onDismiss={dismissOnboarding}
       />
     </TooltipProvider>
   )

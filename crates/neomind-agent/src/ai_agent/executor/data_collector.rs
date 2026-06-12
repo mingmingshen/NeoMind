@@ -976,8 +976,10 @@ impl AgentExecutor {
 
             // Last outcome from most recent journal entry
             if let Some(last) = agent.memory.journal.records.last() {
-                memory_summary
-                    .insert("last_conclusion".to_string(), serde_json::json!(last.outcome));
+                memory_summary.insert(
+                    "last_conclusion".to_string(),
+                    serde_json::json!(last.outcome),
+                );
             }
 
             // Recent outcomes (up to 2)
@@ -1282,7 +1284,9 @@ pub(crate) fn extract_image_data(
                 .or(obj.get("type"))
                 .and_then(|v| v.as_str())
                 .map(|m| m.to_string())
-                .or_else(|| crate::image_utils::infer_mime_from_base64_prefix(base64).map(|s| s.to_string()))
+                .or_else(|| {
+                    crate::image_utils::infer_mime_from_base64_prefix(base64).map(|s| s.to_string())
+                })
                 .unwrap_or_else(|| "image/jpeg".to_string());
             return (None, Some(base64.to_string()), Some(mime));
         }

@@ -624,7 +624,6 @@ impl SemanticToolMapper {
 
         context
     }
-
 }
 
 impl Clone for SemanticToolMapper {

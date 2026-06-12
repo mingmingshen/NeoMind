@@ -605,14 +605,8 @@ pub async fn register_template(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn register_template(
-    context: &Context,
-    template: &Value,
-) -> Result<Value, CapabilityError> {
-    context.invoke_capability(
-        capabilities::DEVICE_TEMPLATE_REGISTER,
-        template,
-    )
+pub fn register_template(context: &Context, template: &Value) -> Result<Value, CapabilityError> {
+    context.invoke_capability(capabilities::DEVICE_TEMPLATE_REGISTER, template)
 }
 
 // ============================================================================
@@ -621,10 +615,7 @@ pub fn register_template(
 
 /// Register a device instance
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn register_device(
-    context: &Context,
-    device: &Value,
-) -> Result<Value, CapabilityError> {
+pub async fn register_device(context: &Context, device: &Value) -> Result<Value, CapabilityError> {
     context
         .invoke_capability(ExtensionCapability::DeviceRegister, device)
         .await
@@ -632,14 +623,8 @@ pub async fn register_device(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn register_device(
-    context: &Context,
-    device: &Value,
-) -> Result<Value, CapabilityError> {
-    context.invoke_capability(
-        capabilities::DEVICE_REGISTER,
-        device,
-    )
+pub fn register_device(context: &Context, device: &Value) -> Result<Value, CapabilityError> {
+    context.invoke_capability(capabilities::DEVICE_REGISTER, device)
 }
 
 // ============================================================================
@@ -662,10 +647,7 @@ pub async fn unregister_device(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn unregister_device(
-    context: &Context,
-    device_id: &str,
-) -> Result<Value, CapabilityError> {
+pub fn unregister_device(context: &Context, device_id: &str) -> Result<Value, CapabilityError> {
     context.invoke_capability(
         capabilities::DEVICE_UNREGISTER,
         &json!({"device_id": device_id}),

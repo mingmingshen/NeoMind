@@ -9,10 +9,10 @@
 //! - **Batch operations**: Insert and search multiple vectors at once
 //! - **Hybrid search**: Combine vector similarity with keyword matching
 
+use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use dashmap::DashMap;
 use rand::random;

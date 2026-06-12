@@ -30,7 +30,8 @@ impl DataSourceMatcher {
                 }
             }
         }
-        self.last_values.insert(source_id.to_string(), value.to_string());
+        self.last_values
+            .insert(source_id.to_string(), value.to_string());
         true
     }
 }

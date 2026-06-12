@@ -57,14 +57,16 @@ pub struct MqttConfigResponse {
 /// Resolve broker configuration from broker_id.
 fn resolve_broker_config(broker_id: &str) -> Result<(String, u16, String, String), ErrorResponse> {
     if broker_id == "embedded" {
-        let store = config::open_settings_store()
-            .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+        let store = config::open_settings_store().map_err(|e| {
+            ErrorResponse::internal(format!("Failed to open settings store: {}", e))
+        })?;
         let settings = store.get_mqtt_settings();
         let host = crate::handlers::common::get_server_host();
         Ok((host, settings.port, String::new(), String::new()))
     } else {
-        let store = config::open_settings_store()
-            .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+        let store = config::open_settings_store().map_err(|e| {
+            ErrorResponse::internal(format!("Failed to open settings store: {}", e))
+        })?;
         let broker = store
             .load_external_broker(broker_id)
             .map_err(|e| ErrorResponse::internal(format!("Failed to load broker: {}", e)))?
@@ -210,10 +212,7 @@ pub async fn ble_provision_handler(
 
     // Phase 2: register the device
     let mut extra = HashMap::new();
-    extra.insert(
-        "ble_provisioned".to_string(),
-        serde_json::Value::Bool(true),
-    );
+    extra.insert("ble_provisioned".to_string(), serde_json::Value::Bool(true));
     extra.insert(
         "provisioned_at".to_string(),
         serde_json::Value::String(chrono::Utc::now().to_rfc3339()),

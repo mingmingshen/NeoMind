@@ -165,5 +165,4 @@ mod tests {
         // Same pointer
         assert!(std::ptr::eq(r1, r2));
     }
-
 }

@@ -3392,7 +3392,9 @@ fn load_extension_components(
                 .data_binding
                 .map(DataBindingDto::from)
                 .unwrap_or_default(),
-            data_source_allowed_types: def._other.get("dataSourceAllowedTypes")
+            data_source_allowed_types: def
+                ._other
+                .get("dataSourceAllowedTypes")
                 .or_else(|| def._other.get("data_source_allowed_types"))
                 .and_then(|v| serde_json::from_value(v.clone()).ok()),
             has_device_binding: def.has_device_binding,

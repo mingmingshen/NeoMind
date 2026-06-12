@@ -538,7 +538,11 @@ impl ChannelRegistry {
     /// Get recipients for a channel.
     pub async fn get_recipients(&self, channel_name: &str) -> Vec<String> {
         let state = self.state.read().await;
-        state.recipients.get(channel_name).cloned().unwrap_or_default()
+        state
+            .recipients
+            .get(channel_name)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Add a recipient to a channel.
@@ -563,7 +567,10 @@ impl ChannelRegistry {
         // Add to memory
         {
             let mut state = self.state.write().await;
-            let channel_recipients = state.recipients.entry(channel_name.to_string()).or_default();
+            let channel_recipients = state
+                .recipients
+                .entry(channel_name.to_string())
+                .or_default();
             if channel_recipients.contains(&email.to_string()) {
                 return Err(Error::InvalidConfiguration(
                     "Recipient already exists".to_string(),
@@ -625,7 +632,10 @@ impl ChannelRegistry {
             if let Err(e) = self.recreate_email_channel(channel_name).await {
                 // Rollback: add back to memory
                 let mut state = self.state.write().await;
-                let channel_recipients = state.recipients.entry(channel_name.to_string()).or_default();
+                let channel_recipients = state
+                    .recipients
+                    .entry(channel_name.to_string())
+                    .or_default();
                 channel_recipients.push(email.to_string());
                 return Err(e);
             }
@@ -707,7 +717,11 @@ impl ChannelRegistry {
             };
             let channel_recipients = {
                 let state = self.state.read().await;
-                state.recipients.get(channel_name).cloned().unwrap_or_default()
+                state
+                    .recipients
+                    .get(channel_name)
+                    .cloned()
+                    .unwrap_or_default()
             };
             (db, channel_recipients)
         };

@@ -99,7 +99,8 @@ mod tests {
 
     #[test]
     fn test_format_output_human_success() {
-        let response = CliResponse::success(json!({"id": "123", "count": 42}), "Operation completed");
+        let response =
+            CliResponse::success(json!({"id": "123", "count": 42}), "Operation completed");
         let output = format_output(&response, OutputFormat::Human);
 
         assert!(output.contains("✅"));

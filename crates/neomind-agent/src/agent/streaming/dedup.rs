@@ -69,8 +69,14 @@ mod tests {
     #[test]
     fn test_dedup_keeps_latest() {
         let results = vec![
-            ("shell".to_string(), r#"{"device_id":"d1","status":"ok"}"#.to_string()),
-            ("shell".to_string(), r#"{"device_id":"d1","status":"updated"}"#.to_string()),
+            (
+                "shell".to_string(),
+                r#"{"device_id":"d1","status":"ok"}"#.to_string(),
+            ),
+            (
+                "shell".to_string(),
+                r#"{"device_id":"d1","status":"updated"}"#.to_string(),
+            ),
         ];
         let deduped = deduplicate_tool_results(&results);
         assert_eq!(deduped.len(), 1);
@@ -80,8 +86,14 @@ mod tests {
     #[test]
     fn test_dedup_different_entities_kept() {
         let results = vec![
-            ("shell".to_string(), r#"{"device_id":"d1","value":1}"#.to_string()),
-            ("shell".to_string(), r#"{"device_id":"d2","value":2}"#.to_string()),
+            (
+                "shell".to_string(),
+                r#"{"device_id":"d1","value":1}"#.to_string(),
+            ),
+            (
+                "shell".to_string(),
+                r#"{"device_id":"d2","value":2}"#.to_string(),
+            ),
         ];
         let deduped = deduplicate_tool_results(&results);
         assert_eq!(deduped.len(), 2);

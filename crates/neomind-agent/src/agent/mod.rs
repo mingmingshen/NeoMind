@@ -1155,7 +1155,6 @@ impl Agent {
         Ok(())
     }
 
-
     /// Set a custom LLM runtime directly (for testing purposes).
     pub async fn set_custom_llm(&self, llm: Arc<dyn LlmRuntime>) {
         self.llm_interface.set_llm(llm).await;
@@ -1621,11 +1620,12 @@ impl Agent {
         for image_data in &images {
             // Parse via shared utility — handles data URLs, raw base64, and
             // jpg/jpeg aliasing consistently across all multimodal paths.
-            let parsed = crate::image_utils::parse_image_data(image_data)
-                .unwrap_or(crate::image_utils::ParsedImage {
+            let parsed = crate::image_utils::parse_image_data(image_data).unwrap_or(
+                crate::image_utils::ParsedImage {
                     mime_type: "image/png",
                     base64: image_data.as_str(),
-                });
+                },
+            );
             let mime_type_str = parsed.mime_type;
             let base64_part = parsed.base64;
 
@@ -2722,11 +2722,7 @@ END"#
         let mut last_attempt = 0u32;
 
         for attempt in 0..=MAX_RETRIES {
-            match self
-                .tools
-                .execute(&real_tool_name, exec_args.clone())
-                .await
-            {
+            match self.tools.execute(&real_tool_name, exec_args.clone()).await {
                 Ok(output) => {
                     let elapsed = start.elapsed();
 
@@ -3132,5 +3128,4 @@ mod tests {
         let history = agent.history().await;
         assert!(history.len() >= 2); // user + assistant
     }
-
 }

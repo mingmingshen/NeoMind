@@ -5,8 +5,8 @@
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::EventBus;
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    ExecutionMode, ExecutionJournal, ScheduleType,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionJournal,
+    ExecutionMode, ScheduleType,
 };
 use std::sync::Arc;
 
@@ -449,10 +449,7 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
         }
 
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-        println!(
-            "  ✅ {} 完成",
-            name,
-        );
+        println!("  ✅ {} 完成", name,);
         let _ = &agent.conversation_history;
     }
 

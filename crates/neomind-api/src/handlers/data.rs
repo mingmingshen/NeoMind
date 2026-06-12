@@ -89,12 +89,29 @@ pub async fn list_all_data_sources_handler(
     let need_transform = filter_type.is_none() || filter_type == Some("transform");
 
     // Collect sources from all needed types in parallel
-    let (mut device_sources, mut extension_sources, mut transform_sources) =
-        tokio::join!(
-            async { if need_device { collect_device_sources_parallel(&state).await } else { vec![] } },
-            async { if need_extension { collect_extension_sources_parallel(&state).await } else { vec![] } },
-            async { if need_transform { collect_transform_sources_parallel(&state).await } else { vec![] } },
-        );
+    let (mut device_sources, mut extension_sources, mut transform_sources) = tokio::join!(
+        async {
+            if need_device {
+                collect_device_sources_parallel(&state).await
+            } else {
+                vec![]
+            }
+        },
+        async {
+            if need_extension {
+                collect_extension_sources_parallel(&state).await
+            } else {
+                vec![]
+            }
+        },
+        async {
+            if need_transform {
+                collect_transform_sources_parallel(&state).await
+            } else {
+                vec![]
+            }
+        },
+    );
     sources.append(&mut device_sources);
     sources.append(&mut extension_sources);
     sources.append(&mut transform_sources);
@@ -191,7 +208,12 @@ async fn populate_latest_values(state: &ServerState, sources: &mut [UnifiedDataS
         .collect();
 
     // Execute all queries concurrently
-    let results = futures::future::join_all(futures.into_iter().map(|(i, f)| async move { (i, f.await) })).await;
+    let results = futures::future::join_all(
+        futures
+            .into_iter()
+            .map(|(i, f)| async move { (i, f.await) }),
+    )
+    .await;
 
     // Apply results back to sources by index
     for (idx, result) in results {
@@ -264,10 +286,7 @@ async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDa
         let mut known_metrics: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // 1. Add template-defined metrics
-        let template = state
-            .devices
-            .registry
-            .get_template(&device.device_type);
+        let template = state.devices.registry.get_template(&device.device_type);
 
         if let Some(template) = template {
             for metric in &template.metrics {

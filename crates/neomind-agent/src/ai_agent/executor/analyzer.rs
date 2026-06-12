@@ -182,16 +182,23 @@ impl AgentExecutor {
 
         // Build system prompt using the shared builder (no tools, no invocation)
         let config = ToolLoopConfig::focused_plus(agent);
-        let knowledge_content = self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
+        let knowledge_content =
+            self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
         let system_prompt = super::tool_prompt::build_tool_system_prompt(
-            agent, data, None, &config, knowledge_content.as_ref(),
+            agent,
+            data,
+            None,
+            &config,
+            knowledge_content.as_ref(),
         );
 
         // Build user message with data summary
         let data_lines = build_compact_data_summary(data);
         let image_info = if !image_sources_info.is_empty() && !has_valid_images {
-            format!("\n\n[Image data unavailable — LLM does not support vision: {}]",
-                image_sources_info.join(", "))
+            format!(
+                "\n\n[Image data unavailable — LLM does not support vision: {}]",
+                image_sources_info.join(", ")
+            )
         } else {
             String::new()
         };
@@ -252,7 +259,10 @@ impl AgentExecutor {
             Ok(result) => result,
             Err(_) => {
                 tracing::warn!(agent_id = %agent.id, "LLM timed out after {}s", LLM_TIMEOUT_SECS);
-                return Err(NeoMindError::Llm(format!("LLM timeout after {}s", LLM_TIMEOUT_SECS)));
+                return Err(NeoMindError::Llm(format!(
+                    "LLM timeout after {}s",
+                    LLM_TIMEOUT_SECS
+                )));
             }
         };
 
@@ -270,13 +280,17 @@ impl AgentExecutor {
                 "No data was available for analysis.".to_string()
             } else {
                 let summary: Vec<&str> = data_lines.iter().map(|s| s.as_str()).take(10).collect();
-                format!("Collected data (LLM analysis unavailable):\n{}", summary.join("\n"))
+                format!(
+                    "Collected data (LLM analysis unavailable):\n{}",
+                    summary.join("\n")
+                )
             };
             return Ok((
                 data_summary.clone(),
                 vec![ReasoningStep {
                     step_number: 1,
-                    description: "LLM returned empty response — falling back to raw data summary".to_string(),
+                    description: "LLM returned empty response — falling back to raw data summary"
+                        .to_string(),
                     step_type: "fallback".to_string(),
                     input: None,
                     output: String::new(),
@@ -328,26 +342,30 @@ impl AgentExecutor {
         if let Some(ref bus) = self.event_bus {
             let ts = chrono::Utc::now().timestamp();
             for step in &reasoning_steps {
-                let _ = bus.publish(NeoMindEvent::AgentThinking {
-                    agent_id: agent.id.clone(),
-                    execution_id: execution_id.to_string(),
-                    step_number: step.step_number,
-                    step_type: step.step_type.clone(),
-                    description: step.description.clone(),
-                    details: None,
-                    timestamp: ts,
-                }).await;
+                let _ = bus
+                    .publish(NeoMindEvent::AgentThinking {
+                        agent_id: agent.id.clone(),
+                        execution_id: execution_id.to_string(),
+                        step_number: step.step_number,
+                        step_type: step.step_type.clone(),
+                        description: step.description.clone(),
+                        details: None,
+                        timestamp: ts,
+                    })
+                    .await;
             }
             for decision in &decisions {
-                let _ = bus.publish(NeoMindEvent::AgentDecision {
-                    agent_id: agent.id.clone(),
-                    execution_id: execution_id.to_string(),
-                    description: decision.description.clone(),
-                    rationale: decision.rationale.clone(),
-                    action: decision.action.clone(),
-                    confidence: 0.7,
-                    timestamp: ts,
-                }).await;
+                let _ = bus
+                    .publish(NeoMindEvent::AgentDecision {
+                        agent_id: agent.id.clone(),
+                        execution_id: execution_id.to_string(),
+                        description: decision.description.clone(),
+                        rationale: decision.rationale.clone(),
+                        action: decision.action.clone(),
+                        confidence: 0.7,
+                        timestamp: ts,
+                    })
+                    .await;
             }
         }
 
@@ -483,10 +501,7 @@ impl AgentExecutor {
 /// - `image_sources_info`: human-readable description strings for the text summary.
 fn collect_image_parts(
     data: &[DataCollected],
-) -> (
-    Vec<(String, String, ImageContent)>,
-    Vec<String>,
-) {
+) -> (Vec<(String, String, ImageContent)>, Vec<String>) {
     let mut image_parts = Vec::new();
     let mut image_sources_info = Vec::new(); // Track image sources for text summary
 
@@ -540,9 +555,7 @@ fn collect_image_parts(
                 // Clean base64: strip whitespace/newlines, remove non-base64 characters
                 let cleaned_base64: String = base64
                     .chars()
-                    .filter(|c| {
-                        c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '='
-                    })
+                    .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '=')
                     .collect();
                 // Fix padding
                 let padded_len = (cleaned_base64.len() + 3) & !3;

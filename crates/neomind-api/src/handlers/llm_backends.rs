@@ -620,13 +620,14 @@ pub async fn update_capabilities_override_handler(
         // Source attribution: 3-tier (registry / heuristic / unknown).
         // Use the same logic as `adjust_capabilities_for_model` so the source
         // is consistent across creation, update, and override-clear paths.
-        let source: Option<&str> = if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
-            Some("registry")
-        } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
-            Some("heuristic")
-        } else {
-            None
-        };
+        let source: Option<&str> =
+            if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
+                Some("registry")
+            } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
+                Some("heuristic")
+            } else {
+                None
+            };
         tracing::info!(
             backend_id = %id,
             model = %instance.model,

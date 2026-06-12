@@ -488,8 +488,7 @@ impl EventPublishingAdapter {
                                 format!("adapter:discovery:{}", device.device_id)
                             }
                             _ => {
-                                let device_id =
-                                    event.device_id().unwrap_or("unknown").to_string();
+                                let device_id = event.device_id().unwrap_or("unknown").to_string();
                                 format!("adapter:{}", device_id)
                             }
                         };

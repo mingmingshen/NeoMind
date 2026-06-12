@@ -66,13 +66,14 @@ fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendI
     if instance.capabilities.supports_multimodal != detected_multimodal {
         // Value changed — must update. Compute new source based on which layer
         // produced the value.
-        let source: Option<&str> = if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
-            Some("registry")
-        } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
-            Some("heuristic")
-        } else {
-            None
-        };
+        let source: Option<&str> =
+            if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
+                Some("registry")
+            } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
+                Some("heuristic")
+            } else {
+                None
+            };
         tracing::info!(
             backend_id = %instance.id,
             backend_type = ?instance.backend_type,
@@ -90,13 +91,14 @@ fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendI
         // value. If a previous "runtime_api" source was set, we leave it
         // alone — the value came from a runtime probe and we have no reason
         // to relabel it.
-        let source: Option<&str> = if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
-            Some("registry")
-        } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
-            Some("heuristic")
-        } else {
-            None
-        };
+        let source: Option<&str> =
+            if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
+                Some("registry")
+            } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
+                Some("heuristic")
+            } else {
+                None
+            };
         instance.capabilities.multimodal_source = source.map(str::to_string);
     }
     instance
@@ -243,10 +245,11 @@ impl LlmBackendInstanceManager {
                     // explicitly overridden by the user.
                     let user_override = instance.capabilities.multimodal_user_override;
                     // Effective "old" multimodal depends on override
-                    let old_multimodal = user_override
-                        .unwrap_or(instance.capabilities.supports_multimodal);
+                    let old_multimodal =
+                        user_override.unwrap_or(instance.capabilities.supports_multimodal);
                     let multimodal_changed = old_multimodal != caps.supports_multimodal;
-                    let other_changed = instance.capabilities.supports_thinking != caps.supports_thinking
+                    let other_changed = instance.capabilities.supports_thinking
+                        != caps.supports_thinking
                         || instance.capabilities.supports_tools != caps.supports_tools
                         || instance.capabilities.max_context != caps.max_context;
                     if multimodal_changed || other_changed {
@@ -268,11 +271,16 @@ impl LlmBackendInstanceManager {
                         }
                         updated.capabilities.supports_thinking = caps.supports_thinking;
                         updated.capabilities.supports_tools = caps.supports_tools;
-                        let cap = std::env::var("NEOMIND_MAX_CONTEXT").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX); updated.capabilities.max_context = caps.max_context.min(cap);
+                        let cap = std::env::var("NEOMIND_MAX_CONTEXT")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .unwrap_or(usize::MAX);
+                        updated.capabilities.max_context = caps.max_context.min(cap);
                         // Always update source to indicate the runtime API was consulted
                         // (but only when there's no user override, since override is authoritative).
                         if user_override.is_none() {
-                            updated.capabilities.multimodal_source = Some("runtime_api".to_string());
+                            updated.capabilities.multimodal_source =
+                                Some("runtime_api".to_string());
                         }
                         let _ = self.storage.save_instance(&updated);
                         self.instances.insert(instance.id.clone(), updated);
@@ -349,8 +357,8 @@ impl LlmBackendInstanceManager {
                         // Respect user override — only update fields that aren't explicitly
                         // overridden by the user. Same pattern as the Ollama path above.
                         let user_override = instance.capabilities.multimodal_user_override;
-                        let old_multimodal = user_override
-                            .unwrap_or(instance.capabilities.supports_multimodal);
+                        let old_multimodal =
+                            user_override.unwrap_or(instance.capabilities.supports_multimodal);
                         let multimodal_changed = old_multimodal != caps.supports_multimodal;
                         let other_changed = instance.capabilities.max_context != caps.max_context
                             || instance.capabilities.supports_tools != caps.supports_tools;
@@ -367,7 +375,8 @@ impl LlmBackendInstanceManager {
                             let mut updated = instance.clone();
                             if user_override.is_none() {
                                 updated.capabilities.supports_multimodal = caps.supports_multimodal;
-                                updated.capabilities.multimodal_source = Some("runtime_api".to_string());
+                                updated.capabilities.multimodal_source =
+                                    Some("runtime_api".to_string());
                             }
                             updated.capabilities.supports_thinking = caps.supports_thinking;
                             updated.capabilities.supports_tools = caps.supports_tools;
@@ -410,15 +419,84 @@ impl LlmBackendInstanceManager {
                 ));
             }
         } else {
-            // For cloud backends, use the generic create_backend
-            let config = serde_json::json!({
-                "base_url": instance.endpoint,
-                "model": instance.model,
-                "api_key": instance.api_key,
-            });
+            // For cloud backends (OpenAI-compatible providers), construct a
+            // CloudRuntime and apply a capabilities override derived from the
+            // stored instance — mirroring the Ollama / llama.cpp branches above.
+            //
+            // This override is REQUIRED. Without it the runtime falls back to
+            // the `is_vision_model()` name heuristic, which can disagree with
+            // the authoritative stored capabilities and report text-only models
+            // (e.g. DeepSeek-V4, Qwen text tiers) as multimodal. The chat then
+            // sends `image_url` content parts and the upstream API rejects the
+            // request with `unknown variant image_url, expected text`.
+            #[cfg(feature = "cloud")]
+            {
+                use super::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
 
-            create_backend(instance.backend_name(), &config)
-                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
+                let provider = match instance.backend_type {
+                    LlmBackendType::OpenAi => Some(CloudProvider::OpenAI),
+                    LlmBackendType::Anthropic => Some(CloudProvider::Anthropic),
+                    LlmBackendType::Google => Some(CloudProvider::Google),
+                    LlmBackendType::XAi => Some(CloudProvider::Grok),
+                    LlmBackendType::Qwen => Some(CloudProvider::Qwen),
+                    LlmBackendType::DeepSeek => Some(CloudProvider::DeepSeek),
+                    LlmBackendType::GLM => Some(CloudProvider::GLM),
+                    LlmBackendType::MiniMax => Some(CloudProvider::MiniMax),
+                    // Ollama / LlamaCpp are handled by earlier branches; any
+                    // future type falls through to generic construction.
+                    _ => None,
+                };
+
+                match provider {
+                    Some(provider) => {
+                        let mut cfg: CloudConfig = serde_json::from_value(serde_json::json!({
+                            "base_url": instance.endpoint,
+                            "model": instance.model,
+                            // api_key is a required non-optional field on CloudConfig.
+                            "api_key": instance.api_key.clone().unwrap_or_default(),
+                        }))
+                        .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
+                        cfg.provider = provider;
+
+                        let runtime = CloudRuntime::new(cfg)
+                            .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
+
+                        // Effective multimodal honors the user override (sacred);
+                        // all other capability fields come straight from storage.
+                        let caps = &instance.capabilities;
+                        let effective_multimodal = caps
+                            .multimodal_user_override
+                            .unwrap_or(caps.supports_multimodal);
+                        let runtime = runtime.with_capabilities_override(
+                            effective_multimodal,
+                            caps.supports_thinking,
+                            caps.supports_tools,
+                            caps.max_context,
+                        );
+
+                        Arc::new(runtime) as Arc<dyn LlmRuntime>
+                    }
+                    None => {
+                        let config = serde_json::json!({
+                            "base_url": instance.endpoint,
+                            "model": instance.model,
+                            "api_key": instance.api_key,
+                        });
+                        create_backend(instance.backend_name(), &config)
+                            .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
+                    }
+                }
+            }
+            #[cfg(not(feature = "cloud"))]
+            {
+                let config = serde_json::json!({
+                    "base_url": instance.endpoint,
+                    "model": instance.model,
+                    "api_key": instance.api_key,
+                });
+                create_backend(instance.backend_name(), &config)
+                    .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
+            }
         };
 
         Ok(runtime)
@@ -1007,9 +1085,8 @@ impl LlmBackendInstanceManager {
     async fn query_ollama_multimodal(&self, inst: &LlmBackendInstance) -> Option<bool> {
         use super::backends::ollama::{ModelCapability, OllamaConfig, OllamaRuntime};
 
-        let config = OllamaConfig::new(&inst.model).with_endpoint(
-            inst.endpoint.as_deref().unwrap_or("http://localhost:11434"),
-        );
+        let config = OllamaConfig::new(&inst.model)
+            .with_endpoint(inst.endpoint.as_deref().unwrap_or("http://localhost:11434"));
         let runtime = OllamaRuntime::new(config).ok()?;
         runtime
             .fetch_capabilities_from_api()

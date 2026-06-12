@@ -1,6 +1,9 @@
 /// Helper function to extract an array from a JSON value, handling both direct arrays
 /// and truncated nested structures ({"items": [...], "_total_count": N, ...})
-pub(crate) fn extract_array(json_value: &serde_json::Value, key: &str) -> Option<Vec<serde_json::Value>> {
+pub(crate) fn extract_array(
+    json_value: &serde_json::Value,
+    key: &str,
+) -> Option<Vec<serde_json::Value>> {
     // First try to get the key directly as an array
     if let Some(arr) = json_value.get(key).and_then(|v| v.as_array()) {
         return Some(arr.clone());
@@ -18,7 +21,11 @@ pub(crate) fn extract_array(json_value: &serde_json::Value, key: &str) -> Option
 
 /// Format results from CLI domain tools (device, agent, rule, message, extension)
 /// by detecting the JSON structure. Handles structured JSON results from CLI commands.
-pub(crate) fn format_cli_tool_result(tool_name: &str, json: &serde_json::Value, response: &mut String) {
+pub(crate) fn format_cli_tool_result(
+    tool_name: &str,
+    json: &serde_json::Value,
+    response: &mut String,
+) {
     // Detect what kind of result this is based on JSON structure
 
     // Agent list: has "agents" key with array or nested object
@@ -554,8 +561,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
             // with "command"/"stdout"/"exit_code" keys. Other tools return
             // domain-specific JSON (devices, rules, agents, etc.).
             if json_value.get("command").is_some()
-                && (json_value.get("stdout").is_some()
-                    || json_value.get("exit_code").is_some())
+                && (json_value.get("stdout").is_some() || json_value.get("exit_code").is_some())
             {
                 // Shell/CliResponse format
                 let cmd = json_value
@@ -588,19 +594,12 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 if let Some(stderr) = json_value.get("stderr").and_then(|s| s.as_str()) {
                     if !stderr.is_empty() {
-                        response.push_str(&format!(
-                            "**stderr:**\n```\n{}\n```\n",
-                            stderr
-                        ));
+                        response.push_str(&format!("**stderr:**\n```\n{}\n```\n", stderr));
                     }
                 }
             } else {
                 // Non-shell JSON — detect structure for formatting
-                format_cli_tool_result(
-                    tool_name,
-                    &json_value,
-                    &mut response,
-                );
+                format_cli_tool_result(tool_name, &json_value, &mut response);
             }
         } else {
             // Result is not valid JSON, use as-is

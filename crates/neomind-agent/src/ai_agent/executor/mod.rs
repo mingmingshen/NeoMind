@@ -16,21 +16,9 @@ use neomind_devices::DeviceService;
 use crate::llm_backends::{CloudConfig, CloudRuntime};
 use neomind_messages::MessageManager;
 use neomind_storage::{
-    AgentExecutionRecord,
-    AgentResource,
-    AgentStore,
-    AgentToolConfig,
-    AiAgent,
-    DataCollected,
-    Decision,
-    DecisionProcess,
-    ExecutionRecord,
-    ExecutionResult as StorageExecutionResult,
-    ExecutionStatus,
-    GeneratedReport,
-    LlmBackendStore,
-    MarkdownMemoryStore,
-    ReasoningStep,
+    AgentExecutionRecord, AgentResource, AgentStore, AgentToolConfig, AiAgent, DataCollected,
+    Decision, DecisionProcess, ExecutionRecord, ExecutionResult as StorageExecutionResult,
+    ExecutionStatus, GeneratedReport, LlmBackendStore, MarkdownMemoryStore, ReasoningStep,
     ResourceType,
 };
 use std::collections::HashMap;
@@ -73,9 +61,7 @@ pub(crate) struct ToolLoopOutput {
 pub(crate) enum DedupOutcome {
     /// Some tool calls survived deduplication.
     /// Contains the count and signatures of cross-round duplicates that were dropped.
-    HasNew {
-        skipped_cross_round: Vec<String>,
-    },
+    HasNew { skipped_cross_round: Vec<String> },
     /// All tool calls were duplicates.
     AllDuplicate,
 }
@@ -132,8 +118,8 @@ impl ToolLoopConfig {
 
 // Sub-modules
 mod analyzer;
-mod compact;
 mod command_executor;
+mod compact;
 mod context;
 mod data_collector;
 mod event_trigger;
@@ -141,18 +127,16 @@ mod intent;
 mod llm_runtime;
 mod memory;
 mod response_parser;
+mod tool_loop;
 mod tool_prompt;
 mod tool_result;
-mod tool_loop;
 
 // Re-export public types
 pub(crate) use analyzer::AnalysisResult;
 pub use context::{DataSourceRef, EventTriggerData};
 
 // Re-export functions needed by sibling modules (via use super::*)
-pub(crate) use context::{
-    build_history_context, format_timestamp, truncate_to, HistoryConfig,
-};
+pub(crate) use context::{build_history_context, format_timestamp, truncate_to, HistoryConfig};
 pub(crate) use data_collector::get_time_context;
 pub(crate) use intent::extract_threshold;
 pub(crate) use response_parser::{
@@ -290,7 +274,8 @@ pub struct AgentExecutor {
     pub(crate) llm_runtime_cache:
         Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
     /// Phase 3.3: Extension registry for dynamic tool loading
-    pub(crate) extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    pub(crate) extension_registry:
+        Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     /// Tool registry for function calling mode (wrapped for late initialization)
     pub(crate) tool_registry: parking_lot::RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>,
     /// Memory store for extracting learned patterns
@@ -460,7 +445,8 @@ impl AgentExecutor {
             neomind_storage::agents::ExecutionMode::Focused => ToolLoopConfig::focused_plus(agent),
         };
 
-        let (mut filtered_tools, mut tool_name_map) = Self::filter_tools(&registry, &agent.tool_config);
+        let (mut filtered_tools, mut tool_name_map) =
+            Self::filter_tools(&registry, &agent.tool_config);
 
         // When the LLM already supports vision AND images are embedded in the
         // multimodal user message, remove the `vision` tool to prevent redundant
@@ -468,7 +454,10 @@ impl AgentExecutor {
         // wastes a round, passes truncated data (the LLM can only reference a
         // tiny preview in tool arguments), and may hit rate limits.
         let has_images_in_data = data_collected.iter().any(|d| {
-            d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false)
+            d.values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
         });
         let llm_supports_vision = llm_runtime.capabilities().supports_images;
         if has_images_in_data && llm_supports_vision {
@@ -497,10 +486,16 @@ impl AgentExecutor {
         // Pre-fetch knowledge file content for inline injection.
         // This avoids wasting a tool-call round to read files the agent already
         // knows about — especially valuable in Focused+ mode with only 3 rounds.
-        let knowledge_content = self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
+        let knowledge_content =
+            self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
 
-        let system_prompt =
-            tool_prompt::build_tool_system_prompt(agent, data_collected, invocation_input, &tool_config, knowledge_content.as_ref());
+        let system_prompt = tool_prompt::build_tool_system_prompt(
+            agent,
+            data_collected,
+            invocation_input,
+            &tool_config,
+            knowledge_content.as_ref(),
+        );
         let mut messages = tool_prompt::build_tool_messages(&system_prompt, data_collected);
 
         let loop_output = self
@@ -529,8 +524,8 @@ impl AgentExecutor {
         let has_malformed_output = loop_output.final_text.contains("</parameter>")
             || loop_output.final_text.contains("</function>")
             || loop_output.final_text.contains("</tool_call");
-        let llm_generation_failed = loop_output.final_text
-            == "LLM generation failed during tool execution.";
+        let llm_generation_failed =
+            loop_output.final_text == "LLM generation failed during tool execution.";
 
         if no_tools_executed && (llm_generation_failed || has_malformed_output) {
             tracing::info!(
@@ -793,8 +788,12 @@ impl AgentExecutor {
         let execution_result: AgentResult<(DecisionProcess, StorageExecutionResult)> =
             match tokio::time::timeout(
                 std::time::Duration::from_secs(GLOBAL_EXECUTION_TIMEOUT_SECS),
-                std::panic::AssertUnwindSafe(self.execute_internal(context, event_data.clone(), per_exec_knowledge_files.clone()))
-                    .catch_unwind(),
+                std::panic::AssertUnwindSafe(self.execute_internal(
+                    context,
+                    event_data.clone(),
+                    per_exec_knowledge_files.clone(),
+                ))
+                .catch_unwind(),
             )
             .await
             {
@@ -1060,7 +1059,9 @@ impl AgentExecutor {
         &self,
         context: ExecutionContext,
         event_data: Option<EventTriggerData>,
-        per_exec_knowledge_files: Option<Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>>,
+        per_exec_knowledge_files: Option<
+            Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
+        >,
     ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let mut agent = context.agent;
         let agent_id = agent.id.clone();
@@ -1358,8 +1359,8 @@ impl AgentExecutor {
 
                 // Step 5: Update memory with learnings
                 // Reflect partial failures in action execution
-                let focused_success = actions_executed.is_empty()
-                    || actions_executed.iter().all(|a| a.success);
+                let focused_success =
+                    actions_executed.is_empty() || actions_executed.iter().all(|a| a.success);
                 let mut updated_memory = self
                     .update_memory(
                         &agent,

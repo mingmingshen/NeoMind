@@ -35,7 +35,12 @@ pub(crate) fn build_tool_system_prompt(
     // ── Event trigger callout (if triggered by data event) ──
     let event_callout = data_collected
         .iter()
-        .find(|d| d.values.get("_is_event_data").and_then(|v| v.as_bool()).unwrap_or(false))
+        .find(|d| {
+            d.values
+                .get("_is_event_data")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
         .map(|d| {
             let value_str = if let Some(v) = d.values.get("value") {
                 match v {
@@ -66,9 +71,17 @@ pub(crate) fn build_tool_system_prompt(
 
     // ── Context: User Messages → Knowledge Files → Journal ──
     let history_section = if config.is_focused_plus {
-        build_history_context(agent, &HistoryConfig::focused(agent.context_window_size), knowledge_content)
+        build_history_context(
+            agent,
+            &HistoryConfig::focused(agent.context_window_size),
+            knowledge_content,
+        )
     } else {
-        build_history_context(agent, &HistoryConfig::free(agent.context_window_size), knowledge_content)
+        build_history_context(
+            agent,
+            &HistoryConfig::free(agent.context_window_size),
+            knowledge_content,
+        )
     };
 
     // Build invocation input section
@@ -196,7 +209,11 @@ pub(crate) fn build_focused_resource_section(
             device_info_map.insert(&d.source, &d.values);
             continue;
         }
-        if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if d.values
+            .get("_is_image")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             image_sources.push(&d.source);
             continue;
         }
@@ -224,8 +241,14 @@ pub(crate) fn build_focused_resource_section(
         let mut devices: Vec<_> = device_info_map.iter().collect();
         devices.sort_by_key(|(id, _)| *id);
         for (device_id, info) in devices {
-            let name = info.get("name").and_then(|v| v.as_str()).unwrap_or(device_id);
-            let dev_type = info.get("device_type").and_then(|v| v.as_str()).unwrap_or("-");
+            let name = info
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(device_id);
+            let dev_type = info
+                .get("device_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-");
             let display = if name != *device_id {
                 format!("{} ({})", device_id, name)
             } else {
@@ -253,18 +276,29 @@ pub(crate) fn build_focused_resource_section(
         let (current, age_str) = latest_values
             .get(r.resource_id.as_str())
             .map(|(v, age)| {
-                let age_fmt = if *age == 0 { "now".to_string() } else { format!("{}s", age) };
+                let age_fmt = if *age == 0 {
+                    "now".to_string()
+                } else {
+                    format!("{}s", age)
+                };
                 (v.clone(), age_fmt)
             })
             .unwrap_or_else(|| ("-".to_string(), "-".to_string()));
-        section.push_str(&format!("| {} | {} | {} | {} |\n", display_name, type_str, current, age_str));
+        section.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            display_name, type_str, current, age_str
+        ));
     }
 
     // Add any data sources not in resources
     for (source, (value, age)) in &latest_values {
         let source_id = source.to_string();
         if !agent.resources.iter().any(|r| r.resource_id == source_id) {
-            let age_fmt = if *age == 0 { "now".to_string() } else { format!("{}s", age) };
+            let age_fmt = if *age == 0 {
+                "now".to_string()
+            } else {
+                format!("{}s", age)
+            };
             section.push_str(&format!("| {} | - | {} | {} |\n", source, value, age_fmt));
         }
     }
@@ -283,7 +317,10 @@ pub(crate) fn build_focused_resource_section(
 
 /// Build merged resource + data section for Free mode.
 /// Resource list + JSON data dump in one section.
-pub(crate) fn build_free_resource_section(agent: &AiAgent, data_collected: &[DataCollected]) -> String {
+pub(crate) fn build_free_resource_section(
+    agent: &AiAgent,
+    data_collected: &[DataCollected],
+) -> String {
     let mut section = String::from("\n## Resources & Data\n");
 
     if !agent.resources.is_empty() {
@@ -298,7 +335,11 @@ pub(crate) fn build_free_resource_section(agent: &AiAgent, data_collected: &[Dat
     let data_text: Vec<String> = data_collected
         .iter()
         .filter(|d| {
-            if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if d.values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 return false;
             }
             if d.source == "system"
@@ -352,7 +393,10 @@ pub(crate) fn build_free_resource_section(agent: &AiAgent, data_collected: &[Dat
 }
 
 /// Build initial messages (system + user) with multimodal image support.
-pub(crate) fn build_tool_messages(system_prompt: &str, data_collected: &[DataCollected]) -> Vec<Message> {
+pub(crate) fn build_tool_messages(
+    system_prompt: &str,
+    data_collected: &[DataCollected],
+) -> Vec<Message> {
     // Collect image parts
     let image_parts: Vec<ContentPart> = data_collected
         .iter()
@@ -383,18 +427,17 @@ pub(crate) fn build_tool_messages(system_prompt: &str, data_collected: &[DataCol
                         })
                         .unwrap_or_else(|| "image/jpeg".to_string());
                     // Clean base64: handle URL-safe chars, strip whitespace, fix padding
-                    let cleaned: String = base64.chars().filter_map(|c| match c {
-                        '-' => Some('+'),
-                        '_' => Some('/'),
-                        c if c.is_ascii_alphanumeric()
-                            || c == '+'
-                            || c == '/'
-                            || c == '=' =>
-                        {
-                            Some(c)
-                        }
-                        _ => None, // skip whitespace/newlines
-                    }).collect();
+                    let cleaned: String = base64
+                        .chars()
+                        .filter_map(|c| match c {
+                            '-' => Some('+'),
+                            '_' => Some('/'),
+                            c if c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' => {
+                                Some(c)
+                            }
+                            _ => None, // skip whitespace/newlines
+                        })
+                        .collect();
                     let padded_len = (cleaned.len() + 3) & !3;
                     let padded = if cleaned.len() < padded_len {
                         let mut s = cleaned;

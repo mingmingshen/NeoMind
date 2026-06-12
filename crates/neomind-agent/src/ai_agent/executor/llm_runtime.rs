@@ -4,7 +4,11 @@ use super::*;
 
 impl AgentExecutor {
     /// Build a cache key for LLM runtime based on backend configuration.
-    pub(super) fn build_runtime_cache_key(backend_type: &str, endpoint: &str, model: &str) -> String {
+    pub(super) fn build_runtime_cache_key(
+        backend_type: &str,
+        endpoint: &str,
+        model: &str,
+    ) -> String {
         format!("{}|{}|{}", backend_type, endpoint, model)
     }
 

@@ -2,9 +2,9 @@
 //!
 //! Provides persistent storage for visual dashboards with components.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::sync::OnceLock;
 
 use redb::{Database, ReadableTable, TableDefinition};

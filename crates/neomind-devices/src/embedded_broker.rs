@@ -191,7 +191,11 @@ impl rmqtt::hook::Handler for NeoMindAuthHandler {
                     tracing::debug!("Auth hook: validating user='{}'", uname_str);
                     if (self.credential_validator)(uname_str, pwd_str) {
                         let is_superuser = uname_str == "__neomind_internal__";
-                        tracing::debug!("Auth hook: user='{}' authenticated (super={})", uname_str, is_superuser);
+                        tracing::debug!(
+                            "Auth hook: user='{}' authenticated (super={})",
+                            uname_str,
+                            is_superuser
+                        );
                         return (
                             false,
                             Some(rmqtt::hook::HookResult::AuthResult(
@@ -199,9 +203,15 @@ impl rmqtt::hook::Handler for NeoMindAuthHandler {
                             )),
                         );
                     }
-                    tracing::warn!("Auth hook: credential validation failed for user='{}'", uname_str);
+                    tracing::warn!(
+                        "Auth hook: credential validation failed for user='{}'",
+                        uname_str
+                    );
                 } else {
-                    tracing::warn!("Auth hook: password is not valid UTF-8 for user='{}'", uname_str);
+                    tracing::warn!(
+                        "Auth hook: password is not valid UTF-8 for user='{}'",
+                        uname_str
+                    );
                 }
             } else {
                 tracing::debug!("Auth hook: missing username or password (anonymous connection)");
@@ -252,10 +262,7 @@ impl EmbeddedBroker {
 
     /// Create with default configuration
     pub fn with_default() -> Self {
-        Self::new(
-            EmbeddedBrokerConfig::default(),
-            Arc::new(|_, _| false),
-        )
+        Self::new(EmbeddedBrokerConfig::default(), Arc::new(|_, _| false))
     }
 
     /// Check if the broker is running
@@ -275,7 +282,8 @@ impl EmbeddedBroker {
         if old != enabled {
             tracing::info!(
                 "Embedded broker auth_enabled changed: {} -> {}",
-                old, enabled
+                old,
+                enabled
             );
         }
     }
@@ -314,10 +322,7 @@ impl EmbeddedBroker {
 
         // If port is in use, wait briefly for it to be released
         if check_port_sync(config.port) {
-            tracing::info!(
-                "Port {} still in use, waiting for release...",
-                config.port
-            );
+            tracing::info!("Port {} still in use, waiting for release...", config.port);
             let wait_start = std::time::Instant::now();
             let max_wait = std::time::Duration::from_secs(5);
             loop {
@@ -374,19 +379,22 @@ impl EmbeddedBroker {
             let cert_path = config.tls_cert_path.as_deref().ok_or_else(|| {
                 EmbeddedBrokerError::Config("TLS certificate path required".to_string())
             })?;
-            let key_path = config.tls_key_path.as_deref().ok_or_else(|| {
-                EmbeddedBrokerError::Config("TLS key path required".to_string())
-            })?;
+            let key_path = config
+                .tls_key_path
+                .as_deref()
+                .ok_or_else(|| EmbeddedBrokerError::Config("TLS key path required".to_string()))?;
 
             // Verify cert and key files exist and are readable before passing to rmqtt
             if !std::path::Path::new(cert_path).exists() {
                 return Err(EmbeddedBrokerError::Config(format!(
-                    "TLS certificate file not found: {}", cert_path
+                    "TLS certificate file not found: {}",
+                    cert_path
                 )));
             }
             if !std::path::Path::new(key_path).exists() {
                 return Err(EmbeddedBrokerError::Config(format!(
-                    "TLS key file not found: {}", key_path
+                    "TLS key file not found: {}",
+                    key_path
                 )));
             }
 
@@ -489,8 +497,9 @@ mod tests {
 
     #[test]
     fn test_socket_addr() {
-        let config =
-            EmbeddedBrokerConfig::new().with_port(1883).with_listen("0.0.0.0");
+        let config = EmbeddedBrokerConfig::new()
+            .with_port(1883)
+            .with_listen("0.0.0.0");
         let addr = config.socket_addr().expect("Failed to get socket address");
         assert_eq!(addr.port(), 1883);
         assert_eq!(addr.ip(), std::net::Ipv4Addr::new(0, 0, 0, 0));

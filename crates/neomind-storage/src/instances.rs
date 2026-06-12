@@ -2,9 +2,9 @@
 //!
 //! Stores metadata about remote NeoMind backend instances for multi-backend switching.
 
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -114,7 +114,10 @@ impl InstanceRecord {
 
     /// Return a response-safe copy with masked api_key and encrypted full key.
     pub fn for_response(&self) -> InstanceResponse {
-        let encrypted_key = self.api_key.as_ref().map(|k| xor_encode(k, get_key_cipher()));
+        let encrypted_key = self
+            .api_key
+            .as_ref()
+            .map(|k| xor_encode(k, get_key_cipher()));
         InstanceResponse {
             id: self.id.clone(),
             name: self.name.clone(),
@@ -228,8 +231,7 @@ impl InstanceStore {
 
     /// Create an in-memory store (for testing)
     pub fn memory() -> Result<Arc<Self>, Error> {
-        let db = Database::builder()
-            .create_with_backend(redb::backends::InMemoryBackend::new())?;
+        let db = Database::builder().create_with_backend(redb::backends::InMemoryBackend::new())?;
 
         let store = Arc::new(InstanceStore {
             db: Arc::new(db),

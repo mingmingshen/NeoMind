@@ -1,7 +1,7 @@
-use anyhow::Result;
-use serde_json::json;
 use crate::types::CliResponse;
 use crate::ApiClient;
+use anyhow::Result;
+use serde_json::json;
 
 /// List all data connectors with compact summary.
 ///
@@ -43,7 +43,12 @@ fn extract_list_array(data: &serde_json::Value, key: &str) -> Option<Vec<serde_j
         .map(|a| a.clone())
         .or_else(|| data.get(key).and_then(|v| v.as_array()).cloned())
         .or_else(|| data.get("data").and_then(|d| d.as_array()).cloned())
-        .or_else(|| data.get("data").and_then(|d| d.get(key)).and_then(|v| v.as_array()).cloned())
+        .or_else(|| {
+            data.get("data")
+                .and_then(|d| d.get(key))
+                .and_then(|v| v.as_array())
+                .cloned()
+        })
 }
 
 /// Get connector by ID
@@ -79,12 +84,17 @@ pub async fn create_connector(
     }
     if let Some(topics) = subscribe_topics {
         // Accept comma-separated topics
-        let topic_list: Vec<&str> = topics.split(',').map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
+        let topic_list: Vec<&str> = topics
+            .split(',')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .collect();
         body["subscribe_topics"] = json!(topic_list);
     }
 
     let data = client.post("/brokers", &body).await?;
-    let connected = data.get("broker")
+    let connected = data
+        .get("broker")
         .and_then(|b| b.get("connected"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
@@ -93,7 +103,10 @@ pub async fn create_connector(
     let msg = if connected {
         format!("{} connector created and connected", type_label)
     } else {
-        format!("{} connector created (connection pending or failed)", type_label)
+        format!(
+            "{} connector created (connection pending or failed)",
+            type_label
+        )
     };
 
     Ok(CliResponse::success(data, &msg))
@@ -132,7 +145,11 @@ pub async fn update_connector(
         body["password"] = json!(p);
     }
     if let Some(topics) = subscribe_topics {
-        let topic_list: Vec<&str> = topics.split(',').map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
+        let topic_list: Vec<&str> = topics
+            .split(',')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .collect();
         body["subscribe_topics"] = json!(topic_list);
     }
 
@@ -143,14 +160,26 @@ pub async fn update_connector(
 /// Delete a connector
 pub async fn delete_connector(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/brokers/{}", id)).await?;
-    Ok(CliResponse::success(json!({ "id": id }), "Connector deleted"))
+    Ok(CliResponse::success(
+        json!({ "id": id }),
+        "Connector deleted",
+    ))
 }
 
 /// Test connector connection
 pub async fn test_connector(client: &ApiClient, id: &str) -> Result<CliResponse> {
-    let data = client.post(&format!("/brokers/{}/test", id), &json!({})).await?;
-    let success = data.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-    let msg = if success { "Connector connection successful" } else { "Connector connection failed" };
+    let data = client
+        .post(&format!("/brokers/{}/test", id), &json!({}))
+        .await?;
+    let success = data
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let msg = if success {
+        "Connector connection successful"
+    } else {
+        "Connector connection failed"
+    };
     Ok(CliResponse::success(data, msg))
 }
 
@@ -161,7 +190,11 @@ pub async fn list_subscriptions(client: &ApiClient) -> Result<CliResponse> {
 }
 
 /// Subscribe to an MQTT topic
-pub async fn subscribe_topic(client: &ApiClient, topic: &str, qos: Option<u8>) -> Result<CliResponse> {
+pub async fn subscribe_topic(
+    client: &ApiClient,
+    topic: &str,
+    qos: Option<u8>,
+) -> Result<CliResponse> {
     let body = json!({
         "topic": topic,
         "qos": qos.unwrap_or(1),

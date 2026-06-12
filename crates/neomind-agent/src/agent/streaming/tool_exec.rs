@@ -57,8 +57,7 @@ pub(crate) async fn execute_with_retry_impl(
     // If mapper resolved a CLI domain name to "shell", convert the structured args
     // into a CLI command string that ShellTool expects: {"command": "neomind <domain> ..."}
     let exec_args = if real_tool_name == "shell" && name != "shell" {
-        crate::tools::mapper::build_cli_command(name, &arguments)
-            .unwrap_or(arguments.clone())
+        crate::tools::mapper::build_cli_command(name, &arguments).unwrap_or(arguments.clone())
     } else {
         arguments.clone()
     };
