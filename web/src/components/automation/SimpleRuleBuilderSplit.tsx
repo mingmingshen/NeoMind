@@ -1322,43 +1322,43 @@ function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensio
       {/* Action type buttons */}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() => {
-          const newAction: RuleAction = { type: 'Log', level: 'info', message: '' }
-          onActionsChange([...actions, newAction])
-        }}>
-          <FileText className="h-4 w-4 mr-1" />
-          {tBuilder('logRecord') || 'Log'}
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => {
-          const newAction: RuleAction = { type: 'Notify', message: '', channels: [] }
-          onActionsChange([...actions, newAction])
-        }}>
-          <Bell className="h-4 w-4 mr-1" />
-          {tBuilder('sendNotification') || 'Notify'}
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => {
           const firstDevice = devices[0]
           const commands = firstDevice ? getCommandsForResource(firstDevice.id, devices, deviceTypes, extensions) : []
-          const newAction: RuleAction = {
-            type: 'Execute',
-            device_id: firstDevice?.id || '',
-            command: commands[0]?.name || 'turn_on',
-            params: {},
-          }
-          onActionsChange([...actions, newAction])
+          onActionsChange([...actions, { type: 'Execute', device_id: firstDevice?.id || '', command: commands[0]?.name || 'turn_on', params: {} }])
         }}>
           <Zap className="h-4 w-4 mr-1" />
           {tBuilder('executeCommand') || 'Execute'}
         </Button>
         <Button size="sm" variant="outline" onClick={() => {
-          const newAction: RuleAction = { type: 'Delay', duration: 5000 }
-          onActionsChange([...actions, newAction])
+          const firstDevice = devices[0]
+          onActionsChange([...actions, { type: 'Set', device_id: firstDevice?.id || '', property: 'state', value: true }])
         }}>
+          <Settings className="h-4 w-4 mr-1" />
+          {tBuilder('writeValue') || 'Set'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onActionsChange([...actions, { type: 'Notify', message: '', channels: [] }])}>
+          <Bell className="h-4 w-4 mr-1" />
+          {tBuilder('sendNotification') || 'Notify'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onActionsChange([...actions, { type: 'CreateAlert', title: '', message: '', severity: 'info' }])}>
+          <AlertTriangle className="h-4 w-4 mr-1" />
+          {tBuilder('createAlert') || 'Alert'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onActionsChange([...actions, { type: 'HttpRequest', method: 'POST', url: '', headers: {}, body: '' }])}>
+          <Globe className="h-4 w-4 mr-1" />
+          {tBuilder('httpRequest') || 'HTTP'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onActionsChange([...actions, { type: 'Log', level: 'info', message: '' }])}>
+          <FileText className="h-4 w-4 mr-1" />
+          {tBuilder('logRecord') || 'Log'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onActionsChange([...actions, { type: 'Delay', duration: 5000 }])}>
           <Clock className="h-4 w-4 mr-1" />
           {tBuilder('delay') || 'Delay'}
         </Button>
       </div>
 
-      {/* Actions list */}
+      {/* Actions list — rendered via ActionEditorCompact (handles all 7 types) */}
       <div className="space-y-2">
         {actions.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
@@ -1367,90 +1367,19 @@ function ActionCanvas({ actions, onActionsChange, devices, deviceTypes, extensio
           </div>
         ) : (
           actions.map((action, index) => (
-            <div key={index} className="p-4 rounded-lg border border-border bg-background">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded bg-accent-indigo-light flex items-center justify-center text-xs font-medium text-accent-indigo">
-                    {index + 1}
-                  </div>
-                  <span className="text-sm font-medium">{action.type}</span>
-                </div>
-                <Button size="sm" variant="ghost" onClick={() => onActionsChange(actions.filter((_, i) => i !== index))}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Action editor based on type */}
-              {action.type === 'Log' && (
-                <div className="space-y-2">
-                  <Select value={(action as any).level || 'info'} onValueChange={(v) => {
-                    onActionsChange(actions.map((a, i) => i === index ? { ...a, level: v } : a))
-                  }}>
-                    <SelectTrigger className="w-32 h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="info">Info</SelectItem>
-                      <SelectItem value="warning">Warning</SelectItem>
-                      <SelectItem value="error">Error</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={(action as any).message || ''}
-                    onChange={e => onActionsChange(actions.map((a, i) => i === index ? { ...a, message: e.target.value } : a))}
-                    placeholder={tBuilder('logMessage') || 'Log message'}
-                  />
-                </div>
-              )}
-
-              {action.type === 'Notify' && (
-                <div className="space-y-2">
-                  <Input
-                    value={(action as any).message || ''}
-                    onChange={e => onActionsChange(actions.map((a, i) => i === index ? { ...a, message: e.target.value } : a))}
-                    placeholder={tBuilder('enterNotificationMessage') || 'Notification message'}
-                  />
-                </div>
-              )}
-
-              {action.type === 'Execute' && (
-                <div className="space-y-2">
-                  <Select value={(action as any).device_id || ''} onValueChange={(v) => {
-                    onActionsChange(actions.map((a, i) => i === index ? { ...a, device_id: v, command: getCommandsForResource(v, devices, deviceTypes, extensions)[0]?.name || 'turn_on' } : a))
-                  }}>
-                    <SelectTrigger className="w-full h-9">
-                      <SelectValue placeholder={tBuilder('selectDeviceForAction') || 'Select device'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {devices.map(d => (
-                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={(action as any).command || ''} onValueChange={(v) => {
-                    onActionsChange(actions.map((a, i) => i === index ? { ...a, command: v } : a))
-                  }}>
-                    <SelectTrigger className="w-full h-9">
-                      <SelectValue placeholder={tBuilder('enterCommandName') || 'Command name'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getCommandsForResource((action as any).device_id || '', devices, deviceTypes, extensions).map(c => (
-                        <SelectItem key={c.name} value={c.name}>{c.display_name || c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {action.type === 'Delay' && (
-                <Input
-                  type="number"
-                  value={(action as any).duration || 5000}
-                  onChange={e => onActionsChange(actions.map((a, i) => i === index ? { ...a, duration: parseInt(e.target.value) || 5000 } : a))}
-                  placeholder={tBuilder('enterDelayDuration') || 'Delay duration (ms)'}
-                />
-              )}
-            </div>
+            <ActionEditorCompact
+              key={index}
+              index={index}
+              action={action}
+              devices={devices}
+              deviceTypes={deviceTypes}
+              extensions={extensions}
+              messageChannels={messageChannels}
+              t={t}
+              tBuilder={tBuilder}
+              onUpdate={(updates) => onActionsChange(actions.map((a, i) => i === index ? ({ ...a, ...updates } as RuleAction) : a))}
+              onRemove={() => onActionsChange(actions.filter((_, i) => i !== index))}
+            />
           ))
         )}
       </div>
