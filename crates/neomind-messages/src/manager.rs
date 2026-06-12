@@ -734,28 +734,6 @@ impl MessageManager {
 
         Ok(count)
     }
-
-    /// Reload messages from storage.
-    pub async fn reload(&self) -> Result<()> {
-        if let Some(store) = self.storage.read().await.as_ref() {
-            let stored_msgs = store
-                .list_async()
-                .await
-                .map_err(|e| Error::Storage(format!("Failed to load messages: {}", e)))?;
-
-            let mut messages = HashMap::new();
-            for stored_msg in stored_msgs {
-                if let Ok(id) = MessageId::from_string(&stored_msg.id) {
-                    let msg = Self::stored_to_message(stored_msg);
-                    messages.insert(id, msg);
-                }
-            }
-
-            *self.messages.write().await = messages;
-        }
-
-        Ok(())
-    }
 }
 
 /// Message statistics.
