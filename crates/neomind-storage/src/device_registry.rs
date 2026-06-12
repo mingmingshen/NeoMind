@@ -777,48 +777,6 @@ impl DeviceRegistryStore {
         Ok(commands)
     }
 
-    /// Delete a command history record.
-    pub fn delete_command(&self, device_id: &str, command_id: &str) -> Result<bool, Error> {
-        let write_txn = self.db.begin_write()?;
-        let deleted = {
-            let mut table = write_txn.open_table(COMMAND_HISTORY_TABLE)?;
-            let result = table.remove((device_id, command_id))?.is_some();
-            result
-        };
-        write_txn.commit()?;
-        Ok(deleted)
-    }
-
-    /// Clear all command history for a device.
-    pub fn clear_device_commands(&self, device_id: &str) -> Result<usize, Error> {
-        let write_txn = self.db.begin_write()?;
-        let count = {
-            let mut table = write_txn.open_table(COMMAND_HISTORY_TABLE)?;
-            let start_key = (device_id, "");
-            let end_key = (device_id, "\x7F");
-
-            // First collect all command IDs to delete
-            let mut command_ids = Vec::new();
-            {
-                let range = table.range(start_key..=end_key)?;
-                for result in range {
-                    let (key, _) = result?;
-                    command_ids.push(key.value().1.to_string());
-                }
-            }
-
-            // Then delete each one
-            let deleted = command_ids.len();
-            for command_id in command_ids {
-                table.remove((device_id, command_id.as_str()))?;
-            }
-
-            deleted
-        };
-        write_txn.commit()?;
-        Ok(count)
-    }
-
     // ========== Bulk Operations ==========
 
     /// Load all templates into memory.

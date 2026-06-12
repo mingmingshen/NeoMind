@@ -36,15 +36,6 @@ pub mod protocol;
 // Adapter interface for event-driven architecture
 pub mod adapter;
 
-// Protocol mapping re-exports
-pub use protocol::{
-    Address, BinaryFormat, Capability, CapabilityType, MappingConfig, MqttMapping,
-    MqttMappingBuilder, ProtocolMapping, SharedMapping,
-};
-
-// Re-export protocol mapping functions
-// builtin_types removed - old implementation
-
 // Device adapters implementing the adapter interface
 pub mod adapters;
 
