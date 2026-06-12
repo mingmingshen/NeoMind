@@ -5,12 +5,11 @@
 
 pub mod filter;
 pub mod manager;
-pub mod store;
 pub mod scheduler;
+pub mod store;
 pub mod targets;
 pub mod template;
 pub mod types;
 
-pub use manager::{PushManager, CreateTargetRequest, UpdateTargetRequest};
-pub use store::DataPushStore;
-pub use types::*;
+// Re-exports (only types used externally via crate-root shortcut path)
+pub use manager::{CreateTargetRequest, PushManager, UpdateTargetRequest};
