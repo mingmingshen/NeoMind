@@ -26,22 +26,27 @@ fn main() {
         .and_then(|p| p.parent()) // NeoMind/
         .unwrap_or(&project_root);
 
-    // Source runner location
+    // Windows binaries carry the .exe suffix
+    let exe_suffix = if target.contains("windows") { ".exe" } else { "" };
+
+    // Tauri expects the sidecar at: binaries/neomind-extension-runner-{target_triple}[.exe]
+    let platform_runner = binaries_dir
+        .join(format!("neomind-extension-runner-{}{}", target, exe_suffix));
+
+    // 1. If CI (or a local dev) already staged the sidecar in binaries/, use it as-is.
+    //    fs::copy overwrites, so no need to remove a stale file first.
+    if platform_runner.exists() {
+        println!("cargo:warning=✅ Extension runner sidecar ready: {}", target);
+        return;
+    }
+
+    // 2. Otherwise, copy it from the workspace build output if present.
     let source_runner = workspace_root
         .join("target")
         .join(&profile)
-        .join("neomind-extension-runner");
+        .join(format!("neomind-extension-runner{}", exe_suffix));
 
-    // Tauri expects: binaries/neomind-extension-runner-{target_triple}
-    let target_triple = target.as_str();
-    let platform_runner = binaries_dir.join(format!("neomind-extension-runner-{}", target_triple));
-
-    // Copy the runner if it exists
     if source_runner.exists() {
-        // Remove old file
-        let _ = fs::remove_file(&platform_runner);
-
-        // Copy to platform-specific name
         fs::copy(&source_runner, &platform_runner).expect("Failed to copy extension runner");
 
         // Make executable on Unix
@@ -53,14 +58,18 @@ fn main() {
             fs::set_permissions(&platform_runner, perms).expect("Failed to set permissions");
         }
 
-        println!("cargo:warning=✅ Extension runner ready: {}", target_triple);
-    } else {
-        println!(
-            "cargo:warning=⚠️  Extension runner not found at: {:?}",
-            source_runner
-        );
-        println!("cargo:warning=   Run: cargo build --release -p neomind-extension-runner");
+        println!("cargo:warning=✅ Extension runner copied: {}", target);
+        return;
     }
+
+    // 3. Neither staged nor buildable — this is a genuine problem.
+    println!("cargo:warning=⚠️  Extension runner not found. Looked for one of:");
+    println!("cargo:warning=   staged sidecar : {}", platform_runner.display());
+    println!("cargo:warning=   workspace build: {}", source_runner.display());
+    println!(
+        "cargo:warning=   Build it first: cargo build --{} -p neomind-extension-runner",
+        profile
+    );
 
     // NOTE: neomind-cli is no longer bundled as a Tauri sidecar. The agent's
     // shell tool dispatches data commands in-process via neomind-cli-ops

@@ -225,12 +225,6 @@ jobs:
             cp target/${{ matrix.target }}/release/neomind-extension-runner \
                web/src-tauri/binaries/neomind-extension-runner-${{ matrix.target }}
             chmod +x web/src-tauri/binaries/neomind-extension-runner-${{ matrix.target }}
-
-            # Also copy to target/release for Tauri's default lookup
-            mkdir -p target/release
-            cp target/${{ matrix.target }}/release/neomind-extension-runner \
-               target/release/neomind-extension-runner
-            chmod +x target/release/neomind-extension-runner
           fi
 
           echo "✅ External binary built for ${{ matrix.target }}"
