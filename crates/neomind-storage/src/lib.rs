@@ -62,7 +62,6 @@ pub mod backends;
 pub mod agent_summary;
 pub mod agents;
 pub mod backend;
-pub mod backup;
 pub mod business;
 pub mod dashboards;
 pub mod device_registry;
@@ -175,8 +174,6 @@ pub use business::{
 };
 
 pub use llm_data::{LongTermMemoryStore, MemoryEntry, MemoryFilter, MemoryStats};
-
-pub use backup::{BackupConfig, BackupHandler, BackupManager, BackupMetadata, BackupType};
 
 pub use device_registry::{
     CommandDefinition, CommandHistoryRecord, CommandStatus, ConnectionConfig, DeviceConfig,
