@@ -4,21 +4,20 @@ pub mod output;
 pub mod types;
 
 // Command modules
-pub mod device;
-pub mod dashboard;
-pub mod rule;
-pub mod transform;
-pub mod extension;
 pub mod agent_cmd;
-pub mod message;
-pub mod widget;
-pub mod system;
-pub mod connector;
-pub mod llm;
-pub mod settings;
-pub mod config_cmd;
 pub mod automation;
+pub mod config_cmd;
+pub mod connector;
+pub mod dashboard;
 pub mod data_push;
+pub mod device;
+pub mod extension;
+pub mod llm;
+pub mod message;
+pub mod rule;
+pub mod settings;
+pub mod system;
+pub mod transform;
+pub mod widget;
 
 pub use api_client::ApiClient;
-pub use types::{BuildMeta, CliResponse, OutputFormat};
