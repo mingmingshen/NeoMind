@@ -18,20 +18,12 @@ pub mod tools;
 pub use llm::LlmError;
 
 // Exports
-pub use llm::backend::{
-    BackendCapabilities, BackendId, FinishReason, GenerationParams,
-    LlmInput as LlmRuntimeInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
-};
-pub use llm::modality::{ImageContent, ImageFormat, ImageInput, ModalityContent};
+pub use llm::backend::{BackendCapabilities, GenerationParams, LlmRuntime};
 
-pub use message::{Content, ContentPart, ImageDetail, Message, MessageRole};
+pub use message::{Content, ContentPart, Message, MessageRole};
 
 // Event exports
-pub use event::{EventMetadata, MetricValue, NeoMindEvent, ProposedAction};
+pub use event::{MetricValue, NeoMindEvent};
 
 // Event bus exports
-pub use eventbus::{
-    EventBus, EventBusReceiver, FilterBuilder, FilteredReceiver,
-    SharedEventBus, DEFAULT_CHANNEL_CAPACITY,
-};
-
+pub use eventbus::EventBus;
