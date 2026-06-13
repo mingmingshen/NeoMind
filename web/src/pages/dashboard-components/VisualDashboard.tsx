@@ -157,12 +157,6 @@ import { toast } from '@/components/ui/use-toast'
 
 // Config system
 import {
-  createDataDisplayConfig,
-  createProgressConfig,
-  createControlConfig,
-  createIndicatorConfig,
-  createContentConfig,
-  createChartConfig,
   ComponentConfigDialog,
   DualModeSourceField,
   UnifiedDataSourceConfig,
