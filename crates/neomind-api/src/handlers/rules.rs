@@ -8,10 +8,9 @@ use chrono;
 use serde_json::{json, Value};
 
 use neomind_devices::MetricDataType as DeviceMetricDataType;
-use neomind_rules::dsl::{AlertSeverity, HttpMethod};
 use neomind_rules::{
-    ComparisonOperator, CompiledRule, MetricDataType as RulesMetricDataType, RuleAction,
-    RuleCondition, RuleId, RuleStatus,
+    ComparisonOperator, CompiledRule, LogicalOperator, NotifySeverity, RuleAction, RuleCondition,
+    RuleId, RuleTrigger,
 };
 
 use super::{
@@ -29,10 +28,20 @@ struct RuleDetailDto {
     description: Option<String>,
     enabled: bool,
     trigger_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     last_triggered: Option<String>,
     created_at: String,
+    updated_at: String,
+    trigger: Value,
     condition: Value,    // Changed to Value to handle different condition types
     actions: Vec<Value>, // Changed to Value for frontend-compatible format
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cooldown: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    for_duration: Option<u64>,
+    dsl_preview: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<Value>, // Frontend UI state for proper restoration on edit
 }
@@ -49,8 +58,17 @@ struct RuleDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     last_triggered: Option<String>,
     created_at: String,
+    updated_at: String,
+    trigger: Value,
+    condition: Value,
     actions: Vec<Value>,
-    dsl: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cooldown: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    for_duration: Option<u64>,
+    dsl_preview: String,
 }
 
 /// Request body for enabling/disabling a rule.
@@ -68,118 +86,78 @@ fn operator_to_symbol(op: &ComparisonOperator) -> &'static str {
         ComparisonOperator::LessEqual => "<=",
         ComparisonOperator::Equal => "==",
         ComparisonOperator::NotEqual => "!=",
+        ComparisonOperator::Contains => "contains",
+        ComparisonOperator::StartsWith => "starts_with",
+        ComparisonOperator::EndsWith => "ends_with",
+        ComparisonOperator::Regex => "regex",
     }
 }
 
-/// Convert LogLevel to frontend-compatible string
-fn log_level_to_string(level: &neomind_rules::LogLevel) -> &'static str {
-    match level {
-        neomind_rules::LogLevel::Alert => "debug",
-        neomind_rules::LogLevel::Info => "info",
-        neomind_rules::LogLevel::Warning => "warn",
-        neomind_rules::LogLevel::Error => "error",
-    }
-}
-
-/// Convert AlertSeverity to frontend-compatible string
-fn alert_severity_to_string(severity: &AlertSeverity) -> &'static str {
+/// Convert NotifySeverity to frontend-compatible string
+fn notify_severity_to_string(severity: &NotifySeverity) -> &'static str {
     match severity {
-        AlertSeverity::Info => "info",
-        AlertSeverity::Warning => "warning",
-        AlertSeverity::Error => "error",
-        AlertSeverity::Critical => "critical",
-    }
-}
-
-/// Convert HttpMethod to frontend-compatible string
-fn http_method_to_string(method: &HttpMethod) -> &'static str {
-    match method {
-        HttpMethod::Get => "GET",
-        HttpMethod::Post => "POST",
-        HttpMethod::Put => "PUT",
-        HttpMethod::Delete => "DELETE",
-        HttpMethod::Patch => "PATCH",
+        NotifySeverity::Info => "info",
+        NotifySeverity::Warning => "warning",
+        NotifySeverity::Critical => "critical",
+        NotifySeverity::Emergency => "emergency",
     }
 }
 
 /// Convert RuleCondition to frontend-compatible JSON Value
 fn condition_to_json(cond: &RuleCondition) -> Value {
     match cond {
-        RuleCondition::Device {
-            device_id,
-            metric,
+        RuleCondition::Comparison {
+            source,
             operator,
             threshold,
+            threshold_value,
         } => {
-            json!({
-                "device_id": device_id,
-                "metric": metric,
+            let mut json = json!({
+                "condition_type": "comparison",
+                "source": source.storage_key(),
+                "source_type": match source.source_type {
+                    neomind_core::datasource::DataSourceType::Device => "device",
+                    neomind_core::datasource::DataSourceType::Extension => "extension",
+                    neomind_core::datasource::DataSourceType::Transform => "transform",
+                },
+                "source_id": source.source_id,
+                "metric": source.field_path,
                 "operator": operator_to_symbol(operator),
                 "threshold": threshold,
+            });
+            if let Some(tv) = threshold_value {
+                json["threshold_value"] = json!(tv);
+            }
+            json
+        }
+        RuleCondition::Range { source, min, max } => {
+            json!({
+                "condition_type": "range",
+                "source": source.storage_key(),
+                "source_type": match source.source_type {
+                    neomind_core::datasource::DataSourceType::Device => "device",
+                    neomind_core::datasource::DataSourceType::Extension => "extension",
+                    neomind_core::datasource::DataSourceType::Transform => "transform",
+                },
+                "source_id": source.source_id,
+                "metric": source.field_path,
+                "operator": "between",
+                "min": min,
+                "max": max,
             })
         }
-        RuleCondition::Extension {
-            extension_id,
-            metric,
+        RuleCondition::Logical {
             operator,
-            threshold,
+            conditions,
         } => {
             json!({
-                "extension_id": extension_id,
-                "metric": metric,
-                "operator": operator_to_symbol(operator),
-                "threshold": threshold,
-            })
-        }
-        RuleCondition::DeviceRange {
-            device_id,
-            metric,
-            min,
-            max,
-        } => {
-            json!({
-                "device_id": device_id,
-                "metric": metric,
-                "operator": "between",
-                "range_min": min,
-                "threshold": max,
-            })
-        }
-        RuleCondition::ExtensionRange {
-            extension_id,
-            metric,
-            min,
-            max,
-        } => {
-            json!({
-                "extension_id": extension_id,
-                "metric": metric,
-                "operator": "between",
-                "range_min": min,
-                "threshold": max,
-            })
-        }
-        RuleCondition::And(conditions) => {
-            json!({
-                "operator": "and",
+                "condition_type": "logical",
+                "operator": match operator {
+                    LogicalOperator::And => "and",
+                    LogicalOperator::Or => "or",
+                    LogicalOperator::Not => "not",
+                },
                 "conditions": conditions.iter().map(condition_to_json).collect::<Vec<_>>(),
-            })
-        }
-        RuleCondition::Or(conditions) => {
-            json!({
-                "operator": "or",
-                "conditions": conditions.iter().map(condition_to_json).collect::<Vec<_>>(),
-            })
-        }
-        RuleCondition::Not(condition) => {
-            json!({
-                "operator": "not",
-                "conditions": [condition_to_json(condition)],
-            })
-        }
-        RuleCondition::Always => {
-            json!({
-                "operator": "always",
             })
         }
     }
@@ -188,89 +166,40 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
 /// Convert RuleAction to frontend-compatible JSON Value
 fn action_to_json(action: &RuleAction) -> Value {
     match action {
-        RuleAction::Notify {
-            message,
-            channels: _,
-        } => {
+        RuleAction::Notify { message, severity } => {
             json!({
-                "type": "Notify",
+                "type": "notify",
                 "message": message,
+                "severity": notify_severity_to_string(severity),
             })
         }
         RuleAction::Execute {
-            device_id,
+            target,
+            target_type,
             command,
             params,
         } => {
             json!({
-                "type": "Execute",
-                "device_id": device_id,
+                "type": "execute",
+                "target": target,
+                "target_type": match target_type {
+                    neomind_rules::ExecuteTarget::Device => "device",
+                    neomind_rules::ExecuteTarget::Extension => "extension",
+                },
                 "command": command,
                 "params": params,
-            })
-        }
-        RuleAction::Log {
-            level,
-            message,
-            severity: _,
-        } => {
-            json!({
-                "type": "Log",
-                "level": log_level_to_string(level),
-                "message": message,
-            })
-        }
-        RuleAction::Set {
-            device_id,
-            property,
-            value,
-        } => {
-            json!({
-                "type": "Set",
-                "device_id": device_id,
-                "property": property,
-                "value": value,
-            })
-        }
-        RuleAction::Delay { duration } => {
-            json!({
-                "type": "Delay",
-                "duration": duration.as_millis(),
-            })
-        }
-        RuleAction::CreateAlert {
-            title,
-            message,
-            severity,
-        } => {
-            json!({
-                "type": "CreateAlert",
-                "title": title,
-                "message": message,
-                "severity": alert_severity_to_string(severity),
-            })
-        }
-        RuleAction::HttpRequest {
-            method,
-            url,
-            headers: _,
-            body: _,
-        } => {
-            json!({
-                "type": "HttpRequest",
-                "method": http_method_to_string(method),
-                "url": url,
             })
         }
         RuleAction::TriggerAgent {
             agent_id,
             input,
-            data: _,
+            data,
         } => {
             json!({
-                "type": "TriggerAgent",
+                "type": "trigger_agent",
                 "agent_id": agent_id,
                 "input": input,
+                "data": data,
             })
         }
     }
@@ -279,21 +208,46 @@ fn action_to_json(action: &RuleAction) -> Value {
 impl From<&CompiledRule> for RuleDetailDto {
     fn from(rule: &CompiledRule) -> Self {
         // Convert RuleCondition to frontend-compatible JSON format
-        let condition_json = condition_to_json(&rule.condition);
+        let condition_json = rule
+            .condition
+            .as_ref()
+            .map(condition_to_json)
+            .unwrap_or_else(|| json!({"condition_type": "none"}));
 
         // Convert actions to frontend-compatible format
         let actions_json: Vec<Value> = rule.actions.iter().map(action_to_json).collect();
+
+        // Convert trigger
+        let trigger_json = match &rule.trigger {
+            RuleTrigger::DataChange { sources } => json!({
+                "trigger_type": "data_change",
+                "sources": sources.iter().map(|s: &neomind_core::datasource::DataSourceId| s.storage_key()).collect::<Vec<_>>(),
+            }),
+            RuleTrigger::Schedule { cron } => json!({
+                "trigger_type": "schedule",
+                "cron": cron,
+            }),
+            RuleTrigger::Manual => json!({
+                "trigger_type": "manual",
+            }),
+        };
 
         Self {
             id: rule.id.to_string(),
             name: rule.name.clone(),
             description: rule.description.clone(),
-            enabled: matches!(rule.status, RuleStatus::Active),
+            enabled: rule.enabled,
             trigger_count: rule.state.trigger_count,
             last_triggered: rule.state.last_triggered.map(|dt| dt.to_rfc3339()),
             created_at: rule.created_at.to_rfc3339(),
+            updated_at: rule.updated_at.to_rfc3339(),
+            trigger: trigger_json,
             condition: condition_json,
             actions: actions_json,
+            tags: if rule.tags.is_empty() { None } else { Some(rule.tags.clone()) },
+            cooldown: Some(rule.cooldown.as_millis() as u64),
+            for_duration: rule.for_duration.map(|d| d.as_millis() as u64),
+            dsl_preview: rule.dsl_preview.clone(),
             source: rule.source.clone(),
         }
     }
@@ -310,17 +264,41 @@ pub async fn list_rules_handler(
         .into_iter()
         .map(|r| {
             let actions_json: Vec<Value> = r.actions.iter().map(action_to_json).collect();
+            let condition_json = r
+                .condition
+                .as_ref()
+                .map(condition_to_json)
+                .unwrap_or_else(|| json!({"condition_type": "none"}));
+            let trigger_json = match &r.trigger {
+                RuleTrigger::DataChange { sources } => json!({
+                    "trigger_type": "data_change",
+                    "sources": sources.iter().map(|s| s.storage_key()).collect::<Vec<_>>(),
+                }),
+                RuleTrigger::Schedule { cron } => json!({
+                    "trigger_type": "schedule",
+                    "cron": cron,
+                }),
+                RuleTrigger::Manual => json!({
+                    "trigger_type": "manual",
+                }),
+            };
 
             RuleDto {
                 id: r.id.to_string(),
                 name: r.name,
                 description: r.description.clone(),
-                enabled: matches!(r.status, RuleStatus::Active),
+                enabled: r.enabled,
                 trigger_count: r.state.trigger_count,
                 last_triggered: r.state.last_triggered.map(|dt| dt.to_rfc3339()),
                 created_at: r.created_at.to_rfc3339(),
+                updated_at: r.updated_at.to_rfc3339(),
+                trigger: trigger_json,
+                condition: condition_json,
                 actions: actions_json,
-                dsl: r.dsl.clone(),
+                tags: if r.tags.is_empty() { None } else { Some(r.tags.clone()) },
+                cooldown: Some(r.cooldown.as_millis() as u64),
+                for_duration: r.for_duration.map(|d| d.as_millis() as u64),
+                dsl_preview: r.dsl_preview.clone(),
             }
         })
         .collect();
@@ -374,65 +352,98 @@ pub async fn update_rule_handler(
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
-    // Extract fields from request
-    let dsl = req.get("dsl").and_then(|v| v.as_str());
-    let name = req.get("name").and_then(|v| v.as_str());
-    let description = req.get("description").and_then(|v| v.as_str());
+    // Extract fields from request (clone before potential move)
+    let name = req.get("name").and_then(|v| v.as_str()).map(String::from);
+    let description = req.get("description").and_then(|v| v.as_str()).map(String::from);
     let enabled = req.get("enabled").and_then(|v| v.as_bool());
     let source = req.get("source").cloned();
 
-    // Validate DSL if provided
-    if let Some(dsl_value) = dsl {
-        validate_required_string(dsl_value, "dsl")?;
-        validate_string_length(dsl_value, "dsl", 10, 50000)?;
-    }
-
     // Validate name if provided
-    if let Some(name_value) = name {
+    if let Some(ref name_value) = name {
         validate_required_string(name_value, "name")?;
         validate_string_length(name_value, "name", 1, 100)?;
     }
 
     // Validate description if provided
-    if let Some(desc_value) = description {
+    if let Some(ref desc_value) = description {
         validate_string_length(desc_value, "description", 0, 500)?;
     }
 
-    // If DSL is provided, re-parse and replace the entire rule
-    if let Some(dsl) = dsl {
-        // Use the inner engine to parse DSL and get a CompiledRule
-        let parsed = neomind_rules::dsl::RuleDslParser::parse(dsl)
-            .map_err(|e| ErrorResponse::internal(format!("Failed to parse DSL: {}", e)))?;
+    // Check if the request contains full rule definition (condition, trigger, actions)
+    let has_full_definition = req.get("condition").is_some()
+        || req.get("trigger").is_some()
+        || req.get("actions").is_some();
 
-        // Create a compiled rule from the parsed DSL, then override with original ID
-        let mut rule = CompiledRule::from_parsed_with_dsl(parsed, dsl.to_string());
+    if has_full_definition {
+        // Full update: deserialize the entire JSON body as a CompiledRule
+        let mut rule: CompiledRule = serde_json::from_value(req)
+            .map_err(|e| ErrorResponse::bad_request(format!("Invalid rule data: {}", e)))?;
+
+        // Preserve the original ID
         rule.id = rule_id.clone();
 
-        // Override name if provided
+        // Override name if provided at top level
         if let Some(name) = name {
-            rule.name = name.to_string();
+            rule.name = name;
         }
 
         // Override description if provided
         if let Some(description) = description {
-            rule.description = Some(description.to_string());
+            rule.description = Some(description);
         }
 
         // Set source from frontend if provided
         rule.source = source;
 
-        // Handle enable/disable
-        rule.status = if enabled.unwrap_or(matches!(rule.status, RuleStatus::Active)) {
-            RuleStatus::Active
-        } else {
-            RuleStatus::Paused
-        };
+        // Preserve runtime state, created_at, and enabled from existing rule
+        let existing = state.automation.rule_engine.get_rule(&rule_id).await;
+        if let Some(ref old) = existing {
+            rule.state = old.state.clone();
+            rule.created_at = old.created_at;
+        }
+        rule.enabled = enabled
+            .unwrap_or_else(|| existing.as_ref().map(|r| r.enabled).unwrap_or(true));
+        rule.updated_at = chrono::Utc::now();
 
-        // Add the rule (this replaces the old one with same ID)
+        // Finalize: auto-generate dsl_preview, extract trigger sources
+        rule.finalize();
+
+        // Validate cron expression for Schedule triggers
+        validate_rule_cron(&rule)?;
+
+        // Validate rule against available resources
+        {
+            let context = build_validation_context(&state);
+            let result = neomind_rules::RuleValidator::validate_rule(
+                &rule.condition,
+                &rule.actions,
+                &context,
+            );
+            if !result.is_valid {
+                let detail = result
+                    .errors
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "- {}{}",
+                            e.message,
+                            e.field.as_ref().map(|f| format!(" ({})", f)).unwrap_or_default()
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(ErrorResponse::bad_request(format!(
+                    "Rule references unavailable resources:\n{}",
+                    detail
+                )));
+            }
+        }
+
+        // Update the rule in the engine
         state
             .automation
             .rule_engine
-            .add_rule(rule.clone())
+            .update_rule(rule.clone())
             .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
 
@@ -449,7 +460,7 @@ pub async fn update_rule_handler(
         }));
     }
 
-    // Get the current rule for simple updates (no DSL provided)
+    // Partial update: get the current rule and update only provided fields
     let mut rule = state
         .automation
         .rule_engine
@@ -459,11 +470,11 @@ pub async fn update_rule_handler(
 
     // Update fields
     if let Some(name) = name {
-        rule.name = name.to_string();
+        rule.name = name;
     }
 
     if let Some(description) = description {
-        rule.description = Some(description.to_string());
+        rule.description = Some(description);
     }
 
     // Update source if provided
@@ -472,17 +483,18 @@ pub async fn update_rule_handler(
     }
 
     // Handle enable/disable
-    rule.status = if enabled.unwrap_or(matches!(rule.status, RuleStatus::Active)) {
-        RuleStatus::Active
-    } else {
-        RuleStatus::Paused
-    };
+    if let Some(enabled) = enabled {
+        rule.enabled = enabled;
+    }
 
-    // Re-add the rule (this updates it)
+    // Finalize to update timestamps etc.
+    rule.finalize();
+
+    // Update the rule
     state
         .automation
         .rule_engine
-        .add_rule(rule.clone())
+        .update_rule(rule.clone())
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
 
@@ -550,21 +562,18 @@ pub async fn set_rule_status_handler(
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
-    if req.enabled {
-        state
-            .automation
-            .rule_engine
-            .resume_rule(&rule_id)
-            .await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to enable rule: {}", e)))?;
-    } else {
-        state
-            .automation
-            .rule_engine
-            .pause_rule(&rule_id)
-            .await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to disable rule: {}", e)))?;
-    }
+    state
+        .automation
+        .rule_engine
+        .set_enabled(&rule_id, req.enabled)
+        .await
+        .map_err(|e| {
+            ErrorResponse::internal(format!(
+                "Failed to {} rule: {}",
+                if req.enabled { "enable" } else { "disable" },
+                e
+            ))
+        })?;
 
     // Also update in persistent store
     if let Some(ref store) = state.automation.rule_store {
@@ -597,6 +606,7 @@ pub async fn test_rule_handler(
         .get("execute")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
+
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
@@ -615,95 +625,72 @@ pub async fn test_rule_handler(
         "Rule source field for testing"
     );
 
-    // Extract condition fields using pattern matching
-    let (dsl_device_id, metric, operator, threshold) = match &rule.condition {
-        RuleCondition::Device {
-            device_id,
-            metric,
+    // Extract condition info — v2 model uses Comparison/Range/Logical variants
+    let condition = rule
+        .condition
+        .as_ref()
+        .ok_or_else(|| ErrorResponse::bad_request("Cannot test rule: no condition defined"))?;
+
+    let (source, operator, threshold, threshold_value) = match condition {
+        RuleCondition::Comparison {
+            source,
             operator,
             threshold,
-        } => (device_id.clone(), metric.clone(), *operator, *threshold),
-        RuleCondition::DeviceRange {
-            device_id,
-            metric,
+            threshold_value,
+        } => (source.clone(), *operator, *threshold, threshold_value.clone()),
+        RuleCondition::Range {
+            source,
             min: _,
             max,
-        } => {
-            // For range conditions, use the max as threshold for testing
-            (
-                device_id.clone(),
-                metric.clone(),
-                ComparisonOperator::GreaterThan,
-                *max,
-            )
-        }
-        _ => {
-            return Err(ErrorResponse::bad_request("Cannot test complex conditions"));
+        } => (source.clone(), ComparisonOperator::GreaterThan, *max, None),
+        RuleCondition::Logical { .. } => {
+            return Err(ErrorResponse::bad_request("Cannot test logical (compound) conditions directly. Test individual sub-conditions instead."));
         }
     };
+
+    let metric = source.field_path.clone();
 
     tracing::debug!(
-        dsl_device_id = %dsl_device_id,
+        source = %source.storage_key(),
+        source_type = ?source.source_type,
         metric = %metric,
-        "Extracted DSL device_id and metric"
+        "Extracted source from condition"
     );
 
-    // Use device_id from source.uiCondition if available (contains actual device ID)
-    // The parsed DSL contains device names which won't work for lookups
-    let resolved_device_id = if let Some(source) = &rule.source {
-        source
-            .get("uiCondition")
-            .and_then(|ui| ui.get("device_id"))
-            .and_then(|id| id.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-    } else {
-        None
-    };
-
-    // Fallback: try to resolve device name to device ID using the device registry
-    let device_id = if let Some(ref resolved) = resolved_device_id {
-        resolved.clone()
-    } else {
-        // Try to find device by name in the device registry
-        match state
+    // For Device sources, resolve device name → device ID.
+    // Extension/Transform sources use the ID as-is.
+    let query_source = if source.source_type == neomind_core::datasource::DataSourceType::Device {
+        let device_id = match state
             .devices
             .service
-            .get_device_by_name(&dsl_device_id)
+            .get_device_by_name(&source.source_id)
             .await
         {
             Some(device) => {
                 tracing::debug!(
-                    dsl_device_name = %dsl_device_id,
+                    source_name = %source.source_id,
                     resolved_device_id = %device.device_id,
                     "Resolved device name to device ID"
                 );
                 device.device_id
             }
-            None => {
-                // Try exact match as device ID (for backwards compatibility)
-                tracing::debug!(
-                    dsl_device_id = %dsl_device_id,
-                    "Could not resolve device name, using as-is"
-                );
-                dsl_device_id.clone()
-            }
-        }
+            None => source.source_id.clone(),
+        };
+        neomind_core::datasource::DataSourceId::device(&device_id, &source.field_path)
+    } else {
+        source.clone()
     };
 
-    tracing::debug!(
-        resolved_device_id = ?resolved_device_id,
-        final_device_id = %device_id,
-        "Resolved device_id for testing"
-    );
+    // Get current value from the value provider
+    let current_value = state.automation.rule_engine.get_value_provider().get_by_source(&query_source);
 
-    // Get current value for the rule engine
-    let current_value = state.automation.rule_engine.get_value(&device_id, &metric);
-
-    // Try to get historical data from time series storage as fallback
-    // The metric in the rule might be "battery" but the storage key could be "values.battery"
-    // Try multiple common prefixes if the direct lookup fails
-    let device_source_id = format!("device:{}", device_id);
+    // Fallback: query historical data from time series storage.
+    // Try multiple common metric prefixes in case the field path differs from storage key.
+    let telemetry_source_id = match query_source.source_type {
+        neomind_core::datasource::DataSourceType::Device => format!("device:{}", query_source.source_id),
+        neomind_core::datasource::DataSourceType::Extension => format!("extension:{}", query_source.source_id),
+        neomind_core::datasource::DataSourceType::Transform => format!("transform:{}", query_source.source_id),
+    };
     let metric_variants = vec![
         metric.clone(),
         format!("values.{}", metric),
@@ -712,41 +699,55 @@ pub async fn test_rule_handler(
         format!("telemetry.{}", metric),
     ];
 
-    let mut telemetry_value = None;
+    let mut telemetry_value: Option<neomind_rules::RuleValue> = None;
     let mut value_source = "none";
 
     for metric_variant in &metric_variants {
         tracing::debug!(
             "Trying to query time series for {}/{}",
-            device_id,
+            telemetry_source_id,
             metric_variant
         );
         let result = state
             .devices
             .telemetry
-            .latest(&device_source_id, metric_variant)
+            .latest(&telemetry_source_id, metric_variant)
             .await;
 
         match result {
             Ok(Some(point)) => {
-                telemetry_value = point.value.as_f64();
+                telemetry_value = match &point.value {
+                    neomind_devices::MetricValue::Float(v) => {
+                        Some(neomind_rules::RuleValue::Number(*v))
+                    }
+                    neomind_devices::MetricValue::Integer(v) => {
+                        Some(neomind_rules::RuleValue::Number(*v as f64))
+                    }
+                    neomind_devices::MetricValue::Boolean(v) => {
+                        Some(neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 }))
+                    }
+                    neomind_devices::MetricValue::String(s) => {
+                        Some(neomind_rules::RuleValue::Text(s.clone()))
+                    }
+                    // Non-scalar types: skip (can't be used in rule conditions)
+                    _ => None,
+                };
                 value_source = "historical";
                 tracing::debug!(
                     "Found data for {}/{} with value {:?}",
-                    device_id,
+                    telemetry_source_id,
                     metric_variant,
                     point.value
                 );
                 break;
             }
             Ok(None) => {
-                // No data for this variant, try next
                 continue;
             }
             Err(e) => {
                 tracing::warn!(
                     "Failed to query time series for {}/{}: {}",
-                    device_id,
+                    telemetry_source_id,
                     metric_variant,
                     e
                 );
@@ -755,17 +756,37 @@ pub async fn test_rule_handler(
         }
     }
 
+    // Determine value source before moving current_value
+    let is_current = current_value.is_some();
+
     // Use current value if available, otherwise use historical value
     let used_value = current_value.or(telemetry_value);
 
-    let condition_met = if let Some(val) = used_value {
-        operator.evaluate(val, threshold)
+    let condition_met = if let Some(rv) = used_value.as_ref() {
+        match condition {
+            RuleCondition::Comparison { .. } => {
+                match rv {
+                    neomind_rules::RuleValue::Number(v) => operator.evaluate(*v, threshold),
+                    neomind_rules::RuleValue::Text(s) => {
+                        let fallback = threshold.to_string();
+                        let t = threshold_value.as_deref().unwrap_or(&fallback);
+                        operator.evaluate_str(s, t)
+                    }
+                }
+            }
+            RuleCondition::Range { min, max, .. } => {
+                rv.as_number()
+                    .map(|v| v >= *min && v <= *max)
+                    .unwrap_or(false)
+            }
+            RuleCondition::Logical { .. } => unreachable!(), // Returned error above
+        }
     } else {
         return Err(ErrorResponse::bad_request(
-            format!("Cannot test rule: Device '{}' has no data for metric '{}'.", device_id, metric)
+            format!("Cannot test rule: source '{}' has no data for metric '{}'.", query_source.storage_key(), metric)
         ).with_hint(
-            "The device must have transmitted data at least once before testing rules.\n\
-             1. Check device status: neomind device get <ID>\n\
+            "The data source must have produced data at least once before testing rules.\n\
+             1. Check source status: neomind device get <ID> / neomind extension get <ID>\n\
              2. Send test data: neomind device write-metric <ID> --metric <METRIC> --value <VALUE>\n\
              3. Then retry: neomind rule test <RULE_ID>"
         ));
@@ -788,10 +809,22 @@ pub async fn test_rule_handler(
         "rule_name": rule.name,
         "condition_met": condition_met,
         "value_used": used_value,
-        "value_source": if current_value.is_some() { "current" } else { value_source },
-        "threshold": threshold,
-        "operator": format!("{:?}", operator),
+        "value_source": if is_current { "current" } else { value_source },
+        "threshold": match condition {
+            RuleCondition::Range { .. } => serde_json::Value::Null,
+            _ => json!(threshold),
+        },
+        "operator": match condition {
+            RuleCondition::Range { .. } => "between",
+            _ => operator.symbol(),
+        },
     });
+
+    // Add range bounds for Range conditions
+    if let RuleCondition::Range { min, max, .. } = condition {
+        response["range_min"] = json!(min);
+        response["range_max"] = json!(max);
+    }
 
     // Add execution result if actions were executed
     if let Some(ref result) = execution_result {
@@ -807,76 +840,110 @@ pub async fn test_rule_handler(
     ok(response)
 }
 
+/// Manually trigger a rule.
+///
+/// POST /api/rules/:id/trigger — evaluates the rule condition and executes actions
+/// if the condition is met. This is the entry point for `RuleTrigger::Manual` rules.
+pub async fn trigger_rule_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    let rule_id = RuleId::from_string(&id)
+        .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
+
+    let result = state.automation.rule_engine.execute_rule(&rule_id).await;
+    if !result.success && result.error.as_deref() == Some("Rule not found") {
+        return Err(ErrorResponse::not_found(format!(
+            "Rule '{}' not found",
+            id
+        )));
+    }
+    ok(json!({
+        "rule_id": id,
+        "success": result.success,
+        "actions_executed": result.actions_executed,
+        "error": result.error,
+        "duration_ms": result.duration_ms,
+    }))
+}
+
 /// Create rule.
 ///
-/// POST /api/rules
+/// POST /api/rules — accepts a JSON body representing a CompiledRule.
 pub async fn create_rule_handler(
     State(state): State<ServerState>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     use crate::validator::{validate_required_string, validate_string_length};
 
-    // Validate required DSL field
-    let dsl = req
-        .get("dsl")
+    // Validate name
+    let name = req
+        .get("name")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            ErrorResponse::bad_request("Missing 'dsl' field").with_hint(
-                "DSL is required. Syntax: RULE \"<name>\" WHEN <condition> DO <action> END\n\
-                 Example: RULE \"High Temp\" WHEN sensor-001.temperature > 30 DO NOTIFY \"Too hot\" END",
+        .ok_or_else(|| ErrorResponse::bad_request("Missing 'name' field"))?;
+    validate_required_string(name, "name")?;
+    validate_string_length(name, "name", 1, 100)?;
+
+    // Validate description if provided
+    if let Some(desc) = req.get("description").and_then(|v| v.as_str()) {
+        validate_string_length(desc, "description", 0, 500)?;
+    }
+
+    // Deserialize JSON body into a CompiledRule
+    let mut rule: CompiledRule = serde_json::from_value(req)
+        .map_err(|e| {
+            let err_msg = format!("{}", e);
+            ErrorResponse::bad_request(format!("Invalid rule data: {}", err_msg)).with_hint(
+                format!(
+                    "Provide a valid JSON rule object. Required fields: 'name'. \
+                     Condition types: 'comparison', 'range', 'logical'. \
+                     Action types: 'notify', 'execute', 'trigger_agent'. \
+                     Error detail: {}", err_msg
+                )
             )
         })?;
 
-    validate_required_string(dsl, "dsl")?;
-    validate_string_length(dsl, "dsl", 10, 50000)?;
-
-    // Validate rule name if provided
-    if let Some(name) = req.get("name").and_then(|v| v.as_str()) {
-        validate_required_string(name, "name")?;
-        validate_string_length(name, "name", 1, 100)?;
+    // Ensure fresh timestamps for new rules (serde default = epoch)
+    let now = chrono::Utc::now();
+    if rule.created_at.timestamp() == 0 {
+        rule.created_at = now;
     }
+    rule.updated_at = now;
 
-    // Extract source from frontend for UI state preservation
-    let source = req.get("source").cloned();
+    // Finalize: auto-generate dsl_preview, extract trigger sources
+    rule.finalize();
 
-    // Parse the DSL and create rule with source
-    let parsed = neomind_rules::dsl::RuleDslParser::parse(dsl).map_err(|e| {
-        let err_msg = format!("{}", e);
-        let hint = match &err_msg {
-            m if m.contains("Rule name not found") => {
-                "Rule name is required. Use quoted format: RULE \"My Rule Name\" WHEN ... DO ... END".to_string()
-            }
-            m if m.contains("WHEN clause not found") => {
-                "WHEN clause is required. Syntax: WHEN <device_id>.<metric> <op> <value>\n\
-                 Example: WHEN sensor-001.temperature > 30\n\
-                 Use actual device_id (not 'device.' prefix). Run `neomind device list` to find IDs.".to_string()
-            }
-            m if m.contains("Invalid threshold") => {
-                "Threshold must be a number. Example: sensor-001.temperature > 30 (not > thirty)".to_string()
-            }
-            m if m.contains("Invalid condition") => {
-                "Condition format: <device_id>.<metric> <op> <value>\n\
-                 Operators: >, <, >=, <=, ==, !=\n\
-                 Example: sensor-001.temperature > 30\n\
-                 Do NOT prefix with 'device.' — use the actual device ID.".to_string()
-            }
-            m if m.contains("Missing END") || m.contains("END") => {
-                "DSL must end with END on its own line. Structure:\n\
-                 RULE \"name\"\n  WHEN <condition>\n  DO <action>\nEND".to_string()
-            }
-            _ => {
-                format!("DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END\n\
-                 Conditions: <device_id>.<metric> <op> <value>\n\
-                 Actions: NOTIFY \"message\", EXECUTE device.cmd(key=val), LOG level \"msg\"\n\
-                 Error detail: {}", err_msg)
-            }
-        };
-        ErrorResponse::validation(format!("Failed to parse DSL: {}", e)).with_hint(hint)
-    })?;
+    // Validate cron expression for Schedule triggers
+    validate_rule_cron(&rule)?;
 
-    // Create a compiled rule from the parsed DSL with source
-    let mut rule = CompiledRule::from_parsed_with_dsl(parsed, dsl.to_string());
-    rule.source = source;
+    // Validate rule against available resources (reject rules referencing
+    // non-existent devices/metrics/agents at creation time)
+    {
+        let context = build_validation_context(&state);
+        let result = neomind_rules::RuleValidator::validate_rule(
+            &rule.condition,
+            &rule.actions,
+            &context,
+        );
+        if !result.is_valid {
+            let detail = result
+                .errors
+                .iter()
+                .map(|e| {
+                    format!(
+                        "- {}{}",
+                        e.message,
+                        e.field.as_ref().map(|f| format!(" ({})", f)).unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(ErrorResponse::bad_request(format!(
+                "Rule references unavailable resources:\n{}",
+                detail
+            )));
+        }
+    }
 
     // Add the rule to the engine
     state
@@ -896,7 +963,7 @@ pub async fn create_rule_handler(
     }
 
     ok(json!({
-        "rule_id": rule_id.to_string(),
+        "rule": RuleDetailDto::from(&rule),
     }))
 }
 
@@ -918,11 +985,15 @@ pub async fn get_rule_history_handler(
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
-    let history = state
-        .automation
-        .rule_engine
-        .get_rule_history(&rule_id)
-        .await;
+    // Try persistent store first, fall back to in-memory
+    let history = if let Some(ref store) = state.automation.rule_store {
+        match store.load_history(&rule_id) {
+            Ok(h) if !h.is_empty() => h,
+            _ => state.automation.rule_engine.get_rule_history(&rule_id).await,
+        }
+    } else {
+        state.automation.rule_engine.get_rule_history(&rule_id).await
+    };
 
     ok(json!({
         "rule_id": id,
@@ -967,18 +1038,30 @@ pub async fn import_rules_handler(
     let mut errors = Vec::new();
 
     for rule_value in rules_data {
-        // Try to serialize to DSL format
-        let dsl = serde_json::to_string_pretty(rule_value)
-            .map_err(|e| ErrorResponse::bad_request(format!("Invalid rule format: {}", e)))?;
+        // Deserialize each rule from JSON
+        match serde_json::from_value::<CompiledRule>(rule_value.clone()) {
+            Ok(mut rule) => {
+                // Finalize the rule
+                rule.finalize();
 
-        match state.automation.rule_engine.add_rule_from_dsl(&dsl).await {
-            Ok(_) => imported += 1,
+                match state.automation.rule_engine.add_rule(rule).await {
+                    Ok(_) => imported += 1,
+                    Err(e) => {
+                        let name = rule_value
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        errors.push(format!("Rule {}: {}", name, e));
+                        skipped += 1;
+                    }
+                }
+            }
             Err(e) => {
                 let name = rule_value
                     .get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                errors.push(format!("Rule {}: {}", name, e));
+                errors.push(format!("Rule {}: invalid format - {}", name, e));
                 skipped += 1;
             }
         }
@@ -999,26 +1082,25 @@ pub async fn get_resources_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     use neomind_devices::ConnectionStatus;
-    use neomind_rules::{CommandInfo, DeviceInfo, MetricInfo, ParameterInfo};
+    use neomind_rules::{CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo};
 
     let mut devices = Vec::new();
 
     // Get all devices with their templates
     let all_devices = state.devices.service.list_devices();
 
-    // ✅ 优化：收集唯一的 device_type，批量获取并预转换模板
-    // 这样可以避免在循环中重复调用 get_template() 和重复转换
+    // Optimize: collect unique device_types, batch get and pre-convert templates
     use std::collections::{HashMap, HashSet};
 
     let unique_types: HashSet<_> = all_devices.iter().map(|d| &d.device_type).collect();
 
-    // 预转换所有模板为 (metrics, commands) 对
+    // Pre-convert all templates to (metrics, commands) pairs
     let mut template_data_map: HashMap<String, (Vec<MetricInfo>, Vec<CommandInfo>)> =
         HashMap::new();
 
     for device_type in unique_types {
         if let Some(tpl) = state.devices.service.get_template(device_type) {
-            // 预转换 metrics
+            // Pre-convert metrics
             let metrics: Vec<MetricInfo> = tpl
                 .metrics
                 .into_iter()
@@ -1035,7 +1117,7 @@ pub async fn get_resources_handler(
                 })
                 .collect();
 
-            // 预转换 commands
+            // Pre-convert commands
             let commands: Vec<CommandInfo> = tpl
                 .commands
                 .into_iter()
@@ -1065,9 +1147,8 @@ pub async fn get_resources_handler(
         }
     }
 
-    // 现在循环中直接查找预转换的数据
+    // Now loop and look up pre-converted data
     for device in all_devices {
-        // ✅ 从预转换的缓存中获取数据（避免重复转换）
         let (metrics, commands) = template_data_map
             .get(&device.device_type)
             .cloned()
@@ -1076,7 +1157,7 @@ pub async fn get_resources_handler(
                 (
                     vec![MetricInfo {
                         name: "value".to_string(),
-                        data_type: RulesMetricDataType::Number,
+                        data_type: MetricDataType::Number,
                         unit: None,
                         min_value: None,
                         max_value: None,
@@ -1110,7 +1191,6 @@ pub async fn get_resources_handler(
             device_type: device.device_type.clone(),
             metrics,
             commands,
-            properties: vec![],
             online,
         });
     }
@@ -1144,79 +1224,26 @@ pub async fn get_resources_handler(
 }
 
 /// Convert DeviceTypeTemplate MetricDataType to Rules Engine MetricDataType
-fn convert_metric_data_type(dt: DeviceMetricDataType) -> RulesMetricDataType {
+fn convert_metric_data_type(dt: DeviceMetricDataType) -> neomind_rules::MetricDataType {
     match dt {
-        DeviceMetricDataType::Integer => RulesMetricDataType::Number,
-        DeviceMetricDataType::Float => RulesMetricDataType::Number,
-        DeviceMetricDataType::String => RulesMetricDataType::String,
-        DeviceMetricDataType::Boolean => RulesMetricDataType::Boolean,
-        DeviceMetricDataType::Binary => RulesMetricDataType::String, // Binary as base64 string
-        DeviceMetricDataType::Enum { .. } => RulesMetricDataType::Enum(vec![]),
-        DeviceMetricDataType::Array { .. } => RulesMetricDataType::String, // Arrays as JSON string
+        DeviceMetricDataType::Integer => neomind_rules::MetricDataType::Number,
+        DeviceMetricDataType::Float => neomind_rules::MetricDataType::Number,
+        DeviceMetricDataType::String => neomind_rules::MetricDataType::String,
+        DeviceMetricDataType::Boolean => neomind_rules::MetricDataType::Boolean,
+        DeviceMetricDataType::Binary => neomind_rules::MetricDataType::String, // Binary as base64 string
+        DeviceMetricDataType::Enum { .. } => neomind_rules::MetricDataType::Enum(vec![]),
+        DeviceMetricDataType::Array { .. } => neomind_rules::MetricDataType::String, // Arrays as JSON string
     }
 }
 
-/// Validate a rule against available resources.
+/// Build a [`ValidationContext`] populated with the currently registered devices.
 ///
-/// POST /api/rules/validate
-pub async fn validate_rule_handler(
-    State(state): State<ServerState>,
-    Json(req): Json<serde_json::Value>,
-) -> HandlerResult<serde_json::Value> {
-    use neomind_rules::{RuleCondition, RuleValidator, ValidationContext};
+/// This is shared between `validate_rule_handler` and `create_rule_handler` so that
+/// rule creation rejects rules that reference non-existent resources.
+fn build_validation_context(state: &ServerState) -> neomind_rules::ValidationContext {
+    use neomind_rules::{DeviceInfo, MetricDataType, MetricInfo, ValidationContext};
 
-    // Parse condition from request
-    let condition_obj = req
-        .get("condition")
-        .ok_or_else(|| ErrorResponse::bad_request("Missing 'condition'"))?;
-
-    let device_id = condition_obj
-        .get("device_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ErrorResponse::bad_request("Missing 'condition.device_id'"))?;
-
-    let metric = condition_obj
-        .get("metric")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ErrorResponse::bad_request("Missing 'condition.metric'"))?;
-
-    let operator_str = condition_obj
-        .get("operator")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ErrorResponse::bad_request("Missing 'condition.operator'"))?;
-
-    let operator = match operator_str {
-        ">" => neomind_rules::ComparisonOperator::GreaterThan,
-        "<" => neomind_rules::ComparisonOperator::LessThan,
-        ">=" => neomind_rules::ComparisonOperator::GreaterEqual,
-        "<=" => neomind_rules::ComparisonOperator::LessEqual,
-        "==" => neomind_rules::ComparisonOperator::Equal,
-        "!=" => neomind_rules::ComparisonOperator::NotEqual,
-        _ => {
-            return Err(ErrorResponse::bad_request(format!(
-                "Invalid operator: {}",
-                operator_str
-            )));
-        }
-    };
-
-    let threshold = condition_obj
-        .get("threshold")
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| ErrorResponse::bad_request("Missing or invalid 'condition.threshold'"))?;
-
-    let condition = RuleCondition::Device {
-        device_id: device_id.to_string(),
-        metric: metric.to_string(),
-        operator,
-        threshold,
-    };
-
-    // Build validation context
     let mut context = ValidationContext::new();
-
-    // Add devices
-    use neomind_rules::{DeviceInfo, MetricDataType, MetricInfo};
 
     let all_devices = state.devices.service.list_devices();
     for device in all_devices {
@@ -1248,48 +1275,60 @@ pub async fn validate_rule_handler(
             device_type: device.device_type.clone(),
             metrics,
             commands: vec![],
-            properties: vec![],
             online: true,
         });
     }
 
-    // Parse actions if present
-    let mut actions = Vec::new();
-    if let Some(actions_arr) = req.get("actions").and_then(|v| v.as_array()) {
-        for action_value in actions_arr {
-            if let Some(action_type) = action_value.get("type").and_then(|v| v.as_str()) {
-                match action_type {
-                    "notify" => {
-                        if let Some(message) = action_value.get("message").and_then(|v| v.as_str())
-                        {
-                            // Get channels if specified
-                            let channels = action_value
-                                .get("channels")
-                                .and_then(|v| v.as_array())
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|v| v.as_str().map(String::from))
-                                        .collect()
-                                });
+    context
+}
 
-                            actions.push(neomind_rules::RuleAction::Notify {
-                                message: message.to_string(),
-                                channels,
-                            });
-                        }
-                    }
-                    "log" => {
-                        actions.push(neomind_rules::RuleAction::Log {
-                            level: neomind_rules::LogLevel::Info,
-                            message: "Rule triggered".to_string(),
-                            severity: None,
-                        });
-                    }
-                    _ => {}
-                }
-            }
-        }
+/// Validate the cron expression of a Schedule-type rule.
+///
+/// Returns `Err` with a user-friendly message if the cron syntax is invalid.
+fn validate_rule_cron(rule: &CompiledRule) -> Result<(), ErrorResponse> {
+    if let neomind_rules::RuleTrigger::Schedule { ref cron } = rule.trigger {
+        cron.parse::<cron::Schedule>().map_err(|e| {
+            ErrorResponse::bad_request(format!(
+                "Invalid cron expression '{}': {}. \
+                 Use standard 5-field cron (min hour day month weekday), e.g. '0 */5 * * *'.",
+                cron, e
+            ))
+        })?;
     }
+    Ok(())
+}
+
+/// Validate a rule against available resources.
+///
+/// POST /api/rules/validate
+pub async fn validate_rule_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<serde_json::Value>,
+) -> HandlerResult<serde_json::Value> {
+    use neomind_rules::{RuleCondition, RuleValidator};
+
+    // Parse condition from request — v2 uses tagged enum format
+    let condition: Option<RuleCondition> = if let Some(cond_value) = req.get("condition") {
+        Some(
+            serde_json::from_value(cond_value.clone())
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid condition: {}", e)))?,
+        )
+    } else {
+        None
+    };
+
+    // Build validation context
+    let context = build_validation_context(&state);
+
+    // Parse actions if present — v2 uses tagged enum format
+    let actions: Vec<RuleAction> = if let Some(actions_arr) = req.get("actions").and_then(|v| v.as_array()) {
+        actions_arr
+            .iter()
+            .filter_map(|av| serde_json::from_value(av.clone()).ok())
+            .collect()
+    } else {
+        vec![]
+    };
 
     // Validate
     let result = RuleValidator::validate_rule(&condition, &actions, &context);
@@ -1298,6 +1337,5 @@ pub async fn validate_rule_handler(
         "valid": result.is_valid,
         "errors": result.errors,
         "warnings": result.warnings,
-        "resources": result.available_resources,
     }))
 }

@@ -16,7 +16,7 @@ use neomind_rules::RuleEngine;
 ///
 /// Subscribes to device metric events and auto-evaluates rules.
 pub struct RuleEngineEventService {
-    event_bus: Arc<EventBus>,
+    _event_bus: Arc<EventBus>,
     _rule_engine: Arc<RuleEngine>,
     running: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -25,45 +25,20 @@ impl RuleEngineEventService {
     /// Create a new rule engine event service.
     pub fn new(event_bus: Arc<EventBus>, rule_engine: Arc<RuleEngine>) -> Self {
         Self {
-            event_bus,
+            _event_bus: event_bus,
             _rule_engine: rule_engine,
             running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
     /// Start the service.
+    ///
+    /// The actual rule evaluation is driven by the value-provider and extension-output
+    /// tasks spawned in `init_rule_engine_events`. This method only sets the running flag
+    /// so callers can track service lifecycle.
     pub fn start(&self) -> Arc<std::sync::atomic::AtomicBool> {
-        if self
-            .running
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::SeqCst,
-                std::sync::atomic::Ordering::SeqCst,
-            )
-            .is_ok()
-        {
-            let _running = self.running.clone();
-            let event_bus = self.event_bus.clone();
-            tokio::spawn(async move {
-                let mut rx = event_bus.filter().device_events();
-                tracing::info!("Rule engine event service started - subscribing to device events");
-
-                while let Some((event, _metadata)) = rx.recv().await {
-                    if let NeoMindEvent::DeviceMetric {
-                        device_id,
-                        metric,
-                        value,
-                        ..
-                    } = event
-                    {
-                        tracing::trace!(device_id = %device_id, metric = %metric, "Device metric received for rule evaluation");
-                        // Rule states are updated by the separate value provider update task in init_rule_engine_events
-                        let _ = (device_id, metric, value);
-                    }
-                }
-            });
-        }
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.running.clone()
     }
 }
@@ -77,6 +52,8 @@ pub struct TransformEventService {
     automation_store: Arc<SharedAutomationStore>,
     device_registry: Arc<DeviceRegistry>,
     time_series_storage: Arc<neomind_devices::TimeSeriesStorage>,
+    value_provider: Arc<neomind_rules::UnifiedValueProvider>,
+    rule_engine: Arc<RuleEngine>,
     running: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -88,6 +65,8 @@ impl TransformEventService {
         automation_store: Arc<SharedAutomationStore>,
         time_series_storage: Arc<neomind_devices::TimeSeriesStorage>,
         device_registry: Arc<neomind_devices::DeviceRegistry>,
+        value_provider: Arc<neomind_rules::UnifiedValueProvider>,
+        rule_engine: Arc<RuleEngine>,
     ) -> Self {
         Self {
             event_bus,
@@ -95,6 +74,8 @@ impl TransformEventService {
             automation_store,
             device_registry,
             time_series_storage,
+            value_provider,
+            rule_engine,
             running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -116,6 +97,8 @@ impl TransformEventService {
             let automation_store = self.automation_store.clone();
             let device_registry = self.device_registry.clone();
             let time_series_storage = self.time_series_storage.clone();
+            let value_provider = self.value_provider.clone();
+            let rule_engine = self.rule_engine.clone();
 
             tokio::spawn(async move {
                 let mut rx = event_bus.filter().device_events();
@@ -225,6 +208,8 @@ impl TransformEventService {
                         let device_type_clone = device_type.clone();
                         let time_series_storage_inner = time_series_storage.clone();
                         let exec_flush_clone = exec_flush.clone();
+                        let value_provider_clone = value_provider.clone();
+                        let rule_engine_clone = rule_engine.clone();
 
                         // Schedule a new debounce timer
                         let timer_handle = tokio::spawn(async move {
@@ -402,6 +387,26 @@ impl TransformEventService {
                                                 value = ?transformed_metric.value,
                                                 "Published and stored transformed metric"
                                             );
+
+                                            // Update rule engine value provider + notify engine
+                                            // so that rules referencing `transform:{transform_id}:{metric}` fire.
+                                            // The DeviceMetric event published above is stored under
+                                            // device:{device_id} namespace, which doesn't match the
+                                            // transform: prefix rules use.
+                                            if let Some(ref transform_id) = transformed_metric.transform_id {
+                                                let rv = match &transformed_metric.value {
+                                                    MetricValue::Float(v) => neomind_rules::RuleValue::Number(*v),
+                                                    MetricValue::Integer(v) => neomind_rules::RuleValue::Number(*v as f64),
+                                                    MetricValue::Boolean(v) => neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 }),
+                                                    MetricValue::String(s) => neomind_rules::RuleValue::Text(s.clone()),
+                                                    MetricValue::Json(v) => neomind_rules::RuleValue::Text(v.to_string()),
+                                                };
+                                                value_provider_clone
+                                                    .update_rule_value("transform", transform_id, &transformed_metric.metric, rv.clone())
+                                                    .await;
+                                                let ds = neomind_core::datasource::DataSourceId::transform(transform_id, &transformed_metric.metric);
+                                                rule_engine_clone.on_data_update(&ds, rv).await;
+                                            }
                                         }
                                     }
 

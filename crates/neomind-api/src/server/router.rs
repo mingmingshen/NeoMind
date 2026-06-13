@@ -508,6 +508,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         .route("/api/rules/:id/test", post(rules::test_rule_handler))
         .route(
+            "/api/rules/:id/trigger",
+            post(rules::trigger_rule_handler),
+        )
+        .route(
             "/api/rules/:id/history",
             get(rules::get_rule_history_handler),
         )

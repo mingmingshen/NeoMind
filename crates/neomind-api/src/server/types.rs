@@ -516,11 +516,6 @@ impl ServerState {
         self.devices.service.clone()
     }
 
-    /// Get rule history store (backward compatibility).
-    pub fn rule_history_store(&self) -> Option<Arc<neomind_storage::business::RuleHistoryStore>> {
-        self.automation.rule_history_store.clone()
-    }
-
     /// Get agent store (backward compatibility).
     pub fn agent_store(&self) -> Arc<neomind_storage::AgentStore> {
         self.agents.agent_store.clone()
@@ -560,19 +555,6 @@ impl ServerState {
                 }
                 Err(e) => {
                     tracing::warn!(category = "storage", error = %e, "Failed to open rule store, rules will not be persisted");
-                    None
-                }
-            }
-        });
-
-        let rule_history_store_h = tokio::task::spawn_blocking(|| {
-            match neomind_storage::business::RuleHistoryStore::open("data/rule_history.redb") {
-                Ok(store) => {
-                    tracing::info!("Rule history store initialized at data/rule_history.redb");
-                    Some(Arc::new(store))
-                }
-                Err(e) => {
-                    tracing::warn!(category = "storage", error = %e, "Failed to open rule history store, statistics will be limited");
                     None
                 }
             }
@@ -876,13 +858,8 @@ impl ServerState {
             .await;
 
         // Wire rule engine to device service
-        let event_bus_for_action = (**event_bus
-            .as_ref()
-            .expect("event_bus initialized during startup"))
-        .clone();
         let device_service_for_action = devices.service.clone();
         let device_action_executor = Arc::new(DeviceActionExecutor::with_device_service(
-            event_bus_for_action,
             device_service_for_action,
         ));
         rule_engine
@@ -928,6 +905,17 @@ impl ServerState {
                     tracing::warn!(category = "storage", error = %e, "Failed to load rules from store");
                 }
             }
+
+            // Clean up execution history older than 30 days to prevent unbounded growth
+            match store.cleanup_history(30) {
+                Ok(removed) if removed > 0 => {
+                    tracing::info!(removed, "Cleaned up old rule execution history (>30 days)");
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(category = "storage", error = %e, "Failed to clean up rule history");
+                }
+            }
         }
 
         // Create automation store
@@ -961,17 +949,12 @@ impl ServerState {
         };
         tracing::info!("Transform engine initialized with extension registry");
 
-        // Await parallel-opened rule history store
-        let rule_history_store = rule_history_store_h
-            .await
-            .expect("rule_history_store task panicked");
-
         let automation = AutomationState::new(
+            value_provider,
             rule_engine,
             rule_store,
             automation_store,
             transform_engine,
-            rule_history_store,
         );
 
         // ========== Build AGENT STATE ==========
@@ -1173,10 +1156,8 @@ impl ServerState {
             .set_message_manager(core.message_manager.clone())
             .await;
 
-        let event_bus_for_action = (**event_bus.as_ref().unwrap()).clone();
         let device_service_for_action = devices.service.clone();
         let device_action_executor = Arc::new(DeviceActionExecutor::with_device_service(
-            event_bus_for_action,
             device_service_for_action,
         ));
         rule_engine
@@ -1200,14 +1181,12 @@ impl ServerState {
         let transform_engine = Some(Arc::new(TransformEngine::with_extension_registry(
             extensions.registry.clone(),
         )));
-        let rule_history_store = None; // Skip for tests
-
         let automation = AutomationState::new(
+            value_provider,
             rule_engine,
             None, // rule_store - skip for tests
             automation_store,
             transform_engine,
-            rule_history_store,
         );
 
         // ========== Build AGENT STATE ==========
@@ -2063,7 +2042,7 @@ impl ServerState {
             }
         }
 
-        // Start the service (compare_exchange inside prevents duplicate tasks)
+        // Start the service (duplicate init already prevented by rule_engine_events_initialized guard)
         let running = {
             let cached_service = self.rule_engine_event_service.lock().await;
             cached_service
@@ -2084,7 +2063,7 @@ impl ServerState {
         // Start a task to update the UnifiedValueProvider when device metrics arrive
         // This is needed for rule evaluation to work with current values
         let mut rx = event_bus.filter().device_events();
-        let value_provider = rule_engine.get_value_provider();
+        let value_provider = self.automation.value_provider.clone();
         let rule_engine_for_update = rule_engine.clone();
 
         tokio::spawn(async move {
@@ -2109,85 +2088,237 @@ impl ServerState {
                         value
                     );
 
-                    // Extract numeric value for rule evaluation
-                    let numeric_value = match &value {
-                        MetricValue::Float(v) => Some(*v),
-                        MetricValue::Integer(v) => Some(*v as f64),
-                        MetricValue::Boolean(v) => Some(if *v { 1.0 } else { 0.0 }),
-                        _ => None,
+                    // Extract value for rule evaluation (numeric or string)
+                    let rule_value = match &value {
+                        MetricValue::Float(v) => Some(neomind_rules::RuleValue::Number(*v)),
+                        MetricValue::Integer(v) => Some(neomind_rules::RuleValue::Number(*v as f64)),
+                        MetricValue::Boolean(v) => Some(neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 })),
+                        MetricValue::String(s) => Some(neomind_rules::RuleValue::Text(s.clone())),
+                        MetricValue::Json(v) => Some(neomind_rules::RuleValue::Text(v.to_string())),
                     };
 
-                    if let Some(num_value) = numeric_value {
+                    if let Some(rv) = rule_value {
                         // Update the UnifiedValueProvider with the new value
-                        if let Some(provider) = value_provider
-                            .as_any()
-                            .downcast_ref::<UnifiedValueProvider>()
                         {
-                            // Store with original metric key
-                            provider
-                                .update_value("device", &device_id, &metric, num_value)
-                                .await;
-
-                            // Also store with common prefixes stripped for rule matching
-                            // Rules might reference "battery" while events use "values.battery"
-                            let common_prefixes = [
-                                "values.",
-                                "value.",
-                                "data.",
-                                "telemetry.",
-                                "metrics.",
-                                "state.",
-                            ];
-                            for prefix in &common_prefixes {
-                                if let Some(stripped_metric) = metric.strip_prefix(prefix) {
-                                    provider
-                                        .update_value(
-                                            "device",
-                                            &device_id,
-                                            stripped_metric,
-                                            num_value,
-                                        )
+                            match &rv {
+                                neomind_rules::RuleValue::Number(num_value) => {
+                                    // Store with original metric key
+                                    value_provider
+                                        .update_value("device", &device_id, &metric, *num_value)
                                         .await;
-                                    break;
+
+                                    // Also store with common prefixes stripped for rule matching
+                                    let common_prefixes = [
+                                        "values.",
+                                        "value.",
+                                        "data.",
+                                        "telemetry.",
+                                        "metrics.",
+                                        "state.",
+                                    ];
+                                    for prefix in &common_prefixes {
+                                        if let Some(stripped_metric) = metric.strip_prefix(prefix) {
+                                            value_provider
+                                                .update_value(
+                                                    "device",
+                                                    &device_id,
+                                                    stripped_metric,
+                                                    *num_value,
+                                                )
+                                                .await;
+                                            break;
+                                        }
+                                    }
+                                }
+                                neomind_rules::RuleValue::Text(text_value) => {
+                                    // Store with original metric key
+                                    value_provider
+                                        .update_string_value("device", &device_id, &metric, text_value)
+                                        .await;
+
+                                    // Also store with common prefixes stripped for rule matching
+                                    let common_prefixes = [
+                                        "values.",
+                                        "value.",
+                                        "data.",
+                                        "telemetry.",
+                                        "metrics.",
+                                        "state.",
+                                    ];
+                                    for prefix in &common_prefixes {
+                                        if let Some(stripped_metric) = metric.strip_prefix(prefix) {
+                                            value_provider
+                                                .update_string_value(
+                                                    "device",
+                                                    &device_id,
+                                                    stripped_metric,
+                                                    text_value,
+                                                )
+                                                .await;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        // Update rule states (for FOR clauses)
-                        rule_engine_for_update.update_states().await;
-
-                        // Evaluate and execute any rules that should trigger
-                        let results = rule_engine_for_update.execute_triggered().await;
-                        if !results.is_empty() {
-                            tracing::info!(
-                                "Executed {} triggered rule(s) from device event: {} {} = {:?}",
-                                results.len(),
-                                device_id,
-                                metric,
-                                num_value
-                            );
-                            for result in &results {
-                                if result.success {
-                                    tracing::info!(
-                                        "  Rule '{}' executed: actions={:?}",
-                                        result.rule_name,
-                                        result.actions_executed
-                                    );
-                                } else {
-                                    tracing::warn!(
-                                        "  Rule '{}' failed: {:?}",
-                                        result.rule_name,
-                                        result.error
-                                    );
-                                }
-                            }
-                        }
+                        // Event-driven rule evaluation: notify engine of data change
+                        let data_source = neomind_core::datasource::DataSourceId::device(
+                            &device_id,
+                            &metric,
+                        );
+                        rule_engine_for_update.on_data_update(&data_source, rv).await;
                     }
                 }
             }
 
             tracing::warn!("Value provider update task ended");
         });
+
+        // Extension events → rule engine
+        // Extension metrics are published as ExtensionOutput events, not DeviceMetric,
+        // so they need a separate subscription to reach the value provider + rule engine.
+        let mut ext_rx = event_bus.filter().extension_output();
+        let value_provider_ext = self.automation.value_provider.clone();
+        let rule_engine_ext = rule_engine.clone();
+
+        tokio::spawn(async move {
+            use neomind_core::{MetricValue, NeoMindEvent};
+
+            tracing::info!("Starting extension output listener for rule engine");
+
+            while let Some((event, _)) = ext_rx.recv().await {
+                if let NeoMindEvent::ExtensionOutput {
+                    extension_id,
+                    output_name,
+                    value,
+                    ..
+                } = event
+                {
+                    // output_name has two formats:
+                    //   "extension_id:metric_name" (from publish_extension_metrics)
+                    //   "metric_name" (from ExtensionMetricsCollector)
+                    let metric_name = output_name
+                        .strip_prefix(&format!("{}:", extension_id))
+                        .unwrap_or(&output_name);
+
+                    let rv = match &value {
+                        MetricValue::Float(v) => neomind_rules::RuleValue::Number(*v),
+                        MetricValue::Integer(v) => neomind_rules::RuleValue::Number(*v as f64),
+                        MetricValue::Boolean(v) => {
+                            neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 })
+                        }
+                        MetricValue::String(s) => neomind_rules::RuleValue::Text(s.clone()),
+                        MetricValue::Json(v) => neomind_rules::RuleValue::Text(v.to_string()),
+                    };
+
+                    // Update value provider
+                    value_provider_ext
+                        .update_rule_value("extension", &extension_id, metric_name, rv.clone())
+                        .await;
+
+                    // Notify rule engine
+                    let data_source =
+                        neomind_core::datasource::DataSourceId::extension(&extension_id, metric_name);
+                    rule_engine_ext.on_data_update(&data_source, rv).await;
+                }
+            }
+
+            tracing::warn!("Extension output listener task ended");
+        });
+
+        // Wire agent trigger callback for rule TriggerAgent actions
+        {
+            let agent_manager = self.agents.agent_manager.clone();
+            let rule_engine = self.automation.rule_engine.clone();
+            let callback: neomind_rules::AgentTriggerCallback = Arc::new(
+                move |agent_id: String,
+                      input: Option<String>,
+                      data: Option<serde_json::Value>| {
+                    let agent_manager = agent_manager.clone();
+                    Box::pin(async move {
+                        let mgr_guard = agent_manager.read().await;
+                        if let Some(mgr) = mgr_guard.as_ref() {
+                            let agent_input = if input.is_some() || data.is_some() {
+                                Some(neomind_agent::AgentInput {
+                                    content: input,
+                                    data,
+                                    source: Some("rule_engine".to_string()),
+                                })
+                            } else {
+                                None
+                            };
+                            match mgr.execute_agent_now(&agent_id, agent_input).await {
+                                Ok(_) => Ok(()),
+                                Err(e) => Err(format!("Failed to trigger agent: {}", e)),
+                            }
+                        } else {
+                            Err("Agent manager not initialized".to_string())
+                        }
+                    })
+                },
+            );
+            rule_engine.set_agent_trigger_callback(callback).await;
+        }
+
+        // Start cron scheduler tick for Schedule-type rules
+        {
+            let rule_engine = self.automation.rule_engine.clone();
+            tokio::spawn(async move {
+                use cron::Schedule;
+                use chrono::Utc;
+
+                tracing::info!("Starting rule cron scheduler (30s tick)");
+
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(30));
+                ticker.tick().await; // First tick completes immediately
+
+                loop {
+                    ticker.tick().await;
+                    let now = Utc::now();
+
+                    let schedule_rules = rule_engine.list_schedule_rules().await;
+                    for (rule_id, cron_expr) in schedule_rules {
+                        // Parse cron and check if it should fire now (within the last 30s window)
+                        let parsed: Result<Schedule, _> = cron_expr.parse();
+                        let parsed = match parsed {
+                            Ok(s) => s,
+                            Err(_) => continue,
+                        };
+
+                        // Get the next scheduled time after (now - 30s).
+                        // If that time is <= now, the rule should fire.
+                        let window_start = now - chrono::Duration::seconds(30);
+                        let next = parsed.after(&window_start.fixed_offset()).next();
+                        if let Some(next_time) = next {
+                            if next_time.timestamp() <= now.timestamp() {
+                                tracing::debug!(
+                                    rule_id = %rule_id,
+                                    cron = %cron_expr,
+                                    "Executing scheduled rule"
+                                );
+                                let result = rule_engine.execute_rule(&rule_id).await;
+                                if result.success {
+                                    tracing::info!(
+                                        rule_id = %rule_id,
+                                        rule_name = %result.rule_name,
+                                        duration_ms = result.duration_ms,
+                                        "Scheduled rule executed successfully"
+                                    );
+                                } else {
+                                    tracing::warn!(
+                                        rule_id = %rule_id,
+                                        rule_name = %result.rule_name,
+                                        error = ?result.error,
+                                        "Scheduled rule execution failed"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /// Initialize auto-onboarding event listener.
@@ -2419,6 +2550,8 @@ impl ServerState {
             automation_store,
             self.devices.telemetry.clone(),
             self.devices.registry.clone(),
+            self.automation.value_provider.clone(),
+            self.automation.rule_engine.clone(),
         );
 
         let running = service.start();
