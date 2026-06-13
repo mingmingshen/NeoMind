@@ -16,138 +16,24 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { useCommunityComponentLifecycle } from '@/hooks/useCommunityComponentLifecycle'
 import { useDashboardPrefetch } from '@/hooks/useDashboardPrefetch'
-import { useEvents } from '@/hooks/useEvents'
-import { isSelfSyncEcho } from '@/store/slices/dashboardCrudSlice'
-import { logError } from '@/lib/errors'
-import { clearTelemetryCache } from '@/hooks/useDataSource/fetch'
+import { useDashboardRealtime } from '@/hooks/useDashboardRealtime'
+import { useComponentConfigDialog } from '@/hooks/useComponentConfigDialog'
 import { fetchCache } from '@/lib/utils/async'
 import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
-import { textNano } from '@/design-system/tokens/typography'
-import { createStableKey as createStableCacheKey } from '@/lib/stable-key'
-import { useIsMobile, useTouchHover } from '@/hooks/useMobile'
+import { useIsMobile } from '@/hooks/useMobile'
 import {
   LayoutDashboard,
   Plus,
-  Check,
-  Settings2,
-  Copy,
-  Trash2,
-  Settings as SettingsIcon,
-  ChevronRight,
-  MoreVertical,
-  Maximize,
-  PanelLeft,
   Minimize,
-  // Indicator icons
   Hash,
-  Circle,
-  TrendingUp,
-  Timer as TimerIcon,
-  Hourglass,
-  // Chart icons
-  LineChart as LineChartIcon,
-  BarChart3,
-  PieChart as PieChartIcon,
-  ScatterChart as ScatterChartIcon,
-  Radar as RadarIcon,
-  Filter,
-  CandlestickChart,
-  // Control icons
   ToggleLeft,
-  Sliders as SliderIcon,
-  RadioIcon,
-  CheckSquare,
-  ToggleLeft as SwitchIcon,
-  Star,
-  MapPin,
   Monitor,
-  RotateCw,
-  // Media icons
-  Image as ImageIcon,
-  Video as VideoIcon,
-  Camera,
-  Music,
-  Globe,
-  QrCode,
-  Square as SquareIcon,
-  Type,
-  Code,
-  Link,
-  Share2,
-  // Layout icons
-  Layers,
-  Container as ContainerIcon,
-  MinusSquare,
   Grid,
-  Minus,
-  // Visualization icons
-  Calendar as CalendarIcon,
-  GitBranch,
-  Network,
-  Map as MapIcon,
-  Zap,
-  Box,
-  Cloud,
-  Sparkles,
-  Database,
-  // Agent icons
-  Bot,
-  ListTodo,
-  Clock,
-  Brain,
-  // Device icons
-  Workflow,
-  Activity,
-  SlidersHorizontal,
-  HeartPulse,
-  // More icons
-  FileText,
-  Table,
-  Search,
-  ChevronDown,
-  LayoutGrid,
-  List,
-  Scroll,
-  Play,
-  Upload,
-  Store as StoreIcon,
-  Download,
-  PackagePlus,
-  Loader2,
 } from 'lucide-react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Field } from '@/components/ui/field'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Switch } from '@/components/ui/switch'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { Badge } from '@/components/ui/badge'
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   FullScreenDialog,
   FullScreenDialogHeader,
@@ -158,58 +44,30 @@ import { toast } from '@/components/ui/use-toast'
 // Config system
 import {
   ComponentConfigDialog,
-  DualModeSourceField,
-  UnifiedDataSourceConfig,
 } from '@/components/dashboard/config'
-import type { ComponentConfigSchema, ConfigSection } from '@/components/dashboard/config/ComponentConfigBuilder'
-import { ValueMapEditor } from '@/components/dashboard/config/ValueMapEditor'
-import { DataMappingConfig } from '@/components/dashboard/config/UIConfigSections'
-import { LEDStateRulesConfig } from '@/components/dashboard/config/LEDStateRulesConfig'
-import type { StateRule } from '@/components/dashboard/generic/LEDIndicator'
-import type { SingleValueMappingConfig, TimeSeriesMappingConfig, CategoricalMappingConfig } from '@/lib/dataMapping'
-
-// UI components
-import { ColorPicker } from '@/components/ui/color-picker'
-import { IconPicker } from '@/components/ui/icon-picker'
-import { EntityIconPicker } from '@/components/ui/entity-icon-picker'
 
 // Dashboard components
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
 import { LayerEditorDialog } from '@/components/dashboard/generic/LayerEditorDialog'
-import { MapEditorDialog, type MapBinding, type MapBindingType } from '@/components/dashboard/generic/MapEditorDialog'
+import { MapEditorDialog, type MapBinding } from '@/components/dashboard/generic/MapEditorDialog'
 import { CenterPickerDialog } from '@/components/dashboard/generic/CenterPickerDialog'
-import type { LayerBinding, LayerBindingType } from '@/components/dashboard/generic/CustomLayer'
+import type { LayerBinding } from '@/components/dashboard/generic/CustomLayer'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
-import { DashboardTabBar } from '@/components/dashboard/DashboardTabBar'
 import { ShareManagerDialog } from '@/components/dashboard/ShareManagerDialog'
-import { InstallComponentDialog } from '@/pages/dashboard-components/InstallComponentDialog'
-import type { MarketComponentEntry } from '@/types/frontend-component'
 import { MobileEditBar } from '@/components/dashboard/MobileEditBar'
-import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
-import { getSourceId, normalizeDataSource } from '@/types/dashboard'
+import type { DashboardComponent, DataSource, GenericComponent } from '@/types/dashboard'
 import type { Device } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
-import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
-import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
-import { DeviceBindingConfig } from '@/components/dashboard/config/DeviceBindingConfig'
-import { groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
-// lucideReact barrel import removed — icons are imported individually above
-import { api, fetchAPI } from '@/lib/api'
-import { notifySuccess, notifyError } from '@/lib/notify'
+import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
+import { api } from '@/lib/api'
 import { confirm } from '@/hooks/use-confirm'
 
 // Renderers extracted to Renderers.tsx
-import { renderDashboardComponent, ComponentWrapper, builtInTypes } from './Renderers'
+import { renderDashboardComponent, ComponentWrapper } from './Renderers'
 
 // Extracted sub-modules
-import { getComponentLibrary, type ComponentCategory } from './componentLibraryUtils'
-import { BindingDataSourceSelector } from './BindingDataSourceSelector'
-import { SelectField, ImageSourceField, type SelectOption } from './ConfigFieldComponents'
-import { generateConfigSchema as _generateConfigSchema } from './configSchemas'
-import { ComponentLibrarySidebar } from './ComponentLibrarySidebar'
-
-
-
+import { getComponentLibrary } from './componentLibraryUtils'
+import { DashboardToolbar } from './DashboardToolbar'
 
 // ============================================================================
 // Helper Functions
@@ -344,9 +202,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       }))
       .filter(cat => cat.items.length > 0)
   }, [componentLibrary, librarySearch])
-
-  const [configOpen, setConfigOpen] = useState(false)
-  const [selectedComponent, setSelectedComponent] = useState<DashboardComponent | null>(null)
 
   // Extension fullscreen dialog state
   const [extFullscreenContent, setExtFullscreenContent] = useState<React.ReactNode | null>(null)
@@ -507,15 +362,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
   }, [deleteDashboard])
 
-  // Config dialog state
-  const [configTitle, setConfigTitle] = useState('')
-  const [componentConfig, setComponentConfig] = useState<Record<string, any>>({})
-  const [configSchema, setConfigSchema] = useState<ComponentConfigSchema | null>(null)
-
-  // Store original config for revert on cancel
-  const [originalComponentConfig, setOriginalComponentConfig] = useState<Record<string, any>>({})
-  const [originalTitle, setOriginalTitle] = useState('')
-
   // Track if we've initialized to avoid duplicate calls
   const hasInitialized = useRef(false)
 
@@ -558,138 +404,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     fetchDeviceTypes()
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
-  // Real-time dashboard sync: refetch when another client or AI modifies dashboards.
-  // Skip events that are echoes of our own saves (drag, config edit, etc.)
-  // to avoid overwriting in-progress edits with stale server data.
-  useEvents({
-    eventTypes: ['DashboardUpdated'],
-    onEvent: (event) => {
-      const data = event.data as { dashboard_id?: string; action?: string } | undefined
-      const dashboardId = data?.dashboard_id
-      if (dashboardId && isSelfSyncEcho(dashboardId)) return
-      fetchDashboards()
-    },
+  // Real-time dashboard sync, device fetching, and polling handled by hook
+  useDashboardRealtime({
+    currentDashboard,
+    currentDashboardId,
+    devicesLength,
+    dashboardsLoading,
+    dashboardsCount: dashboards.length,
+    devicesRef,
+    fetchDashboards,
+    fetchDevices,
+    fetchDeviceTypes,
+    fetchDevicesCurrentBatch,
   })
-
-  // Retry device fetching when devices are empty (backend DB may still be loading)
-  // Max 10 retries (30s) to avoid polling forever when no devices exist
-  useEffect(() => {
-    // Only retry if we have dashboard components that need device data
-    if (!currentDashboard || currentDashboard.components.length === 0) return
-    if (devicesLength > 0) return
-    if (dashboardsLoading) return
-
-    let attempts = 0
-    const MAX_ATTEMPTS = 10
-    const interval = setInterval(() => {
-      if (attempts >= MAX_ATTEMPTS) {
-        clearInterval(interval)
-        return
-      }
-      attempts++
-      fetchDevices()
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [devicesLength, currentDashboard, dashboardsLoading, fetchDevices])
-
-  // Batch fetch current values for devices used in dashboard components
-  // Only considers the CURRENT dashboard (not all dashboards) to avoid
-  // re-fetching when switching between dashboards with different devices.
-  const dashboardDeviceIdsKey = useMemo(() => {
-    if (!currentDashboard) return ''
-    const deviceIds = new Set<string>()
-    for (const component of currentDashboard.components) {
-      const genericComponent = component as GenericComponent
-      const dataSource = genericComponent.dataSource
-      if (dataSource) {
-        const sources = Array.isArray(dataSource) ? dataSource : [dataSource]
-        for (const ds of sources) {
-          const sid = getSourceId(ds)
-          if (sid) deviceIds.add(sid)
-        }
-      }
-      // Device-bound community/extension components (e.g. NE101 camera)
-      const deviceBindingId = (genericComponent.config as any)?.deviceBinding?.deviceId as string | undefined
-      if (deviceBindingId) deviceIds.add(deviceBindingId)
-      if (genericComponent.type === 'map-display') {
-        const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
-        for (const binding of bindings) {
-          const ds = binding.dataSource as DataSource | undefined
-          if (ds && getSourceId(ds)) {
-            deviceIds.add(getSourceId(ds)!)
-          }
-        }
-      }
-    }
-    return Array.from(deviceIds).sort().join(',')
-  }, [currentDashboard])
-
-  // Fetch batch current values when device set changes.
-  // v0.7.0 approach: single initial fetch + slow background refresh (120s).
-  // NO 2-second fast retry polling — it blocks the main thread during scroll
-  // in WKWebView (Tauri), causing white screen frames.
-  const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
-
-  useEffect(() => {
-    if (!dashboardDeviceIdsKey) return
-
-    const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
-    if (deviceIds.length === 0) return
-
-    // Clear previous polling if device set changed
-    const ctrl = batchFetchControllerRef.current
-    if (ctrl.interval) {
-      clearInterval(ctrl.interval)
-      ctrl.interval = null
-    }
-    ctrl.deviceIds = deviceIds
-
-    // Initial fetch — do NOT pass an AbortSignal.
-    // React 18 StrictMode unmounts→remounts components synchronously,
-    // which aborts the signal before the fetch completes. Without a signal,
-    // the initial fetch always succeeds regardless of effect re-runs.
-    fetchDevicesCurrentBatch(deviceIds)
-
-    // Periodic refresh uses a separate abortable controller
-    const refreshController = new AbortController()
-    const SLOW_REFRESH_MS = 120_000
-    ctrl.interval = setInterval(() => {
-      if (!refreshController.signal.aborted) {
-        fetchDevicesCurrentBatch(deviceIds, refreshController.signal)
-      }
-    }, SLOW_REFRESH_MS)
-
-    return () => {
-      refreshController.abort()
-      if (ctrl.interval) {
-        clearInterval(ctrl.interval)
-        ctrl.interval = null
-      }
-    }
-  }, [dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
-
-  // Fix 3: Update devicesRef only when devices actually change (not on every render)
-  useEffect(() => {
-    devicesRef.current = useStore.getState().devices
-  }, [devicesLength])
-
-  // On dashboard switch, clear polling interval
-  useEffect(() => {
-    const ctrl = batchFetchControllerRef.current
-    if (ctrl.interval) {
-      clearInterval(ctrl.interval)
-      ctrl.interval = null
-    }
-  }, [currentDashboardId])
-
-  // Re-load dashboards if array becomes empty but we have a current ID
-  useEffect(() => {
-    if (dashboards.length === 0 && currentDashboardId) {
-      // Try to recover by fetching again
-      fetchDashboards()
-    }
-  }, [dashboards.length, currentDashboardId, fetchDashboards])
 
   // ==========================================================================
   // URL ↔ Store Sync
@@ -735,6 +462,35 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       navigate('/visual-dashboard', { replace: true })
     }
   }, [dashboards.length, dashboardsLoading, dashboardId, navigate])
+
+  // Config dialog state and handlers (extracted hook)
+  const {
+    configOpen,
+    selectedComponent,
+    componentConfig,
+    configSchema,
+    configTitle,
+    handleOpenConfig,
+    handleCancelConfig,
+    handleSaveConfig,
+    handleMapEditorSave,
+    handleLayerEditorSave,
+    handleCenterPickerSave,
+    handleTitleChange,
+  } = useComponentConfigDialog({
+    currentDashboard,
+    updateComponent,
+    persistDashboard,
+    agents,
+    agentsLoading,
+    visionModels,
+    visionModelsLoading,
+    setCenterPickerOpen,
+    setMapEditorBindings,
+    setMapEditorOpen,
+    setLayerEditorBindings,
+    setLayerEditorOpen,
+  })
 
   // Load agents — preload on mount, refresh when config opens for agent-monitor-widget
   useEffect(() => {
@@ -1031,29 +787,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
   }, [currentDashboard?.components, batchUpdatePositions])
 
-  // Handle opening config dialog
-  const handleOpenConfig = useCallback((componentId: string) => {
-    const component = currentDashboard?.components.find(c => c.id === componentId)
-    if (!component) return
-
-    setSelectedComponent(component)
-    // Extract both config and dataSource (they are separate properties on GenericComponent)
-    const config = { ...((component as any).config || {}) }
-    const dataSource = (component as any).dataSource
-    // Include title in config so style sections can access it
-    const configWithTitle = { ...config, title: component.title }
-    // Merge dataSource into config for unified state management
-    const mergedConfig = dataSource ? { ...configWithTitle, dataSource } : configWithTitle
-
-    // Store original config for revert on cancel
-    setOriginalComponentConfig(mergedConfig)
-    setOriginalTitle(component.title || '')
-
-    setConfigTitle(component.title || '')
-    setComponentConfig(mergedConfig)
-    setConfigOpen(true)
-  }, [currentDashboard?.components])
-
   // Memoize grid components to prevent infinite re-renders
   // Only recalculate when actual component data changes (detected via stableKey)
   // Note: handleOpenConfig, removeComponent, duplicateComponent are NOT dependencies
@@ -1101,287 +834,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       }
     }) ?? []
   }, [componentsStableKey, editMode, isMobile, installedComponents.length])
-
-  // Track initial config load to avoid unnecessary updates
-  const initialConfigRef = useRef<any>(null)
-  const isInitialLoad = useRef(false)
-  const lastSyncedConfigRef = useRef<string>('')
-
-  // Live preview: update component in real-time as config changes
-  // Applies changes to the store immediately so the grid preview updates.
-  // Schema is regenerated so the dialog's own inputs stay responsive.
-  useEffect(() => {
-    if (configOpen && selectedComponent) {
-      // Skip initial load - don't update store with same config
-      if (!isInitialLoad.current) {
-        initialConfigRef.current = componentConfig
-        isInitialLoad.current = true
-        lastSyncedConfigRef.current = JSON.stringify(componentConfig)
-        setConfigSchema(generateConfigSchema(selectedComponent.type, componentConfig))
-        return
-      }
-
-      // Check if config actually changed since last sync
-      const currentJSON = JSON.stringify(componentConfig)
-      if (currentJSON !== lastSyncedConfigRef.current) {
-        // Regenerate schema immediately so input values update
-        setConfigSchema(generateConfigSchema(selectedComponent.type, componentConfig))
-
-        // Update last synced config
-        lastSyncedConfigRef.current = currentJSON
-
-        // Apply to store immediately for live preview in the grid
-        const { dataSource, ...configOnly } = componentConfig
-        const currentDS = (selectedComponent as any).dataSource
-        const updateData: any = { config: configOnly }
-        if (dataSource !== undefined || currentDS !== undefined) {
-          updateData.dataSource = dataSource
-        }
-        updateComponent(selectedComponent.id, updateData, false)
-      }
-    } else {
-      // Reset when dialog closes
-      isInitialLoad.current = false
-      initialConfigRef.current = null
-      lastSyncedConfigRef.current = ''
-    }
-  }, [componentConfig, configOpen, selectedComponent?.id, selectedComponent?.type, updateComponent, setConfigSchema])
-
-  // Handle canceling component config - revert to original
-  const handleCancelConfig = useCallback(() => {
-    if (selectedComponent && originalComponentConfig) {
-      // Revert to original config (no need to persist - reverting to saved state)
-      const { dataSource, ...configOnly } = originalComponentConfig
-      const currentDS = (selectedComponent as any).dataSource
-      const updateData: any = { config: configOnly }
-      // Include dataSource if:
-      // 1. Original config had dataSource, OR
-      // 2. Original config didn't have dataSource but current component does (need to clear it)
-      if (dataSource !== undefined || currentDS !== undefined) {
-        updateData.dataSource = dataSource
-      }
-      updateComponent(selectedComponent.id, updateData, false)
-
-      // Revert title
-      if (originalTitle !== selectedComponent.title) {
-        updateComponent(selectedComponent.id, { title: originalTitle }, false)
-      }
-    }
-    setConfigOpen(false)
-  }, [selectedComponent, originalComponentConfig, originalTitle, updateComponent])
-
-  // Handle saving component config - persist the dashboard to localStorage
-  const handleSaveConfig = async () => {
-    if (selectedComponent) {
-      // Get the latest component from the store to merge with local changes
-      const latestDashboard = useStore.getState().currentDashboard
-      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
-
-      // Extract dataSource — only from authoritative locations:
-      // 1. componentConfig.dataSource (newly selected/changed in config dialog)
-      // 2. latestComponent.dataSource (existing on component as separate property)
-      // Do NOT read from nested config.dataSource — the migration moved it to top-level,
-      // and reading the nested one can restore a dataSource the user intentionally cleared.
-      const configDataSource = componentConfig.dataSource
-      const latestComponentDataSource = (latestComponent as any)?.dataSource
-
-      // Use explicit null check: if user cleared dataSource (set to null/undefined), respect that.
-      // Only fall back to the latest component dataSource if config didn't touch it at all.
-      const finalDataSource = configDataSource !== undefined
-        ? configDataSource
-        : latestComponentDataSource
-
-      // Merge local config changes with the latest component config
-      const mergedConfig = {
-        ...(latestComponent as any)?.config || {},
-        ...componentConfig,
-      }
-
-      // IMPORTANT: Remove dataSource from mergedConfig to avoid confusion
-      // dataSource should be stored as a separate property, not inside config
-      delete (mergedConfig as any).dataSource
-
-      // Remove runtime-only fields that should never be persisted
-      delete (mergedConfig as any).editMode
-
-      // Update the component in the store
-      // CRITICAL: dataSource must be saved as a separate property, not inside config
-      const updateData: any = {
-        config: mergedConfig,
-        title: configTitle,
-      }
-      if (finalDataSource !== undefined) {
-        updateData.dataSource = finalDataSource
-      }
-
-      // 1. Save clean data (without _saveTs) to the store for persistence
-      updateComponent(selectedComponent.id, updateData, false)
-
-      // 2. Persist to storage — clean dataSource is saved
-      await persistDashboard()
-
-      // 3. Force telemetry cache refresh so dashboard components re-fetch with new settings
-      clearTelemetryCache()
-
-      // 4. Stamp dataSource with a unique timestamp to force re-render.
-      //    This is done AFTER persist so _saveTs is not stored to backend.
-      //    The stamp triggers: componentsStableKey change → gridComponents rebuild → useDataSource re-fetch.
-      if (finalDataSource !== undefined) {
-        const saveTs = Date.now()
-        const stampedDataSource = Array.isArray(finalDataSource)
-          ? finalDataSource.map((ds: any) => ({ ...ds, _saveTs: saveTs }))
-          : { ...(finalDataSource as any), _saveTs: saveTs }
-        updateComponent(selectedComponent.id, { dataSource: stampedDataSource }, false)
-      }
-    }
-    setConfigOpen(false)
-  }
-
-  // Handle saving map editor bindings
-  const handleMapEditorSave = async (bindings: MapBinding[]) => {
-    // Fix any duplicate IDs in bindings before saving
-    const idCount = new Map<string, number>() as Map<string, number>
-    const fixedBindings = bindings.map((binding, index) => {
-      const ds = binding.dataSource as any
-      const currentId = binding.id
-      idCount.set(currentId, (idCount.get(currentId) || 0) + 1)
-
-      // If ID is duplicated, regenerate it
-      if (idCount.get(currentId)! > 1) {
-        let newId: string
-        if (binding.type === 'metric' || ds?.type === 'telemetry') {
-          newId = `metric-${getSourceId(ds)}-${ds?.metricId || ds?.property || index}`
-        } else if (binding.type === 'command') {
-          newId = `command-${getSourceId(ds)}-${ds?.command}`
-        } else {
-          newId = `device-${getSourceId(ds)}-${index}`
-        }
-        return { ...binding, id: newId }
-      }
-      return binding
-    })
-
-    if (selectedComponent) {
-      // CRITICAL FIX: Get the latest component config from the store to avoid stale state
-      const latestDashboard = useStore.getState().currentDashboard
-      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
-
-      const latestConfig = (latestComponent as any)?.config || {}
-      const latestDataSource = (latestComponent as any)?.dataSource
-
-      // Merge the latest config with the new bindings, preserving dataSource
-      const newConfig = { ...latestConfig, bindings: fixedBindings }
-      const updateData: any = { config: newConfig }
-
-      // CRITICAL: Preserve dataSource when updating
-      if (latestDataSource) {
-        updateData.dataSource = latestDataSource
-      }
-
-      // Update the store with both config and dataSource
-      updateComponent(selectedComponent.id, updateData, false)
-
-      // Update local config state
-      setComponentConfig(prev => ({ ...prev, bindings: fixedBindings }))
-    }
-
-    // Persist to localStorage
-    await persistDashboard()
-
-    setMapEditorOpen(false)
-  }
-
-  // Handle saving layer editor bindings
-  const handleLayerEditorSave = async (bindings: LayerBinding[]) => {
-    if (selectedComponent) {
-      const latestDashboard = useStore.getState().currentDashboard
-      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
-
-      const latestConfig = (latestComponent as any)?.config || {}
-      const latestDataSource = (latestComponent as any)?.dataSource
-
-      // Merge the latest config with the new bindings, preserving dataSource
-      const newConfig = { ...latestConfig, bindings }
-      const updateData: any = { config: newConfig }
-
-      // Preserve dataSource when updating
-      if (latestDataSource) {
-        updateData.dataSource = latestDataSource
-      }
-
-      // Update the store
-      updateComponent(selectedComponent.id, updateData, false)
-
-      // Force re-render
-
-      // Update local config state
-      setComponentConfig(prev => ({ ...prev, bindings }))
-    }
-
-    // Persist to localStorage
-    await persistDashboard()
-
-    setLayerEditorOpen(false)
-  }
-
-  // Handle saving center picker
-  const handleCenterPickerSave = async (newCenter: { lat: number; lng: number }) => {
-    if (selectedComponent) {
-      const latestDashboard = useStore.getState().currentDashboard
-      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
-
-      const latestConfig = (latestComponent as any)?.config || {}
-      const latestDataSource = (latestComponent as any)?.dataSource
-
-      // Merge the latest config with the new center, preserving dataSource
-      const newConfig = { ...latestConfig, center: newCenter }
-      const updateData: any = { config: newConfig }
-
-      // Preserve dataSource when updating
-      if (latestDataSource) {
-        updateData.dataSource = latestDataSource
-      }
-
-      // Update the store
-      updateComponent(selectedComponent.id, updateData, false)
-
-      // Force re-render
-
-      // Update local config state
-      setComponentConfig(prev => ({ ...prev, center: newCenter }))
-    }
-
-    // Persist to localStorage
-    await persistDashboard()
-
-    setCenterPickerOpen(false)
-  }
-
-  // Handle title change (local state only — store updated via debounced live preview)
-  const handleTitleChange = (newTitle: string) => {
-    setConfigTitle(newTitle)
-  }
-
-  // Generate config schema based on component type
-  const generateConfigSchema = (componentType: string, currentConfig: any): ComponentConfigSchema | null => {
-    return _generateConfigSchema(componentType, currentConfig, {
-      setConfigTitle,
-      selectedComponent,
-      updateComponent,
-      setComponentConfig,
-      t,
-      agents,
-      currentDashboard,
-      setCenterPickerOpen,
-      setMapEditorBindings,
-      setMapEditorOpen,
-      setLayerEditorBindings,
-      setLayerEditorOpen,
-      agentsLoading,
-      visionModels,
-      visionModelsLoading,
-    })
-  }
 
   if (!currentDashboard) {
     // Show loading skeleton while dashboards are loading OR
@@ -1507,121 +959,42 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       {/* Main content area */}
       <div className={cn("flex-1 flex flex-col overflow-hidden", isFullscreen && "hidden")}>
-        <header className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border bg-background z-10">
-          {layoutMode === 'tabs' ? (
-            <DashboardTabBar
-              dashboards={sortedDashboards}
-              currentDashboardId={currentDashboardId}
-              onSwitch={handleDashboardSwitch}
-              onCreate={handleDashboardCreate}
-              onRename={handleDashboardRename}
-              onDelete={handleDashboardDelete}
-              onSwitchToSidebar={handleSwitchToSidebar}
-            />
-          ) : (
-            <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-sm font-semibold truncate">
-                {currentDashboard.name}
-              </h1>
-            </div>
-          )}
-
-          <TooltipProvider delayDuration={300}>
-            <div className="flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={editMode ? "default" : "outline"}
-                      size="icon"
-                      onClick={() => {
-                        const nextMode = !editMode
-                        setEditMode(nextMode)
-                        if (!nextMode && isMobile) {
-                          setMobileSelectedId(null)
-                          setMobileEditBarOpen(false)
-                        }
-                      }}
-                      className="h-8 w-8 rounded-lg"
-                    >
-                      {editMode ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <Settings2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {editMode ? t('common.done') : t('common:editDashboard')}
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 rounded-lg"
-                      disabled={!editMode}
-                      onClick={() => editMode && setComponentLibraryOpen(true)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{t('visualDashboard.addComponent')}</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => setShareDialogOpen(true)}
-                    >
-                      <Share2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{t('visualDashboard.share.title')}</TooltipContent>
-                </Tooltip>
-
-                <ComponentLibrarySidebar
-                  open={componentLibraryOpen}
-                  onOpenChange={setComponentLibraryOpen}
-                  libraryTab={libraryTab}
-                  onLibraryTabChange={setLibraryTab}
-                  librarySearch={librarySearch}
-                  onLibrarySearchChange={setLibrarySearch}
-                  filteredLibrary={filteredLibrary}
-                  onAddComponent={handleAddComponent}
-                  marketComponents={marketComponents}
-                  marketLoading={marketLoading}
-                  installedComponents={installedComponents}
-                  installingId={installingId}
-                  onInstall={installFromMarket}
-                  onUninstall={uninstallComponent}
-                  onRefreshComponent={refreshComponentAction}
-                  onSetInstalling={setInstallingId}
-                  importDialogOpen={importDialogOpen}
-                  onImportDialogOpenChange={setImportDialogOpen}
-                />
-
-                {/* Fullscreen toggle button */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={toggleFullscreen}
-                    >
-                      <Maximize className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{t('visualDashboard.fullscreen')}</TooltipContent>
-                </Tooltip>
-              </div>
-          </TooltipProvider>
-        </header>
+        <DashboardToolbar
+          sortedDashboards={sortedDashboards}
+          currentDashboardId={currentDashboardId}
+          currentDashboard={currentDashboard}
+          layoutMode={layoutMode}
+          onDashboardSwitch={handleDashboardSwitch}
+          onDashboardCreate={handleDashboardCreate}
+          onDashboardRename={handleDashboardRename}
+          onDashboardDelete={handleDashboardDelete}
+          onSwitchToSidebar={handleSwitchToSidebar}
+          editMode={editMode}
+          setEditMode={setEditMode}
+          isMobile={isMobile}
+          setMobileSelectedId={setMobileSelectedId}
+          setMobileEditBarOpen={setMobileEditBarOpen}
+          onOpenShare={() => setShareDialogOpen(true)}
+          onToggleFullscreen={toggleFullscreen}
+          componentLibraryOpen={componentLibraryOpen}
+          setComponentLibraryOpen={setComponentLibraryOpen}
+          libraryTab={libraryTab}
+          onLibraryTabChange={setLibraryTab}
+          librarySearch={librarySearch}
+          onLibrarySearchChange={setLibrarySearch}
+          filteredLibrary={filteredLibrary}
+          onAddComponent={handleAddComponent}
+          marketComponents={marketComponents}
+          marketLoading={marketLoading}
+          installedComponents={installedComponents}
+          installingId={installingId}
+          onInstall={installFromMarket}
+          onUninstall={uninstallComponent}
+          onRefreshComponent={refreshComponentAction}
+          onSetInstalling={setInstallingId}
+          importDialogOpen={importDialogOpen}
+          onImportDialogOpenChange={setImportDialogOpen}
+        />
 
         {/* Dashboard Grid */}
         <div className="flex-1 overflow-auto p-4 relative">
