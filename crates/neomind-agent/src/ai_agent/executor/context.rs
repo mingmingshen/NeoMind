@@ -132,7 +132,7 @@ pub(crate) fn build_history_context(
                     ts,
                     status,
                     truncate_to(&r.outcome, 300),
-                    truncate_to(&r.action_taken, 300)
+                    truncate_to(&r.action_taken, 600)
                 )
             })
             .collect::<Vec<_>>();

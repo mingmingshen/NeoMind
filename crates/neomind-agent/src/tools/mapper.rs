@@ -406,7 +406,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     }
                 }
                 "rule" => {
-                    if obj.contains_key("dsl") || obj.contains_key("conditions") {
+                    if obj.contains_key("json") || obj.contains_key("condition") || obj.contains_key("actions") {
                         Some("create")
                     } else if obj.contains_key("enabled") {
                         Some("enable")
@@ -521,7 +521,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
 
                 // ===== rule domain =====
                 ("rule", "rule") => "rule_id",
-                ("rule", "dsl") => "dsl",
+                ("rule", "json") => "json",
                 ("rule", "action") => {
                     if let Some(action_val) = value.as_str() {
                         let normalized = match action_val {
@@ -850,7 +850,8 @@ mod tests {
     fn test_action_inference_for_rule_tool() {
         // Test action inference for rule tool
         let args_create = serde_json::json!({
-            "dsl": "when temperature > 30 then alert()"
+            "name": "Test Rule",
+            "condition": {"condition_type": "comparison", "source": "device:sensor1:temp", "operator": "greater_than", "threshold": 30}
         });
         let mapped_create = map_tool_parameters("rule", &args_create);
         assert_eq!(mapped_create.get("action").unwrap(), "create");

@@ -115,9 +115,10 @@ neomind transform data-sources
 2. `neomind transform test-code --code '...' --input '<actual_data>'` to verify
 3. `neomind transform create --name ... --code ... --scope ...` to save
 
-**Output DataSourceId**: `transform:<output_prefix>:<field>`
+**Output format depends on context**:
 
-Use this ID when binding to dashboards:
+- **Rules** use DataSourceId format: `transform:<output_prefix>:<field>` (colon-separated)
+- **Dashboards** use extension-metric binding (dot in metric name):
 ```json
 {"type":"extension-metric","extensionId":"transform","extensionMetric":"<output_prefix>.<field>"}
 ```
@@ -130,8 +131,8 @@ Use this ID when binding to dashboards:
 neomind transform create --name '<name>' --scope <scope> --code '<JS>'
 ```
 
-Required: `--name`, `--code`
-Optional: `--scope` (default: `global`), `--output-prefix`, `--description`, `--enabled`
+Required: `--name`, `--scope`, `--code`
+Optional: `--output-prefix`, `--description`, `--enabled`
 
 ### Test Before Creating
 
@@ -255,7 +256,7 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[{
 | No virtual metric appears | Transform disabled or scope mismatch | Check `transform get <ID>` for enabled status and scope |
 | "input is not defined" | Using wrong variable name | Must use `input` (not `inputs` or `value`) |
 | Dashboard shows no data | Wrong DataSourceId binding | Check `transform metrics` for correct output names |
-| Transform runs but output wrong | Logic error in code | Test with known input values via `transform test` |
+| Transform runs but output wrong | Logic error in code | Test with known input values via `transform test-code` |
 | `return input * 2` returns NaN/0 | Using `input.value` on auto-unwrapped scalar | Single-key `{"value":X}` is auto-unwrapped — just use `input`, not `input.value` |
 | `extensions.invoke is not defined` | Extension not installed | Check `neomind extension list` and verify extension ID |
 | Multi-key object: `input * 2` = NaN | Object can't be multiplied | Use `input.temperature * 2` for specific fields |

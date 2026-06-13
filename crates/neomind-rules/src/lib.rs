@@ -1,60 +1,56 @@
-//! Edge AI Rules Engine Crate
+//! Rule engine v2 — event-driven, pure JSON rules.
 //!
-//! This crate provides a rule engine with DSL support for the NeoMind platform.
-//!
-//! ## Features
-//!
-//! - **DSL Parser**: Human-readable rule definition language
-//! - **Rule Engine**: Condition evaluation and action execution
-//! - **Value Provider**: Integration with device metrics
-//!
-//! ## Example
+//! ## Quick start
 //!
 //! ```rust,no_run
-//! use neomind_rules::{RuleEngine, RuleDslParser, InMemoryValueProvider};
+//! use neomind_rules::{RuleEngine, CompiledRule};
+//! use neomind_rules::models::*;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let provider = std::sync::Arc::new(InMemoryValueProvider::new());
+//!     let provider = std::sync::Arc::new(neomind_rules::InMemoryValueProvider::new());
 //!     let engine = RuleEngine::new(provider);
 //!
-//!     let dsl = r#"
-//!         RULE "高温告警"
-//!         WHEN sensor.temperature > 50
-//!         DO
-//!             NOTIFY "设备温度过高"
-//!         END
-//!     "#;
+//!     let mut rule = CompiledRule::new("High Temperature");
+//!     rule.condition = Some(RuleCondition::Comparison {
+//!         source: neomind_core::datasource::DataSourceId::device("sensor1", "temperature"),
+//!         operator: ComparisonOperator::GreaterThan,
+//!         threshold: 50.0,
+//!         threshold_value: None,
+//!     });
+//!     rule.trigger = RuleTrigger::from_condition(&rule.condition);
+//!     rule.actions = vec![RuleAction::Notify {
+//!         message: "Too hot!".into(),
+//!         severity: NotifySeverity::Critical,
+//!     }];
+//!     rule.finalize();
 //!
-//!     let rule_id = engine.add_rule_from_dsl(dsl).await?;
-//!     println!("Added rule: {}", rule_id);
-//!
+//!     engine.add_rule(rule).await?;
 //!     Ok(())
 //! }
 //! ```
 
-pub mod dependencies;
 pub mod device_integration;
-pub mod dsl;
 pub mod engine;
 pub mod error;
 pub mod extension_integration;
-pub mod unified_provider;
-
+pub mod models;
+pub mod preview;
 pub mod store;
+pub mod unified_provider;
 pub mod validator;
 
-// Re-exports (only types used externally via crate-root shortcut path)
-pub use dsl::{ComparisonOperator, LogLevel, RuleAction, RuleCondition, RuleDslParser};
-pub use engine::{
-    CompiledRule, InMemoryValueProvider, RuleEngine, RuleId, RuleStatus, ValueProvider,
-};
+// Re-exports
+pub use engine::{AgentTriggerCallback, InMemoryValueProvider, RuleEngine};
 pub use error::RuleError;
-pub use unified_provider::{ExtensionStorageLike, UnifiedValueProvider};
-pub use validator::{
-    AlertChannelInfo, CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo,
-    RuleValidator, ValidationContext,
+pub use models::{
+    CompiledRule, ComparisonOperator, ExecuteTarget, LogicalOperator, NotifySeverity,
+    RuleAction, RuleCondition, RuleExecutionResult, RuleId, RuleState, RuleTrigger, RuleValue,
+    ValueProvider,
 };
+pub use preview::to_dsl_preview;
+pub use unified_provider::UnifiedValueProvider;
+pub use validator::{AlertChannelInfo, CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo, RuleValidator, ValidationContext};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

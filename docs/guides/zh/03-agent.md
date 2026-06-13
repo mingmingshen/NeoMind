@@ -757,8 +757,8 @@ anti_triggers:
 # 列出温度设备
 neomind device list --type temperature
 
-# 创建温度规则
-neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
+# 创建温度规则（默认启用）
+neomind rule create --json '{"name":"Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temp","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"温度过高","severity":"warning"}]}'
 
 # 查询最新读数
 neomind device get <device_id>

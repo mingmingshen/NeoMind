@@ -179,6 +179,7 @@ impl AgentExecutor {
         &self,
         agent_id: &str,
         knowledge_files: &[neomind_storage::KnowledgeFileRef],
+        context_window_size: usize,
     ) -> Option<std::collections::HashMap<String, String>> {
         if knowledge_files.is_empty() {
             return None;
@@ -190,11 +191,17 @@ impl AgentExecutor {
         for f in knowledge_files {
             match store.read_agent_custom_file(agent_id, &f.name) {
                 Ok(content) => {
-                    // Truncate individual files to 12000 chars — scaled up from 6000
-                    // to match the raised write limit (20000) so long-task context
-                    // written in one execution is actually visible in the next.
-                    // Still bounded per-file to avoid context bloat on small models.
-                    content_map.insert(f.name.clone(), truncate_to(&content, 12000));
+                    // Adaptive truncation: large-context models (64K+) can afford
+                    // the full write limit (20000), matching what the agent wrote.
+                    // Smaller models stay conservative to avoid context bloat.
+                    let limit = if context_window_size > 64000 {
+                        20000
+                    } else if context_window_size > 16000 {
+                        16000
+                    } else {
+                        8000
+                    };
+                    content_map.insert(f.name.clone(), truncate_to(&content, limit));
                 }
                 Err(e) => {
                     tracing::debug!(

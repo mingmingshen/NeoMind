@@ -2,178 +2,160 @@
 
 **Package**: `neomind-rules`
 **Version**: 0.8.0
-**Completion**: 85%
-**Purpose**: DSL rule engine with LLM-based generation
+**Purpose**: JSON-based rule engine with event-driven evaluation
 
 ## Overview
 
-The Rules module implements a DSL (Domain Specific Language) rule engine with support for device and extension metric conditions, LLM-based rule generation from natural language, context-aware validation, and multiple action types.
+The Rules module implements a JSON-based rule engine with support for device and extension metric conditions, event-driven evaluation, context-aware validation, and three action types (notify, execute, trigger_agent).
 
 ## Module Structure
 
 ```
 crates/neomind-rules/src/
 ├── lib.rs                      # Public interface and re-exports
-├── dsl.rs                      # DSL parser and types
+├── models.rs                   # Core data models (CompiledRule, conditions, actions)
 ├── engine.rs                   # Rule evaluation engine
-├── generator.rs                # LLM-based rule generation from NL
-├── validator.rs                # Context-aware rule validation
+├── preview.rs                  # Human-readable preview generation (read-only)
+├── validator.rs                # Rule validation
 ├── store.rs                    # Rule persistence (redb)
-├── history.rs                  # Rule execution history
-├── dependencies.rs             # Dependency management
 ├── device_integration.rs       # Device action execution
 ├── extension_integration.rs    # Extension action execution
 ├── unified_provider.rs         # Unified value provider
 └── error.rs                    # Error types
 ```
 
-## DSL Syntax
+## Rule JSON Format
 
 ### Rule Structure
 
-```neo
-RULE "<name>"
-[TRIGGER SCHEDULE "<cron>"]
-WHEN <condition>
-[FOR <duration>]
-DO
-    <action>
-    [<action> ...]
-END
+```json
+{
+  "name": "<rule name>",
+  "description": "<optional description>",
+  "enabled": true,
+  "trigger": {"trigger_type": "data_change"},
+  "condition": { "<condition_type>": "..." },
+  "for_duration": <milliseconds, optional>,
+  "cooldown": <milliseconds, default 60000>,
+  "actions": [ { "<type>": "..." } ]
+}
 ```
 
 ### Complete Examples
 
-```neo
-# Simple device rule
-RULE "Temperature Alert"
-WHEN sensor.temperature > 50
-DO
-    NOTIFY "Device temperature too high: {temperature}C"
-END
+```bash
+# Simple comparison rule (enabled by default)
+neomind rule create --json '{
+  "name": "Temperature Alert",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 50},
+  "actions": [{"type": "notify", "message": "Too hot: {value}C", "severity": "critical"}]
+}'
 
-# Device rule with duration
-RULE "Sustained High Temperature"
-WHEN sensor.temperature > 30
-FOR 5 minutes
-DO
-    NOTIFY "Temperature high for 5 minutes"
-    EXECUTE device.fan(speed=100)
-END
+# Rule with duration (condition must hold for 5 minutes)
+neomind rule create --json '{
+  "name": "Sustained High Temperature",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+  "for_duration": 300000,
+  "actions": [
+    {"type": "notify", "message": "High for 5 min", "severity": "warning"},
+    {"type": "execute", "target": "fan", "target_type": "device", "command": "set_speed", "params": {"speed": 100}}
+  ]
+}'
 
 # Extension metric rule
-RULE "Weather Alert"
-WHEN EXTENSION weather.temperature > 30
-DO
-    NOTIFY "Weather too hot"
-END
+neomind rule create --json '{
+  "name": "Weather Alert",
+  "condition": {"condition_type": "comparison", "source": "extension:weather:temperature", "operator": "greater_than", "threshold": 30},
+  "actions": [{"type": "notify", "message": "Weather too hot", "severity": "warning"}]
+}'
 
-# Complex rule with AND/OR
-RULE "Compound Alert"
-WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
-DO
-    NOTIFY "High temp, low humidity"
-    EXECUTE device.humidifier(on=true)
-END
+# Complex rule with AND
+neomind rule create --json '{
+  "name": "Compound Alert",
+  "condition": {
+    "condition_type": "logical", "operator": "and",
+    "conditions": [
+      {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+      {"condition_type": "comparison", "source": "extension:weather:humidity", "operator": "less_than", "threshold": 20}
+    ]
+  },
+  "actions": [{"type": "notify", "message": "High temp, low humidity", "severity": "warning"}]
+}'
 
 # Range condition
-RULE "Temperature Range"
-WHEN sensor.temperature BETWEEN 20 AND 25
-DO
-    NOTIFY "Temperature in comfort range"
-END
+neomind rule create --json '{
+  "name": "Temperature Range",
+  "condition": {"condition_type": "range", "source": "device:sensor:temperature", "min": 20, "max": 25},
+  "actions": [{"type": "notify", "message": "Comfortable range", "severity": "info"}]
+}'
 
-# Scheduled rule
-RULE "Periodic Check"
-TRIGGER SCHEDULE "0 */5 * * * *"
-DO
-    EXECUTE device.read_sensors()
-END
+# Scheduled rule (no condition needed)
+neomind rule create --json '{
+  "name": "Periodic Check",
+  "trigger": {"trigger_type": "schedule", "cron": "0 */5 * * *"},
+  "actions": [{"type": "execute", "target": "sensor-controller", "target_type": "device", "command": "read_sensors", "params": {}}]
+}'
 
 # Agent trigger rule
-RULE "Auto Analysis"
-WHEN sensor.temperature > 40
-DO
-    TRIGGER_AGENT "analyzer" INPUT "Check temperature anomaly"
-END
+neomind rule create --json '{
+  "name": "Auto Analysis",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 40},
+  "actions": [{"type": "trigger_agent", "agent_id": "analyzer", "input": "Check temperature anomaly"}]
+}'
 ```
 
 ## Core Types
 
-### 1. ParsedRule - Parsed Rule Definition
+### 1. CompiledRule - Complete Rule Definition
 
 ```rust
-pub struct ParsedRule {
-    /// Rule name
+pub struct CompiledRule {
+    pub id: RuleId,
     pub name: String,
-    /// Condition to evaluate
-    pub condition: RuleCondition,
-    /// Duration for condition to hold before triggering
-    pub for_duration: Option<Duration>,
-    /// Actions to execute
-    pub actions: Vec<RuleAction>,
-    /// Description (optional)
     pub description: Option<String>,
-    /// Tags
+    pub enabled: bool,
     pub tags: Vec<String>,
-    /// Trigger type
-    pub trigger_type: TriggerType,
+    pub trigger: RuleTrigger,
+    pub condition: Option<RuleCondition>,
+    pub actions: Vec<RuleAction>,
+    pub cooldown: Duration,
+    pub for_duration: Option<Duration>,
+    pub state: RuleState,
+    pub dsl_preview: String,
+    pub source: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 ```
 
-### 2. TriggerType - Trigger Type
+### 2. RuleTrigger - Trigger Type
 
 ```rust
-pub enum TriggerType {
-    /// Triggered by device state changes (default)
-    DeviceState,
-    /// Triggered on a cron schedule
+pub enum RuleTrigger {
+    DataChange { sources: Vec<DataSourceId> },
     Schedule { cron: String },
-    /// Triggered manually via API
     Manual,
 }
 ```
 
-### 3. RuleCondition - Condition Definition
+### 3. RuleCondition - 3 Condition Types
 
 ```rust
 pub enum RuleCondition {
-    /// Device condition: device.metric operator value
-    Device {
-        device_id: String,
-        metric: String,
+    Comparison {
+        source: DataSourceId,
         operator: ComparisonOperator,
         threshold: f64,
     },
-    /// Extension condition: extension.metric operator value
-    Extension {
-        extension_id: String,
-        metric: String,
-        operator: ComparisonOperator,
-        threshold: f64,
-    },
-    /// Device range condition
-    DeviceRange {
-        device_id: String,
-        metric: String,
+    Range {
+        source: DataSourceId,
         min: f64,
         max: f64,
     },
-    /// Extension range condition
-    ExtensionRange {
-        extension_id: String,
-        metric: String,
-        min: f64,
-        max: f64,
+    Logical {
+        operator: LogicalOperator,  // And | Or | Not
+        conditions: Vec<RuleCondition>,
     },
-    /// Logical AND
-    And(Vec<RuleCondition>),
-    /// Logical OR
-    Or(Vec<RuleCondition>),
-    /// Logical NOT
-    Not(Box<RuleCondition>),
-    /// Always true (for scheduled/manual rules)
-    Always,
 }
 ```
 
@@ -188,49 +170,20 @@ pub enum ComparisonOperator {
 }
 ```
 
-### 4. RuleAction - Action Definition
+### 4. RuleAction - 3 Action Types
 
 ```rust
 pub enum RuleAction {
-    /// Send notification
     Notify {
         message: String,
-        channels: Option<Vec<String>>,
+        severity: NotifySeverity,  // Info | Warning | Critical | Emergency
     },
-    /// Execute device command
     Execute {
-        device_id: String,
+        target: String,
+        target_type: ExecuteTarget,  // Device | Extension
         command: String,
-        params: HashMap<String, serde_json::Value>,
+        params: serde_json::Value,
     },
-    /// Log message
-    Log {
-        level: LogLevel,
-        message: String,
-        severity: Option<String>,
-    },
-    /// Set device property
-    Set {
-        device_id: String,
-        property: String,
-        value: serde_json::Value,
-    },
-    /// Delay execution
-    Delay { duration: Duration },
-    /// Create alert
-    CreateAlert {
-        title: String,
-        message: String,
-        severity: AlertSeverity,
-    },
-    /// Send HTTP request
-    HttpRequest {
-        method: HttpMethod,
-        url: String,
-        headers: Option<HashMap<String, String>>,
-        body: Option<String>,
-    },
-    /// Trigger AI Agent
     TriggerAgent {
         agent_id: String,
         input: Option<String>,
@@ -252,30 +205,7 @@ pub struct RuleEngine {
 }
 ```
 
-```rust
-impl RuleEngine {
-    /// Create rule engine
-    pub fn new(value_provider: Arc<dyn ValueProvider>) -> Self;
-
-    /// Add rule from DSL text
-    pub async fn add_rule_from_dsl(&self, dsl: &str) -> Result<RuleId>;
-
-    /// Enable/disable rule
-    pub async fn set_rule_enabled(&self, id: &RuleId, enabled: bool) -> Result<()>;
-
-    /// Evaluate all rules
-    pub async fn evaluate_all(&self) -> Vec<RuleExecutionResult>;
-
-    /// Get rule state
-    pub async fn get_rule_state(&self, id: &RuleId) -> Option<RuleState>;
-
-    /// Start evaluation loop
-    pub async fn start(&self) -> Result<()>;
-
-    /// Stop evaluation loop
-    pub async fn stop(&self) -> Result<()>;
-}
-```
+The engine evaluates rules on data updates (`on_data_update`), using a subscription index to map DataSourceIds to relevant rules. Cooldowns are enforced atomically via `try_claim_cooldown()` to prevent TOCTOU races.
 
 ### Rule Execution Result
 
@@ -283,55 +213,11 @@ impl RuleEngine {
 pub struct RuleExecutionResult {
     pub rule_id: RuleId,
     pub rule_name: String,
-    pub triggered: bool,
-    pub condition_met: bool,
-    pub actions_executed: usize,
-    pub action_results: Vec<ActionResult>,
-    pub evaluation_duration: Duration,
-}
-```
-
-## Rule Validation
-
-```rust
-pub struct RuleValidator {
-    // Validates rules against available resources
-}
-
-pub struct ValidationContext {
-    pub devices: Vec<DeviceInfo>,
-    pub metrics: Vec<MetricInfo>,
-    pub commands: Vec<CommandInfo>,
-    pub alert_channels: Vec<AlertChannelInfo>,
-}
-
-pub struct RuleValidationResult {
-    pub is_valid: bool,
-    pub issues: Vec<ValidationIssue>,
-    pub resource_summary: ResourceSummary,
-}
-
-pub enum ValidationSeverity {
-    Error,
-    Warning,
-    Info,
-}
-```
-
-## Rule History
-
-```rust
-pub struct RuleHistoryEntry {
-    pub rule_id: String,
-    pub rule_name: String,
-    pub triggered_at: i64,
-    pub condition_met: bool,
-    pub actions_executed: usize,
+    pub success: bool,
+    pub actions_executed: Vec<String>,
+    pub error: Option<String>,
     pub duration_ms: u64,
-}
-
-pub struct RuleHistoryStorage {
-    db: Database,
+    pub triggered_at: DateTime<Utc>,
 }
 ```
 
@@ -340,68 +226,44 @@ pub struct RuleHistoryStorage {
 ```
 # Rules CRUD
 GET    /api/rules                           # List rules
-POST   /api/rules                           # Create rule (requires {"dsl": "RULE ... END"})
+POST   /api/rules                           # Create rule (JSON body)
 GET    /api/rules/:id                       # Get rule
-PUT    /api/rules/:id                       # Update rule
+PUT    /api/rules/:id                       # Update rule (JSON body)
 DELETE /api/rules/:id                       # Delete rule
 POST   /api/rules/:id/enable                # Enable/disable rule
 
 # Rule Operations
 POST   /api/rules/:id/test                  # Test rule
 GET    /api/rules/:id/history               # Rule execution history
-POST   /api/rules/validate                  # Validate rule DSL
-
-# Rule Import/Export
-GET    /api/rules/export                    # Export all rules
-POST   /api/rules/import                    # Import rules
-
-# Rule Resources
-GET    /api/rules/resources                 # Available resources for validation
 ```
 
 ## Usage Examples
 
-### Create Rule via DSL
+### Create Rule
 
 ```bash
 curl -X POST http://localhost:9375/api/rules \
   -H "Content-Type: application/json" \
   -d '{
-    "dsl": "RULE \"Temperature Alert\" WHEN sensor.temperature > 30 DO NOTIFY \"High temperature\" END"
+    "name": "Temperature Alert",
+    "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+    "actions": [{"type": "notify", "message": "High temperature", "severity": "warning"}]
   }'
 ```
 
 ### Test Rule
 
 ```bash
-curl -X POST http://localhost:9375/api/rules/test \
+curl -X POST http://localhost:9375/api/rules/<rule-id>/test \
   -H "Content-Type: application/json" \
-  -d '{
-    "dsl": "RULE \"Test\" WHEN sensor.temperature > 30 DO NOTIFY \"High\" END",
-    "context": {
-      "sensor": {
-        "temperature": 35
-      }
-    }
-  }'
-```
-
-### Validate Rule
-
-```bash
-curl -X POST http://localhost:9375/api/rules/validate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dsl": "RULE \"Test\" WHEN sensor.temperature > 30 DO NOTIFY \"High\" END"
-  }'
+  -d '{"test_value": 35}'
 ```
 
 ## Design Principles
 
-1. **DSL-First**: Human-readable rule definition language (RULE/WHEN/DO/END)
-2. **Testable**: All rules can be tested with mock context
-3. **Event-Driven**: Rules evaluate based on data changes
-4. **Composable**: Support complex condition combinations (AND/OR/NOT)
-5. **Extensible**: Support device, extension, and scheduled triggers
-6. **Validated**: Context-aware validation against available resources
-7. **Agent-Integrated**: Rules can trigger AI agents for complex analysis
+1. **JSON-First**: Pure JSON rule definitions — no DSL parsing required
+2. **Event-Driven**: Rules evaluate on data changes via subscription index
+3. **Composable**: Logical conditions support AND/OR/NOT combinations
+4. **Extensible**: Device, extension, and scheduled triggers
+5. **Agent-Integrated**: Rules can trigger AI agents for complex analysis
+6. **Cooldown-Safe**: Atomic cooldown claiming prevents concurrent trigger races

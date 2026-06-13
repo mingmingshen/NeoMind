@@ -136,16 +136,13 @@ extension:{extension_id}:{metric_name}
 
 ### 在规则中使用
 
-在规则 DSL 中使用标准 DataSourceId 引用扩展指标：
+在规则中使用标准 DataSourceId（`extension:扩展ID:指标`）引用扩展指标：
 
+```bash
+neomind rule create --json '{"name":"Weather Rain Alert","condition":{"condition_type":"comparison","source":"extension:weather:is_raining","operator":"greater_than","threshold":0},"actions":[{"type":"notify","message":"检测到下雨！","severity":"warning"}]}'
 ```
-RULE weather_rain_alert
-  WHEN EXTENSION weather.condition = "Rain"
-  DO
-    NOTIFY(channel="telegram", message="检测到下雨！")
-  END
-END
-```
+
+> **注意**：规则仅支持数值比较。对于字符串类型的扩展指标（如 `condition = "Rain"`），请创建转换输出数值信号，或使用 `trigger_agent` 进行 AI 评估。
 
 ### 在转换中使用
 

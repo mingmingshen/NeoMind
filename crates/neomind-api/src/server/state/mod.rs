@@ -21,6 +21,5 @@ pub use automation_state::AutomationState;
 pub use core_state::CoreState;
 pub use device_state::{DeviceState, DeviceStatusUpdate};
 pub use extension_state::{
-    ExtensionMetricsStorage, ExtensionMetricsStorageAdapter, ExtensionRegistryAdapter,
-    ExtensionState, ExtensionStore,
+    ExtensionMetricsStorage, ExtensionRegistryAdapter, ExtensionState, ExtensionStore,
 };

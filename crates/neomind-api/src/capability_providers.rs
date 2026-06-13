@@ -854,7 +854,7 @@ impl RuleCapabilityProvider {
         Ok(json!({
             "rule_id": rule_id.to_string(),
             "name": rule.name,
-            "status": format!("{:?}", rule.status),
+            "enabled": rule.enabled,
             "trigger_count": rule.state.trigger_count,
             "last_triggered": rule.state.last_triggered,
         }))
@@ -874,7 +874,7 @@ impl RuleCapabilityProvider {
                 json!({
                     "id": r.id.to_string(),
                     "name": r.name,
-                    "status": format!("{:?}", r.status),
+                    "enabled": r.enabled,
                     "trigger_count": r.state.trigger_count,
                 })
             })

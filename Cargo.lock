@@ -3415,6 +3415,7 @@ dependencies = [
  "neomind-messages",
  "parking_lot",
  "redb",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

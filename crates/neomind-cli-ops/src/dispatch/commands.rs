@@ -987,7 +987,7 @@ pub enum RuleCommand {
     List,
     /// Get rule details.
     ///
-    /// Shows the full DSL definition, condition, action, and execution stats.
+    /// Shows the full rule definition, condition, actions, and execution stats.
     /// Use this to inspect a rule before modifying or testing it.
     ///
     /// Example: `neomind rule get rule-001`
@@ -998,34 +998,29 @@ pub enum RuleCommand {
     },
     /// Create a new rule.
     ///
-    /// Uses NeoMind DSL syntax. Must include RULE...WHEN...DO...END structure.
-    /// Example: `neomind rule create --dsl 'RULE "Alert" WHEN device.temperature > 30 DO NOTIFY "Too hot" END'`
+    /// Uses JSON format for rule definition. Must include name, condition, and actions.
+    /// Example: `neomind rule create --json '{"name":"Alert","condition":{...},"actions":[...]}'`
     Create {
-        /// Rule name (optional, can be set in DSL).
+        /// Rule definition as JSON string.
+        /// Required fields: name, condition (optional for schedule/manual), actions.
+        /// Conditions: {"condition_type":"comparison","source":"device:sensor1:temp","operator":"greater_than","threshold":30}
+        /// Actions: [{"type":"notify","message":"Too hot","severity":"critical"}]
         #[arg(short, long)]
-        name: Option<String>,
-        /// Rule DSL definition. Syntax: RULE "name" WHEN <condition> DO <action> END
-        /// Conditions: device.<metric> <op> <value>, AND/OR for compound.
-        /// Actions: NOTIFY "message", device.<metric>.write(<value>)
-        #[arg(short, long)]
-        dsl: String,
+        json: String,
     },
     /// Update rule.
     ///
-    /// Modify rule name or DSL definition. The rule is re-evaluated immediately.
+    /// Modify rule using JSON format. Only included fields are updated.
     /// Test first with `rule test <ID> --input '...'` to verify new conditions.
     ///
-    /// Example: `neomind rule update rule-001 --dsl 'RULE "Alert" WHEN device.temp > 25 DO NOTIFY "Warm" END'`
+    /// Example: `neomind rule update rule-001 --json '{"name":"New Name"}'`
     Update {
         /// Rule ID.
         #[arg(required = true)]
         id: String,
-        /// New name.
+        /// Updated rule definition as JSON string.
         #[arg(short, long)]
-        name: Option<String>,
-        /// New rule DSL definition.
-        #[arg(short, long)]
-        dsl: Option<String>,
+        json: String,
     },
     /// Delete rule.
     ///
@@ -1272,7 +1267,8 @@ pub enum AgentCommand {
         /// Overrides --schedule-type and --schedule-config.
         #[arg(long)]
         every: Option<String>,
-        /// Event filter for event schedule type (e.g., "device_type:temp_sensor").
+        /// Event filter JSON for event schedule type. Format: '{"sources":[{"type":"device","id":"sensor-001"}]}'
+        /// Use "all" as id to match any source of that type. Add "field" to match a specific metric.
         #[arg(long)]
         event_filter: Option<String>,
         /// Timezone for cron schedule (e.g., "Asia/Shanghai", "UTC"). Default: system timezone.
@@ -1566,7 +1562,7 @@ pub enum MessageCommand {
         /// Message content (supports markdown).
         #[arg(short, long)]
         body: String,
-        /// Severity level: info | warning | error | critical.
+        /// Severity level: info | warning | critical | emergency.
         #[arg(short, long, default_value = "info")]
         severity: String,
         /// Source.

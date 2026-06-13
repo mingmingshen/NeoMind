@@ -561,41 +561,6 @@ impl neomind_rules::extension_integration::ExtensionRegistry for ExtensionRegist
     }
 }
 
-// ============================================================================
-// Adapter for UnifiedValueProvider
-// ============================================================================
-
-/// Adapter that implements neomind_rules::ExtensionStorageLike for ExtensionMetricsStorage.
-///
-/// This allows ExtensionMetricsStorage to be used with UnifiedValueProvider.
-pub struct ExtensionMetricsStorageAdapter {
-    storage: Arc<ExtensionMetricsStorage>,
-}
-
-impl ExtensionMetricsStorageAdapter {
-    pub fn new(storage: Arc<ExtensionMetricsStorage>) -> Self {
-        Self { storage }
-    }
-}
-
-#[async_trait::async_trait]
-impl neomind_rules::ExtensionStorageLike for ExtensionMetricsStorageAdapter {
-    async fn query_latest(&self, extension_id: &str, metric: &str) -> Option<f64> {
-        // Extension metrics are stored with "extension:" prefix
-        let source_id = format!("extension:{}", extension_id);
-        match self.storage.query_latest(&source_id, metric).await {
-            Ok(Some(dp)) => match &dp.value {
-                neomind_devices::MetricValue::Float(f) => Some(*f),
-                neomind_devices::MetricValue::Integer(i) => Some(*i as f64),
-                neomind_devices::MetricValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
-                _ => None,
-            },
-            Ok(None) => None,
-            Err(_) => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

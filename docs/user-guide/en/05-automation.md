@@ -133,54 +133,54 @@ See the Data page documentation for full details.
 
 ---
 
-## Appendix: DSL Rule Syntax
+## Appendix: Rule JSON Format
 
-For advanced users, rules can be written directly in the NeoMind DSL format. This is useful for version control, bulk import, and complex multi-condition rules.
+Advanced users can create rules directly via CLI (`--json`) or REST API. This is useful for version control, bulk import, and complex multi-condition rules.
 
 ### Basic Structure
 
-```neo
-RULE "<rule name>"
-[TRIGGER SCHEDULE "<cron expression>"]
-WHEN <condition>
-[FOR <duration>]
-DO
-    <action>
-    [<action> ...]
-END
+```json
+{
+  "name": "<rule name>",
+  "trigger": {"trigger_type": "schedule", "cron": "<cron expression>"},
+  "condition": { "<condition_type>": "..." },
+  "for_duration": <milliseconds>,
+  "actions": [ { "<type>": "..." } ]
+}
 ```
 
-### Condition Examples
+### Condition Types
 
-```neo
-WHEN sensor.temperature > 30
-WHEN sensor.temperature BETWEEN 18 AND 25
-WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
-WHEN sensor.temperature > 30 FOR 5 minutes
-```
+| Type | Fields | Example |
+|------|--------|---------|
+| `comparison` | `source`, `operator`, `threshold` | `{"condition_type":"comparison","source":"device:sensor:temp","operator":"greater_than","threshold":30}` |
+| `range` | `source`, `min`, `max` | `{"condition_type":"range","source":"device:sensor:temp","min":18,"max":25}` |
+| `logical` | `operator` (and/or/not), `conditions` | `{"condition_type":"logical","operator":"and","conditions":[...]}` |
 
-### Action Examples
+**Operators**: `greater_than`, `less_than`, `greater_equal`, `less_equal`, `equal`, `not_equal`
 
-```neo
-NOTIFY "Temperature too high: {temperature}C"
-EXECUTE device.fan(speed=100)
-LOG "Check completed", severity="info"
-SET device.thermostat.target = 22
-ALERT "High Temp", "Sensor exceeds 50C", severity="critical"
-HTTP POST "https://api.example.com/alert" headers={"Authorization": "Bearer TOKEN"} body='{"temp": 35}'
-```
+### Action Types
+
+| Type | Fields | Example |
+|------|--------|---------|
+| `notify` | `message`, `severity` | `{"type":"notify","message":"Too hot: {value}","severity":"critical"}` |
+| `execute` | `target`, `target_type`, `command`, `params` | `{"type":"execute","target":"fan","target_type":"device","command":"on","params":{"speed":100}}` |
+| `trigger_agent` | `agent_id`, `input` | `{"type":"trigger_agent","agent_id":"analyzer","input":"Check temp"}` |
+
+**Severities**: `info`, `warning`, `critical`, `emergency`
 
 ### Complete Example
 
-```neo
-RULE "Temperature Alert"
-WHEN sensor.temperature > 50
-FOR 2 minutes
-DO
-    NOTIFY "Temperature critical: {temperature}C"
-    EXECUTE device.fan(speed=100)
-    ALERT "Critical Temperature", "Sensor exceeds 50C", severity="critical"
-END
+```bash
+neomind rule create --json '{
+  "name": "Temperature Alert",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 50},
+  "for_duration": 120000,
+  "actions": [
+    {"type": "notify", "message": "Critical: {value}C", "severity": "critical"},
+    {"type": "execute", "target": "fan", "target_type": "device", "command": "set_speed", "params": {"speed": 100}}
+  ]
+}'
 ```
 
 ### API and CLI
@@ -189,13 +189,13 @@ END
 # Create a rule via API
 curl -X POST http://localhost:9375/api/rules \
   -H "Content-Type: application/json" \
-  -d '{"dsl": "RULE \"Alert\" WHEN sensor.temp > 30 DO NOTIFY \"High\" END"}'
+  -d '{"name":"Alert","condition":{"condition_type":"comparison","source":"device:sensor:temp","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"High temperature","severity":"warning"}]}'
 
-# CLI commands
+# CLI commands (rules are enabled by default)
 neomind rule list
-neomind rule create --dsl 'RULE "Alert" WHEN sensor.temp > 30 DO NOTIFY "Hot" END'
-neomind rule enable <rule_id>
+neomind rule create --json '{"name":"Alert","condition":{"condition_type":"comparison","source":"device:sensor:temp","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"Hot","severity":"warning"}]}'
 neomind rule disable <rule_id>
+neomind rule enable <rule_id>
 neomind rule delete <rule_id>
 ```
 

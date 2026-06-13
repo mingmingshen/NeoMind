@@ -2,178 +2,160 @@
 
 **包名**: `neomind-rules`
 **版本**: 0.8.0
-**完成度**: 85%
-**用途**: 带LLM生成的DSL规则引擎
+**用途**: 基于 JSON 的规则引擎，支持事件驱动评估
 
 ## 概述
 
-Rules模块实现了基于DSL（领域特定语言）的规则引擎，支持设备和扩展指标条件、基于LLM的自然语言规则生成、上下文感知验证和多种动作类型。
+Rules 模块实现了基于 JSON 的规则引擎，支持设备和扩展指标条件、事件驱动评估、上下文感知验证，以及三种动作类型（notify、execute、trigger_agent）。
 
 ## 模块结构
 
 ```
 crates/neomind-rules/src/
-├── lib.rs                      # 公开接口与重导出
-├── dsl.rs                      # DSL解析器和类型
+├── lib.rs                      # 公共接口和重导出
+├── models.rs                   # 核心数据模型（CompiledRule、条件、动作）
 ├── engine.rs                   # 规则评估引擎
-├── generator.rs                # 基于LLM的自然语言规则生成
-├── validator.rs                # 上下文感知的规则验证
+├── preview.rs                  # 人类可读预览生成（只读）
+├── validator.rs                # 规则验证
 ├── store.rs                    # 规则持久化（redb）
-├── history.rs                  # 规则执行历史
-├── dependencies.rs             # 依赖管理
 ├── device_integration.rs       # 设备动作执行
 ├── extension_integration.rs    # 扩展动作执行
 ├── unified_provider.rs         # 统一值提供者
 └── error.rs                    # 错误类型
 ```
 
-## DSL语法
+## 规则 JSON 格式
 
 ### 规则结构
 
-```neo
-RULE "<名称>"
-[TRIGGER SCHEDULE "<cron>"]
-WHEN <条件>
-[FOR <持续时间>]
-DO
-    <动作>
-    [<动作> ...]
-END
+```json
+{
+  "name": "<规则名称>",
+  "description": "<可选描述>",
+  "enabled": true,
+  "trigger": {"trigger_type": "data_change"},
+  "condition": { "<条件类型>": "..." },
+  "for_duration": <毫秒，可选>,
+  "cooldown": <毫秒，默认 60000>,
+  "actions": [ { "<类型>": "..." } ]
+}
 ```
 
 ### 完整示例
 
-```neo
-# 简单设备规则
-RULE "温度告警"
-WHEN sensor.temperature > 50
-DO
-    NOTIFY "设备温度过高: {temperature}C"
-END
+```bash
+# 简单比较规则（默认启用）
+neomind rule create --json '{
+  "name": "Temperature Alert",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 50},
+  "actions": [{"type": "notify", "message": "温度过高: {value}C", "severity": "critical"}]
+}'
 
-# 带持续时间的设备规则
-RULE "持续高温"
-WHEN sensor.temperature > 30
-FOR 5 minutes
-DO
-    NOTIFY "温度持续过高5分钟"
-    EXECUTE device.fan(speed=100)
-END
+# 带持续时间的规则（条件须保持 5 分钟）
+neomind rule create --json '{
+  "name": "Sustained High Temperature",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+  "for_duration": 300000,
+  "actions": [
+    {"type": "notify", "message": "高温持续 5 分钟", "severity": "warning"},
+    {"type": "execute", "target": "fan", "target_type": "device", "command": "set_speed", "params": {"speed": 100}}
+  ]
+}'
 
 # 扩展指标规则
-RULE "天气告警"
-WHEN EXTENSION weather.temperature > 30
-DO
-    NOTIFY "天气过热"
-END
+neomind rule create --json '{
+  "name": "Weather Alert",
+  "condition": {"condition_type": "comparison", "source": "extension:weather:temperature", "operator": "greater_than", "threshold": 30},
+  "actions": [{"type": "notify", "message": "天气过热", "severity": "warning"}]
+}'
 
-# 带AND/OR的复杂规则
-RULE "复合告警"
-WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
-DO
-    NOTIFY "高温且低湿度"
-    EXECUTE device.humidifier(on=true)
-END
+# 带 AND 的复杂规则
+neomind rule create --json '{
+  "name": "Compound Alert",
+  "condition": {
+    "condition_type": "logical", "operator": "and",
+    "conditions": [
+      {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+      {"condition_type": "comparison", "source": "extension:weather:humidity", "operator": "less_than", "threshold": 20}
+    ]
+  },
+  "actions": [{"type": "notify", "message": "温度高且湿度低", "severity": "warning"}]
+}'
 
 # 范围条件
-RULE "温度范围"
-WHEN sensor.temperature BETWEEN 20 AND 25
-DO
-    NOTIFY "温度在舒适范围内"
-END
+neomind rule create --json '{
+  "name": "Temperature Range",
+  "condition": {"condition_type": "range", "source": "device:sensor:temperature", "min": 20, "max": 25},
+  "actions": [{"type": "notify", "message": "温度在舒适范围内", "severity": "info"}]
+}'
 
-# 定时规则
-RULE "周期检查"
-TRIGGER SCHEDULE "0 */5 * * * *"
-DO
-    EXECUTE device.read_sensors()
-END
+# 定时规则（无需条件）
+neomind rule create --json '{
+  "name": "Periodic Check",
+  "trigger": {"trigger_type": "schedule", "cron": "0 */5 * * *"},
+  "actions": [{"type": "execute", "target": "sensor-controller", "target_type": "device", "command": "read_sensors", "params": {}}]
+}'
 
-# Agent触发规则
-RULE "自动分析"
-WHEN sensor.temperature > 40
-DO
-    TRIGGER_AGENT "analyzer" INPUT "检查温度异常"
-END
+# Agent 触发规则
+neomind rule create --json '{
+  "name": "Auto Analysis",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 40},
+  "actions": [{"type": "trigger_agent", "agent_id": "analyzer", "input": "检查温度异常"}]
+}'
 ```
 
 ## 核心类型
 
-### 1. ParsedRule - 解析后的规则定义
+### 1. CompiledRule - 完整规则定义
 
 ```rust
-pub struct ParsedRule {
-    /// 规则名称
+pub struct CompiledRule {
+    pub id: RuleId,
     pub name: String,
-    /// 要评估的条件
-    pub condition: RuleCondition,
-    /// 条件触发前需要持续的时长
-    pub for_duration: Option<Duration>,
-    /// 要执行的动作
-    pub actions: Vec<RuleAction>,
-    /// 描述（可选）
     pub description: Option<String>,
-    /// 标签
+    pub enabled: bool,
     pub tags: Vec<String>,
-    /// 触发类型
-    pub trigger_type: TriggerType,
+    pub trigger: RuleTrigger,
+    pub condition: Option<RuleCondition>,
+    pub actions: Vec<RuleAction>,
+    pub cooldown: Duration,
+    pub for_duration: Option<Duration>,
+    pub state: RuleState,
+    pub dsl_preview: String,
+    pub source: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 ```
 
-### 2. TriggerType - 触发类型
+### 2. RuleTrigger - 触发类型
 
 ```rust
-pub enum TriggerType {
-    /// 设备状态变化触发（默认）
-    DeviceState,
-    /// Cron定时触发
+pub enum RuleTrigger {
+    DataChange { sources: Vec<DataSourceId> },
     Schedule { cron: String },
-    /// 手动通过API触发
     Manual,
 }
 ```
 
-### 3. RuleCondition - 条件定义
+### 3. RuleCondition - 3 种条件类型
 
 ```rust
 pub enum RuleCondition {
-    /// 设备条件: device.metric 操作符 值
-    Device {
-        device_id: String,
-        metric: String,
+    Comparison {
+        source: DataSourceId,
         operator: ComparisonOperator,
         threshold: f64,
     },
-    /// 扩展条件: extension.metric 操作符 值
-    Extension {
-        extension_id: String,
-        metric: String,
-        operator: ComparisonOperator,
-        threshold: f64,
-    },
-    /// 设备范围条件
-    DeviceRange {
-        device_id: String,
-        metric: String,
+    Range {
+        source: DataSourceId,
         min: f64,
         max: f64,
     },
-    /// 扩展范围条件
-    ExtensionRange {
-        extension_id: String,
-        metric: String,
-        min: f64,
-        max: f64,
+    Logical {
+        operator: LogicalOperator,  // And | Or | Not
+        conditions: Vec<RuleCondition>,
     },
-    /// 逻辑与
-    And(Vec<RuleCondition>),
-    /// 逻辑或
-    Or(Vec<RuleCondition>),
-    /// 逻辑非
-    Not(Box<RuleCondition>),
-    /// 始终为真（用于定时/手动规则）
-    Always,
 }
 ```
 
@@ -188,49 +170,20 @@ pub enum ComparisonOperator {
 }
 ```
 
-### 4. RuleAction - 动作定义
+### 4. RuleAction - 3 种动作类型
 
 ```rust
 pub enum RuleAction {
-    /// 发送通知
     Notify {
         message: String,
-        channels: Option<Vec<String>>,
+        severity: NotifySeverity,  // Info | Warning | Critical | Emergency
     },
-    /// 执行设备命令
     Execute {
-        device_id: String,
+        target: String,
+        target_type: ExecuteTarget,  // Device | Extension
         command: String,
-        params: HashMap<String, serde_json::Value>,
+        params: serde_json::Value,
     },
-    /// 记录日志
-    Log {
-        level: LogLevel,
-        message: String,
-        severity: Option<String>,
-    },
-    /// 设置设备属性
-    Set {
-        device_id: String,
-        property: String,
-        value: serde_json::Value,
-    },
-    /// 延迟执行
-    Delay { duration: Duration },
-    /// 创建告警
-    CreateAlert {
-        title: String,
-        message: String,
-        severity: AlertSeverity,
-    },
-    /// 发送HTTP请求
-    HttpRequest {
-        method: HttpMethod,
-        url: String,
-        headers: Option<HashMap<String, String>>,
-        body: Option<String>,
-    },
-    /// 触发AI Agent
     TriggerAgent {
         agent_id: String,
         input: Option<String>,
@@ -250,30 +203,9 @@ pub struct RuleEngine {
     message_manager: Option<Arc<MessageManager>>,
     agent_trigger: Option<AgentTriggerCallback>,
 }
-
-impl RuleEngine {
-    /// 创建规则引擎
-    pub fn new(value_provider: Arc<dyn ValueProvider>) -> Self;
-
-    /// 从DSL文本添加规则
-    pub async fn add_rule_from_dsl(&self, dsl: &str) -> Result<RuleId>;
-
-    /// 启用/禁用规则
-    pub async fn set_rule_enabled(&self, id: &RuleId, enabled: bool) -> Result<()>;
-
-    /// 评估所有规则
-    pub async fn evaluate_all(&self) -> Vec<RuleExecutionResult>;
-
-    /// 获取规则状态
-    pub async fn get_rule_state(&self, id: &RuleId) -> Option<RuleState>;
-
-    /// 启动评估循环
-    pub async fn start(&self) -> Result<()>;
-
-    /// 停止评估循环
-    pub async fn stop(&self) -> Result<()>;
-}
 ```
+
+引擎在数据更新时（`on_data_update`）评估规则，使用订阅索引将 DataSourceId 映射到相关规则。冷却时间通过 `try_claim_cooldown()` 原子性强制执行，防止 TOCTOU 竞争。
 
 ### 规则执行结果
 
@@ -281,125 +213,57 @@ impl RuleEngine {
 pub struct RuleExecutionResult {
     pub rule_id: RuleId,
     pub rule_name: String,
-    pub triggered: bool,
-    pub condition_met: bool,
-    pub actions_executed: usize,
-    pub action_results: Vec<ActionResult>,
-    pub evaluation_duration: Duration,
-}
-```
-
-## 规则验证
-
-```rust
-pub struct RuleValidator {
-    // 根据可用资源验证规则
-}
-
-pub struct ValidationContext {
-    pub devices: Vec<DeviceInfo>,
-    pub metrics: Vec<MetricInfo>,
-    pub commands: Vec<CommandInfo>,
-    pub alert_channels: Vec<AlertChannelInfo>,
-}
-
-pub struct RuleValidationResult {
-    pub is_valid: bool,
-    pub issues: Vec<ValidationIssue>,
-    pub resource_summary: ResourceSummary,
-}
-
-pub enum ValidationSeverity {
-    Error,
-    Warning,
-    Info,
-}
-```
-
-## 规则历史
-
-```rust
-pub struct RuleHistoryEntry {
-    pub rule_id: String,
-    pub rule_name: String,
-    pub triggered_at: i64,
-    pub condition_met: bool,
-    pub actions_executed: usize,
+    pub success: bool,
+    pub actions_executed: Vec<String>,
+    pub error: Option<String>,
     pub duration_ms: u64,
-}
-
-pub struct RuleHistoryStorage {
-    db: Database,
+    pub triggered_at: DateTime<Utc>,
 }
 ```
 
-## API端点
+## API 端点
 
 ```
-# Rules CRUD
+# 规则 CRUD
 GET    /api/rules                           # 列出规则
-POST   /api/rules                           # 创建规则（需要 {"dsl": "RULE ... END"}）
+POST   /api/rules                           # 创建规则（JSON body）
 GET    /api/rules/:id                       # 获取规则
-PUT    /api/rules/:id                       # 更新规则
+PUT    /api/rules/:id                       # 更新规则（JSON body）
 DELETE /api/rules/:id                       # 删除规则
 POST   /api/rules/:id/enable                # 启用/禁用规则
 
 # 规则操作
 POST   /api/rules/:id/test                  # 测试规则
 GET    /api/rules/:id/history               # 规则执行历史
-POST   /api/rules/validate                  # 验证规则DSL
-
-# 规则导入/导出
-GET    /api/rules/export                    # 导出所有规则
-POST   /api/rules/import                    # 导入规则
-
-# 规则资源
-GET    /api/rules/resources                 # 验证可用的资源
 ```
 
 ## 使用示例
 
-### 通过DSL创建规则
+### 创建规则
 
 ```bash
 curl -X POST http://localhost:9375/api/rules \
   -H "Content-Type: application/json" \
   -d '{
-    "dsl": "RULE \"温度告警\" WHEN sensor.temperature > 30 DO NOTIFY \"高温\" END"
+    "name": "Temperature Alert",
+    "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+    "actions": [{"type": "notify", "message": "高温", "severity": "warning"}]
   }'
 ```
 
 ### 测试规则
 
 ```bash
-curl -X POST http://localhost:9375/api/rules/test \
+curl -X POST http://localhost:9375/api/rules/<rule-id>/test \
   -H "Content-Type: application/json" \
-  -d '{
-    "dsl": "RULE \"测试\" WHEN sensor.temperature > 30 DO NOTIFY \"高温\" END",
-    "context": {
-      "sensor": {
-        "temperature": 35
-      }
-    }
-  }'
-```
-
-### 验证规则
-
-```bash
-curl -X POST http://localhost:9375/api/rules/validate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dsl": "RULE \"测试\" WHEN sensor.temperature > 30 DO NOTIFY \"高温\" END"
-  }'
+  -d '{"test_value": 35}'
 ```
 
 ## 设计原则
 
-1. **DSL优先**: 人类可读的规则定义语言（RULE/WHEN/DO/END）
-2. **可测试**: 所有规则都可以用模拟上下文测试
-3. **事件驱动**: 规则基于数据变化评估
-4. **可组合**: 支持复杂条件组合（AND/OR/NOT）
-5. **可扩展**: 支持设备、扩展和定时触发
-6. **验证**: 上下文感知的资源验证
-7. **Agent集成**: 规则可触发AI Agent进行复杂分析
+1. **JSON 优先**: 纯 JSON 规则定义 — 无需 DSL 解析
+2. **事件驱动**: 规则通过订阅索引在数据变化时评估
+3. **可组合**: 逻辑条件支持 AND/OR/NOT 组合
+4. **可扩展**: 支持设备、扩展和定时触发
+5. **Agent 集成**: 规则可触发 AI Agent 进行复杂分析
+6. **冷却安全**: 原子性冷却声明防止并发触发竞争

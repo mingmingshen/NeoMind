@@ -101,7 +101,9 @@ export function AutomationPage() {
   const [ruleDevices, setRuleDevices] = useState<any[]>([])  // Devices with metrics for rules
   const [extensions, setExtensions] = useState<Extension[]>([])
   const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
+  const [transformDataSources, setTransformDataSources] = useState<TransformDataSourceInfo[]>([])
   const [messageChannels, setMessageChannels] = useState<Array<{ name: string; type: string; enabled: boolean }>>([])
+  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([])
   const [resourcesLoaded, setResourcesLoaded] = useState(false)
   const [resourcesLoading, setResourcesLoading] = useState(false)
 
@@ -136,7 +138,7 @@ export function AutomationPage() {
     if (resourcesLoaded || resourcesLoading) return
     setResourcesLoading(true)
     try {
-      const [devicesData, typesResult, resourcesResult, extResult, channelsResult] = await Promise.all([
+      const [devicesData, typesResult, resourcesResult, extResult, channelsResult, agentsResult] = await Promise.all([
         api.getDevices().catch((): any => ({ devices: [] })),
         api.getDeviceTypes().catch((): any => ({ device_types: [] })),
         api.getRuleResources().catch((): any => ({ devices: [] })),
@@ -145,6 +147,7 @@ export function AutomationPage() {
           api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
         ]),
         api.listMessageChannels().catch((): any => ({ channels: [] })),
+        api.listAgentSummaries().catch((): any => ({ agents: [] })),
       ])
 
       setDevices(devicesData.devices || [])
@@ -154,7 +157,9 @@ export function AutomationPage() {
       const [extData, dsData] = extResult
       setExtensions(extData)
       setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
+      setTransformDataSources(dsData.filter((source): source is TransformDataSourceInfo => 'transform_id' in source))
 
+      setAgents((agentsResult.agents || []).map((a: any) => ({ id: a.id, name: a.name })))
       setMessageChannels((channelsResult.channels || []).map((ch: any) => ({
         name: ch.name,
         type: ch.channel_type,
@@ -254,8 +259,7 @@ export function AutomationPage() {
         description: tAuto('itemDeleted'),
       })
     } catch (error) {
-      handleError(error, { operation: 'Delete rule', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Delete rule' })
     }
   }
 
@@ -268,8 +272,7 @@ export function AutomationPage() {
       }
       await loadItems()
     } catch (error) {
-      handleError(error, { operation: 'Toggle rule', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Toggle rule' })
     }
   }
 
@@ -288,8 +291,7 @@ export function AutomationPage() {
         })
       }
     } catch (error) {
-      handleError(error, { operation: 'Execute rule', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Execute rule' })
     }
   }
 
@@ -318,8 +320,7 @@ export function AutomationPage() {
         description: tAuto('itemDeleted'),
       })
     } catch (error) {
-      handleError(error, { operation: 'Delete transform', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Delete transform' })
     }
   }
 
@@ -328,8 +329,7 @@ export function AutomationPage() {
       await api.setAutomationStatus(transform.id, !transform.enabled)
       await loadItems()
     } catch (error) {
-      handleError(error, { operation: 'Toggle transform', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Toggle transform' })
     }
   }
 
@@ -390,8 +390,7 @@ export function AutomationPage() {
         description: tAuto('ruleSaved'),
       })
     } catch (error) {
-      handleError(error, { operation: 'Save rule', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Save rule' })
       throw error
     }
   }
@@ -432,8 +431,7 @@ export function AutomationPage() {
         description: tAuto('transformSaved'),
       })
     } catch (error) {
-      handleError(error, { operation: 'Save transform', showToast: true })
-      showErrorToast(toast, error, tCommon('failed'))
+      handleError(error, { operation: 'Save transform' })
       throw error
     }
   }
@@ -677,7 +675,7 @@ export function AutomationPage() {
         onOpenChange={setShowRuleDialog}
         rule={editingRule}
         onSave={handleSaveRule}
-        resources={{ devices: ruleDevices, deviceTypes, extensions, extensionDataSources, messageChannels }}
+        resources={{ devices: ruleDevices, deviceTypes, extensions, extensionDataSources, transformDataSources, messageChannels, agents }}
       />
 
       {/* Transform Builder Dialog */}

@@ -95,12 +95,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_rule_handler_missing_dsl() {
+    async fn test_create_rule_handler_missing_name() {
         let state = create_test_server_state().await;
         let req = json!({ "invalid": "data" });
         let result = create_rule_handler(State(state), Json(req)).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.message.contains("Missing 'dsl' field"));
+        assert!(err.message.contains("Missing 'name' field"));
     }
 }

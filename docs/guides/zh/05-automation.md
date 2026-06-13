@@ -104,60 +104,71 @@ POST /api/device-types/generate-from-samples
 
 通过LLM分析从示例数据生成设备类型模板。
 
-## 规则DSL语法
+## 规则 JSON 结构
 
-### 基本规则
+规则使用基于 JSON 的 API，包含 3 种条件类型（`comparison`、`range`、`logical`）和 3 种动作类型（`notify`、`execute`、`trigger_agent`）。
 
-```neo
-RULE "温度告警"
-WHEN sensor.temperature > 50
-FOR 5 minutes
-DO
-    NOTIFY "设备温度过高: {temperature}C"
-    EXECUTE device.fan(speed=100)
-    LOG alert, severity="high"
-END
+### 基本规则（比较条件）
+
+```bash
+neomind rule create --json '{
+  "name": "Temperature Alert",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 50},
+  "for_duration": 300000,
+  "actions": [
+    {"type": "notify", "message": "温度过高: {value}C", "severity": "critical"},
+    {"type": "execute", "target": "fan", "target_type": "device", "command": "set_speed", "params": {"speed": 100}}
+  ]
+}'
 ```
 
-### 扩展规则
+### 扩展指标规则
 
-```neo
-RULE "天气告警"
-WHEN EXTENSION weather.temperature > 30
-DO
-    NOTIFY "天气过热"
-END
+```bash
+neomind rule create --json '{
+  "name": "Weather Alert",
+  "condition": {"condition_type": "comparison", "source": "extension:weather:temperature", "operator": "greater_than", "threshold": 30},
+  "actions": [{"type": "notify", "message": "天气过热", "severity": "warning"}]
+}'
 ```
 
-### 带AND/OR的复杂规则
+### 复杂规则（逻辑条件：AND/OR/NOT）
 
-```neo
-RULE "复合条件告警"
-WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
-DO
-    NOTIFY "温度高且湿度低"
-    EXECUTE device.humidifier(on=true)
-END
+```bash
+neomind rule create --json '{
+  "name": "Compound Condition Alert",
+  "condition": {
+    "condition_type": "logical", "operator": "and",
+    "conditions": [
+      {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+      {"condition_type": "comparison", "source": "extension:weather:humidity", "operator": "less_than", "threshold": 20}
+    ]
+  },
+  "actions": [
+    {"type": "notify", "message": "温度高且湿度低", "severity": "warning"},
+    {"type": "execute", "target": "humidifier", "target_type": "device", "command": "turn_on", "params": {}}
+  ]
+}'
 ```
 
 ### 范围条件规则
 
-```neo
-RULE "温度范围告警"
-WHEN sensor.temperature BETWEEN 20 AND 25
-DO
-    NOTIFY "温度在舒适范围内"
-END
+```bash
+neomind rule create --json '{
+  "name": "Temperature Range Alert",
+  "condition": {"condition_type": "range", "source": "device:sensor:temperature", "min": 20, "max": 25},
+  "actions": [{"type": "notify", "message": "温度在舒适范围内", "severity": "info"}]
+}'
 ```
 
 ### 定时规则
 
-```neo
-RULE "周期检查"
-TRIGGER SCHEDULE "0 */5 * * * *"
-DO
-    EXECUTE device.read_sensors()
-END
+```bash
+neomind rule create --json '{
+  "name": "Periodic Check",
+  "trigger": {"trigger_type": "schedule", "cron": "0 */5 * * *"},
+  "actions": [{"type": "execute", "target": "sensor-controller", "target_type": "device", "command": "read_sensors", "params": {}}]
+}'
 ```
 
 ## API端点

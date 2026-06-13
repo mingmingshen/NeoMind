@@ -757,8 +757,8 @@ anti_triggers:
 # List temperature devices
 neomind device list --type temperature
 
-# Create a temperature rule
-neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
+# Create a temperature rule (enabled by default)
+neomind rule create --json '{"name":"Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temp","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"Temperature too high","severity":"warning"}]}'
 
 # Query latest readings
 neomind device get <device_id>

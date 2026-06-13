@@ -50,6 +50,37 @@ neomind agent control agent-abc123 --status active
 | `free` (default) | No bound resources, agent has full platform access | General monitoring, analysis tasks |
 | `focused` | Bound to specific devices/rules | Requires `--device-ids` or `--resources` |
 
+### Binding Resources (Focused Mode)
+
+**`--device-ids`** (simple): comma-separated device IDs.
+```bash
+--device-ids 'sensor-001,sensor-002'
+```
+
+**`--resources`** (unified, preferred): JSON array with rich metadata.
+```json
+[
+  {"resource_id": "sensor-001", "resource_type": "device", "name": "Living Room Sensor"},
+  {"resource_id": "weather", "resource_type": "extension", "name": "Weather Service"}
+]
+```
+
+**`--metrics`**: Bind specific metrics for the agent to monitor.
+```json
+[
+  {"device_id": "sensor-001", "metric_name": "temperature", "display_name": "Temperature"},
+  {"device_id": "sensor-001", "metric_name": "humidity", "display_name": "Humidity"}
+]
+```
+
+**`--commands`**: Bind specific device commands the agent can execute.
+```json
+[
+  {"device_id": "ac-unit", "command_name": "turn_on", "display_name": "Turn On AC"},
+  {"device_id": "ac-unit", "command_name": "set_temp", "display_name": "Set Temperature", "parameters": {"target": 25}}
+]
+```
+
 ## Choosing the Right LLM Backend
 
 Before creating an agent, check available backends and their capabilities:
@@ -183,6 +214,39 @@ neomind agent create \
 # Run whenever needed
 neomind agent invoke <AGENT_ID> --input 'Analyze temperature trends for sensor-001'
 ```
+
+### Event-Driven Agent (Triggered by Device Data)
+
+Event agents execute automatically when device data arrives. Use `--event-filter` with a JSON string to limit which data sources trigger execution.
+
+```bash
+# Runs when ANY device data arrives (no filter = all bound resources)
+neomind agent create \
+  --name 'Data Logger' \
+  --prompt 'Log incoming device data and check for anomalies.' \
+  --schedule-type event
+
+# Runs only when specific devices report (with filter)
+neomind agent create \
+  --name 'Temp Guardian' \
+  --prompt 'Analyze temperature readings. Alert if any sensor reports above 40°C.' \
+  --schedule-type event \
+  --event-filter '{"sources":[{"type":"device","id":"sensor-001"},{"type":"device","id":"sensor-002"}]}'
+
+# Trigger on ANY device of a type (use "all" for id)
+--event-filter '{"sources":[{"type":"device","id":"all"}]}'
+
+# Trigger on a specific metric field
+--event-filter '{"sources":[{"type":"device","id":"sensor-001","field":"temperature"}]}'
+
+# Trigger on extension data
+--event-filter '{"sources":[{"type":"extension","id":"weather"}]}'
+```
+
+**When to use event vs interval:**
+- **Event**: React immediately when data arrives (real-time anomaly detection)
+- **Interval**: Check periodically regardless of data flow (periodic reports, summaries)
+- **Without `--event-filter`**: Event agents without a filter trigger on data from their bound resources (focused mode). Free-mode event agents without a filter will NOT trigger automatically.
 
 ### Focused Mode Agent (Bound to Specific Devices)
 

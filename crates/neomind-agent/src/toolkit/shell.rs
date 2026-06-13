@@ -542,9 +542,9 @@ impl ShellTool {
                 if is_not_found {
                     Some("Run 'neomind rule list' to see available rules.".to_string())
                 } else if action == "create"
-                    && (is_validation || combined.contains("dsl") || combined.contains("parse"))
+                    && (is_validation || combined.contains("json") || combined.contains("parse"))
                 {
-                    Some("Rule DSL syntax: RULE \"<name>\" WHEN <device_id>.<metric> <op> <value> DO <action> END. RULE name MUST be in double quotes. Use real device_id directly (NO 'device.' prefix). BEFORE writing DSL: run `neomind device list` to discover real device IDs and metric_fields per type. If metric_fields is empty, run `neomind device get <ID>` for exact field names. NEVER guess metric names.".to_string())
+                    Some("Rule JSON format: {\"name\":\"...\",\"condition\":{\"condition_type\":\"comparison\",\"source\":\"device:SENSOR_ID:METRIC\",\"operator\":\"greater_than\",\"threshold\":30},\"actions\":[{\"type\":\"notify\",\"message\":\"Alert\",\"severity\":\"critical\"}]}. BEFORE creating: run `neomind device list` to discover real device IDs and metric_fields per type. NEVER guess device IDs or metric names.".to_string())
                 } else if action == "enable" || action == "disable" {
                     Some("Run 'neomind rule list' to find the rule ID, then 'neomind rule <enable|disable> <ID>'.".to_string())
                 } else {
@@ -642,7 +642,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | device | list, get, create, update, delete, history, control, write-metric, webhook-url, types, drafts | **Discovery**: `device list` returns devices **grouped by type** with `metric_fields` (actual field names from real data), `example` (one online device's current values per type), and all device IDs/names/status. **One command for complete discovery** — no need to call `device latest` separately. `device get <ID>` returns full picture: metadata + config + all metrics + available commands. `device latest <ID>` is an alias for `device get`. CRUD: create/update/delete. Telemetry: `history <ID>` for time-series. Control: `control <ID> <CMD>`. Adapters: `mqtt`/`webhook`. `types` subcommand: list/get/create/delete (for managing type definitions). `drafts` subcommand: list/get/approve/reject/config |
 | dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
 | widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
-| rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
+| rule | list, get, create, update, delete, enable, disable, test, history | Rules use JSON: `{\"name\":\"...\",\"condition\":{...},\"actions\":[...]}` |
 | agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, clear-memory, send-message | Created as `active` by default. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents. **`--llm-backend`**: check `neomind llm list` for available backends and their capabilities (`multimodal`, `supports_images`, `function_calling`, `max_context`). Match capabilities to the task — use a multimodal backend for image/vision tasks, check `function_calling` for tool-heavy agents |
 | transform | list, get, create, update, delete, test-code, metrics, data-sources | JS code transforms; `input` is raw metric value. `--scope` defaults to `global`. `metrics` lists virtual outputs |
 | extension | list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload | `get <ID>` returns commands, metrics, config details. `config <ID>` reads config, `config <ID> --set '<JSON>'` updates |
@@ -658,19 +658,31 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 
 > For complex operations (dashboard creation, agent management, extension development, device onboarding), use the `skill` tool to load detailed step-by-step guides.
 
-### Rule DSL Syntax — MANDATORY: discover device IDs and metrics FIRST
+### Rule JSON Format — MANDATORY: discover device IDs and metrics FIRST
 **Before creating ANY rule, you MUST run `neomind device list`** to get real device IDs and `metric_fields` per type.
 If `metric_fields` is empty, run `neomind device get <ID>` for exact metric names.
 **NEVER guess device IDs or metric names** — rules with fake names silently fail.
 
+```json
+{
+  "name": "Rule Name",
+  "condition": {
+    "condition_type": "comparison",
+    "source": "device:SENSOR_ID:METRIC",
+    "operator": "greater_than",
+    "threshold": 30
+  },
+  "actions": [
+    {"type": "notify", "message": "Alert: {value}", "severity": "critical"}
+  ]
+}
 ```
-RULE "<name>" WHEN <condition> DO <action> END
-```
-- Conditions: `<device_id>.<metric> <op> <value>` (use REAL device_id + REAL metric from discovery), `EXTENSION <ext_id>.<metric> <op> <value>`
-- Operators: `< > <= >= == !=`, `BETWEEN val AND val`, combine with `AND`, `OR`, `NOT`
-- Actions: `NOTIFY "msg" [channels]`, `EXECUTE device.cmd(key=val)`, `ALERT "title" "msg" SEVERITY`, `TRIGGER_AGENT id "input"`
-- Template vars: `{{device.name}}`, `{{value}}`
-- New rules are **disabled** — must `neomind rule enable <ID>` after create
+- **Sources**: `device:SENSOR_ID:METRIC`, `extension:EXT_ID:METRIC`
+- **Condition types**: `comparison` (operator + threshold), `range` (min + max), `logical` (AND/OR/NOT combining sub-conditions)
+- **Operators**: `greater_than`, `less_than`, `greater_equal`, `less_equal`, `equal`, `not_equal`, `contains`, `starts_with`, `ends_with`, `regex`
+- **Actions**: `notify` (message + severity), `execute` (target + command + params), `trigger_agent` (agent_id + input)
+- **Severities**: `info`, `warning`, `critical`, `emergency`
+- New rules are **enabled by default** — use `neomind rule disable <ID>` to pause
 
 ```bash
 # Step 1: DISCOVER real device IDs and metric names
@@ -679,8 +691,7 @@ neomind device list
 
 # Step 2: Create rule using DISCOVERED names (not the examples below!)
 # These examples use placeholder names — YOU must replace with real ones from step 1
-neomind rule create --dsl 'RULE "High Temp Alert" WHEN REAL_DEVICE_ID.temperature > 30 DO NOTIFY "High temp on {{device.name}}: {{value}}°C" END'
-neomind rule enable <RULE_ID>
+neomind rule create --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:REAL_DEVICE_ID:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"High temp: {value}°C","severity":"critical"}]}'
 ```
 
 ### Dashboard Components

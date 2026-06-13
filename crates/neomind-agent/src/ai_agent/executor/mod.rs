@@ -486,8 +486,11 @@ impl AgentExecutor {
         // Pre-fetch knowledge file content for inline injection.
         // This avoids wasting a tool-call round to read files the agent already
         // knows about — especially valuable in Focused+ mode with only 3 rounds.
-        let knowledge_content =
-            self.prefetch_knowledge_files(&agent.id, &agent.memory.knowledge_files);
+        let knowledge_content = self.prefetch_knowledge_files(
+            &agent.id,
+            &agent.memory.knowledge_files,
+            agent.context_window_size,
+        );
 
         let system_prompt = tool_prompt::build_tool_system_prompt(
             agent,

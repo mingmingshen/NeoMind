@@ -2,7 +2,7 @@
 //!
 //! Provides persistent storage for rule definitions and execution history.
 
-use crate::engine::{CompiledRule, RuleId};
+use crate::models::{CompiledRule, RuleId};
 use parking_lot::Mutex;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::{Path, PathBuf};
@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 // Table definitions
 const RULES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rules");
+const HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rule_history");
 
 /// Error type for rule storage operations.
 #[derive(Debug, thiserror::Error)]
@@ -60,12 +61,6 @@ impl From<redb::TransactionError> for StoreError {
 
 impl From<redb::CommitError> for StoreError {
     fn from(e: redb::CommitError) -> Self {
-        StoreError::Database(e.to_string())
-    }
-}
-
-impl From<redb::CompactionError> for StoreError {
-    fn from(e: redb::CompactionError) -> Self {
         StoreError::Database(e.to_string())
     }
 }
@@ -211,6 +206,105 @@ impl RuleStore {
         }
 
         Ok(rules)
+    }
+
+    /// Save an execution result to history.
+    pub fn save_history(&self, result: &crate::models::RuleExecutionResult) -> Result<()> {
+        // Key: timestamp + rule_id for ordering
+        let key = format!(
+            "history:{}:{}",
+            result.triggered_at.timestamp_millis(),
+            result.rule_id
+        );
+        let value = serde_json::to_vec(result)?;
+
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(HISTORY_TABLE)?;
+            table.insert(key.as_str(), value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Load execution history for a specific rule.
+    pub fn load_history(&self, rule_id: &RuleId) -> Result<Vec<crate::models::RuleExecutionResult>> {
+        let mut results = Vec::new();
+
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(HISTORY_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(results), // Table doesn't exist yet
+        };
+
+        let iter = table.iter()?;
+        for item in iter {
+            let (_, value) = item?;
+            let entry: crate::models::RuleExecutionResult = serde_json::from_slice(value.value())?;
+            if &entry.rule_id == rule_id {
+                results.push(entry);
+            }
+        }
+
+        // Sort by triggered_at descending (most recent first)
+        results.sort_by(|a, b| b.triggered_at.cmp(&a.triggered_at));
+        Ok(results)
+    }
+
+    /// Count history entries since a timestamp (only actual triggers with executed actions).
+    pub fn count_history_since(&self, since_timestamp: i64) -> Result<u64> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(HISTORY_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(0),
+        };
+
+        let mut count = 0u64;
+        for result in table.iter()? {
+            let (_, value) = result?;
+            if let Ok(entry) =
+                serde_json::from_slice::<crate::models::RuleExecutionResult>(value.value())
+            {
+                if entry.triggered_at.timestamp() >= since_timestamp
+                    && !entry.actions_executed.is_empty()
+                {
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    }
+
+    /// Clean up old history entries (older than the given number of days).
+    pub fn cleanup_history(&self, older_than_days: u64) -> Result<usize> {
+        let cutoff = chrono::Utc::now()
+            - chrono::Duration::days(older_than_days as i64);
+        let cutoff_key = format!("history:{}:", cutoff.timestamp_millis());
+
+        let write_txn = self.db.begin_write()?;
+        let removed = {
+            let mut table = write_txn.open_table(HISTORY_TABLE)?;
+            let keys_to_remove: Vec<String> = table
+                .iter()?
+                .filter_map(|item| {
+                    let (key, _) = item.ok()?;
+                    let key_str = key.value().to_string();
+                    if key_str < cutoff_key {
+                        Some(key_str)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let count = keys_to_remove.len();
+            for key in &keys_to_remove {
+                table.remove(key.as_str())?;
+            }
+            count
+        };
+        write_txn.commit()?;
+        Ok(removed)
     }
 }
 

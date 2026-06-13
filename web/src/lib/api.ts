@@ -1138,19 +1138,21 @@ export const api = {
   enableRule: (id: string) =>
     fetchAPI<{ message: string }>(`/rules/${id}/enable`, {
       method: 'POST',
+      body: JSON.stringify({ enabled: true }),
     }),
   disableRule: (id: string) =>
-    fetchAPI<{ message: string }>(`/rules/${id}/disable`, {
+    fetchAPI<{ message: string }>(`/rules/${id}/enable`, {
       method: 'POST',
+      body: JSON.stringify({ enabled: false }),
     }),
   testRule: (id: string, execute = false) =>
     fetchAPI<{ result: unknown; message?: string }>(`/rules/${id}/test${execute ? '?execute=true' : ''}`, {
       method: 'POST',
     }),
-  validateRuleDSL: (dsl: string) =>
+  validateRule: (rule: { name: string; trigger?: Record<string, unknown>; condition?: Record<string, unknown>; actions?: Array<Record<string, unknown>> }) =>
     fetchAPI<{ valid: boolean; errors?: string[]; parsed?: unknown }>('/rules/validate', {
       method: 'POST',
-      body: JSON.stringify({ dsl }),
+      body: JSON.stringify(rule),
     }),
   getRuleResources: () =>
     fetchAPI<{
@@ -1173,6 +1175,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ rules }),
     }),
+  getRuleHistory: (id: string) =>
+    fetchAPI<{ rule_id: string; executions: Array<{
+      rule_id: string
+      rule_name: string
+      success: boolean
+      actions_executed: string[]
+      error: string | null
+      duration_ms: number
+      triggered_at: string
+    }> }>(`/rules/${id}/history`),
 
   // ========== Unified Automations API ==========
   // Matches backend: crates/api/src/handlers/automations.rs

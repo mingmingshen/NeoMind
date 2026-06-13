@@ -556,25 +556,34 @@ AI：[运行 `neomind system info` 获取 Broker 信息]
 
 ## 创建自动化规则
 
-NeoMind 使用 DSL（领域特定语言）编写自动化规则。规则可以通过 CLI、API 或 AI 聊天创建。
+NeoMind 使用基于 JSON 的 API 来编写自动化规则。规则可以通过 CLI（`--json`）、REST API 或 AI 聊天创建。
 
-### 规则 DSL 语法
+### 规则 JSON 结构
 
+```json
+{
+  "name": "规则名称",
+  "condition": {
+    "condition_type": "comparison",
+    "source": "device:传感器ID:指标",
+    "operator": "greater_than",
+    "threshold": 30
+  },
+  "actions": [
+    {"type": "notify", "message": "告警: {value}", "severity": "critical"}
+  ]
+}
 ```
-RULE <规则名>
-  WHEN <触发条件>
-  DO <动作>
-END
-```
+
+**条件类型**: `comparison`（运算符 + 阈值）、`range`（最小值 + 最大值）、`logical`（AND/OR/NOT 组合子条件）
+**运算符**: `greater_than`、`less_than`、`greater_equal`、`less_equal`、`equal`、`not_equal`
+**动作**: `notify`（消息 + 严重级别）、`execute`（目标 + 命令）、`trigger_agent`（代理ID）
 
 ### CLI 示例
 
 ```bash
-# 创建温度告警规则
-neomind rule create --dsl 'RULE high_temp_alert
-  WHEN device:sensor1:temperature > 30
-  DO notify(channel="alert-webhook", message="温度过高: {{value}}")
-END'
+# 创建温度告警规则（默认启用）
+neomind rule create --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"温度过高: {value}","severity":"critical"}]}'
 
 # 列出所有规则
 neomind rule list
@@ -583,10 +592,7 @@ neomind rule list
 neomind rule get <rule-id>
 
 # 更新规则
-neomind rule update <rule-id> --dsl 'RULE high_temp_alert
-  WHEN device:sensor1:temperature > 35
-  DO notify(channel="alert-webhook", message="严重: 温度 {{value}}")
-END'
+neomind rule update <rule-id> --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temperature","operator":"greater_than","threshold":35},"actions":[{"type":"notify","message":"严重: {value}","severity":"critical"}]}'
 
 # 删除规则
 neomind rule delete <rule-id>
@@ -598,7 +604,7 @@ neomind rule delete <rule-id>
 # 通过 API 创建规则
 curl -X POST http://localhost:9375/api/rules \
   -H "Content-Type: application/json" \
-  -d '{"dsl": "RULE high_temp_alert\n  WHEN device:sensor1:temperature > 30\n  DO notify(channel=\"alert-webhook\", message=\"温度过高\")\nEND"}'
+  -d '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"温度过高","severity":"critical"}]}'
 
 # 列出规则
 curl http://localhost:9375/api/rules

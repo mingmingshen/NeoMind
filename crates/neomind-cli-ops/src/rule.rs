@@ -6,7 +6,7 @@ use serde_json::json;
 /// List all rules with compact summary.
 ///
 /// Returns id, name, enabled, and trigger description per rule.
-/// Full DSL is available via `neomind rule get <id>`.
+/// Full details available via `neomind rule get <id>`.
 pub async fn list_rules(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/rules").await?;
 
@@ -29,11 +29,17 @@ pub async fn list_rules(client: &ApiClient) -> Result<CliResponse> {
     let summary: Vec<serde_json::Value> = rules
         .iter()
         .map(|r| {
+            let trigger_type = r.get("trigger")
+                .and_then(|t| t.get("trigger_type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({
                 "id": r.get("id").and_then(|v| v.as_str()).unwrap_or(r.get("rule_id").and_then(|v| v.as_str()).unwrap_or("?")),
                 "name": r.get("name").and_then(|v| v.as_str()).unwrap_or("(unnamed)"),
                 "enabled": r.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                "description": r.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                "trigger_type": trigger_type,
+                "trigger_count": r.get("trigger_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                "last_triggered": r.get("last_triggered").and_then(|v| v.as_str()).unwrap_or("-"),
             })
         })
         .collect();
@@ -50,43 +56,40 @@ pub async fn get_rule(client: &ApiClient, id: &str) -> Result<CliResponse> {
     Ok(CliResponse::success(data, "Rule retrieved"))
 }
 
-/// Create a new rule via DSL
-pub async fn create_rule(client: &ApiClient, name: Option<&str>, dsl: &str) -> Result<CliResponse> {
-    let mut body = json!({
-        "dsl": dsl,
-    });
-    if let Some(n) = name {
-        body["name"] = json!(n);
-    }
+/// Create a new rule via JSON body.
+///
+/// Accepts a raw JSON string that is forwarded to the API.
+pub async fn create_rule(
+    client: &ApiClient,
+    json_body: &str,
+) -> Result<CliResponse> {
+    let body: serde_json::Value = serde_json::from_str(json_body)
+        .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
 
     let data = client.post("/rules", &body).await?;
-    let rule_id = data["id"].as_str().unwrap_or("unknown").to_string();
+    let rule = &data["rule"];
+    let rule_id = rule["id"].as_str().unwrap_or("unknown").to_string();
+    let rule_name = rule["name"].as_str().unwrap_or("(unnamed)").to_string();
 
     let meta = BuildMeta {
         r#type: "rule".to_string(),
         action: "create".to_string(),
         entity_id: rule_id.clone(),
-        entity_name: name.map(|s| s.to_string()),
+        entity_name: Some(rule_name),
         undo_command: format!("neomind rule delete {}", rule_id),
     };
 
     Ok(CliResponse::success_with_meta(data, "Rule created", meta))
 }
 
-/// Update rule via DSL
+/// Update rule via JSON body.
 pub async fn update_rule(
     client: &ApiClient,
     id: &str,
-    name: Option<&str>,
-    dsl: Option<&str>,
+    json_body: &str,
 ) -> Result<CliResponse> {
-    let mut body = json!({});
-    if let Some(n) = name {
-        body["name"] = json!(n);
-    }
-    if let Some(d) = dsl {
-        body["dsl"] = json!(d);
-    }
+    let body: serde_json::Value = serde_json::from_str(json_body)
+        .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
 
     let data = client.put(&format!("/rules/{}", id), &body).await?;
     Ok(CliResponse::success(data, "Rule updated"))

@@ -136,16 +136,13 @@ extension:{extension_id}:{metric_name}
 
 ### In Rules
 
-Reference extension metrics in rule DSL using the standard DataSourceId:
+Reference extension metrics in rules using the standard DataSourceId (`extension:EXT_ID:METRIC`):
 
+```bash
+neomind rule create --json '{"name":"Weather Rain Alert","condition":{"condition_type":"comparison","source":"extension:weather:is_raining","operator":"greater_than","threshold":0},"actions":[{"type":"notify","message":"Rain detected!","severity":"warning"}]}'
 ```
-RULE weather_rain_alert
-  WHEN EXTENSION weather.condition = "Rain"
-  DO
-    NOTIFY(channel="telegram", message="Rain detected!")
-  END
-END
-```
+
+> **Note**: Rules support numeric comparisons only. For string-based extension metrics (e.g. `condition = "Rain"`), create a transform that outputs a numeric signal, or use `trigger_agent` for AI-based evaluation.
 
 ### In Transforms
 

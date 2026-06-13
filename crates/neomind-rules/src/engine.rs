@@ -1,43 +1,39 @@
-//! Rule engine for evaluating and executing rules.
+//! Rule engine v2 — event-driven, no polling.
 //!
-//! The rule engine manages rule lifecycle, evaluates conditions,
-//! and executes actions when rules are triggered.
+//! The engine evaluates rules **only** when data changes arrive via
+//! [`RuleEngine::on_data_update`]. A subscription index maps each
+//! `DataSourceId` → relevant `RuleId`s so only affected rules are evaluated.
 
-use parking_lot::RwLock as StdRwLock;
-use std::any::Any;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, VecDeque};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
+use neomind_core::datasource::DataSourceId;
+use parking_lot::RwLock as StdRwLock;
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
-use uuid::Uuid;
 
-use super::dependencies::DependencyManager;
-use super::device_integration::DeviceActionExecutor;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition, TriggerType};
-use super::error::RuleError;
-use super::extension_integration::{try_parse_extension_action, ExtensionActionExecutor};
-use super::store::RuleStore;
+use crate::device_integration::DeviceActionExecutor;
+use crate::error::RuleError;
+use crate::extension_integration::ExtensionActionExecutor;
+use crate::models::{
+    CompiledRule, ExecuteTarget, NotifySeverity, RuleAction, RuleCondition, RuleExecutionResult,
+    RuleId, RuleTrigger, RuleValue, ValueProvider,
+};
+use crate::store::RuleStore;
 
-/// Optional message manager for creating messages from rule actions.
-/// Wrapped in Option to allow RuleEngine to function without it.
-/// Double-wrapped in Arc because MessageManager doesn't implement Clone.
+// ---------------------------------------------------------------------------
+// Type aliases for optional dependencies
+// ---------------------------------------------------------------------------
+
 type OptionMessageManager = Arc<tokio::sync::RwLock<Option<Arc<neomind_messages::MessageManager>>>>;
-
-/// Optional device action executor for executing device commands.
 type OptionDeviceActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<DeviceActionExecutor>>>>;
+type OptionExtensionActionExecutor =
+    Arc<tokio::sync::RwLock<Option<Arc<ExtensionActionExecutor>>>>;
 
-/// Optional extension action executor for executing extension commands.
-type OptionExtensionActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<ExtensionActionExecutor>>>>;
-
-/// Callback type for triggering agents from rules.
-/// Takes (agent_id, input_text, data) and returns Ok(()) on success.
-type AgentTriggerCallback = Arc<
+pub type AgentTriggerCallback = Arc<
     dyn Fn(
             String,
             Option<String>,
@@ -46,1365 +42,15 @@ type AgentTriggerCallback = Arc<
         + Send
         + Sync,
 >;
-
-/// Optional agent trigger callback wrapper.
 type OptionAgentTriggerCallback = Arc<tokio::sync::RwLock<Option<AgentTriggerCallback>>>;
 
-/// Scheduler task handle for managing the rule evaluation loop.
-type SchedulerHandle = Arc<StdRwLock<Option<JoinHandle<()>>>>;
-
-/// Unique identifier for a rule.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct RuleId(pub Uuid);
-
-impl RuleId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    pub fn from_string(s: &str) -> Result<Self, uuid::Error> {
-        Ok(Self(Uuid::parse_str(s)?))
-    }
-}
-
-impl Default for RuleId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl std::fmt::Display for RuleId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Rule status.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RuleStatus {
-    /// Rule is active and being evaluated.
-    Active,
-    /// Rule is paused.
-    Paused,
-    /// Rule has been triggered and is executing.
-    Triggered,
-    /// Rule is disabled.
-    Disabled,
-}
-
-/// Rule execution state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuleState {
-    /// Number of times the rule has been triggered.
-    pub trigger_count: u64,
-    /// Last time the rule was triggered.
-    pub last_triggered: Option<DateTime<Utc>>,
-    /// Last evaluation result.
-    pub last_evaluation: bool,
-    /// Time since condition has been true (for FOR clauses).
-    /// Note: Instant is not serialized, will be reset on deserialization.
-    #[serde(skip)]
-    pub condition_true_since: Option<Instant>,
-}
-
-/// Compiled rule ready for execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompiledRule {
-    /// Unique rule identifier.
-    pub id: RuleId,
-    /// Rule name.
-    pub name: String,
-    /// Rule description (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Original DSL text.
-    pub dsl: String,
-    /// Condition to evaluate.
-    pub condition: RuleCondition,
-    /// Duration condition must be true before triggering.
-    pub for_duration: Option<Duration>,
-    /// Actions to execute on trigger.
-    pub actions: Vec<RuleAction>,
-    /// Current rule status.
-    pub status: RuleStatus,
-    /// Rule state.
-    pub state: RuleState,
-    /// When the rule was created.
-    pub created_at: DateTime<Utc>,
-    /// Frontend UI state for proper restoration on edit (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<serde_json::Value>,
-    /// Trigger type (device state, schedule, or manual).
-    #[serde(default)]
-    pub trigger_type: TriggerType,
-}
-
-impl CompiledRule {
-    /// Create a new compiled rule from a parsed rule.
-    pub fn from_parsed(parsed: ParsedRule) -> Self {
-        Self::from_parsed_with_dsl(parsed, String::new())
-    }
-
-    /// Create a new compiled rule from a parsed rule with the original DSL text.
-    pub fn from_parsed_with_dsl(parsed: ParsedRule, dsl: String) -> Self {
-        Self {
-            id: RuleId::new(),
-            name: parsed.name.clone(),
-            description: parsed.description,
-            dsl,
-            condition: parsed.condition,
-            for_duration: parsed.for_duration,
-            actions: parsed.actions,
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: parsed.trigger_type,
-        }
-    }
-
-    /// Check if the rule should trigger based on current values.
-    /// This now supports complex conditions through value provider.
-    /// For manual rules, always returns false (only triggered via API).
-    /// For schedule rules, always returns true when called by the scheduler
-    /// (the scheduler decides when to call this).
-    /// For device state rules, evaluates the condition.
-    pub fn should_trigger(&self, value_provider: &dyn ValueProvider) -> bool {
-        match &self.trigger_type {
-            TriggerType::Manual => false,
-            TriggerType::Schedule { .. } => {
-                // Schedule rules are triggered by the scheduler,
-                // not by device state evaluation
-                true
-            }
-            TriggerType::DeviceState => {
-                let condition_met = self.evaluate_condition(&self.condition, value_provider);
-
-                if let Some(duration) = self.for_duration {
-                    if condition_met {
-                        if let Some(since) = self.state.condition_true_since {
-                            since.elapsed() >= duration
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    condition_met
-                }
-            }
-        }
-    }
-
-    /// Update the rule's state based on current evaluation.
-    pub fn update_state(&mut self, value_provider: &dyn ValueProvider) {
-        let condition_met = self.evaluate_condition(&self.condition, value_provider);
-
-        if condition_met {
-            if self.state.condition_true_since.is_none() {
-                self.state.condition_true_since = Some(Instant::now());
-            }
-        } else {
-            self.state.condition_true_since = None;
-        }
-
-        self.state.last_evaluation = condition_met;
-    }
-
-    /// Build a device name → device ID mapping from source.uiCondition.
-    /// This resolves the issue where DSL contains device names but evaluation needs device IDs.
-    fn build_device_id_mapping(&self) -> std::collections::HashMap<String, String> {
-        let mut mapping = std::collections::HashMap::new();
-        if let Some(source) = &self.source {
-            self.extract_device_ids_from_ui_condition(source.get("uiCondition"), &mut mapping);
-        }
-        mapping
-    }
-
-    /// Recursively extract device_id from uiCondition structure.
-    fn extract_device_ids_from_ui_condition(
-        &self,
-        ui_cond: Option<&serde_json::Value>,
-        mapping: &mut std::collections::HashMap<String, String>,
-    ) {
-        if let Some(cond) = ui_cond {
-            // For simple conditions, map the device name (derived from device_id during parsing)
-            if let Some(device_id) = cond.get("device_id").and_then(|v| v.as_str()) {
-                // Also check if there's a device name that needs to be mapped
-                if let Some(name) = cond.get("deviceName").and_then(|v| v.as_str()) {
-                    if !name.is_empty() && !device_id.is_empty() {
-                        mapping.insert(name.to_string(), device_id.to_string());
-                    }
-                }
-                // Direct mapping: the parsed DSL uses device_id as the key
-                // but the value is stored under the actual device ID
-                if !device_id.is_empty() {
-                    mapping.insert(device_id.to_string(), device_id.to_string());
-                }
-            }
-
-            // Handle nested conditions for AND/OR
-            if let Some(conditions) = cond.get("conditions").and_then(|v| v.as_array()) {
-                for sub_cond in conditions {
-                    self.extract_device_ids_from_ui_condition(Some(sub_cond), mapping);
-                }
-            }
-
-            // Handle NOT condition
-            if let Some(sub_cond) = cond.get("condition") {
-                self.extract_device_ids_from_ui_condition(Some(sub_cond), mapping);
-            }
-        }
-    }
-
-    /// Resolve device_id using the source.uiCondition mapping.
-    /// Returns the actual device ID if found, otherwise returns the original device_id.
-    fn resolve_device_id(
-        &self,
-        dsl_device_id: &str,
-        mapping: &std::collections::HashMap<String, String>,
-    ) -> String {
-        // First check if the dsl_device_id is already a valid device ID
-        if let Some(resolved) = mapping.get(dsl_device_id) {
-            return resolved.clone();
-        }
-        // If not found, return the original (might already be a device ID)
-        dsl_device_id.to_string()
-    }
-
-    /// Evaluate a condition with the given value provider.
-    fn evaluate_condition(
-        &self,
-        condition: &RuleCondition,
-        value_provider: &dyn ValueProvider,
-    ) -> bool {
-        // Build device ID mapping from source (cache this for efficiency)
-        let device_id_mapping = self.build_device_id_mapping();
-
-        self.evaluate_condition_with_mapping(condition, value_provider, &device_id_mapping)
-    }
-
-    /// Evaluate a condition with device ID mapping.
-    fn evaluate_condition_with_mapping(
-        &self,
-        condition: &RuleCondition,
-        value_provider: &dyn ValueProvider,
-        device_id_mapping: &std::collections::HashMap<String, String>,
-    ) -> bool {
-        match condition {
-            RuleCondition::Device {
-                device_id,
-                metric,
-                operator,
-                threshold,
-            } => {
-                let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
-                if let Some(value) = value_provider.get_value(&resolved_id, metric) {
-                    operator.evaluate(value, *threshold)
-                } else {
-                    false
-                }
-            }
-            RuleCondition::Extension {
-                extension_id,
-                metric,
-                operator,
-                threshold,
-            } => {
-                // Extension conditions use extension_id directly, no mapping needed
-                if let Some(value) = value_provider.get_value(extension_id, metric) {
-                    operator.evaluate(value, *threshold)
-                } else {
-                    false
-                }
-            }
-            RuleCondition::DeviceRange {
-                device_id,
-                metric,
-                min,
-                max,
-            } => {
-                let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
-                if let Some(value) = value_provider.get_value(&resolved_id, metric) {
-                    value >= *min && value <= *max
-                } else {
-                    false
-                }
-            }
-            RuleCondition::ExtensionRange {
-                extension_id,
-                metric,
-                min,
-                max,
-            } => {
-                // Extension range conditions use extension_id directly, no mapping needed
-                if let Some(value) = value_provider.get_value(extension_id, metric) {
-                    value >= *min && value <= *max
-                } else {
-                    false
-                }
-            }
-            RuleCondition::And(conditions) => {
-                // Short-circuit: stop evaluating on first failure
-                for c in conditions {
-                    if !self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping) {
-                        return false;
-                    }
-                }
-                true
-            }
-            RuleCondition::Or(conditions) => {
-                // Short-circuit: stop evaluating on first success
-                for c in conditions {
-                    if self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping) {
-                        return true;
-                    }
-                }
-                false
-            }
-            RuleCondition::Not(condition) => {
-                !self.evaluate_condition_with_mapping(condition, value_provider, device_id_mapping)
-            }
-            RuleCondition::Always => true,
-        }
-    }
-}
-
-/// Rule execution result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuleExecutionResult {
-    /// Rule that was executed.
-    pub rule_id: RuleId,
-    /// Rule name.
-    pub rule_name: String,
-    /// Whether execution was successful.
-    pub success: bool,
-    /// Actions executed.
-    pub actions_executed: Vec<String>,
-    /// Error message if execution failed.
-    pub error: Option<String>,
-    /// Execution duration.
-    pub duration_ms: u64,
-}
-
-/// Value provider for rule evaluation.
-pub trait ValueProvider: Send + Sync {
-    /// Get the current value for a device metric.
-    fn get_value(&self, device_id: &str, metric: &str) -> Option<f64>;
-
-    /// Get as Any for downcasting.
-    fn as_any(&self) -> &dyn Any;
-}
-
-/// Rule engine that manages and executes rules.
-pub struct RuleEngine {
-    /// Registered rules.
-    rules: Arc<RwLock<HashMap<RuleId, CompiledRule>>>,
-    /// Value provider for evaluating conditions.
-    value_provider: Arc<dyn ValueProvider>,
-    /// Execution history.
-    history: Arc<RwLock<Vec<RuleExecutionResult>>>,
-    /// Maximum history size.
-    max_history_size: usize,
-    /// Dependency manager for execution ordering.
-    dependency_manager: Arc<StdRwLock<DependencyManager>>,
-    /// Optional message manager for creating messages from rule actions.
-    message_manager: OptionMessageManager,
-    /// Optional device action executor for executing device commands.
-    device_action_executor: OptionDeviceActionExecutor,
-    /// Optional extension action executor for executing extension commands.
-    extension_action_executor: OptionExtensionActionExecutor,
-    /// Optional agent trigger callback for invoking agents from rules.
-    agent_trigger: OptionAgentTriggerCallback,
-    /// Scheduler task handle.
-    scheduler_handle: SchedulerHandle,
-    /// Scheduler interval (how often to evaluate rules).
-    scheduler_interval: Arc<StdRwLock<Duration>>,
-    /// Whether the scheduler is running.
-    scheduler_running: Arc<StdRwLock<bool>>,
-    /// Optional rule store for persistent storage.
-    rule_store: Arc<StdRwLock<Option<Arc<RuleStore>>>>,
-}
-
-impl RuleEngine {
-    /// Create a new rule engine.
-    pub fn new(value_provider: Arc<dyn ValueProvider>) -> Self {
-        Self {
-            rules: Arc::new(RwLock::new(HashMap::new())),
-            value_provider,
-            history: Arc::new(RwLock::new(Vec::new())),
-            max_history_size: 1000,
-            dependency_manager: Arc::new(StdRwLock::new(DependencyManager::new())),
-            message_manager: Arc::new(tokio::sync::RwLock::new(None)),
-            device_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
-            extension_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
-            agent_trigger: Arc::new(tokio::sync::RwLock::new(None)),
-            scheduler_handle: Arc::new(StdRwLock::new(None)),
-            scheduler_interval: Arc::new(StdRwLock::new(Duration::from_secs(5))),
-            scheduler_running: Arc::new(StdRwLock::new(false)),
-            rule_store: Arc::new(StdRwLock::new(None)),
-        }
-    }
-
-    /// Set the rule store for persistent storage.
-    pub fn set_rule_store(&self, store: Arc<RuleStore>) {
-        let mut rule_store = self.rule_store.write();
-        *rule_store = Some(store);
-    }
-
-    /// Set the message manager for creating messages from rule actions.
-    /// This must be called after construction as it requires async access.
-    pub async fn set_message_manager(
-        &self,
-        message_manager: Arc<neomind_messages::MessageManager>,
-    ) {
-        *self.message_manager.write().await = Some(message_manager);
-    }
-
-    /// Get a reference to the message manager (if set).
-    pub async fn get_message_manager(&self) -> Option<Arc<neomind_messages::MessageManager>> {
-        let guard = self.message_manager.read().await;
-        guard.as_ref().map(Arc::clone)
-    }
-
-    /// Set the device action executor for executing device commands from rule actions.
-    /// This must be called after construction as it requires async access.
-    pub async fn set_device_action_executor(&self, executor: Arc<DeviceActionExecutor>) {
-        *self.device_action_executor.write().await = Some(executor);
-    }
-
-    /// Get a reference to the device action executor (if set).
-    pub async fn get_device_action_executor(&self) -> Option<Arc<DeviceActionExecutor>> {
-        let guard = self.device_action_executor.read().await;
-        guard.as_ref().map(Arc::clone)
-    }
-
-    /// Set the extension action executor for executing extension commands.
-    /// This must be called after construction as it requires async access.
-    pub async fn set_extension_action_executor(&self, executor: Arc<ExtensionActionExecutor>) {
-        *self.extension_action_executor.write().await = Some(executor);
-    }
-
-    /// Get a reference to the extension action executor (if set).
-    pub async fn get_extension_action_executor(&self) -> Option<Arc<ExtensionActionExecutor>> {
-        let guard = self.extension_action_executor.read().await;
-        guard.as_ref().map(Arc::clone)
-    }
-
-    /// Set the agent trigger callback for invoking agents from rule actions.
-    pub async fn set_agent_trigger_callback(&self, callback: AgentTriggerCallback) {
-        *self.agent_trigger.write().await = Some(callback);
-    }
-
-    /// Start the automatic rule scheduler.
-    /// The scheduler will periodically evaluate rules and execute triggered ones.
-    /// Returns an error if the scheduler is already running.
-    pub fn start_scheduler(&self) -> Result<(), RuleError> {
-        // Check if already running
-        {
-            let mut running = self.scheduler_running.write();
-            if *running {
-                return Err(RuleError::Validation(
-                    "Scheduler is already running".to_string(),
-                ));
-            }
-            *running = true;
-        }
-
-        // Get the interval
-        let interval = {
-            let interval_guard = self.scheduler_interval.read();
-            *interval_guard
-        };
-
-        // Clone needed Arcs for the task
-        let rules = self.rules.clone();
-        let value_provider = self.value_provider.clone();
-        let history = self.history.clone();
-        let max_history_size = self.max_history_size;
-        let _message_manager = self.message_manager.clone();
-        let scheduler_running = self.scheduler_running.clone();
-        let rule_store = self.rule_store.clone();
-
-        // Spawn the scheduler task
-        let handle = tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(interval);
-            loop {
-                ticker.tick().await;
-
-                // Check if we should stop
-                {
-                    let running = scheduler_running.read();
-                    if !*running {
-                        break;
-                    }
-                }
-
-                // Update rule states and evaluate triggers in a single read lock scope
-                // to avoid holding write lock during evaluation (deadlock prevention)
-                let rules_to_execute: Vec<_> = {
-                    let rules_guard = rules.read().await;
-                    rules_guard
-                        .iter()
-                        .filter_map(|(id, rule)| {
-                            if rule.status != RuleStatus::Active {
-                                return None;
-                            }
-
-                            // Catch panics during rule evaluation to prevent one failing rule from crashing the entire scheduler
-                            let eval_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                                rule.should_trigger(value_provider.as_ref())
-                            }));
-
-                            match eval_result {
-                                Ok(true) => Some((id.clone(), rule.clone())),
-                                Ok(false) => None,
-                                Err(_) => {
-                                    tracing::error!(
-                                        rule_id = %id,
-                                        rule_name = %rule.name,
-                                        "Rule panicked during scheduler evaluation, skipping"
-                                    );
-                                    None
-                                }
-                            }
-                        })
-                        .collect()
-                };
-
-                // Execute triggered rules
-                for (id, rule) in rules_to_execute {
-                    // Update rule state
-                    let rule_to_save = {
-                        let mut rules_guard = rules.write().await;
-                        if let Some(r) = rules_guard.get_mut(&id) {
-                            r.state.trigger_count += 1;
-                            r.state.last_triggered = Some(Utc::now());
-                            Some(r.clone())
-                        } else {
-                            None
-                        }
-                    };
-
-                    // Persist rule state if store is available
-                    if let Some(ref rule) = rule_to_save {
-                        if let Some(ref store) = *rule_store.read() {
-                            if let Err(e) = store.save(rule) {
-                                tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after trigger");
-                            } else {
-                                tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after trigger");
-                            }
-                        }
-                    }
-
-                    // Execute actions
-                    for action in &rule.actions {
-                        // In a real implementation, this would use the action executor
-                        // For now, we just log that an action was executed
-                        tracing::debug!(
-                            rule_id = %id,
-                            rule_name = %rule.name,
-                            action = ?action,
-                            "Executing rule action"
-                        );
-                    }
-
-                    // Record in history
-                    let result = RuleExecutionResult {
-                        rule_id: id.clone(),
-                        rule_name: rule.name.clone(),
-                        success: true,
-                        actions_executed: rule.actions.iter().map(|a| format!("{:?}", a)).collect(),
-                        error: None,
-                        duration_ms: 0,
-                    };
-
-                    let mut hist = history.write().await;
-                    hist.push(result);
-                    if hist.len() > max_history_size {
-                        hist.remove(0);
-                    }
-                }
-            }
-        });
-
-        // Store the handle
-        let mut handle_guard = self.scheduler_handle.write();
-        *handle_guard = Some(handle);
-
-        tracing::info!(interval_sec = interval.as_secs(), "Rule scheduler started");
-
-        Ok(())
-    }
-
-    /// Stop the automatic rule scheduler.
-    /// Returns an error if the scheduler is not running.
-    pub fn stop_scheduler(&self) -> Result<(), RuleError> {
-        // Check if running
-        {
-            let running = self.scheduler_running.read();
-            if !*running {
-                return Err(RuleError::Validation(
-                    "Scheduler is not running".to_string(),
-                ));
-            }
-        }
-
-        // Signal the task to stop
-        {
-            let mut running = self.scheduler_running.write();
-            *running = false;
-        }
-
-        // Abort the task if it exists
-        {
-            let mut handle_guard = self.scheduler_handle.write();
-            if let Some(handle) = handle_guard.take() {
-                handle.abort();
-            }
-        }
-
-        tracing::info!("Rule scheduler stopped");
-        Ok(())
-    }
-
-    /// Check if the scheduler is currently running.
-    pub fn is_scheduler_running(&self) -> bool {
-        let running = self.scheduler_running.read();
-        *running
-    }
-
-    /// Set the scheduler interval.
-    /// This will not affect a running scheduler; it must be restarted for the new interval to take effect.
-    pub fn set_scheduler_interval(&self, interval: Duration) {
-        let mut interval_guard = self.scheduler_interval.write();
-        *interval_guard = interval;
-    }
-
-    /// Get the current scheduler interval.
-    pub fn get_scheduler_interval(&self) -> Duration {
-        let interval_guard = self.scheduler_interval.read();
-        *interval_guard
-    }
-
-    /// Set the maximum history size.
-    pub fn with_max_history_size(mut self, size: usize) -> Self {
-        self.max_history_size = size;
-        self
-    }
-
-    /// Add a rule to the engine.
-    pub async fn add_rule(&self, rule: CompiledRule) -> Result<(), RuleError> {
-        let mut rules = self.rules.write().await;
-        rules.insert(rule.id.clone(), rule);
-        Ok(())
-    }
-
-    /// Add a rule from DSL.
-    pub async fn add_rule_from_dsl(&self, dsl: &str) -> Result<RuleId, RuleError> {
-        let parsed = super::dsl::RuleDslParser::parse(dsl)?;
-        let compiled = CompiledRule::from_parsed_with_dsl(parsed, dsl.to_string());
-        let id = compiled.id.clone();
-        self.add_rule(compiled).await?;
-        Ok(id)
-    }
-
-    /// Remove a rule.
-    pub async fn remove_rule(&self, id: &RuleId) -> Result<bool, RuleError> {
-        // Remove from dependency manager first
-        {
-            let mut dep_manager = self.dependency_manager.write();
-            dep_manager.remove_rule(id);
-        }
-
-        // Then remove the rule itself
-        let mut rules = self.rules.write().await;
-        Ok(rules.remove(id).is_some())
-    }
-
-    /// Add a dependency between rules.
-    ///
-    /// After calling this, `dependent` will only execute after `dependency` has completed.
-    pub fn add_dependency(&self, dependent: RuleId, dependency: RuleId) -> Result<(), RuleError> {
-        let mut dep_manager = self.dependency_manager.write();
-        dep_manager.add_dependency(dependent, dependency);
-        Ok(())
-    }
-
-    /// Remove a dependency between rules.
-    pub fn remove_dependency(
-        &self,
-        dependent: &RuleId,
-        dependency: &RuleId,
-    ) -> Result<(), RuleError> {
-        let mut dep_manager = self.dependency_manager.write();
-        dep_manager.remove_dependency(dependent, dependency);
-        Ok(())
-    }
-
-    /// Get all dependencies for a rule.
-    pub fn get_dependencies(&self, rule_id: &RuleId) -> Vec<RuleId> {
-        let dep_manager = self.dependency_manager.read();
-        dep_manager.get_dependencies(rule_id)
-    }
-
-    /// Get all rules that depend on this rule.
-    pub fn get_dependents(&self, rule_id: &RuleId) -> Vec<RuleId> {
-        let dep_manager = self.dependency_manager.read();
-        dep_manager.get_dependents(rule_id)
-    }
-
-    /// Validate dependencies and get execution order.
-    ///
-    /// Returns the order in which rules should be executed based on their dependencies.
-    /// Also detects circular dependencies and missing dependencies.
-    pub fn validate_dependencies(&self) -> Result<Vec<RuleId>, RuleError> {
-        let existing_rules: std::collections::HashSet<RuleId> = {
-            let rules = self
-                .rules
-                .try_read()
-                .map_err(|e| RuleError::Validation(format!("Failed to acquire lock: {}", e)))?;
-            rules.keys().cloned().collect()
-        };
-
-        let dep_manager = self.dependency_manager.read();
-        let result = dep_manager.validate_and_order(&existing_rules);
-
-        if result.is_valid {
-            Ok(result.execution_order)
-        } else {
-            Err(RuleError::Validation(result.format_message()))
-        }
-    }
-
-    /// Get rules ready to execute based on dependencies.
-    ///
-    /// Returns rules whose dependencies have all been satisfied.
-    pub async fn get_ready_rules(&self, completed: &HashSet<RuleId>) -> Vec<RuleId> {
-        let rules = self.rules.read().await;
-        let existing_rules: std::collections::HashSet<RuleId> = rules.keys().cloned().collect();
-        drop(rules);
-
-        let dep_manager = self.dependency_manager.read();
-        dep_manager.get_ready_rules(&existing_rules, completed)
-    }
-
-    /// Get a reference to the dependency manager.
-    pub fn dependency_manager(&self) -> Arc<StdRwLock<DependencyManager>> {
-        Arc::clone(&self.dependency_manager)
-    }
-
-    /// Get a rule by ID.
-    pub async fn get_rule(&self, id: &RuleId) -> Option<CompiledRule> {
-        let rules = self.rules.read().await;
-        rules.get(id).cloned()
-    }
-
-    /// List all rules.
-    pub async fn list_rules(&self) -> Vec<CompiledRule> {
-        let rules = self.rules.read().await;
-        rules.values().cloned().collect()
-    }
-
-    /// Get the current value for a device metric.
-    pub fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
-        self.value_provider.get_value(device_id, metric)
-    }
-
-    /// Get a reference to the value provider for updating values.
-    pub fn get_value_provider(&self) -> Arc<dyn ValueProvider> {
-        self.value_provider.clone()
-    }
-
-    /// Evaluate all active rules.
-    pub async fn evaluate_rules(&self) -> Vec<RuleId> {
-        let mut triggered = Vec::new();
-        let rules = self.rules.read().await;
-
-        for (id, rule) in rules.iter() {
-            if rule.status != RuleStatus::Active {
-                continue;
-            }
-
-            // Catch panics during rule evaluation to prevent one failing rule from crashing the entire scheduler
-            let eval_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                rule.should_trigger(self.value_provider.as_ref())
-            }));
-
-            match eval_result {
-                Ok(true) => {
-                    triggered.push(id.clone());
-                }
-                Ok(false) => {
-                    // Condition not met, continue to next rule
-                }
-                Err(_) => {
-                    tracing::error!(
-                        rule_id = %id,
-                        rule_name = %rule.name,
-                        "Rule panicked during evaluation, skipping"
-                    );
-                }
-            }
-        }
-
-        triggered
-    }
-
-    /// Update rule states based on current values.
-    pub async fn update_states(&self) {
-        let mut rules = self.rules.write().await;
-
-        for rule in rules.values_mut() {
-            if rule.status != RuleStatus::Active {
-                continue;
-            }
-
-            // Catch panics during rule state update to prevent one failing rule from crashing the entire update
-            let rule_id = rule.id.clone();
-            let rule_name = rule.name.clone();
-            let value_provider = self.value_provider.as_ref();
-
-            let update_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                rule.update_state(value_provider);
-            }));
-
-            if update_result.is_err() {
-                tracing::error!(
-                    rule_id = %rule_id,
-                    rule_name = %rule_name,
-                    "Rule panicked during state update, skipping"
-                );
-            }
-        }
-    }
-
-    /// Execute triggered rules.
-    pub async fn execute_triggered(&self) -> Vec<RuleExecutionResult> {
-        let triggered_ids = self.evaluate_rules().await;
-        let mut results = Vec::new();
-
-        for id in triggered_ids {
-            let result = self.execute_rule(&id).await;
-            results.push(result);
-        }
-
-        results
-    }
-
-    /// Execute a specific rule.
-    pub async fn execute_rule(&self, id: &RuleId) -> RuleExecutionResult {
-        let start = Instant::now();
-
-        let rule = {
-            let rules = self.rules.read().await;
-            match rules.get(id) {
-                Some(r) => r.clone(),
-                None => {
-                    return RuleExecutionResult {
-                        rule_id: id.clone(),
-                        rule_name: "Unknown".to_string(),
-                        success: false,
-                        actions_executed: Vec::new(),
-                        error: Some("Rule not found".to_string()),
-                        duration_ms: 0,
-                    };
-                }
-            }
-        };
-
-        let mut actions_executed = Vec::new();
-        let mut error = None;
-
-        for action in &rule.actions {
-            match self.execute_action(action).await {
-                Ok(name) => actions_executed.push(name),
-                Err(e) => {
-                    error = Some(e.to_string());
-                    break;
-                }
-            }
-        }
-
-        // Update rule state
-        let rule_to_save = {
-            let mut rules = self.rules.write().await;
-            if let Some(rule) = rules.get_mut(id) {
-                rule.state.trigger_count += 1;
-                rule.state.last_triggered = Some(Utc::now());
-                Some(rule.clone())
-            } else {
-                None
-            }
-        };
-
-        // Persist rule state if store is available
-        if let Some(ref rule) = rule_to_save {
-            if let Some(ref store) = *self.rule_store.read() {
-                if let Err(e) = store.save(rule) {
-                    tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after manual trigger");
-                } else {
-                    tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after manual trigger");
-                }
-            }
-        }
-
-        let result = RuleExecutionResult {
-            rule_id: id.clone(),
-            rule_name: rule.name.clone(),
-            success: error.is_none(),
-            actions_executed,
-            error,
-            duration_ms: start.elapsed().as_millis() as u64,
-        };
-
-        // Add to history
-        let mut history = self.history.write().await;
-        history.push(result.clone());
-        if history.len() > self.max_history_size {
-            history.remove(0);
-        }
-
-        result
-    }
-
-    /// Execute a single action - supports all action types.
-    async fn execute_action(&self, action: &RuleAction) -> Result<String, String> {
-        use super::dsl::{AlertSeverity, HttpMethod};
-
-        match action {
-            RuleAction::Notify { message, channels } => {
-                // Try to use MessageManager if available
-                let msg_manager = self.message_manager.read().await;
-                if let Some(manager) = msg_manager.as_ref() {
-                    // Determine severity from message content or default to Info
-                    let severity = neomind_messages::MessageSeverity::Info;
-
-                    // Create a message using MessageManager
-                    let msg = neomind_messages::Message::alert(
-                        severity,
-                        "Rule Triggered".to_string(),
-                        message.clone(),
-                        "rule_engine".to_string(),
-                    );
-
-                    match manager.create_message(msg).await {
-                        Ok(_) => {
-                            tracing::debug!(
-                                "NOTIFY: {} (channels: {:?}) - Message created",
-                                message,
-                                channels
-                            );
-                            Ok(format!("NOTIFY: {}", message))
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to create message: {}", e);
-                            Err(format!("Failed to create message: {}", e))
-                        }
-                    }
-                } else {
-                    // Fallback: just log if MessageManager is not set
-                    tracing::warn!(
-                        "NOTIFY: {} (channels: {:?}) - MessageManager not configured, only logging",
-                        message,
-                        channels
-                    );
-                    Ok(format!("NOTIFY: {} (logged only)", message))
-                }
-            }
-            RuleAction::Execute {
-                device_id,
-                command,
-                params,
-            } => {
-                // First, check if this is an extension action
-                // Extension IDs can be:
-                // - "extension:xxx:metric" format
-                // - "extension:xxx:command:field" format
-                // - device_id that starts with "extension:"
-                if let Some(ext_action) = try_parse_extension_action(action) {
-                    // This is an extension command - try extension executor
-                    let ext_executor = self.extension_action_executor.read().await;
-                    if let Some(ex) = ext_executor.as_ref() {
-                        match ex.execute(&ext_action).await {
-                            Ok(result) if result.success => {
-                                tracing::debug!(
-                                    "EXTENSION EXECUTE: {}.{} -> success ({:?})",
-                                    result.extension_id,
-                                    result.command,
-                                    result.result
-                                );
-                                Ok(format!(
-                                    "EXTENSION: {}.{}",
-                                    result.extension_id, result.command
-                                ))
-                            }
-                            Ok(result) => {
-                                let err = result
-                                    .error
-                                    .unwrap_or_else(|| "Execution failed".to_string());
-                                tracing::error!("EXTENSION EXECUTE failed: {}", err);
-                                Err(err)
-                            }
-                            Err(e) => {
-                                tracing::error!("EXTENSION EXECUTE error: {}", e);
-                                Err(e)
-                            }
-                        }
-                    } else {
-                        // Extension action but no executor - log and treat as success
-                        tracing::warn!(
-                            "EXTENSION EXECUTE: {}.{} (no ExtensionActionExecutor - logged only)",
-                            ext_action.extension_id,
-                            ext_action.command
-                        );
-                        Ok(format!(
-                            "EXTENSION: {}.{} (logged only)",
-                            ext_action.extension_id, ext_action.command
-                        ))
-                    }
-                } else {
-                    // This is a device action - use device executor
-                    let executor = self.device_action_executor.read().await;
-                    if let Some(ex) = executor.as_ref() {
-                        match ex.execute_action(action, None, None).await {
-                            Ok(result) if result.success => Ok(result.actions_executed.join(", ")),
-                            Ok(result) => Err(result
-                                .error
-                                .unwrap_or_else(|| "Execution failed".to_string())),
-                            Err(e) => Err(e.to_string()),
-                        }
-                    } else {
-                        // Fallback: just log (no actual execution)
-                        tracing::debug!(
-                            "EXECUTE: {}.{} with params {:?} (no DeviceActionExecutor - logging only)",
-                            device_id,
-                            command,
-                            params
-                        );
-                        Ok(format!("EXECUTE: {}.{} (logged only)", device_id, command))
-                    }
-                }
-            }
-            RuleAction::Log {
-                level,
-                message,
-                severity,
-            } => {
-                let log_msg = if let Some(sev) = severity {
-                    format!("{}: {} (severity: {})", level, message, sev)
-                } else {
-                    format!("{}: {}", level, message)
-                };
-                tracing::info!("{}", log_msg);
-                Ok(log_msg)
-            }
-            RuleAction::Set {
-                device_id,
-                property,
-                value,
-            } => {
-                // First, check if this is an extension action
-                if let Some(ext_action) = try_parse_extension_action(action) {
-                    let ext_executor = self.extension_action_executor.read().await;
-                    if let Some(ex) = ext_executor.as_ref() {
-                        match ex.execute(&ext_action).await {
-                            Ok(result) if result.success => {
-                                tracing::debug!(
-                                    "EXTENSION SET: {}.{} = {:?} -> success",
-                                    result.extension_id,
-                                    property,
-                                    value
-                                );
-                                Ok(format!(
-                                    "EXTENSION SET: {}.{} = {:?}",
-                                    result.extension_id, property, value
-                                ))
-                            }
-                            Ok(result) => {
-                                let err = result
-                                    .error
-                                    .unwrap_or_else(|| "Extension SET failed".to_string());
-                                tracing::error!("EXTENSION SET failed: {}", err);
-                                Err(err)
-                            }
-                            Err(e) => {
-                                tracing::error!("EXTENSION SET error: {}", e);
-                                Err(e)
-                            }
-                        }
-                    } else {
-                        tracing::warn!(
-                            "EXTENSION SET: {}.{} = {:?} (no ExtensionActionExecutor - logged only)",
-                            ext_action.extension_id,
-                            property,
-                            value
-                        );
-                        Ok(format!(
-                            "EXTENSION SET: {}.{} = {:?} (logged only)",
-                            ext_action.extension_id, property, value
-                        ))
-                    }
-                } else {
-                    // Device action - use DeviceActionExecutor
-                    let executor = self.device_action_executor.read().await;
-                    if let Some(ex) = executor.as_ref() {
-                        // Convert Set to Execute command
-                        let params = std::collections::HashMap::from([
-                            ("property".to_string(), serde_json::json!(property)),
-                            (
-                                "value".to_string(),
-                                serde_json::to_value(value).unwrap_or(serde_json::Value::Null),
-                            ),
-                        ]);
-
-                        match ex
-                            .execute_command_with_retry(device_id, "set", &params)
-                            .await
-                        {
-                            Ok(_) => Ok(format!("SET: {}.{} = {:?}", device_id, property, value)),
-                            Err(e) => Err(format!("SET failed: {}", e)),
-                        }
-                    } else {
-                        // Fallback: just log (no actual execution)
-                        tracing::debug!(
-                            "SET: {}.{} = {} (no DeviceActionExecutor - logging only)",
-                            device_id,
-                            property,
-                            value
-                        );
-                        Ok(format!(
-                            "SET: {}.{} = {} (logged only)",
-                            device_id, property, value
-                        ))
-                    }
-                }
-            }
-            RuleAction::Delay { duration } => {
-                tracing::debug!("DELAY: {:?} (sleeping...)", duration);
-                tokio::time::sleep(*duration).await;
-                Ok(format!("DELAY: {:?} completed", duration))
-            }
-            RuleAction::CreateAlert {
-                title,
-                message,
-                severity,
-            } => {
-                use neomind_messages::{Message, MessageSeverity as MessageSev};
-
-                let sev = match severity {
-                    AlertSeverity::Info => MessageSev::Info,
-                    AlertSeverity::Warning => MessageSev::Warning,
-                    AlertSeverity::Error => MessageSev::Warning, // Map Error to Warning
-                    AlertSeverity::Critical => MessageSev::Critical,
-                };
-
-                // Try to create message through MessageManager if available
-                let message_manager = self.message_manager.read().await;
-                if let Some(manager) = message_manager.as_ref() {
-                    let mut msg = Message::new(
-                        "notification".to_string(),
-                        sev,
-                        title.clone(),
-                        message.clone(),
-                        "rule".to_string(),
-                    );
-                    // Set source_type to "rule" for better tracking
-                    msg.source_type = "rule".to_string();
-
-                    match manager.create_message(msg).await {
-                        Ok(created) => {
-                            tracing::debug!(
-                                "Message created from rule: {} [{}] - {}",
-                                title,
-                                sev,
-                                message
-                            );
-                            Ok(format!("MESSAGE [{}]: {} (id: {})", sev, title, created.id))
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to create message from rule: {}", e);
-                            Err(format!("Failed to create message: {}", e))
-                        }
-                    }
-                } else {
-                    // Fallback to logging if no MessageManager is set
-                    let sev_str = match severity {
-                        AlertSeverity::Info => "INFO",
-                        AlertSeverity::Warning => "WARNING",
-                        AlertSeverity::Error => "ERROR",
-                        AlertSeverity::Critical => "CRITICAL",
-                    };
-                    tracing::warn!(
-                        "MESSAGE [{}]: {} - {} (no MessageManager configured)",
-                        sev_str,
-                        title,
-                        message
-                    );
-                    Ok(format!("MESSAGE [{}]: {} (logged only)", sev_str, title))
-                }
-            }
-            RuleAction::HttpRequest {
-                method,
-                url,
-                headers,
-                body,
-            } => {
-                let method_str = match method {
-                    HttpMethod::Get => reqwest::Method::GET,
-                    HttpMethod::Post => reqwest::Method::POST,
-                    HttpMethod::Put => reqwest::Method::PUT,
-                    HttpMethod::Delete => reqwest::Method::DELETE,
-                    HttpMethod::Patch => reqwest::Method::PATCH,
-                };
-
-                // Build HTTP request with timeout
-                let client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(30))
-                    .build();
-
-                let client = match client {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::error!("Failed to create HTTP client: {}", e);
-                        return Err(format!("HTTP client error: {}", e));
-                    }
-                };
-
-                let mut request = client.request(method_str.clone(), url);
-
-                // Add headers if provided
-                if let Some(hdrs) = headers {
-                    for (key, value) in hdrs {
-                        request = request.header(key, value);
-                    }
-                }
-
-                // Add body if provided (for POST/PUT/PATCH)
-                if let Some(b) = body {
-                    request = request.body(b.clone());
-                }
-
-                // Execute the request
-                match request.send().await {
-                    Ok(response) => {
-                        let status = response.status();
-                        let status_code = status.as_u16();
-
-                        // Try to get response body
-                        let body_result = match response.text().await {
-                            Ok(text) => {
-                                // Truncate if too long
-                                if text.len() > 500 {
-                                    let end = text.floor_char_boundary(500);
-                                    format!("{}... (truncated)", &text[..end])
-                                } else {
-                                    text
-                                }
-                            }
-                            Err(e) => format!("Failed to read response: {}", e),
-                        };
-
-                        tracing::debug!(
-                            "HTTP request completed: {} {} -> {}",
-                            method_str,
-                            url,
-                            status_code
-                        );
-
-                        Ok(format!(
-                            "HTTP: {} {} -> {} ({})",
-                            method_str, url, status_code, body_result
-                        ))
-                    }
-                    Err(e) => {
-                        tracing::error!("HTTP request failed: {} {} - {}", method_str, url, e);
-                        Err(format!("HTTP request failed: {}", e))
-                    }
-                }
-            }
-            RuleAction::TriggerAgent {
-                agent_id,
-                input,
-                data,
-            } => {
-                let trigger = self.agent_trigger.read().await;
-                if let Some(callback) = trigger.as_ref() {
-                    match callback(agent_id.clone(), input.clone(), data.clone()).await {
-                        Ok(()) => {
-                            tracing::debug!("TRIGGER_AGENT: {} triggered successfully", agent_id);
-                            Ok(format!("TRIGGER_AGENT: {} (triggered)", agent_id))
-                        }
-                        Err(e) => {
-                            tracing::error!("TRIGGER_AGENT: {} failed: {}", agent_id, e);
-                            Err(format!("TRIGGER_AGENT failed: {}", e))
-                        }
-                    }
-                } else {
-                    tracing::warn!(
-                        "TRIGGER_AGENT: {} (no agent trigger callback - logged only)",
-                        agent_id
-                    );
-                    Ok(format!("TRIGGER_AGENT: {} (logged only)", agent_id))
-                }
-            }
-        }
-    }
-
-    /// Get execution history.
-    pub async fn get_history(&self) -> Vec<RuleExecutionResult> {
-        let history = self.history.read().await;
-        history.clone()
-    }
-
-    /// Get history for a specific rule.
-    pub async fn get_rule_history(&self, rule_id: &RuleId) -> Vec<RuleExecutionResult> {
-        let history = self.history.read().await;
-        history
-            .iter()
-            .filter(|r| &r.rule_id == rule_id)
-            .cloned()
-            .collect()
-    }
-
-    /// Pause a rule.
-    pub async fn pause_rule(&self, id: &RuleId) -> Result<(), RuleError> {
-        let mut rules = self.rules.write().await;
-        if let Some(rule) = rules.get_mut(id) {
-            rule.status = RuleStatus::Paused;
-            Ok(())
-        } else {
-            Err(RuleError::Validation(format!("Rule not found: {}", id)))
-        }
-    }
-
-    /// Resume a rule.
-    pub async fn resume_rule(&self, id: &RuleId) -> Result<(), RuleError> {
-        let mut rules = self.rules.write().await;
-        if let Some(rule) = rules.get_mut(id) {
-            rule.status = RuleStatus::Active;
-            Ok(())
-        } else {
-            Err(RuleError::Validation(format!("Rule not found: {}", id)))
-        }
-    }
-
-    /// Clear execution history.
-    pub async fn clear_history(&self) {
-        let mut history = self.history.write().await;
-        history.clear();
-    }
-}
+// ---------------------------------------------------------------------------
+// In-memory value provider (testing)
+// ---------------------------------------------------------------------------
 
 /// Simple in-memory value provider for testing.
 pub struct InMemoryValueProvider {
-    values: Arc<StdRwLock<HashMap<String, f64>>>,
+    values: Arc<StdRwLock<HashMap<String, RuleValue>>>,
 }
 
 impl InMemoryValueProvider {
@@ -1414,1499 +60,1049 @@ impl InMemoryValueProvider {
         }
     }
 
-    /// Set a value for a device metric.
-    pub fn set_value(&self, device_id: &str, metric: &str, value: f64) {
+    /// Set a numeric value. Key format: `source_type:source_id:field_path`.
+    pub fn set_value(&self, source_key: &str, value: f64) {
         let mut values = self.values.write();
-        let key = format!("{}:{}", device_id, metric);
-        values.insert(key, value);
+        values.insert(source_key.to_string(), RuleValue::Number(value));
+    }
+
+    /// Set a string value. Key format: `source_type:source_id:field_path`.
+    pub fn set_string_value(&self, source_key: &str, value: &str) {
+        let mut values = self.values.write();
+        values.insert(source_key.to_string(), RuleValue::Text(value.to_string()));
     }
 }
 
 impl ValueProvider for InMemoryValueProvider {
-    fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
-        let key = format!("{}:{}", device_id, metric);
+    fn get_by_source(&self, source: &DataSourceId) -> Option<RuleValue> {
+        let key = source.storage_key();
         let values = self.values.read();
-        values.get(&key).copied()
+        values.get(&key).cloned()
     }
 
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }
 
+// ---------------------------------------------------------------------------
+// Rule engine
+// ---------------------------------------------------------------------------
+
+/// Maximum number of in-memory history entries per engine instance.
+const MAX_HISTORY_SIZE: usize = 1000;
+
+/// Event-driven rule engine.
+///
+/// Rules are evaluated only when [`on_data_update`] is called — no polling.
+pub struct RuleEngine {
+    /// All registered rules.
+    rules: Arc<RwLock<HashMap<RuleId, CompiledRule>>>,
+    /// Subscription index: DataSourceId → Vec<RuleId>
+    subscription_index: Arc<StdRwLock<HashMap<String, Vec<RuleId>>>>,
+    /// Cooldown tracking: RuleId → last trigger Instant
+    cooldowns: Arc<StdRwLock<HashMap<RuleId, Instant>>>,
+    /// Value provider for condition evaluation.
+    value_provider: Arc<dyn ValueProvider>,
+    /// In-memory execution history.
+    history: Arc<RwLock<VecDeque<RuleExecutionResult>>>,
+    // Optional executors
+    message_manager: OptionMessageManager,
+    device_action_executor: OptionDeviceActionExecutor,
+    extension_action_executor: OptionExtensionActionExecutor,
+    agent_trigger: OptionAgentTriggerCallback,
+    /// Persistent rule store.
+    rule_store: Arc<StdRwLock<Option<Arc<RuleStore>>>>,
+}
+
+impl RuleEngine {
+    /// Create a new engine.
+    pub fn new(value_provider: Arc<dyn ValueProvider>) -> Self {
+        Self {
+            rules: Arc::new(RwLock::new(HashMap::new())),
+            subscription_index: Arc::new(StdRwLock::new(HashMap::new())),
+            cooldowns: Arc::new(StdRwLock::new(HashMap::new())),
+            value_provider,
+            history: Arc::new(RwLock::new(VecDeque::new())),
+            message_manager: Arc::new(tokio::sync::RwLock::new(None)),
+            device_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
+            extension_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
+            agent_trigger: Arc::new(tokio::sync::RwLock::new(None)),
+            rule_store: Arc::new(StdRwLock::new(None)),
+        }
+    }
+
+    // -- Setters for optional dependencies --
+
+    pub fn set_rule_store(&self, store: Arc<RuleStore>) {
+        *self.rule_store.write() = Some(store);
+    }
+
+    pub async fn set_message_manager(&self, mm: Arc<neomind_messages::MessageManager>) {
+        *self.message_manager.write().await = Some(mm);
+    }
+
+    pub async fn set_device_action_executor(&self, ex: Arc<DeviceActionExecutor>) {
+        *self.device_action_executor.write().await = Some(ex);
+    }
+
+    pub async fn set_extension_action_executor(&self, ex: Arc<ExtensionActionExecutor>) {
+        *self.extension_action_executor.write().await = Some(ex);
+    }
+
+    pub async fn set_agent_trigger_callback(&self, cb: AgentTriggerCallback) {
+        *self.agent_trigger.write().await = Some(cb);
+    }
+
+    // -- Rule CRUD --
+
+    /// Add a compiled rule. Rebuilds subscription index for the rule.
+    pub async fn add_rule(&self, rule: CompiledRule) -> Result<(), RuleError> {
+        let id = rule.id.clone();
+        let mut rules = self.rules.write().await;
+        rules.insert(id, rule);
+        drop(rules);
+        // Rebuild after insert so the index reflects the new state
+        self.rebuild_all_subscriptions();
+        Ok(())
+    }
+
+    /// Remove a rule and its subscription entries.
+    pub async fn remove_rule(&self, id: &RuleId) -> Result<bool, RuleError> {
+        let mut rules = self.rules.write().await;
+        let removed = rules.remove(id).is_some();
+        drop(rules);
+        if removed {
+            self.rebuild_all_subscriptions();
+            // Clean up cooldown for removed rule
+            self.cooldowns.write().remove(id);
+        }
+        Ok(removed)
+    }
+
+    /// Update an existing rule (or insert if new).
+    pub async fn update_rule(&self, rule: CompiledRule) -> Result<(), RuleError> {
+        let id = rule.id.clone();
+        let mut rules = self.rules.write().await;
+        rules.insert(id, rule);
+        drop(rules);
+        // Rebuild after insert so the index reflects the new state
+        self.rebuild_all_subscriptions();
+        Ok(())
+    }
+
+    /// Get a rule by ID.
+    pub async fn get_rule(&self, id: &RuleId) -> Option<CompiledRule> {
+        self.rules.read().await.get(id).cloned()
+    }
+
+    /// List all rules.
+    pub async fn list_rules(&self) -> Vec<CompiledRule> {
+        self.rules.read().await.values().cloned().collect()
+    }
+
+    /// Enable / disable a rule.
+    pub async fn set_enabled(&self, id: &RuleId, enabled: bool) -> Result<(), RuleError> {
+        let mut rules = self.rules.write().await;
+        match rules.get_mut(id) {
+            Some(rule) => {
+                rule.enabled = enabled;
+                rule.updated_at = Utc::now();
+                Ok(())
+            }
+            None => Err(RuleError::Validation(format!("Rule not found: {}", id))),
+        }
+    }
+
+    // -- Subscription index --
+
+    fn rebuild_all_subscriptions(&self) {
+        // Use blocking read via try_read on the async RwLock.
+        // Since this is called after write lock is dropped (in update_rule/remove_rule),
+        // the lock should be uncontended.
+        let guard = self.rules.try_read();
+        match guard {
+            Ok(rules) => {
+                let mut idx = HashMap::new();
+                for rule in rules.values() {
+                    if let RuleTrigger::DataChange { sources } = &rule.trigger {
+                        for source in sources {
+                            let key = source.storage_key();
+                            idx.entry(key)
+                                .or_insert_with(Vec::new)
+                                .push(rule.id.clone());
+                        }
+                    }
+                }
+                *self.subscription_index.write() = idx;
+            }
+            Err(_) => {
+                // Lock is contended (rare) — keep the existing index rather than wiping it.
+                // The next successful rebuild will bring it up to date.
+                tracing::debug!("rebuild_all_subscriptions: rules lock contended, keeping existing index");
+            }
+        }
+    }
+
+    // -- Core: data-driven evaluation --
+
+    /// Called when a data source value changes.
+    ///
+    /// 1. Look up affected rules via subscription index
+    /// 2. Check cooldown
+    /// 3. Evaluate condition
+    /// 4. Check for_duration
+    /// 5. Execute actions
+    /// 6. Persist history + state
+    /// 7. Set cooldown
+    pub async fn on_data_update(&self, source: &DataSourceId, _value: RuleValue) {
+        let source_key = source.storage_key();
+
+        // 1. Find affected rules
+        let affected: Vec<RuleId> = {
+            let idx = self.subscription_index.read();
+            idx.get(&source_key).cloned().unwrap_or_default()
+        };
+
+        if affected.is_empty() {
+            return;
+        }
+
+        for rule_id in &affected {
+            if let Err(e) = self.evaluate_and_fire(rule_id).await {
+                tracing::warn!(rule_id = %rule_id, error = %e, "Rule evaluation failed");
+            }
+        }
+    }
+
+    /// Manually trigger a rule by ID (for Manual / Schedule triggers).
+    pub async fn execute_rule(&self, id: &RuleId) -> RuleExecutionResult {
+        let start = Instant::now();
+        let now = Utc::now();
+
+        let rule = {
+            let rules = self.rules.read().await;
+            rules.get(id).cloned()
+        };
+
+        let Some(rule) = rule else {
+            return RuleExecutionResult {
+                rule_id: id.clone(),
+                rule_name: "Unknown".to_string(),
+                success: false,
+                actions_executed: Vec::new(),
+                error: Some("Rule not found".to_string()),
+                duration_ms: 0,
+                triggered_at: now,
+            };
+        };
+
+        // Check cooldown (prevents cron double-firing and rapid manual re-triggers)
+        if self.is_in_cooldown(id, &rule) {
+            tracing::debug!(rule_id = %id, "Rule execution skipped due to cooldown");
+            return RuleExecutionResult {
+                rule_id: id.clone(),
+                rule_name: rule.name.clone(),
+                success: false,
+                actions_executed: Vec::new(),
+                error: Some("Rule is in cooldown".to_string()),
+                duration_ms: 0,
+                triggered_at: now,
+            };
+        }
+
+        // Evaluate condition (if any)
+        if let Some(ref cond) = rule.condition {
+            let eval_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                cond.evaluate(self.value_provider.as_ref())
+            }));
+            match eval_result {
+                Ok(true) => {}
+                Ok(false) | Err(_) => {
+                    // Reset condition_since on failure
+                    self.update_condition_since(id, false).await;
+                    return RuleExecutionResult {
+                        rule_id: id.clone(),
+                        rule_name: rule.name.clone(),
+                        success: false,
+                        actions_executed: Vec::new(),
+                        error: Some("Condition not met".to_string()),
+                        duration_ms: start.elapsed().as_millis() as u64,
+                        triggered_at: now,
+                    };
+                }
+            }
+        }
+
+        // Check for_duration for Schedule triggers (consistent with evaluate_and_fire).
+        // Manual triggers skip this — the user explicitly requested immediate execution.
+        if let (Some(dur), RuleTrigger::Schedule { .. }) = (rule.for_duration, &rule.trigger) {
+            let since = self.update_condition_since(id, true).await;
+            match since {
+                Some(since_time) => {
+                    let elapsed = Utc::now()
+                        .signed_duration_since(since_time)
+                        .to_std()
+                        .unwrap_or(Duration::ZERO);
+                    if elapsed < dur {
+                        tracing::debug!(
+                            rule_id = %id,
+                            elapsed_s = elapsed.as_secs(),
+                            required_s = dur.as_secs(),
+                            "Rule condition not yet sustained for required duration"
+                        );
+                        return RuleExecutionResult {
+                            rule_id: id.clone(),
+                            rule_name: rule.name.clone(),
+                            success: false,
+                            actions_executed: Vec::new(),
+                            error: Some(format!(
+                                "Condition sustained for {:?}, requires {:?}",
+                                elapsed, dur
+                            )),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            triggered_at: now,
+                        };
+                    }
+                }
+                None => {
+                    // Just set condition_since, wait for next scheduled evaluation
+                    return RuleExecutionResult {
+                        rule_id: id.clone(),
+                        rule_name: rule.name.clone(),
+                        success: false,
+                        actions_executed: Vec::new(),
+                        error: Some("Condition timing started, awaiting sustained duration".to_string()),
+                        duration_ms: start.elapsed().as_millis() as u64,
+                        triggered_at: now,
+                    };
+                }
+            }
+        }
+
+        // Atomically claim cooldown — prevents concurrent double-fire
+        if !self.try_claim_cooldown(id, rule.cooldown) {
+            tracing::debug!(rule_id = %id, "Rule execution skipped due to cooldown (atomic claim)");
+            return RuleExecutionResult {
+                rule_id: id.clone(),
+                rule_name: rule.name.clone(),
+                success: false,
+                actions_executed: Vec::new(),
+                error: Some("Rule is in cooldown".to_string()),
+                duration_ms: start.elapsed().as_millis() as u64,
+                triggered_at: now,
+            };
+        }
+
+        // Extract trigger value for message placeholder substitution
+        let (trigger_value, trigger_source) = rule
+            .condition
+            .as_ref()
+            .map(|c| Self::extract_trigger_value(c, self.value_provider.as_ref()))
+            .unwrap_or((None, None));
+
+        // Execute actions
+        let mut actions_executed = Vec::new();
+        let mut error = None;
+
+        for action in &rule.actions {
+            match self.execute_action(action, trigger_value, trigger_source.as_deref()).await {
+                Ok(name) => actions_executed.push(name),
+                Err(e) => {
+                    tracing::warn!(
+                        rule_id = %id,
+                        action = ?action,
+                        error = %e,
+                        "Action execution failed"
+                    );
+                    if error.is_none() {
+                        error = Some(e);
+                    }
+                }
+            }
+        }
+
+        // Update state (cooldown already claimed before action execution)
+        self.update_rule_state_after_trigger(id).await;
+
+        let result = RuleExecutionResult {
+            rule_id: id.clone(),
+            rule_name: rule.name.clone(),
+            success: error.is_none(),
+            actions_executed,
+            error,
+            duration_ms: start.elapsed().as_millis() as u64,
+            triggered_at: now,
+        };
+
+        self.record_history(result.clone()).await;
+        result
+    }
+
+    /// Evaluate a single rule and fire actions if conditions are met.
+    async fn evaluate_and_fire(&self, rule_id: &RuleId) -> Result<(), RuleError> {
+        let rule = {
+            let rules = self.rules.read().await;
+            rules.get(rule_id).cloned()
+        };
+        let Some(rule) = rule else {
+            return Err(RuleError::Validation(format!(
+                "Rule not found: {}",
+                rule_id
+            )));
+        };
+
+        if !rule.enabled {
+            return Ok(());
+        }
+
+        // Check cooldown
+        if self.is_in_cooldown(rule_id, &rule) {
+            return Ok(());
+        }
+
+        // Evaluate condition
+        let cond = match &rule.condition {
+            Some(c) => c,
+            None => return Ok(()), // DataChange with no condition → skip
+        };
+
+        let condition_met = panic::catch_unwind(AssertUnwindSafe(|| {
+            cond.evaluate(self.value_provider.as_ref())
+        }))
+        .unwrap_or(false);
+
+        if !condition_met {
+            // Reset condition_since
+            self.update_condition_since(rule_id, false).await;
+            return Ok(());
+        }
+
+        // Check for_duration
+        if let Some(dur) = rule.for_duration {
+            let since = self.update_condition_since(rule_id, true).await;
+            match since {
+                Some(since_time) => {
+                    let elapsed = Utc::now()
+                        .signed_duration_since(since_time)
+                        .to_std()
+                        .unwrap_or(Duration::ZERO);
+                    if elapsed < dur {
+                        return Ok(()); // Not yet sustained long enough
+                    }
+                }
+                None => return Ok(()), // Just set, wait for next evaluation
+            }
+        }
+
+        // Atomically claim cooldown slot — prevents concurrent double-fire
+        // (closes the TOCTOU window between the initial check and action exec).
+        if !self.try_claim_cooldown(rule_id, rule.cooldown) {
+            return Ok(());
+        }
+
+        // Extract trigger value for message placeholder substitution
+        let (trigger_value, trigger_source) =
+            Self::extract_trigger_value(cond, self.value_provider.as_ref());
+
+        // Fire actions
+        let start = Instant::now();
+        let mut actions_executed = Vec::new();
+        let mut first_error = None;
+        for action in &rule.actions {
+            match self.execute_action(action, trigger_value, trigger_source.as_deref()).await {
+                Ok(name) => actions_executed.push(name),
+                Err(e) => {
+                    tracing::warn!(
+                        rule_id = %rule_id,
+                        action = ?action,
+                        error = %e,
+                        "Action execution failed"
+                    );
+                    if first_error.is_none() {
+                        first_error = Some(e);
+                    }
+                }
+            }
+        }
+
+        // Update state (cooldown already claimed before action execution)
+        self.update_rule_state_after_trigger(rule_id).await;
+
+        // Record history
+        self.record_history(RuleExecutionResult {
+            rule_id: rule_id.clone(),
+            rule_name: rule.name.clone(),
+            success: first_error.is_none(),
+            actions_executed,
+            error: first_error,
+            duration_ms: start.elapsed().as_millis() as u64,
+            triggered_at: Utc::now(),
+        }).await;
+
+        Ok(())
+    }
+
+    // -- Action execution --
+
+    /// Substitute `{value}` and `{source_id}` placeholders in a message template.
+    fn substitute_placeholders(message: &str, value: Option<f64>, source: Option<&str>) -> String {
+        let mut result = message.to_string();
+        if let Some(v) = value {
+            result = result.replace("{value}", &format!("{}", v));
+        }
+        if let Some(s) = source {
+            result = result.replace("{source_id}", s);
+        }
+        result
+    }
+
+    /// Extract the primary trigger value and source from a condition tree.
+    /// Returns the first leaf condition's current value and source key.
+    fn extract_trigger_value(
+        condition: &RuleCondition,
+        provider: &dyn ValueProvider,
+    ) -> (Option<f64>, Option<String>) {
+        fn find_first(
+            cond: &RuleCondition,
+            provider: &dyn ValueProvider,
+        ) -> (Option<f64>, Option<String>) {
+            match cond {
+                RuleCondition::Comparison { source, .. } | RuleCondition::Range { source, .. } => {
+                    let value = provider.get_by_source(source);
+                    (value.as_ref().and_then(|rv| rv.as_number()), Some(source.storage_key()))
+                }
+                RuleCondition::Logical { conditions, .. } => {
+                    for c in conditions {
+                        let (v, s) = find_first(c, provider);
+                        if v.is_some() || s.is_some() {
+                            return (v, s);
+                        }
+                    }
+                    (None, None)
+                }
+            }
+        }
+        find_first(condition, provider)
+    }
+
+    async fn execute_action(
+        &self,
+        action: &RuleAction,
+        trigger_value: Option<f64>,
+        trigger_source: Option<&str>,
+    ) -> Result<String, String> {
+        match action {
+            RuleAction::Notify { message, severity } => {
+                let formatted =
+                    Self::substitute_placeholders(message, trigger_value, trigger_source);
+
+                let msg_sev = match severity {
+                    NotifySeverity::Info => neomind_messages::MessageSeverity::Info,
+                    NotifySeverity::Warning => neomind_messages::MessageSeverity::Warning,
+                    NotifySeverity::Critical => neomind_messages::MessageSeverity::Critical,
+                    NotifySeverity::Emergency => {
+                        tracing::warn!(
+                            "Emergency severity mapped to Critical (MessageManager has no Emergency level)"
+                        );
+                        neomind_messages::MessageSeverity::Critical
+                    }
+                };
+
+                let mgr = self.message_manager.read().await;
+                if let Some(manager) = mgr.as_ref() {
+                    let msg = neomind_messages::Message::alert(
+                        msg_sev,
+                        "Rule Triggered".to_string(),
+                        formatted.clone(),
+                        "rule_engine".to_string(),
+                    );
+                    match manager.create_message(msg).await {
+                        Ok(_) => Ok(format!("NOTIFY: {}", formatted)),
+                        Err(e) => Err(format!("Failed to create message: {}", e)),
+                    }
+                } else {
+                    tracing::info!("NOTIFY: {} (no MessageManager)", formatted);
+                    Ok(format!("NOTIFY: {} (logged only)", formatted))
+                }
+            }
+
+            RuleAction::Execute {
+                target,
+                target_type,
+                command,
+                params,
+            } => match target_type {
+                ExecuteTarget::Device => {
+                    let executor = self.device_action_executor.read().await;
+                    if let Some(ex) = executor.as_ref() {
+                        let params_map: HashMap<String, serde_json::Value> = params
+                            .as_object()
+                            .map(|obj| {
+                                obj.iter()
+                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        match ex.execute_command_with_retry(target, command, &params_map).await {
+                            Ok(_) => Ok(format!("EXECUTE: {}.{}", target, command)),
+                            Err(e) => Err(format!("EXECUTE failed: {}", e)),
+                        }
+                    } else {
+                        tracing::info!("EXECUTE device {}.{} (no executor)", target, command);
+                        Ok(format!("EXECUTE: {}.{} (logged only)", target, command))
+                    }
+                }
+                ExecuteTarget::Extension => {
+                    let executor = self.extension_action_executor.read().await;
+                    if let Some(ex) = executor.as_ref() {
+                        let ext_action =
+                            crate::extension_integration::ExtensionCommandAction::new(
+                                target, command,
+                            )
+                            .with_args(params.clone());
+                        match ex.execute(&ext_action).await {
+                            Ok(result) if result.success => Ok(format!(
+                                "EXTENSION: {}.{}",
+                                result.extension_id, result.command
+                            )),
+                            Ok(result) => Err(result.error.unwrap_or_else(|| "Failed".to_string())),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        tracing::info!("EXECUTE extension {}.{} (no executor)", target, command);
+                        Ok(format!("EXTENSION: {}.{} (logged only)", target, command))
+                    }
+                }
+            },
+
+            RuleAction::TriggerAgent {
+                agent_id,
+                input,
+                data,
+            } => {
+                let trigger = self.agent_trigger.read().await;
+                if let Some(cb) = trigger.as_ref() {
+                    match cb(agent_id.clone(), input.clone(), data.clone()).await {
+                        Ok(()) => Ok(format!("TRIGGER_AGENT: {}", agent_id)),
+                        Err(e) => Err(format!("TRIGGER_AGENT failed: {}", e)),
+                    }
+                } else {
+                    tracing::warn!("TRIGGER_AGENT: {} (no callback wired)", agent_id);
+                    Err(format!("TRIGGER_AGENT failed: agent trigger callback not initialized"))
+                }
+            }
+        }
+    }
+
+    // -- State helpers --
+
+    fn is_in_cooldown(&self, rule_id: &RuleId, rule: &CompiledRule) -> bool {
+        let cooldowns = self.cooldowns.read();
+        if let Some(last) = cooldowns.get(rule_id) {
+            last.elapsed() < rule.cooldown
+        } else {
+            false
+        }
+    }
+
+    /// Atomically check cooldown and claim the slot.
+    ///
+    /// If the rule is NOT in cooldown, sets the cooldown timestamp immediately
+    /// and returns `true`. If it IS in cooldown, returns `false` without
+    /// modifying state. This closes the TOCTOU window between `is_in_cooldown`
+    /// and `set_cooldown` that could allow concurrent double-firing.
+    fn try_claim_cooldown(&self, rule_id: &RuleId, cooldown: Duration) -> bool {
+        let mut cooldowns = self.cooldowns.write();
+        if let Some(last) = cooldowns.get(rule_id) {
+            if last.elapsed() < cooldown {
+                return false;
+            }
+        }
+        cooldowns.insert(rule_id.clone(), Instant::now());
+        true
+    }
+
+    async fn update_condition_since(
+        &self,
+        rule_id: &RuleId,
+        condition_met: bool,
+    ) -> Option<chrono::DateTime<Utc>> {
+        let mut rules = self.rules.write().await;
+        if let Some(rule) = rules.get_mut(rule_id) {
+            if condition_met {
+                if rule.state.condition_since.is_none() {
+                    rule.state.condition_since = Some(Utc::now());
+                }
+                rule.state.condition_since
+            } else {
+                rule.state.condition_since = None;
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    async fn update_rule_state_after_trigger(&self, rule_id: &RuleId) {
+        let rule_snapshot = {
+            let mut rules = self.rules.write().await;
+            if let Some(rule) = rules.get_mut(rule_id) {
+                rule.state.trigger_count += 1;
+                rule.state.last_triggered = Some(Utc::now());
+                rule.state.condition_since = None;
+                Some(rule.clone())
+            } else {
+                None
+            }
+        };
+
+        // Persist to store
+        if let Some(rule) = rule_snapshot {
+            if let Some(store) = self.rule_store.read().as_ref() {
+                if let Err(e) = store.save(&rule) {
+                    tracing::warn!(rule_id = %rule_id, error = %e, "Failed to persist rule state");
+                }
+            }
+        }
+    }
+
+    async fn record_history(&self, result: RuleExecutionResult) {
+        // Persist to store if available
+        if let Some(store) = self.rule_store.read().as_ref() {
+            if let Err(e) = store.save_history(&result) {
+                tracing::warn!("Failed to persist rule history: {}", e);
+            }
+        }
+
+        let mut history = self.history.write().await;
+        history.push_back(result);
+        while history.len() > MAX_HISTORY_SIZE {
+            history.pop_front();
+        }
+    }
+
+    // -- History --
+
+    pub async fn get_rule_history(&self, rule_id: &RuleId) -> Vec<RuleExecutionResult> {
+        self.history
+            .read()
+            .await
+            .iter()
+            .filter(|r| &r.rule_id == rule_id)
+            .cloned()
+            .collect()
+    }
+
+    /// List only Schedule-type rules with their cron expressions.
+    pub async fn list_schedule_rules(&self) -> Vec<(RuleId, String)> {
+        let rules = self.rules.read().await;
+        rules
+            .iter()
+            .filter_map(|(id, rule)| {
+                if rule.enabled {
+                    if let RuleTrigger::Schedule { ref cron } = rule.trigger {
+                        Some((id.clone(), cron.clone()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    // -- Value provider access --
+
+    pub fn get_value_provider(&self) -> Arc<dyn ValueProvider> {
+        self.value_provider.clone()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::ComparisonOperator;
+    use crate::models::*;
 
     #[tokio::test]
-    async fn test_rule_engine_basic() {
+    async fn test_add_and_list_rules() {
         let provider = Arc::new(InMemoryValueProvider::new());
         let engine = RuleEngine::new(provider);
 
-        let dsl = r#"
-            RULE "Test Rule"
-            WHEN sensor.temperature > 50
-            DO
-                NOTIFY "High temperature"
-            END
-        "#;
+        let mut rule = CompiledRule::new("Test Rule");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "temperature"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule.trigger = RuleTrigger::from_condition(&rule.condition);
+        rule.finalize();
 
-        let rule_id = engine.add_rule_from_dsl(dsl).await.unwrap();
+        engine.add_rule(rule).await.unwrap();
         assert_eq!(engine.list_rules().await.len(), 1);
-
-        // Set value below threshold
-        let provider = engine.value_provider.clone();
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor", "temperature", 25.0);
-
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-
-        // Set value above threshold
-        mem_provider.set_value("sensor", "temperature", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-        assert_eq!(triggered[0], rule_id);
     }
 
     #[tokio::test]
-    async fn test_rule_with_duration() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider);
-
-        let _dsl = r#"
-            RULE "Test Rule"
-            WHEN sensor.temperature > 50
-            FOR 100 milliseconds
-            DO
-                NOTIFY "High temperature"
-            END
-        "#;
-
-        // Modify DSL to use our duration format
-        let dsl = r#"
-            RULE "Test Rule"
-            WHEN sensor.temperature > 50
-            DO
-                NOTIFY "High temperature"
-            END
-        "#;
-
-        let _rule_id = engine.add_rule_from_dsl(dsl).await.unwrap();
-
-        let provider = engine.value_provider.clone();
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        mem_provider.set_value("sensor", "temperature", 75.0);
-        engine.update_states().await;
-
-        // Should trigger immediately without FOR clause
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_scheduler_start_stop() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider);
-
-        // Initially not running
-        assert!(!engine.is_scheduler_running());
-
-        // Start the scheduler
-        engine.start_scheduler().unwrap();
-        assert!(engine.is_scheduler_running());
-
-        // Cannot start again
-        assert!(engine.start_scheduler().is_err());
-
-        // Stop the scheduler
-        engine.stop_scheduler().unwrap();
-        assert!(!engine.is_scheduler_running());
-
-        // Cannot stop again
-        assert!(engine.stop_scheduler().is_err());
-    }
-
-    #[tokio::test]
-    async fn test_scheduler_interval() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider);
-
-        // Default interval is 5 seconds
-        assert_eq!(engine.get_scheduler_interval(), Duration::from_secs(5));
-
-        // Set a custom interval
-        engine.set_scheduler_interval(Duration::from_millis(100));
-        assert_eq!(engine.get_scheduler_interval(), Duration::from_millis(100));
-    }
-
-    #[tokio::test]
-    async fn test_scheduler_executes_rules() {
+    async fn test_on_data_update_triggers_rule() {
         let provider = Arc::new(InMemoryValueProvider::new());
         let engine = RuleEngine::new(provider.clone());
 
-        // Set a very short interval for testing
-        engine.set_scheduler_interval(Duration::from_millis(50));
-
-        // Add a rule
-        let dsl = r#"
-            RULE "Test Scheduler Rule"
-            WHEN sensor.temperature > 50
-            DO
-                NOTIFY "High temperature"
-            END
-        "#;
-        let _rule_id = engine.add_rule_from_dsl(dsl).await.unwrap();
-
-        // Start the scheduler
-        engine.start_scheduler().unwrap();
-
-        // Wait for scheduler to tick at least once
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Rule should not have triggered yet (temperature is default 0.0)
-        let rules = engine.list_rules().await;
-        assert_eq!(rules[0].state.trigger_count, 0);
-
-        // Set temperature above threshold
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor", "temperature", 75.0);
-
-        // Wait for scheduler to tick again
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Rule should have triggered
-        let rules = engine.list_rules().await;
-        assert!(rules[0].state.trigger_count > 0);
-
-        // Stop the scheduler
-        engine.stop_scheduler().unwrap();
-    }
-
-    // ============================================================================
-    // Engine Evaluation Tests
-    // ============================================================================
-
-    #[tokio::test]
-    async fn test_condition_evaluation_simple_greater_than() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        // Create rule with > condition
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "High Temperature".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: value below threshold should not trigger
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when temp < 50");
-
-        // Test: value above threshold should trigger
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when temp > 50");
-
-        // Test: value exactly at threshold should not trigger
-        mem_provider.set_value("sensor1", "temp", 50.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when temp == 50");
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_simple_less_than() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Low Temperature".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::LessThan,
-                threshold: 10.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: value above threshold should not trigger
-        mem_provider.set_value("sensor1", "temp", 20.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-
-        // Test: value below threshold should trigger
-        mem_provider.set_value("sensor1", "temp", 5.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_greater_equal() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "High or Equal".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterEqual,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: value at threshold should trigger
-        mem_provider.set_value("sensor1", "temp", 50.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when temp >= 50 (equal)");
-
-        // Test: value above threshold should trigger
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when temp >= 50 (greater)"
-        );
-
-        // Test: value below threshold should not trigger
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty(), "Should not trigger when temp < 50");
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_less_equal() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Low or Equal".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::LessEqual,
-                threshold: 10.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: value at threshold should trigger
-        mem_provider.set_value("sensor1", "temp", 10.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: value below threshold should trigger
-        mem_provider.set_value("sensor1", "temp", 5.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: value above threshold should not trigger
-        mem_provider.set_value("sensor1", "temp", 15.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_equal() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Exact Match".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "value".to_string(),
-                operator: ComparisonOperator::Equal,
-                threshold: 42.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: exact match should trigger
-        mem_provider.set_value("sensor1", "value", 42.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: close value should trigger (within epsilon)
-        mem_provider.set_value("sensor1", "value", 42.00005);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: different value should not trigger
-        mem_provider.set_value("sensor1", "value", 43.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_not_equal() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Not Equal".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "value".to_string(),
-                operator: ComparisonOperator::NotEqual,
-                threshold: 42.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: different value should trigger
-        mem_provider.set_value("sensor1", "value", 43.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: exact match should not trigger
-        mem_provider.set_value("sensor1", "value", 42.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_and() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "AND Condition".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::And(vec![
-                RuleCondition::Device {
-                    device_id: "sensor1".to_string(),
-                    metric: "temp".to_string(),
-                    operator: ComparisonOperator::GreaterThan,
-                    threshold: 50.0,
-                },
-                RuleCondition::Device {
-                    device_id: "sensor2".to_string(),
-                    metric: "humidity".to_string(),
-                    operator: ComparisonOperator::LessThan,
-                    threshold: 30.0,
-                },
-            ]),
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: neither condition met
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        mem_provider.set_value("sensor2", "humidity", 50.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when neither condition met"
-        );
-
-        // Test: only first condition met
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        mem_provider.set_value("sensor2", "humidity", 50.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when only first condition met"
-        );
-
-        // Test: only second condition met
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        mem_provider.set_value("sensor2", "humidity", 20.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when only second condition met"
-        );
-
-        // Test: both conditions met
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        mem_provider.set_value("sensor2", "humidity", 20.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when both conditions met"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_or() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "OR Condition".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Or(vec![
-                RuleCondition::Device {
-                    device_id: "sensor1".to_string(),
-                    metric: "temp".to_string(),
-                    operator: ComparisonOperator::GreaterThan,
-                    threshold: 50.0,
-                },
-                RuleCondition::Device {
-                    device_id: "sensor2".to_string(),
-                    metric: "temp".to_string(),
-                    operator: ComparisonOperator::GreaterThan,
-                    threshold: 50.0,
-                },
-            ]),
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: neither condition met
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        mem_provider.set_value("sensor2", "temp", 30.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when neither condition met"
-        );
-
-        // Test: only first condition met
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        mem_provider.set_value("sensor2", "temp", 30.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when only first condition met"
-        );
-
-        // Test: only second condition met
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        mem_provider.set_value("sensor2", "temp", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when only second condition met"
-        );
-
-        // Test: both conditions met
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        mem_provider.set_value("sensor2", "temp", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when both conditions met"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_not() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "NOT Condition".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Not(Box::new(RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            })),
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: condition is true, so NOT should be false
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when inner condition is true"
-        );
-
-        // Test: condition is false, so NOT should be true
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when inner condition is false"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_range() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Range Condition".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::DeviceRange {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                min: 20.0,
-                max: 25.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: value below range
-        mem_provider.set_value("sensor1", "temp", 15.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when value below range"
-        );
-
-        // Test: value at lower bound
-        mem_provider.set_value("sensor1", "temp", 20.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when value at lower bound"
-        );
-
-        // Test: value in range
-        mem_provider.set_value("sensor1", "temp", 22.5);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Should trigger when value in range");
-
-        // Test: value at upper bound
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger when value at upper bound"
-        );
-
-        // Test: value above range
-        mem_provider.set_value("sensor1", "temp", 30.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when value above range"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_condition_evaluation_extension() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Extension Condition".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Extension {
-                extension_id: "weather:ext:temp".to_string(),
-                metric: "temperature".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 30.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Test: extension value below threshold
-        mem_provider.set_value("weather:ext:temp", "temperature", 25.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-
-        // Test: extension value above threshold
-        mem_provider.set_value("weather:ext:temp", "temperature", 35.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_action_execution_notify() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Notify Action".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![RuleAction::Notify {
-                message: "High temperature detected".to_string(),
-                channels: Some(vec!["alert".to_string()]),
-            }],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
+        let mut rule = CompiledRule::new("High Temp");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "temperature"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule.trigger = RuleTrigger::from_condition(&rule.condition);
+        rule.actions = vec![RuleAction::Notify {
+            message: "Too hot".into(),
+            severity: NotifySeverity::Warning,
+        }];
+        rule.finalize();
 
         let rule_id = rule.id.clone();
         engine.add_rule(rule).await.unwrap();
 
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor1", "temp", 75.0);
+        // Set value above threshold and notify
+        provider.set_value("device:sensor1:temperature", 75.0);
+        engine
+            .on_data_update(
+                &DataSourceId::device("sensor1", "temperature"),
+                RuleValue::Number(75.0),
+            )
+            .await;
 
-        // Execute the rule
-        let result = engine.execute_rule(&rule_id).await;
-
-        assert!(result.success, "Execution should succeed");
-        assert_eq!(result.actions_executed.len(), 1);
-        assert!(result.actions_executed[0].contains("NOTIFY"));
-        assert!(result.actions_executed[0].contains("High temperature detected"));
-
-        // Verify trigger count updated
-        let rule = engine.get_rule(&rule_id).await.unwrap();
-        assert_eq!(rule.state.trigger_count, 1);
-        assert!(rule.state.last_triggered.is_some());
+        // Check trigger count
+        let r = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(r.state.trigger_count, 1);
     }
 
     #[tokio::test]
-    async fn test_action_execution_multiple_actions() {
+    async fn test_on_data_update_below_threshold() {
         let provider = Arc::new(InMemoryValueProvider::new());
         let engine = RuleEngine::new(provider.clone());
 
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Multiple Actions".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![
-                RuleAction::Notify {
-                    message: "Alert 1".to_string(),
-                    channels: Some(vec!["alert".to_string()]),
-                },
-                RuleAction::Notify {
-                    message: "Alert 2".to_string(),
-                    channels: Some(vec!["alert".to_string()]),
-                },
-            ],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
+        let mut rule = CompiledRule::new("High Temp");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "temperature"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule.trigger = RuleTrigger::from_condition(&rule.condition);
+        rule.finalize();
 
         let rule_id = rule.id.clone();
         engine.add_rule(rule).await.unwrap();
 
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor1", "temp", 75.0);
+        provider.set_value("device:sensor1:temperature", 25.0);
+        engine
+            .on_data_update(
+                &DataSourceId::device("sensor1", "temperature"),
+                RuleValue::Number(25.0),
+            )
+            .await;
+
+        let r = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(r.state.trigger_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cooldown_prevents_retrigger() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let mut rule = CompiledRule::new("High Temp");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "temperature"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule.trigger = RuleTrigger::from_condition(&rule.condition);
+        rule.cooldown = Duration::from_secs(60);
+        rule.actions = vec![RuleAction::Notify {
+            message: "Too hot".into(),
+            severity: NotifySeverity::Warning,
+        }];
+        rule.finalize();
+
+        let rule_id = rule.id.clone();
+        engine.add_rule(rule).await.unwrap();
+
+        // First trigger
+        provider.set_value("device:sensor1:temperature", 75.0);
+        engine
+            .on_data_update(
+                &DataSourceId::device("sensor1", "temperature"),
+                RuleValue::Number(75.0),
+            )
+            .await;
+
+        // Second trigger (within cooldown)
+        engine
+            .on_data_update(
+                &DataSourceId::device("sensor1", "temperature"),
+                RuleValue::Number(80.0),
+            )
+            .await;
+
+        let r = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(r.state.trigger_count, 1); // Still 1 due to cooldown
+    }
+
+    #[tokio::test]
+    async fn test_manual_trigger() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let mut rule = CompiledRule::new("Manual Rule");
+        rule.trigger = RuleTrigger::Manual;
+        // No condition — always fires on manual trigger
+        rule.actions = vec![RuleAction::Notify {
+            message: "Manual fired".into(),
+            severity: NotifySeverity::Info,
+        }];
+        rule.finalize();
+
+        let rule_id = rule.id.clone();
+        engine.add_rule(rule).await.unwrap();
 
         let result = engine.execute_rule(&rule_id).await;
-
         assert!(result.success);
-        assert_eq!(result.actions_executed.len(), 2);
+
+        let r = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(r.state.trigger_count, 1);
     }
 
     #[tokio::test]
-    async fn test_duration_tracking_with_for_clause() {
+    async fn test_subscription_index_selective() {
         let provider = Arc::new(InMemoryValueProvider::new());
         let engine = RuleEngine::new(provider.clone());
 
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Duration Rule".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: Some(Duration::from_millis(100)),
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
+        // Rule 1: watches sensor1
+        let mut rule1 = CompiledRule::new("Rule 1");
+        rule1.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "temp"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule1.trigger = RuleTrigger::from_condition(&rule1.condition);
+        rule1.actions = vec![RuleAction::Notify {
+            message: "s1 hot".into(),
+            severity: NotifySeverity::Warning,
+        }];
+        rule1.finalize();
+        let rule1_id = rule1.id.clone();
 
-        engine.add_rule(rule).await.unwrap();
+        // Rule 2: watches sensor2
+        let mut rule2 = CompiledRule::new("Rule 2");
+        rule2.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("sensor2", "temp"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule2.trigger = RuleTrigger::from_condition(&rule2.condition);
+        rule2.actions = vec![RuleAction::Notify {
+            message: "s2 hot".into(),
+            severity: NotifySeverity::Warning,
+        }];
+        rule2.finalize();
+        let rule2_id = rule2.id.clone();
 
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor1", "temp", 75.0);
-
-        // Update state to start tracking
-        engine.update_states().await;
-
-        // Should not trigger immediately
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger immediately when FOR clause is set"
-        );
-
-        // Wait for duration to pass
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        // Now should trigger
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(
-            triggered.len(),
-            1,
-            "Should trigger after duration has elapsed"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_duration_tracking_resets_on_condition_false() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Duration Reset Rule".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: Some(Duration::from_millis(100)),
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-
-        // Set condition true
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        engine.update_states().await;
-
-        // Wait a bit
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Set condition false
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        engine.update_states().await;
-
-        // Wait more
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Set condition true again
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        engine.update_states().await;
-
-        // Should not trigger because timer was reset
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger because duration tracking was reset"
-        );
-
-        // Wait for full duration after reset
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        // Now should trigger
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_edge_case_empty_rule_set() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider);
-
-        // No rules added
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "No rules should trigger with empty rule set"
-        );
-
-        let rules = engine.list_rules().await;
-        assert!(rules.is_empty(), "Rule list should be empty");
-    }
-
-    #[tokio::test]
-    async fn test_edge_case_missing_data_source() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Missing Data".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "nonexistent".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        // Don't set any values - data source is missing
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-
-        // Should not trigger when data is missing
-        assert!(
-            triggered.is_empty(),
-            "Should not trigger when data source is missing"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_edge_case_paused_rule() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Paused Rule".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Paused,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor1", "temp", 75.0);
-
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-
-        // Paused rules should not be evaluated
-        assert!(triggered.is_empty(), "Paused rules should not trigger");
-    }
-
-    #[tokio::test]
-    async fn test_edge_case_disabled_rule() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Disabled Rule".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Disabled,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        engine.add_rule(rule).await.unwrap();
-
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor1", "temp", 75.0);
-
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-
-        // Disabled rules should not be evaluated
-        assert!(triggered.is_empty(), "Disabled rules should not trigger");
-    }
-
-    #[tokio::test]
-    async fn test_edge_case_multiple_rules_same_condition() {
-        let provider = Arc::new(InMemoryValueProvider::new());
-        let engine = RuleEngine::new(provider.clone());
-
-        let rule1 = CompiledRule {
-            id: RuleId::new(),
-            name: "Rule 1".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        let rule2 = CompiledRule {
-            id: RuleId::new(),
-            name: "Rule 2".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Device {
-                device_id: "sensor1".to_string(),
-                metric: "temp".to_string(),
-                operator: ComparisonOperator::GreaterThan,
-                threshold: 50.0,
-            },
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
-
-        let id1 = rule1.id.clone();
-        let id2 = rule2.id.clone();
         engine.add_rule(rule1).await.unwrap();
         engine.add_rule(rule2).await.unwrap();
 
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
-        mem_provider.set_value("sensor1", "temp", 75.0);
+        // Update sensor1 — only rule1 should trigger
+        provider.set_value("device:sensor1:temp", 75.0);
+        engine
+            .on_data_update(
+                &DataSourceId::device("sensor1", "temp"),
+                RuleValue::Number(75.0),
+            )
+            .await;
 
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-
-        // Both rules should trigger
-        assert_eq!(triggered.len(), 2);
-        assert!(triggered.contains(&id1));
-        assert!(triggered.contains(&id2));
+        let r1 = engine.get_rule(&rule1_id).await.unwrap();
+        let r2 = engine.get_rule(&rule2_id).await.unwrap();
+        assert_eq!(r1.state.trigger_count, 1);
+        assert_eq!(r2.state.trigger_count, 0);
     }
 
     #[tokio::test]
-    async fn test_edge_case_complex_nested_conditions() {
+    async fn test_string_comparison_rule() {
         let provider = Arc::new(InMemoryValueProvider::new());
         let engine = RuleEngine::new(provider.clone());
 
-        // (A AND B) OR (C AND D)
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Complex Nested".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Or(vec![
-                RuleCondition::And(vec![
-                    RuleCondition::Device {
-                        device_id: "sensor1".to_string(),
-                        metric: "temp".to_string(),
-                        operator: ComparisonOperator::GreaterThan,
-                        threshold: 50.0,
-                    },
-                    RuleCondition::Device {
-                        device_id: "sensor2".to_string(),
-                        metric: "humidity".to_string(),
-                        operator: ComparisonOperator::LessThan,
-                        threshold: 30.0,
-                    },
-                ]),
-                RuleCondition::And(vec![
-                    RuleCondition::Device {
-                        device_id: "sensor3".to_string(),
-                        metric: "pressure".to_string(),
-                        operator: ComparisonOperator::GreaterThan,
-                        threshold: 100.0,
-                    },
-                    RuleCondition::Device {
-                        device_id: "sensor4".to_string(),
-                        metric: "flow".to_string(),
-                        operator: ComparisonOperator::LessThan,
-                        threshold: 10.0,
-                    },
-                ]),
-            ]),
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
+        let mut rule = CompiledRule::new("Status Online");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev1", "status"),
+            operator: ComparisonOperator::Equal,
+            threshold: 0.0,
+            threshold_value: Some("online".into()),
+        });
+        rule.trigger = RuleTrigger::from_condition(&rule.condition);
+        rule.actions = vec![RuleAction::Notify {
+            message: "Device is online".into(),
+            severity: NotifySeverity::Info,
+        }];
+        rule.finalize();
 
+        let rule_id = rule.id.clone();
         engine.add_rule(rule).await.unwrap();
 
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
+        // Set string value and trigger
+        provider.set_string_value("device:dev1:status", "online");
+        engine
+            .on_data_update(
+                &DataSourceId::device("dev1", "status"),
+                RuleValue::Text("online".into()),
+            )
+            .await;
 
-        // Test: neither AND group is true
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        mem_provider.set_value("sensor2", "humidity", 50.0);
-        mem_provider.set_value("sensor3", "pressure", 50.0);
-        mem_provider.set_value("sensor4", "flow", 20.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(triggered.is_empty());
-
-        // Test: first AND group is true
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        mem_provider.set_value("sensor2", "humidity", 20.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: second AND group is true
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        mem_provider.set_value("sensor2", "humidity", 50.0);
-        mem_provider.set_value("sensor3", "pressure", 150.0);
-        mem_provider.set_value("sensor4", "flow", 5.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
-
-        // Test: both AND groups are true
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        mem_provider.set_value("sensor2", "humidity", 20.0);
-        mem_provider.set_value("sensor3", "pressure", 150.0);
-        mem_provider.set_value("sensor4", "flow", 5.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1);
+        let r = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(r.state.trigger_count, 1);
     }
 
     #[tokio::test]
-    async fn test_edge_case_double_negation() {
+    async fn test_string_contains_rule() {
         let provider = Arc::new(InMemoryValueProvider::new());
         let engine = RuleEngine::new(provider.clone());
 
-        // NOT(NOT(condition))
-        let rule = CompiledRule {
-            id: RuleId::new(),
-            name: "Double Negation".to_string(),
-            description: None,
-            dsl: String::new(),
-            condition: RuleCondition::Not(Box::new(RuleCondition::Not(Box::new(
-                RuleCondition::Device {
-                    device_id: "sensor1".to_string(),
-                    metric: "temp".to_string(),
-                    operator: ComparisonOperator::GreaterThan,
-                    threshold: 50.0,
-                },
-            )))),
-            for_duration: None,
-            actions: vec![],
-            status: RuleStatus::Active,
-            state: RuleState {
-                trigger_count: 0,
-                last_triggered: None,
-                last_evaluation: false,
-                condition_true_since: None,
-            },
-            created_at: Utc::now(),
-            source: None,
-            trigger_type: TriggerType::default(),
-        };
+        let mut rule = CompiledRule::new("Error Detected");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev1", "log"),
+            operator: ComparisonOperator::Contains,
+            threshold: 0.0,
+            threshold_value: Some("error".into()),
+        });
+        rule.trigger = RuleTrigger::from_condition(&rule.condition);
+        rule.actions = vec![RuleAction::Notify {
+            message: "Error in log".into(),
+            severity: NotifySeverity::Warning,
+        }];
+        rule.finalize();
 
+        let rule_id = rule.id.clone();
         engine.add_rule(rule).await.unwrap();
 
-        let mem_provider = provider
-            .as_any()
-            .downcast_ref::<InMemoryValueProvider>()
-            .unwrap();
+        provider.set_string_value("device:dev1:log", "device_error_timeout");
+        engine
+            .on_data_update(
+                &DataSourceId::device("dev1", "log"),
+                RuleValue::Text("device_error_timeout".into()),
+            )
+            .await;
 
-        // Double negation should be equivalent to original condition
-        mem_provider.set_value("sensor1", "temp", 75.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert_eq!(triggered.len(), 1, "Double negation of true should be true");
-
-        mem_provider.set_value("sensor1", "temp", 25.0);
-        engine.update_states().await;
-        let triggered = engine.evaluate_rules().await;
-        assert!(
-            triggered.is_empty(),
-            "Double negation of false should be false"
-        );
+        let r = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(r.state.trigger_count, 1);
     }
 }

@@ -1,22 +1,18 @@
-//! Business data storage for logs, rules, and alerts.
+//! Business data storage for alerts.
 //!
 //! Provides storage for:
-//! - Rule execution history
 //! - Alert records with status management
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use crate::Result;
 
 // Table definitions
-const RULE_HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rule_history");
 const ALERT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("alerts");
 
 /// Event severity level.
@@ -30,196 +26,6 @@ pub enum EventSeverity {
     Error,
     /// Critical
     Critical,
-}
-
-/// Rule execution history entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuleExecution {
-    /// Unique execution ID
-    pub id: String,
-    /// Rule ID
-    pub rule_id: String,
-    /// Rule name
-    pub rule_name: String,
-    /// Execution timestamp
-    pub timestamp: i64,
-    /// Trigger source (device_id, manual, etc.)
-    pub trigger_source: String,
-    /// Execution result
-    pub result: RuleExecutionResult,
-    /// Duration in milliseconds
-    pub duration_ms: u64,
-    /// Error message if failed
-    pub error: Option<String>,
-    /// Additional context
-    pub context: Option<serde_json::Value>,
-}
-
-/// Rule execution result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum RuleExecutionResult {
-    /// Rule passed and actions executed
-    Success { actions_executed: u32 },
-    /// Rule passed but actions failed
-    PartialSuccess {
-        actions_executed: u32,
-        actions_failed: u32,
-    },
-    /// Rule evaluation failed
-    EvaluationFailed,
-    /// Rule did not pass
-    NotTriggered,
-}
-
-/// Rule execution statistics.
-#[derive(Debug, Clone, Default)]
-pub struct RuleExecutionStats {
-    /// Total executions
-    pub total_executions: u64,
-    /// Successful executions
-    pub successful: u64,
-    /// Failed executions
-    pub failed: u64,
-    /// Not triggered count
-    pub not_triggered: u64,
-    /// Average duration in milliseconds
-    pub avg_duration_ms: f64,
-}
-
-/// Rule history store.
-pub struct RuleHistoryStore {
-    db: Arc<Database>,
-    stats: Arc<RwLock<HashMap<String, RuleExecutionStats>>>,
-}
-
-impl RuleHistoryStore {
-    /// Open or create a rule history store.
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path_ref = path.as_ref();
-        let db = if path_ref.exists() {
-            Database::open(path_ref)?
-        } else {
-            if let Some(parent) = path_ref.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            Database::create(path_ref)?
-        };
-
-        Ok(Self {
-            db: Arc::new(db),
-            stats: Arc::new(RwLock::new(HashMap::new())),
-        })
-    }
-
-    /// Record a rule execution.
-    pub fn record_execution(&self, execution: &RuleExecution) -> Result<()> {
-        let key = format!("{}:{}", execution.rule_id, execution.id);
-        let value = serde_json::to_vec(execution)?;
-
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(RULE_HISTORY_TABLE)?;
-            table.insert(&*key, &*value)?;
-        }
-        txn.commit()?;
-
-        // Update stats
-        let stats = Arc::clone(&self.stats);
-        let rule_id = execution.rule_id.clone();
-        let duration = execution.duration_ms;
-        let result = execution.result.clone();
-
-        tokio::spawn(async move {
-            let mut stats = stats.write().await;
-            let entry = stats.entry(rule_id).or_insert_with(Default::default);
-            entry.total_executions += 1;
-            match result {
-                RuleExecutionResult::Success { .. } => entry.successful += 1,
-                RuleExecutionResult::PartialSuccess { .. } => entry.failed += 1,
-                RuleExecutionResult::EvaluationFailed => entry.failed += 1,
-                RuleExecutionResult::NotTriggered => entry.not_triggered += 1,
-            }
-            entry.avg_duration_ms = if entry.total_executions == 1 {
-                duration as f64
-            } else {
-                (entry.avg_duration_ms * (entry.total_executions - 1) as f64 + duration as f64)
-                    / entry.total_executions as f64
-            };
-        });
-
-        Ok(())
-    }
-
-    /// Get execution history for a rule.
-    pub fn get_history(&self, rule_id: &str, limit: usize) -> Result<Vec<RuleExecution>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(RULE_HISTORY_TABLE)?;
-
-        let start_key = format!("{}:", rule_id);
-        let end_key = format!("{}:\u{FFFF}", rule_id);
-
-        let mut results = Vec::new();
-        for result in table.range(&*start_key..=&*end_key)?.rev().take(limit) {
-            let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<RuleExecution>(value.value()) {
-                results.push(execution);
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Get trigger history for a rule.
-    pub fn get_trigger_history(&self, rule_id: &str, limit: usize) -> Result<Vec<RuleExecution>> {
-        let history = self.get_history(rule_id, limit)?;
-        Ok(history
-            .into_iter()
-            .filter(|e| !matches!(e.result, RuleExecutionResult::NotTriggered))
-            .collect())
-    }
-
-    /// Get execution statistics for a rule.
-    pub async fn get_stats(&self, rule_id: &str) -> Option<RuleExecutionStats> {
-        self.stats.read().await.get(rule_id).cloned()
-    }
-
-    /// Get all rules with execution history.
-    pub fn list_rules(&self) -> Result<Vec<String>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(RULE_HISTORY_TABLE)?;
-
-        let mut rules = std::collections::HashSet::new();
-        for result in table.iter()? {
-            let (key, _) = result?;
-            let key_str = key.value();
-            if let Some(rule_id) = key_str.split(':').next() {
-                rules.insert(rule_id.to_string());
-            }
-        }
-
-        Ok(rules.into_iter().collect())
-    }
-
-    /// Get count of triggered rules since a given timestamp.
-    pub fn count_since(&self, since_timestamp: i64) -> Result<u64> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(RULE_HISTORY_TABLE)?;
-
-        let mut count = 0u64;
-        for result in table.iter()? {
-            let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<RuleExecution>(value.value()) {
-                if execution.timestamp >= since_timestamp {
-                    // Count only triggered rules (not "NotTriggered")
-                    if !matches!(execution.result, RuleExecutionResult::NotTriggered) {
-                        count += 1;
-                    }
-                }
-            }
-        }
-
-        Ok(count)
-    }
 }
 
 /// Alert record.

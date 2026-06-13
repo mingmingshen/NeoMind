@@ -577,9 +577,9 @@ pub async fn run_rule_cmd(cmd: RuleCommand) -> Result<(CliResponse, OutputFormat
     let response = match cmd {
         RuleCommand::List => list_rules(&client).await?,
         RuleCommand::Get { id } => get_rule(&client, &id).await?,
-        RuleCommand::Create { name, dsl } => create_rule(&client, name.as_deref(), &dsl).await?,
-        RuleCommand::Update { id, name, dsl } => {
-            update_rule(&client, &id, name.as_deref(), dsl.as_deref()).await?
+        RuleCommand::Create { json } => create_rule(&client, &json).await?,
+        RuleCommand::Update { id, json } => {
+            update_rule(&client, &id, &json).await?
         }
         RuleCommand::Delete { id } => delete_rule(&client, &id).await?,
         RuleCommand::Enable { id } => enable_rule(&client, &id).await?,

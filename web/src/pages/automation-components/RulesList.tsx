@@ -7,14 +7,21 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogMain,
+} from "@/components/automation/dialog"
 import { ResponsiveTable, EmptyState } from "@/components/shared"
-import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Timer, Zap, MoreVertical } from "lucide-react"
+import { Edit, Play, Trash2, Bell, Sparkles, Zap, MoreVertical, Timer, History, CheckCircle2, XCircle, Clock } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import type { Rule, RuleAction } from "@/types"
+import type { Rule, RuleAction, RuleExecutionResult } from "@/types"
 import { cn } from "@/lib/utils"
 import { textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useIsMobile } from "@/hooks/useMobile"
+import { api } from "@/lib/api"
 
 interface RulesListProps {
   rules: Rule[]
@@ -30,22 +37,142 @@ interface RulesListProps {
 
 // Action configuration for display
 const ACTION_CONFIG: Record<string, { icon: typeof Zap; label: string; color: string }> = {
-  Execute: { icon: Zap, label: 'automation:ruleBuilder.actionType.execute', color: 'text-warning bg-warning-light border-warning' },
-  Notify: { icon: Bell, label: 'automation:ruleBuilder.actionType.notify', color: 'text-info bg-info-light border-info' },
-  Log: { icon: FileText, label: 'automation:ruleBuilder.actionType.log', color: 'text-foreground bg-muted border-border' },
-  Set: { icon: FlaskConical, label: 'automation:ruleBuilder.actionType.set', color: 'text-accent-purple bg-accent-purple-light border-accent-purple-light' },
-  Delay: { icon: Timer, label: 'automation:ruleBuilder.actionType.delay', color: 'text-accent-orange bg-accent-orange-light border-accent-orange-light' },
-  CreateAlert: { icon: AlertTriangle, label: 'automation:ruleBuilder.actionType.createAlert', color: 'text-error bg-error-light border-error dark:text-error dark:bg-error-light dark:border-error' },
-  HttpRequest: { icon: FlaskConical, label: 'HTTP', color: 'text-success bg-success-light border-success-light dark:text-success dark:bg-success-light dark:border-success-light' },
+  execute: { icon: Zap, label: 'automation:ruleBuilder.actionType.execute', color: 'text-warning bg-warning-light border-warning' },
+  notify: { icon: Bell, label: 'automation:ruleBuilder.actionType.notify', color: 'text-info bg-info-light border-info' },
+  trigger_agent: { icon: Sparkles, label: 'automation:ruleBuilder.actionType.triggerAgent', color: 'text-accent-purple bg-accent-purple-light border-accent-purple-light' },
 }
 
 export const ITEMS_PER_PAGE = 10
 
+// ============================================================================
+// Rule History Dialog (matches DeviceDetail metric history pattern)
+// ============================================================================
+
+function RuleHistoryDialog({ rule, open, onOpenChange }: {
+  rule: Rule | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation(['automation', 'common'])
+  const [history, setHistory] = useState<RuleExecutionResult[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const loadHistory = async () => {
+    if (!rule) return
+    setLoading(true)
+    try {
+      const data = await api.getRuleHistory(rule.id)
+      setHistory(data.executions || [])
+    } catch {
+      setHistory([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && rule) {
+      loadHistory()
+    }
+    onOpenChange(nextOpen)
+  }
+
+  const columns = [
+    { key: 'time', label: t('automation:time', 'Time'), width: '35%' },
+    { key: 'result', label: t('automation:result', 'Result'), width: '20%' },
+    { key: 'detail', label: t('automation:detail', 'Detail'), width: '45%' },
+  ]
+
+  const renderCell = (columnKey: string, rowData: Record<string, unknown>) => {
+    const entry = rowData as unknown as RuleExecutionResult
+    switch (columnKey) {
+      case 'time':
+        return (
+          <span className="text-sm text-muted-foreground">
+            {formatTimestamp(entry.triggered_at)}
+          </span>
+        )
+      case 'result':
+        return (
+          <div className="flex items-center gap-1.5">
+            {entry.success ? (
+              <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+            ) : (
+              <XCircle className="h-4 w-4 text-error shrink-0" />
+            )}
+            <Badge variant="outline" className={cn(textMini, "gap-1")}>
+              <Clock className="h-3 w-3" />
+              {entry.duration_ms}ms
+            </Badge>
+          </div>
+        )
+      case 'detail':
+        return (
+          <div className="space-y-1">
+            {entry.actions_executed.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {entry.actions_executed.map((action, j) => (
+                  <span key={j} className={cn(textMini, "bg-muted px-1.5 py-0.5 rounded")}>
+                    {action}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className={cn(textMini, "text-muted-foreground")}>-</span>
+            )}
+            {entry.error && (
+              <p className={cn(textMini, "text-error")}>{entry.error}</p>
+            )}
+          </div>
+        )
+      default:
+        return null
+    }
+  }
+
+  return (
+    <FullScreenDialog open={open} onOpenChange={handleOpenChange}>
+      <FullScreenDialogHeader
+        icon={<History className="h-5 w-5" />}
+        iconBg="bg-accent-indigo-light"
+        iconColor="text-accent-indigo"
+        title={rule ? `${t('automation:executionHistory')} — ${rule.name}` : t('automation:executionHistory')}
+        onClose={() => onOpenChange(false)}
+      />
+      <FullScreenDialogContent>
+        <FullScreenDialogMain className="overflow-hidden">
+          <div className="h-full flex flex-col">
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              <ResponsiveTable
+                columns={columns}
+                data={history as unknown as Record<string, unknown>[]}
+                renderCell={renderCell}
+                rowKey={(rowData) => {
+                  const entry = rowData as unknown as RuleExecutionResult
+                  return `${entry.triggered_at}-${entry.duration_ms}`
+                }}
+                loading={loading}
+                flexHeight={false}
+                emptyState={
+                  <EmptyState
+                    icon={<History className="h-12 w-12" />}
+                    title={t('automation:noHistory')}
+                  />
+                }
+              />
+            </div>
+          </div>
+        </FullScreenDialogMain>
+      </FullScreenDialogContent>
+    </FullScreenDialog>
+  )
+}
+
 // Format condition for display
 function formatConditionDisplay(rule: Rule): { text: string; full: string } {
-  if (!rule.dsl) return { text: '-', full: '-' }
+  if (!rule.dsl_preview) return { text: '-', full: '-' }
 
-  const whenMatch = rule.dsl.match(/WHEN\s+(.+?)(?:\nFOR|\nDO|$)/s)
+  const whenMatch = rule.dsl_preview.match(/WHEN\s+(.+?)(?:\nFOR|\nDO|$)/s)
   if (whenMatch) {
     let condition = whenMatch[1].trim()
     // Simplify common patterns for better readability
@@ -71,8 +198,8 @@ function formatConditionDisplay(rule: Rule): { text: string; full: string } {
 
 // Parse FOR clause to get duration
 function parseForClause(rule: Rule): { duration: number; unit: string } | null {
-  if (!rule.dsl) return null
-  const forMatch = rule.dsl.match(/FOR\s+(\d+)(ms|s|m|h)\b/)
+  if (!rule.dsl_preview) return null
+  const forMatch = rule.dsl_preview.match(/FOR\s+(\d+)(ms|min|s|m|h)\b/)
   if (forMatch) {
     const duration = parseInt(forMatch[1], 10)
     const unit = forMatch[2]
@@ -83,14 +210,14 @@ function parseForClause(rule: Rule): { duration: number; unit: string } | null {
 
 // Check if rule has FOR clause
 function hasForClause(rule: Rule): boolean {
-  return rule.dsl?.includes('\nFOR ') || false
+  return rule.dsl_preview?.includes('\nFOR ') || false
 }
 
-// Parse actions from DSL
-function parseActionsFromDSL(dsl?: string): RuleAction[] {
-  if (!dsl) return []
+// Parse actions from DSL preview (matches preview.rs render_action format)
+function parseActionsFromDSL(dslPreview?: string): RuleAction[] {
+  if (!dslPreview) return []
   const actions: RuleAction[] = []
-  const doMatch = dsl.match(/\nDO\n(.*?)\nEND/s)
+  const doMatch = dslPreview.match(/\nDO\n(.*?)\nEND/s)
   if (!doMatch) return actions
 
   const actionLines = doMatch[1].trim().split('\n').map(l => l.trim().replace(/^ {4}/, ''))
@@ -98,15 +225,18 @@ function parseActionsFromDSL(dsl?: string): RuleAction[] {
   for (const line of actionLines) {
     if (!line) continue
 
-    const notifyMatch = line.match(/^NOTIFY\s+"(.+)"$/)
+    // NOTIFY [SEVERITY] "message" — matches preview.rs render_action
+    const notifyMatch = line.match(/^NOTIFY\s+\[(\w+)\]\s+"(.+)"$/)
     if (notifyMatch) {
-      actions.push({ type: 'Notify', message: notifyMatch[1] })
+      const sevMap: Record<string, string> = { INFO: 'info', WARNING: 'warning', CRITICAL: 'critical', EMERGENCY: 'emergency' }
+      actions.push({ type: 'notify', message: notifyMatch[2], severity: (sevMap[notifyMatch[1]] || 'info') as any })
       continue
     }
 
-    const execMatch = line.match(/^EXECUTE\s+([^.]+)\.(\w+)(?:\((.*)\))?$/)
+    // EXECUTE prefix.target command(params) — matches preview.rs render_action
+    const execMatch = line.match(/^EXECUTE\s+(?:device|extension)\.(\S+)\s+(\w+)(?:\((.+)\))?$/)
     if (execMatch) {
-      const [, deviceId, command, paramsStr] = execMatch
+      const [, targetId, command, paramsStr] = execMatch
       const params: Record<string, string> = {}
       if (paramsStr) {
         paramsStr.split(', ').forEach(p => {
@@ -114,51 +244,14 @@ function parseActionsFromDSL(dsl?: string): RuleAction[] {
           if (k && v) params[k] = v
         })
       }
-      actions.push({ type: 'Execute', device_id: deviceId, command, params })
+      actions.push({ type: 'execute', target: targetId, target_type: 'device', command, params })
       continue
     }
 
-    const logMatch = line.match(/^LOG\s+(\w+),\s+"(.+)"$/)
-    if (logMatch) {
-      actions.push({ type: 'Log', level: logMatch[1], message: logMatch[2] })
-      continue
-    }
-
-    const setMatch = line.match(/^SET\s+([^.]+)\.([^=]+)\s*=\s*(.+)$/)
-    if (setMatch) {
-      actions.push({
-        type: 'Set',
-        device_id: setMatch[1],
-        property: setMatch[2].trim(),
-        value: setMatch[3].trim().replace(/^"|"$/g, '')
-      })
-      continue
-    }
-
-    const delayMatch = line.match(/^DELAY\s+(\d+)ms$/)
-    if (delayMatch) {
-      actions.push({ type: 'Delay', duration: parseInt(delayMatch[1], 10) })
-      continue
-    }
-
-    const alertMatch = line.match(/^ALERT\s+"(.+)"\s+"(.+)"\s+(\w+)$/)
-    if (alertMatch) {
-      actions.push({
-        type: 'CreateAlert',
-        title: alertMatch[1],
-        message: alertMatch[2],
-        severity: alertMatch[3] as 'info' | 'warning' | 'error' | 'critical'
-      })
-      continue
-    }
-
-    const httpMatch = line.match(/^HTTP\s+(GET|POST|PUT|DELETE|PATCH)\s+(.+)$/)
-    if (httpMatch) {
-      actions.push({
-        type: 'HttpRequest',
-        method: httpMatch[1] as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
-        url: httpMatch[2]
-      })
+    // TRIGGER AGENT agent_id INPUT "text" — matches preview.rs render_action
+    const agentMatch = line.match(/^TRIGGER AGENT\s+(\S+)(?:\s+INPUT\s+"([^"]*)")?/)
+    if (agentMatch) {
+      actions.push({ type: 'trigger_agent', agent_id: agentMatch[1], input: agentMatch[2] })
       continue
     }
   }
@@ -180,6 +273,8 @@ export function RulesList({
   const { t } = useTranslation(['common', 'automation'])
   const isMobile = useIsMobile()
   const [internalPage, setInternalPage] = useState(1)
+  const [historyRule, setHistoryRule] = useState<Rule | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
 
   // Use props if provided, otherwise use internal state (backward compatibility)
   const page = propsPage ?? internalPage
@@ -190,15 +285,16 @@ export function RulesList({
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedRules = propsPaginatedRules ?? rules.slice(startIndex, endIndex)
 
-  return (
+  const content = (
     isMobile ? (
       <div className="space-y-2">
         {paginatedRules.map((rule) => {
           const actions = rule.actions && rule.actions.length > 0
             ? rule.actions
-            : parseActionsFromDSL(rule.dsl)
+            : parseActionsFromDSL(rule.dsl_preview)
           const condition = formatConditionDisplay(rule)
-          const hasTriggered = rule.last_triggered && rule.last_triggered !== '-' && rule.last_triggered !== 0
+          const hasTriggered = rule.last_triggered && rule.last_triggered !== '-'
+          const forClause = parseForClause(rule)
 
           return (
             <Card
@@ -242,6 +338,10 @@ export function RulesList({
                         <Play className="h-4 w-4 mr-2" />
                         {t('automation:execute')}
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setHistoryRule(rule); setShowHistory(true) }}>
+                        <History className="h-4 w-4 mr-2" />
+                        {t('automation:executionHistory', 'History')}
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-error"
                         onClick={(e) => { e.stopPropagation(); onDelete(rule) }}
@@ -258,8 +358,14 @@ export function RulesList({
                     <code className={cn(textMini, "font-mono bg-muted px-1.5 py-0.5 rounded truncate max-w-[180px]")}>
                       {condition.text}
                     </code>
+                    {forClause && (
+                      <Badge variant="outline" className={cn(textMini, "h-5 px-1.5 gap-0.5 text-info border-info")}>
+                        <Timer className="h-3 w-3" />
+                        {forClause.duration}{forClause.unit}
+                      </Badge>
+                    )}
                     {actions.slice(0, 2).map((action, i) => {
-                      const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
+                      const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.execute
                       return (
                         <Badge key={i} variant="outline" className={cn(textMini, "h-5 px-1.5 gap-0.5", config.color)}>
                           {t(config.label)}
@@ -364,7 +470,7 @@ export function RulesList({
           case 'actions': {
             const actions = rule.actions && rule.actions.length > 0
               ? rule.actions
-              : parseActionsFromDSL(rule.dsl)
+              : parseActionsFromDSL(rule.dsl_preview)
             const actionsCount = actions.length
             const firstActions = actions.slice(0, 2)
 
@@ -373,7 +479,7 @@ export function RulesList({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {firstActions.map((action, i) => {
-                  const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
+                  const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.execute
                   const Icon = config.icon
                   return (
                     <Badge
@@ -403,7 +509,7 @@ export function RulesList({
             )
 
           case 'lastTriggered': {
-            const hasTriggered = rule.last_triggered && rule.last_triggered !== '-' && rule.last_triggered !== 0
+            const hasTriggered = rule.last_triggered && rule.last_triggered !== '-'
             const triggerCount = rule.trigger_count || 0
 
             return !hasTriggered ? (
@@ -451,6 +557,15 @@ export function RulesList({
           },
         },
         {
+          label: t('automation:executionHistory', 'History'),
+          icon: <History className="h-4 w-4" />,
+          onClick: (rowData) => {
+            const rule = rowData as unknown as Rule
+            setHistoryRule(rule)
+            setShowHistory(true)
+          },
+        },
+        {
           label: t('common:delete'),
           icon: <Trash2 className="h-4 w-4" />,
           variant: 'destructive',
@@ -469,5 +584,16 @@ export function RulesList({
       }
     />
     )
+  )
+
+  return (
+    <>
+      {content}
+      <RuleHistoryDialog
+        rule={historyRule}
+        open={showHistory}
+        onOpenChange={setShowHistory}
+      />
+    </>
   )
 }

@@ -184,8 +184,8 @@ pub async fn get_system_stats_handler(
         async {
             // Rule stats
             let rules = state.automation.rule_engine.list_rules().await;
-            let triggered_today = if let Some(store) = &state.automation.rule_history_store {
-                store.count_since(start_of_today).unwrap_or(0) as usize
+            let triggered_today = if let Some(ref store) = state.automation.rule_store {
+                store.count_history_since(start_of_today).unwrap_or(0) as usize
             } else {
                 0
             };
@@ -193,11 +193,11 @@ pub async fn get_system_stats_handler(
                 total_rules: rules.len(),
                 enabled_rules: rules
                     .iter()
-                    .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Active))
+                    .filter(|r| r.enabled)
                     .count(),
                 disabled_rules: rules
                     .iter()
-                    .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Disabled))
+                    .filter(|r| !r.enabled)
                     .count(),
                 triggered_today,
             }
@@ -512,7 +512,7 @@ pub async fn get_rule_stats_handler(
 
     let enabled_count = rules
         .iter()
-        .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Active))
+        .filter(|r| r.enabled)
         .count();
     let disabled_count = rules.len() - enabled_count;
 

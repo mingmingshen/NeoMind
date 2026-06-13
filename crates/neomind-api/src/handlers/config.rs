@@ -224,7 +224,7 @@ pub async fn export_config_handler(
                 .map(|r| RuleConfigExport {
                     id: r.id.to_string(),
                     name: r.name.clone(),
-                    enabled: matches!(r.status, neomind_rules::RuleStatus::Active),
+                    enabled: r.enabled,
                     rule_text: format!("{:?}", r.condition), // Simplified export
                     description: None,
                 })

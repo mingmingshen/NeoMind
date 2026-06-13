@@ -9,8 +9,7 @@
 use std::sync::Arc;
 
 use crate::automation::{store::SharedAutomationStore, transform::TransformEngine};
-use neomind_rules::{store::RuleStore, RuleEngine};
-use neomind_storage::business::RuleHistoryStore;
+use neomind_rules::{store::RuleStore, RuleEngine, UnifiedValueProvider};
 
 /// Automation and rules state.
 ///
@@ -20,6 +19,9 @@ pub struct AutomationState {
     /// Rule engine for DSL rule evaluation.
     pub rule_engine: Arc<RuleEngine>,
 
+    /// Typed value provider for direct cache updates.
+    pub value_provider: Arc<UnifiedValueProvider>,
+
     /// Rule store for persistent rule storage.
     pub rule_store: Option<Arc<RuleStore>>,
 
@@ -28,19 +30,16 @@ pub struct AutomationState {
 
     /// Transform engine for data processing.
     pub transform_engine: Option<Arc<TransformEngine>>,
-
-    /// Rule history store for statistics.
-    pub rule_history_store: Option<Arc<RuleHistoryStore>>,
 }
 
 impl AutomationState {
     /// Create a new automation state.
     pub fn new(
+        value_provider: Arc<UnifiedValueProvider>,
         rule_engine: Arc<RuleEngine>,
         rule_store: Option<Arc<RuleStore>>,
         automation_store: Option<Arc<SharedAutomationStore>>,
         transform_engine: Option<Arc<TransformEngine>>,
-        rule_history_store: Option<Arc<RuleHistoryStore>>,
     ) -> Self {
         // Set rule store in rule engine for persistent trigger count
         if let Some(ref store) = rule_store {
@@ -49,10 +48,10 @@ impl AutomationState {
 
         Self {
             rule_engine,
+            value_provider,
             rule_store,
             automation_store,
             transform_engine,
-            rule_history_store,
         }
     }
 
@@ -60,12 +59,15 @@ impl AutomationState {
     #[cfg(test)]
     pub fn minimal() -> Self {
         use neomind_rules::InMemoryValueProvider;
+        let provider = Arc::new(InMemoryValueProvider::new());
+        // Create a dummy UnifiedValueProvider for test (won't be used)
+        let unified = Arc::new(UnifiedValueProvider::new());
         Self {
-            rule_engine: Arc::new(RuleEngine::new(Arc::new(InMemoryValueProvider::new()))),
+            rule_engine: Arc::new(RuleEngine::new(provider)),
+            value_provider: unified,
             rule_store: None,
             automation_store: None,
             transform_engine: None,
-            rule_history_store: None,
         }
     }
 }

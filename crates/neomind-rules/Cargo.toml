@@ -30,6 +30,9 @@ redb = { workspace = true }
 # Concurrency
 parking_lot = { workspace = true }
 
+# Regex for string comparison operators
+regex = { workspace = true }
+
 [features]
 default = []
 

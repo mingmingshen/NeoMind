@@ -180,19 +180,15 @@ impl From<neomind_rules::RuleError> for ErrorResponse {
     fn from(e: neomind_rules::RuleError) -> Self {
         let msg = format!("{}", e);
         let hint = match &msg {
-            m if m.contains("Rule name not found") => {
-                "Rule name is required. Use: RULE \"My Rule Name\" WHEN ... DO ... END".to_string()
+            m if m.contains("Rule name not found") || m.contains("name") => {
+                "Rule 'name' is required in JSON body. Example: {\"name\": \"High Temp Alert\", \"condition\": {...}, \"actions\": [...]}".to_string()
             }
-            m if m.contains("WHEN clause not found") => {
-                "WHEN clause is required. Syntax: WHEN <device_id>.<metric> <op> <value>\n\
-                 Run 'neomind device list' (shows metric_fields per type) or 'neomind device get <ID>' to discover valid IDs and metrics.".to_string()
-            }
-            m if m.contains("Invalid condition") || m.contains("Invalid threshold") => {
-                "Condition format: <device_id>.<metric> <op> <number>\n\
+            m if m.contains("condition") || m.contains("threshold") => {
+                "Condition uses JSON format with 'condition_type': 'comparison' (source, operator, threshold), 'range' (source, min, max), or 'logical' (operator, conditions).\n\
                  Operators: >, <, >=, <=, ==, !=\n\
-                 Do NOT prefix with 'device.' — use the actual device ID directly.".to_string()
+                 Source format: \"device:<id>:<metric>\" or \"extension:<id>:<metric>\"".to_string()
             }
-            _ => "DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END".to_string(),
+            _ => "Provide a valid JSON rule object. Required: 'name'. Condition types: 'comparison', 'range', 'logical'. Action types: 'notify', 'execute', 'trigger_agent'.".to_string(),
         };
         Self::validation(format!("Rule error: {}", e)).with_hint(hint)
     }

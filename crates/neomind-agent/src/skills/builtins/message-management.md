@@ -21,7 +21,7 @@ Messages are platform notifications delivered through configurable channels. 7 c
 ## CRITICAL Rules
 
 1. **`--title` and `--body` are required** for sending — not `--channel`
-2. **Severity values**: `info`, `warning`, `critical`, `emergency` (NOT `error`)
+2. **Severity values**: `info`, `warning`, `critical`, `emergency`
 3. **Channels must be created before rules can use them** for notifications
 4. **Always discover types dynamically**: `channel-types` → `channel-type-schema <TYPE>` → `channel-create`
 5. **Always test a channel** after creation with `message channel-test <NAME>`
@@ -215,25 +215,36 @@ neomind message channel-update alerts \
 neomind message channel-delete alerts
 ```
 
-## Using Messages with Rules
+## How Rule Notifications Reach Channels (CRITICAL)
 
-Messages are typically sent by rules. When a rule triggers, it can send messages through all configured channels:
+When a rule's `notify` action fires, it creates a **Message** in the message system. That message is then delivered to **ALL configured channels** that match the channel's filter.
+
+**Key insight**: By default, every channel has an empty filter = **receives ALL messages**. So the most common IoT workflow is just 2 steps:
 
 ```bash
-# 1. Set up a channel first
-neomind message channel-create --name alerts --type webhook \
-  --config '{"url": "https://hooks.example.com/notify"}'
+# Step 1: Create a notification channel (receives all messages by default)
+neomind message channel-create --name telegram-alerts --type telegram \
+  --config '{"token": "BOT_TOKEN", "chat_id": "CHAT_ID"}'
 
-# 2. Create a rule that sends notifications
-neomind rule create --name 'High Temp Alert' --dsl 'RULE high_temp
-  WHEN sensor-001.temperature > 35
-  DO
-    NOTIFY "Temperature {value}°C on {{device.name}}" [alerts]
-  END'
-
-# 3. Enable the rule
-neomind rule enable <RULE_ID>
+# Step 2: Create a rule with a notify action — that's it!
+neomind rule create --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor-001:temperature","operator":"greater_than","threshold":35},"actions":[{"type":"notify","message":"Temperature {value}°C on sensor-001","severity":"critical"}]}'
+# → When temp > 35, the rule creates a critical message → delivered to telegram-alerts automatically
 ```
+
+**Severity matters**: The rule's `severity` field determines the message severity. Channels with a `min_severity` filter will only receive messages at or above that level. By default (no filter), all severities are delivered.
+
+### Channel Filters (Advanced Routing)
+
+Channel filters allow routing specific messages to specific channels. **There is no CLI command for filters** — they are configured via the web UI or API (`PUT /api/messages/channels/:name/filter`).
+
+Filter fields:
+| Field | Effect | Example |
+|-------|--------|---------|
+| `min_severity` | Only receive messages at or above this severity | `"warning"` → receives warning, critical, emergency |
+| `source_types` | Only receive messages from these sources | `["rule"]` → only rule-triggered messages |
+| `categories` | Only receive messages in these categories | `["alert"]` |
+
+Empty array / null = accept all for that field.
 
 ## Common Errors & Solutions
 

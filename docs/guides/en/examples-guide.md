@@ -556,25 +556,34 @@ AI: [Runs `neomind system info` to get broker info]
 
 ## Creating Automation Rules
 
-NeoMind uses a DSL (Domain-Specific Language) for automation rules. Rules can be created via CLI, API, or AI chat.
+NeoMind uses a JSON-based API for automation rules. Rules can be created via CLI (`--json`), REST API, or AI chat.
 
-### Rule DSL Syntax
+### Rule JSON Structure
 
+```json
+{
+  "name": "Rule Name",
+  "condition": {
+    "condition_type": "comparison",
+    "source": "device:SENSOR_ID:METRIC",
+    "operator": "greater_than",
+    "threshold": 30
+  },
+  "actions": [
+    {"type": "notify", "message": "Alert: {value}", "severity": "critical"}
+  ]
+}
 ```
-RULE <name>
-  WHEN <trigger_condition>
-  DO <action>
-END
-```
+
+**Condition types**: `comparison` (operator + threshold), `range` (min + max), `logical` (AND/OR/NOT combining sub-conditions)
+**Operators**: `greater_than`, `less_than`, `greater_equal`, `less_equal`, `equal`, `not_equal`
+**Actions**: `notify` (message + severity), `execute` (target + command), `trigger_agent` (agent_id)
 
 ### CLI Examples
 
 ```bash
-# Create a temperature alert rule
-neomind rule create --dsl 'RULE high_temp_alert
-  WHEN device:sensor1:temperature > 30
-  DO notify(channel="alert-webhook", message="Temperature too high: {{value}}")
-END'
+# Create a temperature alert rule (enabled by default)
+neomind rule create --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"Temperature too high: {value}","severity":"critical"}]}'
 
 # List all rules
 neomind rule list
@@ -583,10 +592,7 @@ neomind rule list
 neomind rule get <rule-id>
 
 # Update a rule
-neomind rule update <rule-id> --dsl 'RULE high_temp_alert
-  WHEN device:sensor1:temperature > 35
-  DO notify(channel="alert-webhook", message="CRITICAL: Temperature {{value}}")
-END'
+neomind rule update <rule-id> --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temperature","operator":"greater_than","threshold":35},"actions":[{"type":"notify","message":"CRITICAL: {value}","severity":"critical"}]}'
 
 # Delete a rule
 neomind rule delete <rule-id>
@@ -598,7 +604,7 @@ neomind rule delete <rule-id>
 # Create a rule via API
 curl -X POST http://localhost:9375/api/rules \
   -H "Content-Type: application/json" \
-  -d '{"dsl": "RULE high_temp_alert\n  WHEN device:sensor1:temperature > 30\n  DO notify(channel=\"alert-webhook\", message=\"Temperature too high\")\nEND"}'
+  -d '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor1:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"Temperature too high","severity":"critical"}]}'
 
 # List rules
 curl http://localhost:9375/api/rules

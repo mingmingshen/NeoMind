@@ -104,60 +104,71 @@ POST /api/device-types/generate-from-samples
 
 Generates device type templates from sample data using LLM analysis.
 
-## Rule DSL Syntax
+## Rule JSON Structure
 
-### Basic Rule
+Rules use a JSON-based API with 3 condition types (`comparison`, `range`, `logical`) and 3 action types (`notify`, `execute`, `trigger_agent`).
 
-```neo
-RULE "Temperature Alert"
-WHEN sensor.temperature > 50
-FOR 5 minutes
-DO
-    NOTIFY "Device temperature too high: {temperature}C"
-    EXECUTE device.fan(speed=100)
-    LOG alert, severity="high"
-END
+### Basic Rule (Comparison Condition)
+
+```bash
+neomind rule create --json '{
+  "name": "Temperature Alert",
+  "condition": {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 50},
+  "for_duration": 300000,
+  "actions": [
+    {"type": "notify", "message": "Too hot: {value}C", "severity": "critical"},
+    {"type": "execute", "target": "fan", "target_type": "device", "command": "set_speed", "params": {"speed": 100}}
+  ]
+}'
 ```
 
-### Extension Rule
+### Extension Metric Rule
 
-```neo
-RULE "Weather Alert"
-WHEN EXTENSION weather.temperature > 30
-DO
-    NOTIFY "Weather too hot"
-END
+```bash
+neomind rule create --json '{
+  "name": "Weather Alert",
+  "condition": {"condition_type": "comparison", "source": "extension:weather:temperature", "operator": "greater_than", "threshold": 30},
+  "actions": [{"type": "notify", "message": "Weather too hot", "severity": "warning"}]
+}'
 ```
 
-### Complex Rule with AND/OR
+### Complex Rule (Logical Condition: AND/OR/NOT)
 
-```neo
-RULE "Compound Condition Alert"
-WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
-DO
-    NOTIFY "High temperature and low humidity"
-    EXECUTE device.humidifier(on=true)
-END
+```bash
+neomind rule create --json '{
+  "name": "Compound Condition Alert",
+  "condition": {
+    "condition_type": "logical", "operator": "and",
+    "conditions": [
+      {"condition_type": "comparison", "source": "device:sensor:temperature", "operator": "greater_than", "threshold": 30},
+      {"condition_type": "comparison", "source": "extension:weather:humidity", "operator": "less_than", "threshold": 20}
+    ]
+  },
+  "actions": [
+    {"type": "notify", "message": "High temp, low humidity", "severity": "warning"},
+    {"type": "execute", "target": "humidifier", "target_type": "device", "command": "turn_on", "params": {}}
+  ]
+}'
 ```
 
-### Rule with Range Condition
+### Range Condition Rule
 
-```neo
-RULE "Temperature Range Alert"
-WHEN sensor.temperature BETWEEN 20 AND 25
-DO
-    NOTIFY "Temperature in comfort range"
-END
+```bash
+neomind rule create --json '{
+  "name": "Temperature Range Alert",
+  "condition": {"condition_type": "range", "source": "device:sensor:temperature", "min": 20, "max": 25},
+  "actions": [{"type": "notify", "message": "Comfortable range", "severity": "info"}]
+}'
 ```
 
 ### Scheduled Rule
 
-```neo
-RULE "Periodic Check"
-TRIGGER SCHEDULE "0 */5 * * * *"
-DO
-    EXECUTE device.read_sensors()
-END
+```bash
+neomind rule create --json '{
+  "name": "Periodic Check",
+  "trigger": {"trigger_type": "schedule", "cron": "0 */5 * * *"},
+  "actions": [{"type": "execute", "target": "sensor-controller", "target_type": "device", "command": "read_sensors", "params": {}}]
+}'
 ```
 
 ## API Endpoints
