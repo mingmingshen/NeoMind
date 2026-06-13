@@ -105,50 +105,59 @@ export const createDashboardLayoutSlice: StateCreator<
     removeComponentsByExtension(extensionId) {
       const { currentDashboard, selectedComponent, configComponentId } = get()
       if (!currentDashboard) return
-      const idsToRemove = new Set(
-        currentDashboard.components
-          .filter((comp) => {
-            if (comp.type.startsWith(`${extensionId}:`)) return true
-            const ds = comp.dataSource
-            if (!ds) return false
-            const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
-            return sources.some((s) => s.extensionId === extensionId)
-          })
-          .map((c) => c.id),
-      )
-      if (idsToRemove.size === 0) return
-      currentDashboard.components.filter((c) => idsToRemove.has(c.id)).forEach(cleanupAgentForComponent)
-      commitDashboard(
-        currentDashboard.components.filter((c) => !idsToRemove.has(c.id)),
-        {
-          selectedComponent: selectedComponent && idsToRemove.has(selectedComponent) ? null : selectedComponent,
-          configComponentId: configComponentId && idsToRemove.has(configComponentId) ? null : configComponentId,
-        },
-      )
+      // Single-pass: classify, cleanup agents, and reset selection refs together.
+      const matches = (comp: DashboardComponent): boolean => {
+        if (comp.type.startsWith(`${extensionId}:`)) return true
+        const ds = comp.dataSource
+        if (!ds) return false
+        const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
+        return sources.some((s) => s.extensionId === extensionId)
+      }
+      const toKeep: DashboardComponent[] = []
+      let removedSelected = false
+      let removedConfig = false
+      for (const comp of currentDashboard.components) {
+        if (matches(comp)) {
+          cleanupAgentForComponent(comp)
+          if (selectedComponent === comp.id) removedSelected = true
+          if (configComponentId === comp.id) removedConfig = true
+        } else {
+          toKeep.push(comp)
+        }
+      }
+      if (toKeep.length === currentDashboard.components.length) return
+      commitDashboard(toKeep, {
+        selectedComponent: removedSelected ? null : selectedComponent,
+        configComponentId: removedConfig ? null : configComponentId,
+      })
     },
 
     removeComponentsByDevice(deviceId) {
       const { currentDashboard, selectedComponent, configComponentId } = get()
       if (!currentDashboard) return
-      const idsToRemove = new Set(
-        currentDashboard.components
-          .filter((comp) => {
-            const ds = comp.dataSource
-            if (!ds) return false
-            const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
-            return sources.some((s) => s.sourceId === deviceId || (s.type === 'device' && s.property && s.sourceId === deviceId))
-          })
-          .map((c) => c.id),
-      )
-      if (idsToRemove.size === 0) return
-      currentDashboard.components.filter((c) => idsToRemove.has(c.id)).forEach(cleanupAgentForComponent)
-      commitDashboard(
-        currentDashboard.components.filter((c) => !idsToRemove.has(c.id)),
-        {
-          selectedComponent: selectedComponent && idsToRemove.has(selectedComponent) ? null : selectedComponent,
-          configComponentId: configComponentId && idsToRemove.has(configComponentId) ? null : configComponentId,
-        },
-      )
+      const matches = (comp: DashboardComponent): boolean => {
+        const ds = comp.dataSource
+        if (!ds) return false
+        const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
+        return sources.some((s) => s.sourceId === deviceId || (s.type === 'device' && s.property && s.sourceId === deviceId))
+      }
+      const toKeep: DashboardComponent[] = []
+      let removedSelected = false
+      let removedConfig = false
+      for (const comp of currentDashboard.components) {
+        if (matches(comp)) {
+          cleanupAgentForComponent(comp)
+          if (selectedComponent === comp.id) removedSelected = true
+          if (configComponentId === comp.id) removedConfig = true
+        } else {
+          toKeep.push(comp)
+        }
+      }
+      if (toKeep.length === currentDashboard.components.length) return
+      commitDashboard(toKeep, {
+        selectedComponent: removedSelected ? null : selectedComponent,
+        configComponentId: removedConfig ? null : configComponentId,
+      })
     },
 
     duplicateComponent(id) {
@@ -157,7 +166,7 @@ export const createDashboardLayoutSlice: StateCreator<
       const original = currentDashboard.components.find((c) => c.id === id)
       if (!original) return
       const newComponent = {
-        ...JSON.parse(JSON.stringify(original)),
+        ...structuredClone(original),
         id: generateId(),
         position: { ...original.position, y: original.position.y + original.position.h },
       } as DashboardComponent
