@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.13] - 2026-06-14
+
+### Frontend Polish & TopNav Redesign
+
+A product-quality pass on the web UI: navigation reorganization, micro-interactions, and a batch of bug fixes exposed by the new toast stacking.
+
+#### TopNav right cluster redesign
+
+Reordered the right-side toolbar from an ungrouped row into a logical flow: **identity → attention → preferences → user**. New `SystemHealthButton` provides a glanceable status dot (green/yellow/red) backed by a dropdown mini-panel showing backend connection, device online count, and unread alerts. `InstanceSelector` icon changed from `Wifi` to `Server` to avoid visual redundancy with the health indicator.
+
+#### User menu
+
+Avatar dropdown now shows a role badge (`admin`/`user`/`viewer`) alongside the username, with **Preferences** and **About** shortcuts that deep-link to the corresponding settings tabs. (Help item deferred until the standalone wiki launches.)
+
+#### Micro-interactions & polish
+
+- **Button press feedback:** all buttons now scale to 97% on `active` (`active:scale-[0.97]`).
+- **Toast stacking:** limit raised from 1 → 3 with uniform `gap-2` spacing.
+- **404 page:** dedicated `NotFound` page with `FileQuestion` icon and quick-return buttons, replacing the silent redirect to `/`.
+- **Route transitions:** page content fades in on every route change (`animate-fade-in` keyed by pathname).
+- **Top progress bar:** lightweight 2px `NavigationProgress` bar animates 0% → 80% → 100% on each navigation.
+
+#### Bug fixes
+
+- **401 toast duplication:** when a JWT expired, multiple concurrent API calls (`fetchAlerts`, `fetchDevices`, `checkAuthStatus`) each fired their own "Unauthorized" toast. Previously masked by `TOAST_LIMIT=1`. Added a 3-second throttle (`shouldShowUnauthorizedToast`) so only the first 401 in a burst shows a toast.
+- **Settings tab deep-link:** clicking "Preferences" in the user menu while already on `/settings` didn't switch tabs — `useState` initializer only runs on mount. Added a `useEffect` syncing `activeSection` to the `?tab=` URL param on subsequent navigations.
+
+### Agent LLM Error Surfacing
+
+Agents used to swallow LLM failures mid-execution and fall back silently, leaving the user with no indication that the AI brain had stopped working. This round makes errors visible and classifies them so transient failures can retry while permanent ones fail fast.
+
+#### `LlmError::Api` variant + `is_permanent()`
+
+New structured error type distinguishes API-level failures (HTTP 4xx/5xx, rate limits, auth errors) from transient network hiccups. `is_permanent()` returns `true` for 4xx (except 429), `false` for 5xx/429/timeouts — driving retry vs. fail-fast decisions.
+
+#### Removed silent fallbacks
+
+The analyzer path previously caught all LLM errors and produced a generic fallback analysis, hiding the real failure. Now:
+
+- Ollama and OpenAI backends return `LlmError::Api` with the actual status/message.
+- The tool loop surfaces the error instead of silently continuing.
+- Mid-execution LLM failures mark the agent run as **Failed** (not silently "succeeded with fallback").
+
+#### Tests
+
+Integration tests cover `LlmError` classification across all status codes (4xx permanent, 5xx retryable, 429 retryable, timeout retryable).
+
+### Onboarding Wizard Simplification
+
+Streamlined the getting-started wizard from **3 steps → 2 steps** (Setup → Ready). The intermediate "Capability Panorama" step was removed — users found it redundant after the core setup already explains what each module does.
+
+### Dashboard & Data
+
+- **Sparkline pipeline unification:** extracted a shared `useChartPipeline` hook, eliminating duplicated data-transform logic across dashboard chart components.
+- **Chart aggregation fix:** corrected aggregation option keys and restricted line/area charts to raw data only (aggregation on these chart types produced misleading visual artifacts).
+- **Transform real-time updates:** WebSocket push now delivers Transform data source updates to dashboards in real time (previously only refreshed on poll).
+- **MetricValue serialization:** JSON-typed metric values are now serialized as strings in WebSocket events, preventing `{"String":"42"}` artifacts on the frontend.
+
+### Other Fixes
+
+- **IME input garbling:** password field no longer accepts intermediate composition state, preventing CJK input methods from corrupting typed passwords.
+
 ## [0.8.12] - 2026-06-12
 
 ### Agent Reliability: Tool Execution & Memory
