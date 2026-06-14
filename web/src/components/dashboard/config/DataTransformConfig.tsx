@@ -71,15 +71,21 @@ const ALL_AGGREGATE_OPTIONS: Array<{ value: TelemetryAggregate; labelKey: string
   { value: 'raw', labelKey: 'dataTransform.aggregate.raw' },
 ]
 
-// Aggregation options for each chart type (only show meaningful options)
+// Aggregation options for each chart type (only show meaningful options).
+// Keys MUST match the short chartType values passed by ComponentConfigDialog
+// (componentType.replace(/-chart$/, '') → 'line', 'bar', 'pie', etc.).
 const AGGREGATE_OPTIONS_BY_CHART_TYPE: Record<string, TelemetryAggregate[]> = {
-  // Time-series charts: show raw points and aggregations
-  'line-chart': ['raw', 'latest', 'avg', 'min', 'max', 'sum'],
-  'area-chart': ['raw', 'latest', 'avg', 'min', 'max', 'sum'],
-  'bar-chart': ['raw', 'avg', 'count', 'latest', 'min', 'max', 'sum'],
-  'sparkline': ['raw', 'latest', 'avg', 'min', 'max', 'sum'],
+  // Time-series line/area charts: only raw — these charts render every point
+  // as a connected line, so single-value aggregations (avg/min/max/sum) are
+  // meaningless. The frontend does not implement time-bucket downsampling.
+  'line': ['raw'],
+  'area': ['raw'],
+  // Bar chart: supports both raw points and single-value aggregations
+  'bar': ['raw', 'avg', 'count', 'latest', 'min', 'max', 'sum'],
+  // Sparkline: only raw — renders all points as a compact trend line
+  'sparkline': ['raw'],
   // Pie chart: part-to-whole, single values only
-  'pie-chart': ['latest', 'avg', 'sum', 'count'],
+  'pie': ['latest', 'avg', 'sum', 'count'],
   // Single-value indicators: latest or aggregated values
   'card': ['latest', 'avg', 'min', 'max'],
   'led': ['latest', 'avg', 'min', 'max'],
@@ -220,11 +226,18 @@ export function DataTransformConfig({
 
   // Initialize aggregate to correct default for card/progress when not explicitly set
   // Also backfill timeWindow from legacy timeRange when timeWindow is missing
+  // Also normalize line/area charts that have stale non-'raw' aggregateExt from
+  // the old key-mismatch bug (AGGREGATE_OPTIONS_BY_CHART_TYPE used '-chart' suffix
+  // keys that never matched the short chartType prop, so all options were shown).
   useEffect(() => {
-    // Skip if source already has all resolved fields
-    if (firstSource?.timeWindow && firstSource?.aggregateExt) return
-
     const updates: Partial<DataSource> = {}
+
+    // Normalize line/area/sparkline: force aggregateExt to 'raw' (only supported value)
+    if ((chartType === 'line' || chartType === 'area' || chartType === 'sparkline') &&
+        firstSource?.aggregateExt && firstSource.aggregateExt !== 'raw') {
+      updates.aggregateExt = 'raw'
+      updates.aggregate = 'raw'
+    }
 
     const shouldDefaultToLatest = (chartType === 'card' || chartType === 'progress') &&
       !firstSource?.aggregateExt &&
@@ -232,6 +245,9 @@ export function DataTransformConfig({
     if (shouldDefaultToLatest) {
       updates.aggregateExt = 'latest'
     }
+
+    // Skip remaining timeWindow backfill if already resolved
+    if (Object.keys(updates).length === 0 && firstSource?.timeWindow && firstSource?.aggregateExt) return
 
     // If dataSource has timeRange but no timeWindow, derive timeWindow from timeRange
     // so the fetch pipeline can use absolute time calculations where appropriate
@@ -325,7 +341,8 @@ export function DataTransformConfig({
         </Select>
       </Field>
 
-      {/* Aggregation Method */}
+      {/* Aggregation Method — hidden when chart type only supports one option (e.g. line/area = raw only) */}
+      {aggregateOptions.length > 1 && (
       <Field>
         <div className="flex items-center justify-between">
           <Label>{t('dataTransform.aggregation')}</Label>
@@ -348,6 +365,7 @@ export function DataTransformConfig({
           </SelectContent>
         </Select>
       </Field>
+      )}
 
       {/* Data Points Limit - only for charts with raw aggregate */}
       {!isSimplified && (currentAggregate === 'raw' || chartType === 'bar' || chartType === 'line' || chartType === 'area' || chartType === 'sparkline') && (

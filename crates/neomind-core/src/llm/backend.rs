@@ -430,6 +430,16 @@ pub enum LlmError {
     #[error("Generation error: {0}")]
     Generation(String),
 
+    /// HTTP API error with status code and response body.
+    /// Used by cloud backends to preserve status code for classification.
+    #[error("API error {status}: {body}")]
+    Api {
+        /// HTTP status code (e.g., 401, 403, 429, 500).
+        status: u16,
+        /// Raw response body (may be JSON, may be empty).
+        body: String,
+    },
+
     /// Context window exceeded - request too large for model's context
     #[error("Context overflow: {prompt_tokens} prompt tokens exceed {max_context} context limit")]
     ContextOverflow {
@@ -659,6 +669,29 @@ impl BackendCapabilitiesBuilder {
     }
 }
 
+impl LlmError {
+    /// Classify whether this error requires user action (permanent) or may
+    /// succeed on retry (transient).
+    ///
+    /// Used for log clarity only — both classes propagate as Failed execution
+    /// per the agent error surfacing design (Rev 4, Option A).
+    pub fn is_permanent(&self) -> bool {
+        match self {
+            Self::BackendUnavailable(_)
+            | Self::ModelNotFound(_)
+            | Self::InvalidInput(_)
+            | Self::ContextOverflow { .. }
+            | Self::Serialization(_) => true,
+            Self::Api { status, .. } => *status >= 400 && *status < 500 && *status != 429,
+            Self::Timeout(_)
+            | Self::Network(_)
+            | Self::Io(_)
+            | Self::Generation(_)
+            | Self::Unknown(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -672,5 +705,73 @@ mod tests {
         assert_eq!(input.messages.len(), 1);
         assert_eq!(input.model.as_deref(), Some("qwen2"));
         assert!(input.stream);
+    }
+}
+
+#[cfg(test)]
+mod error_classification_tests {
+    use super::LlmError;
+
+    #[test]
+    fn permanent_variants() {
+        assert!(LlmError::BackendUnavailable("ollama".into()).is_permanent());
+        assert!(LlmError::ModelNotFound("qwen3.5:4b".into()).is_permanent());
+        assert!(LlmError::InvalidInput("bad request".into()).is_permanent());
+        assert!(
+            LlmError::ContextOverflow {
+                prompt_tokens: 10000,
+                max_context: 8000
+            }
+            .is_permanent()
+        );
+        assert!(
+            LlmError::Serialization(
+                serde_json::from_str::<i32>("not a number").unwrap_err()
+            )
+            .is_permanent()
+        );
+    }
+
+    #[test]
+    fn permanent_http_statuses() {
+        assert!(LlmError::Api { status: 400, body: "".into() }.is_permanent());
+        assert!(LlmError::Api { status: 401, body: "".into() }.is_permanent());
+        assert!(LlmError::Api { status: 403, body: "quota exhausted".into() }.is_permanent());
+        assert!(LlmError::Api { status: 404, body: "".into() }.is_permanent());
+    }
+
+    #[test]
+    fn transient_http_statuses() {
+        assert!(!LlmError::Api { status: 429, body: "rate limited".into() }.is_permanent());
+        assert!(!LlmError::Api { status: 500, body: "".into() }.is_permanent());
+        assert!(!LlmError::Api { status: 502, body: "".into() }.is_permanent());
+        assert!(!LlmError::Api { status: 503, body: "".into() }.is_permanent());
+    }
+
+    #[test]
+    fn transient_variants() {
+        assert!(!LlmError::Timeout(60).is_permanent());
+        assert!(!LlmError::Network("connection refused".into()).is_permanent());
+        assert!(!LlmError::Generation("legacy fallback".into()).is_permanent());
+        assert!(!LlmError::Unknown("something".into()).is_permanent());
+    }
+
+    #[test]
+    fn api_variant_display_format() {
+        let e = LlmError::Api {
+            status: 403,
+            body: "quota exhausted".into(),
+        };
+        let s = format!("{}", e);
+        assert!(
+            s.contains("403"),
+            "Display should include status: got {}",
+            s
+        );
+        assert!(
+            s.contains("quota exhausted"),
+            "Display should include body: got {}",
+            s
+        );
     }
 }

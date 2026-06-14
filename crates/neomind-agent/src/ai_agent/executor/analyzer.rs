@@ -52,7 +52,7 @@ impl AgentExecutor {
                         agent_id = %agent.id,
                         "Tool mode enabled - using function calling"
                     );
-                    match self
+                    return self
                         .execute_with_tools(
                             agent,
                             data,
@@ -61,70 +61,82 @@ impl AgentExecutor {
                             invocation_input,
                         )
                         .await
-                    {
-                        Ok((dp, exec_result)) => {
+                        .map(|(dp, exec_result)| {
                             tracing::info!(
                                 agent_id = %agent.id,
                                 "Tool-based analysis completed successfully"
                             );
-                            // Tool-calling path (Free + Focused+): return full (DP, ER)
-                            return Ok(AnalysisResult::Free {
+                            AnalysisResult::Free {
                                 decision_process: dp,
                                 execution_result: exec_result,
-                            });
-                        }
-                        Err(e) => {
+                            }
+                        })
+                        .map_err(|e| {
                             tracing::warn!(
                                 agent_id = %agent.id,
                                 error = %e,
-                                "Tool-based analysis failed, falling back to LLM analysis"
+                                "Tool-based analysis failed"
                             );
-                        }
-                    }
+                            e
+                        });
                 }
 
-                // Standard LLM-based analysis (Focused path)
-                match self
+                // Standard LLM-based analysis
+                return self
                     .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
                     .await
-                {
-                    Ok((situation_analysis, reasoning_steps, decisions, conclusion)) => {
+                    .map(|(sa, rs, ds, con)| {
                         tracing::info!(
                             agent_id = %agent.id,
                             "LLM-based analysis completed successfully"
                         );
-                        return Ok(AnalysisResult::Focused {
-                            situation_analysis,
-                            reasoning_steps,
-                            decisions,
-                            conclusion,
-                        });
-                    }
-                    Err(e) => {
+                        AnalysisResult::Focused {
+                            situation_analysis: sa,
+                            reasoning_steps: rs,
+                            decisions: ds,
+                            conclusion: con,
+                        }
+                    })
+                    .map_err(|e| {
                         tracing::warn!(
                             agent_id = %agent.id,
                             error = %e,
-                            "LLM analysis failed, falling back to rule-based"
+                            "LLM analysis failed"
                         );
-                    }
-                }
+                        e
+                    });
             }
             Ok(None) => {
-                tracing::warn!(
+                if agent.llm_backend_id.is_some() {
+                    // Agent expected an LLM but runtime is unavailable.
+                    // Fail explicitly rather than silently degrading.
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        backend_id = ?agent.llm_backend_id,
+                        "Agent has llm_backend_id but runtime is unavailable"
+                    );
+                    return Err(NeoMindError::Validation(format!(
+                        "Agent '{}' 配置了 LLM 后端但运行时不可用（可能已被删除或 API key 未配置）",
+                        agent.name
+                    )));
+                }
+                tracing::info!(
                     agent_id = %agent.id,
-                    "No LLM runtime configured, falling back to rule-based analysis"
+                    "Rule-only agent (no llm_backend_id), proceeding to rule-based analysis"
                 );
+                // Fall through to rule-based analysis below
             }
             Err(e) => {
                 tracing::warn!(
                     agent_id = %agent.id,
                     error = %e,
-                    "Failed to get LLM runtime, falling back to rule-based"
+                    "Failed to load LLM runtime"
                 );
+                return Err(e);
             }
         }
 
-        // Fall back to rule-based logic (Focused path)
+        // Only reached for rule-only agents (no llm_backend_id).
         let (situation_analysis, reasoning_steps, decisions, conclusion) =
             self.analyze_rule_based(agent, data, parsed_intent).await?;
         Ok(AnalysisResult::Focused {
@@ -270,8 +282,13 @@ impl AgentExecutor {
         };
 
         let output = llm_result.map_err(|e| {
-            tracing::error!(agent_id = %agent.id, error = %e, "LLM generation failed");
-            NeoMindError::Llm(format!("LLM generation failed: {}", e))
+            tracing::warn!(
+                agent_id = %agent.id,
+                error = %e,
+                permanent = e.is_permanent(),
+                "LLM generation failed"
+            );
+            NeoMindError::Llm(format!("{}", e))
         })?;
 
         let text = output.text.trim().to_string();
