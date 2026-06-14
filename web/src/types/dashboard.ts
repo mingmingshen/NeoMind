@@ -195,26 +195,8 @@ export interface AgentDataSource extends DataSourceBase {
 // ============================================================================
 
 /**
- * Discriminated union of all data source types.
- * @deprecated Use DataSource with source/mode/id/field fields instead.
- */
-export type StrictDataSource =
-  | DeviceDataSource
-  | MetricDataSource
-  | CommandDataSource
-  | TelemetryDataSource
-  | DeviceInfoDataSource
-  | SystemDataSource
-  | ExtensionDataSource
-  | ExtensionMetricDataSource
-  | ExtensionCommandDataSource
-  | TransformDataSource
-  | AgentDataSource
-
-/**
  * Legacy flat DataSource interface.
  *
- * @deprecated Prefer using StrictDataSource with type guards for new code.
  * This interface is kept for backward compatibility with existing consumers.
  */
 export interface DataSource {

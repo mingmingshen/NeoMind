@@ -35,13 +35,9 @@ export type DashboardStore = {
   extensions: import('@/types').Extension[]
 }
 
-/** Generate unique ID */
-export function generateId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID && typeof crypto.randomUUID === 'function') {
-    try { return crypto.randomUUID() } catch { /* fall through */ }
-  }
-  return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 15)
-}
+// Re-export shared generateId from lib/id to avoid duplicating the identical
+// crypto.randomUUID() + Math.random() fallback implementation.
+export { generateId } from '@/lib/id'
 
 let pendingCleanupCount = 0
 const MAX_CONCURRENT_CLEANUPS = 3

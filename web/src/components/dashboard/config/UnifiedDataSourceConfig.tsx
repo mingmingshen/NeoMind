@@ -6,24 +6,24 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle, Loader2, Database, MapPin, Activity, Puzzle, Workflow } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, Loader2, Database, MapPin, Activity, Puzzle, Workflow } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { dialogHeader } from '@/design-system/tokens/size'
 import { textMicro, textNano } from '@/design-system/tokens/typography'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList, DataSourceMode } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId, getUnifiedId, getUnifiedField } from '@/types/dashboard'
+import { normalizeDataSource, getUnifiedId, getUnifiedField } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
-import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { api } from '@/lib/api'
-import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, UnifiedDataSourceInfo } from '@/types'
+import type { ExtensionCommandDescriptor, UnifiedDataSourceInfo } from '@/types'
 import { findDevice } from '@/lib/deviceUtils'
+import { type CategoryType, getDeviceInfoProperties, getSystemMetrics, getCategories, normalizeAllowedTypes } from './categories'
+import { MobileItemSelector } from './mobile'
+import { ItemBadge, DataIndicator } from './shared'
 
 // ============================================================================
 // Types
@@ -41,479 +41,94 @@ export interface UnifiedDataSourceConfigProps {
   suggestedMode?: DataSourceMode
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command' | 'transform'
-type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command" or "transform:transformId:field"
-
 // ============================================================================
-// Shared sub-components (module-level to prevent remounting)
+// Constants & Factory Functions
 // ============================================================================
 
-function _ItemBadge({ itemType, t }: { itemType: 'template' | 'virtual' | 'info'; t: (key: string) => string }) {
-  const config = {
-    template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-    virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
-    info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
-  }[itemType]
-  return (
-    <span className={cn('px-1.5 py-0.5', textNano, 'font-medium rounded-[3px] border shrink-0', config.className)}>
-      {config.label}
-    </span>
-  )
+const DEFAULT_TIME_RANGE = 1
+const DEFAULT_LIMIT = 50
+const DEFAULT_AGGREGATE = 'raw' as const
+const DEFAULT_REFRESH = 10
+
+function createDeviceLocationDS(deviceId: string): DataSource {
+  return { type: 'device', sourceId: deviceId, source: 'device', id: deviceId, field: 'location', mode: 'info' }
 }
 
-function _DataIndicator({ hasData, count, t }: { hasData: boolean | null; count?: number; t: (key: string) => string }) {
-  if (hasData === true) {
-    return (
-      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success-light border border-success-light" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
-        <Circle className="h-1.5 w-1.5 fill-success text-success" />
-        <span className={cn(textNano, "text-success font-medium")}>{count ?? 0}</span>
-      </div>
-    )
+function createMetricDS(deviceId: string, field: string, suggestedMode?: DataSourceMode): DataSource {
+  const mode = suggestedMode ?? 'timeseries'
+  return {
+    type: 'telemetry', sourceId: deviceId, metricId: field,
+    timeRange: DEFAULT_TIME_RANGE, limit: DEFAULT_LIMIT, aggregate: DEFAULT_AGGREGATE,
+    params: { includeRawPoints: true }, transform: 'raw',
+    source: 'device', id: deviceId, field, mode,
   }
-  if (hasData === false) {
-    return (
-      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted-30 border border-muted" title={t('dataSource.noHistoricalData')}>
-        <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
-        <span className={cn(textNano, "text-muted-foreground")}>{t('dataSource.noData')}</span>
-      </div>
-    )
+}
+
+function createCommandDS(deviceId: string, command: string): DataSource {
+  return { type: 'command', sourceId: deviceId, command, source: 'device', id: deviceId, field: command, mode: 'command' }
+}
+
+function createDeviceInfoDS(deviceId: string, property: string): DataSource {
+  return { type: 'device-info', sourceId: deviceId, infoProperty: property as any, source: 'device', id: deviceId, field: property, mode: 'info' }
+}
+
+function createSystemDS(metric: string): DataSource {
+  return { type: 'system', systemMetric: metric as any, refresh: DEFAULT_REFRESH, source: 'system', id: 'neomind', field: metric, mode: 'latest' }
+}
+
+function createExtensionMetricDS(extId: string, metricName: string, suggestedMode?: DataSourceMode): DataSource {
+  const extMetric = `produce:${metricName}`
+  return {
+    type: 'extension', extensionId: extId, extensionMetric: extMetric,
+    refresh: DEFAULT_REFRESH, timeRange: DEFAULT_TIME_RANGE, limit: DEFAULT_LIMIT, aggregate: DEFAULT_AGGREGATE,
+    params: { includeRawPoints: true }, transform: 'raw',
+    source: 'extension', id: extId, field: extMetric, mode: (suggestedMode ?? 'timeseries') as DataSourceMode,
+  } as any
+}
+
+function createExtensionCommandDS(extId: string, command: string): DataSource {
+  return {
+    type: 'extension-command', extensionId: extId, command, extensionCommand: command,
+    source: 'extension', id: extId, field: command, mode: 'command',
+  } as any
+}
+
+function createTransformDS(transformId: string, field: string): DataSource {
+  return {
+    type: 'transform', sourceId: `transform:${transformId}`, metricId: field, transformId,
+    timeRange: DEFAULT_TIME_RANGE, limit: DEFAULT_LIMIT, aggregate: DEFAULT_AGGREGATE,
+    params: { includeRawPoints: true }, transform: 'raw',
+    source: 'transform', id: transformId, field, mode: 'timeseries',
   }
-  return null
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-// Device info property definitions factory (uses translations)
-function getDeviceInfoProperties(t: (key: string) => string) {
-  return [
-    { id: 'name', name: t('dataSource.deviceName') },
-    { id: 'status', name: t('dataSource.status') },
-    { id: 'online', name: t('dataSource.onlineStatus') },
-    { id: 'last_seen', name: t('dataSource.lastSeen') },
-    { id: 'device_type', name: t('dataSource.deviceType') },
-    { id: 'plugin_name', name: t('dataSource.adapter') },
-    { id: 'adapter_id', name: t('dataSource.adapterId') },
-  ]
-}
-
-// System metrics definitions factory (uses translations)
-function getSystemMetrics(t: (key: string) => string) {
-  return [
-    { id: 'uptime', name: t('systemDataSource.uptime'), description: t('systemDataSource.uptimeDesc'), unit: '', dataType: 'number' as const },
-    { id: 'cpu_count', name: t('systemDataSource.cpuCount'), description: t('systemDataSource.cpuCountDesc'), unit: ' cores', dataType: 'number' as const },
-    { id: 'total_memory', name: t('systemDataSource.totalMemory'), description: t('systemDataSource.totalMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
-    { id: 'used_memory', name: t('systemDataSource.usedMemory'), description: t('systemDataSource.usedMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
-    { id: 'free_memory', name: t('systemDataSource.freeMemory'), description: t('systemDataSource.freeMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
-    { id: 'available_memory', name: t('systemDataSource.availableMemory'), description: t('systemDataSource.availableMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
-    { id: 'memory_percent', name: t('systemDataSource.memoryPercent'), description: t('systemDataSource.memoryPercentDesc'), unit: '%', dataType: 'number' as const },
-    { id: 'platform', name: t('systemDataSource.platform'), description: t('systemDataSource.platformDesc'), unit: '', dataType: 'string' as const },
-    { id: 'arch', name: t('systemDataSource.arch'), description: t('systemDataSource.archDesc'), unit: '', dataType: 'string' as const },
-    { id: 'version', name: t('systemDataSource.version'), description: t('systemDataSource.versionDesc'), unit: '', dataType: 'string' as const },
-  ]
-}
-
-// Category configuration factory (uses translations)
-function getCategories(t: (key: string) => string) {
-  return [
-    { id: 'device' as const, name: t('dataSource.device'), icon: MapPin, description: t('dataSource.deviceDesc') },
-    { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
-    { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
-    { id: 'system' as const, name: t('systemDataSource.title'), icon: Activity, description: t('systemDataSource.description') },
-    { id: 'extension' as const, name: t('extensions:dataSource.extensionSource') || 'Extension Metrics', icon: Puzzle, description: t('extensions:dataSource.selectExtension') || 'Select extension metrics' },
-    { id: 'extension-command' as const, name: t('extensions:dataSource.extensionCommand') || 'Extension Commands', icon: Zap, description: t('extensions:dataSource.selectExtensionCommand') || 'Select extension commands' },
-    { id: 'transform' as const, name: t('dataSource.transform'), icon: Workflow, description: t('dataSource.transformDesc') },
-  ]
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// Convert old allowedTypes format to new format
-function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform'>
-): CategoryType[] {
-  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform']
-
-  const result: CategoryType[] = []
-
-  // Device category (for map markers, etc.)
-  if (allowedTypes.includes('device')) result.push('device')
-
-  // New format types
-  if (allowedTypes.includes('device-metric')) result.push('device-metric')
-  if (allowedTypes.includes('device-command')) result.push('device-command')
-  if (allowedTypes.includes('system')) result.push('system')
-  if (allowedTypes.includes('extension')) result.push('extension')
-  if (allowedTypes.includes('extension-command')) result.push('extension-command')
-  if (allowedTypes.includes('transform')) result.push('transform')
-
-  // Old format types - map to new format (but not 'device' since it's distinct now)
-  if (allowedTypes.includes('metric')) {
-    if (!result.includes('device-metric')) result.push('device-metric')
-  }
-  if (allowedTypes.includes('command')) {
-    // When 'command' is specified, include both device-command and extension-command
-    if (!result.includes('device-command')) result.push('device-command')
-    if (!result.includes('extension-command')) result.push('extension-command')
-  }
-
-  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform']
-}
-
-/**
- * Convert selected items to DataSource format
- */
-function selectedItemsToDataSource(
-  selectedItems: Set<SelectedItem>,
-  multiple: boolean,
-  suggestedMode?: DataSourceMode
-): DataSourceOrList | DataSource | undefined {
-  if (selectedItems.size === 0) return undefined
-  if (!multiple && selectedItems.size === 1) {
-    const item = [...selectedItems][0]!
-    const parts = item.split(':')
-    const type = parts[0]
-
-    switch (type) {
-      case 'device':
-        // Device location marker - just store device reference
-        return {
-          type: 'device',
-          sourceId: parts[1],
-          source: 'device' as const,
-          id: parts[1],
-          field: 'location',
-          mode: 'info' as const,
-        }
-      case 'device-metric': {
-        const metricField = parts.slice(2).join(':')
-        const mode = suggestedMode ?? 'timeseries'
-        return {
-          type: 'telemetry',
-          sourceId: parts[1],
-          metricId: metricField,
-          timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
-          limit: 50,     // Reduced from 100 for better performance
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
-          // Unified fields
-          source: 'device' as const,
-          id: parts[1],
-          field: metricField,
-          mode,
-        }
-      }
-      case 'device-command':
-        return {
-          type: 'command',
-          sourceId: parts[1],
-          command: parts.slice(2).join(':'),
-          // Unified fields
-          source: 'device' as const,
-          id: parts[1],
-          field: parts.slice(2).join(':'),
-          mode: 'command' as const,
-        }
-      case 'device-info': {
-        const infoField = parts.slice(2).join(':')
-        return {
-          type: 'device-info',
-          sourceId: parts[1],
-          infoProperty: infoField as any,
-          // Unified fields
-          source: 'device' as const,
-          id: parts[1],
-          field: infoField,
-          mode: 'info' as const,
-        }
-      }
-      case 'system': {
-        const sysField = parts.slice(1).join(':')
-        return {
-          type: 'system',
-          systemMetric: sysField as any,
-          refresh: 10,
-          // Unified fields
-          source: 'system' as const,
-          id: 'neomind',
-          field: sysField,
-          mode: 'latest' as const,
-        }
-      }
-      case 'extension': {
-        const extMetric = `produce:${parts[2]}`
-        return {
-          type: 'extension',
-          extensionId: parts[1],
-          extensionMetric: extMetric,
-          refresh: 10,
-          timeRange: 1,
-          limit: 50,
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
-          // Unified fields
-          source: 'extension' as const,
-          id: parts[1],
-          field: extMetric,
-          mode: (suggestedMode ?? 'timeseries') as DataSourceMode,
-        } as any
-      }
-      case 'extension-command':
-        return {
-          type: 'extension-command',
-          extensionId: parts[1],
-          command: parts.slice(2).join(':'),
-          extensionCommand: parts.slice(2).join(':'),
-          // Unified fields
-          source: 'extension' as const,
-          id: parts[1],
-          field: parts.slice(2).join(':'),
-          mode: 'command' as const,
-        } as any
-      case 'transform': {
-        const transformField = parts.slice(2).join(':')
-        return {
-          type: 'transform',
-          sourceId: `transform:${parts[1]}`,
-          metricId: transformField,
-          transformId: parts[1],
-          timeRange: 1,
-          limit: 50,
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
-          // Unified fields
-          source: 'transform' as const,
-          id: parts[1],
-          field: transformField,
-          mode: 'timeseries' as const,
-        }
-      }
-      default:
-        return undefined
-    }
-  }
-
-  // Multiple selection - return array
-  const result: DataSource[] = []
-  for (const item of selectedItems) {
-    const parts = item.split(':')
-    const type = parts[0]
-
-    switch (type) {
-      case 'device':
-        result.push({
-          type: 'device',
-          sourceId: parts[1],
-          source: 'device' as const, id: parts[1], field: 'location', mode: 'info' as const,
-        })
-        break
-      case 'device-metric': {
-        const mField = parts.slice(2).join(':')
-        const mMode = suggestedMode ?? 'timeseries'
-        result.push({
-          type: 'telemetry',
-          sourceId: parts[1],
-          metricId: mField,
-          timeRange: 1, limit: 50, aggregate: 'raw',
-          params: { includeRawPoints: true }, transform: 'raw',
-          source: 'device' as const, id: parts[1], field: mField, mode: mMode,
-        })
-        break
-      }
-      case 'device-command': {
-        const cmdField = parts.slice(2).join(':')
-        result.push({
-          type: 'command',
-          sourceId: parts[1], command: cmdField,
-          source: 'device' as const, id: parts[1], field: cmdField, mode: 'command' as const,
-        })
-        break
-      }
-      case 'device-info': {
-        const infoField = parts.slice(2).join(':')
-        result.push({
-          type: 'device-info',
-          sourceId: parts[1], infoProperty: infoField as any,
-          source: 'device' as const, id: parts[1], field: infoField, mode: 'info' as const,
-        })
-        break
-      }
-      case 'system': {
-        const sysField = parts.slice(1).join(':')
-        result.push({
-          type: 'system', systemMetric: sysField as any, refresh: 10,
-          source: 'system' as const, id: 'neomind', field: sysField, mode: 'latest' as const,
-        })
-        break
-      }
-      case 'extension': {
-        const extMetric = `produce:${parts[2]}`
-        result.push({
-          type: 'extension', extensionId: parts[1], extensionMetric: extMetric,
-          refresh: 10, timeRange: 1, limit: 50, aggregate: 'raw',
-          params: { includeRawPoints: true }, transform: 'raw',
-          source: 'extension' as const, id: parts[1], field: extMetric,
-          mode: (suggestedMode ?? 'timeseries') as DataSourceMode,
-        } as any)
-        break
-      }
-      case 'extension-command': {
-        const ecmdField = parts.slice(2).join(':')
-        result.push({
-          type: 'extension-command', extensionId: parts[1], command: ecmdField, extensionCommand: ecmdField,
-          source: 'extension' as const, id: parts[1], field: ecmdField, mode: 'command' as const,
-        } as any)
-        break
-      }
-      case 'transform': {
-        const tfField = parts.slice(2).join(':')
-        result.push({
-          type: 'transform', sourceId: `transform:${parts[1]}`, metricId: tfField, transformId: parts[1],
-          timeRange: 1, limit: 50, aggregate: 'raw',
-          params: { includeRawPoints: true }, transform: 'raw',
-          source: 'transform' as const, id: parts[1], field: tfField, mode: 'timeseries' as const,
-        })
-        break
-      }
-    }
-  }
-
-  return result
-}
-
-/**
- * Parse current data source to selected items
- */
-function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<SelectedItem>  {
-  const items = new Set<SelectedItem>()
-  if (!ds) return items
-
-  const dataSources = normalizeDataSource(ds)
-
-  for (const dataSource of dataSources) {
-    const dsId = getUnifiedId(dataSource) ?? getSourceId(dataSource)
-    const dsField = getUnifiedField(dataSource)
-
-    switch (dataSource.type) {
-      case 'device':
-        if (dsField && dsField !== 'location') {
-          // Device with a metric field → treat as device-metric (AI often uses this format)
-          items.add(`device-metric:${dsId}:${dsField}` as SelectedItem)
-        } else {
-          // Plain device reference (for map markers) - no property/metric
-          items.add(`device:${dsId}` as SelectedItem)
-        }
-        break
-      case 'metric':
-        // Metric type → device-metric selection
-        items.add(`device-metric:${dsId}:${dsField ?? dataSource.metricId}` as SelectedItem)
-        break
-      case 'telemetry':
-        items.add(`device-metric:${dsId}:${dsField ?? dataSource.metricId}` as SelectedItem)
-        break
-      case 'command':
-        items.add(`device-command:${dsId}:${dsField ?? dataSource.command}` as SelectedItem)
-        break
-      case 'device-info':
-        items.add(`device-info:${dsId}:${dsField ?? dataSource.infoProperty}` as SelectedItem)
-        break
-      case 'system':
-        items.add(`system:${dsField ?? dataSource.systemMetric}` as SelectedItem)
-        break
-      case 'extension':
-        // For extension type, check if it has extensionId and extensionMetric
-        if (dataSource.extensionId && dataSource.extensionMetric) {
-          const metric = dataSource.extensionMetric
-          const metricName = metric.startsWith('produce:') ? metric.slice(8) : metric
-          items.add(`extension:${dataSource.extensionId}:${metricName}` as SelectedItem)
-        } else if (dsId && dsField) {
-          // Unified fields fallback
-          const metricName = dsField.startsWith('produce:') ? dsField.slice(8) : dsField
-          items.add(`extension:${dsId}:${metricName}` as SelectedItem)
-        }
-        break
-      case 'extension-command':
-        if (dataSource.extensionId && dataSource.command) {
-          items.add(`extension-command:${dataSource.extensionId}:${dataSource.command}` as SelectedItem)
-        } else if (dsId && dsField) {
-          items.add(`extension-command:${dsId}:${dsField}` as SelectedItem)
-        }
-        break
-      case 'transform':
-        if (dataSource.transformId) {
-          items.add(`transform:${dataSource.transformId}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
-        } else if (dsId?.toString().startsWith('transform:')) {
-          const id = dsId.toString().slice(10)
-          items.add(`transform:${id}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
-        } else if (dsId && dsField) {
-          items.add(`transform:${dsId}:${dsField}` as SelectedItem)
-        }
-        break
-    }
-  }
-
-  return items
-}
-
-/**
- * Get a readable label for a selected item
- */
-function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: string) => string): string {
-  const parts = item.split(':')
-  const type = parts[0]
-
-  switch (type) {
-    case 'device': {
-      // Format: device:deviceId - just show device name
-      const device = findDevice(devices, parts[1])
-      return device?.name || parts[1]
-    }
-    case 'device-metric': {
-      // Format: device-metric:deviceId:metricId
-      const device = findDevice(devices, parts[1])
-      const deviceName = device?.name || parts[1]
-      return `${deviceName} · ${parts.slice(2).join(':')}`
-    }
-    case 'device-command': {
-      // Format: device-command:deviceId:command
-      const device = findDevice(devices, parts[1])
-      const deviceName = device?.name || parts[1]
-      return `${deviceName} · ${parts.slice(2).join(':')}`
-    }
-    case 'device-info': {
-      // Format: device-info:deviceId:property
-      const device = findDevice(devices, parts[1])
-      const deviceName = device?.name || parts[1]
-      const prop = getDeviceInfoProperties(t).find((p: { id: string; name: string }) => p.id === parts.slice(2).join(':'))
-      return `${deviceName} · ${prop?.name || parts.slice(2).join(':')}`
-    }
-    case 'system': {
-      // Format: system:metricId (not system:deviceId:metricId)
-      const metricId = parts.slice(1).join(':')
-      const systemMetric = getSystemMetrics(t).find(m => m.id === metricId)
-      return `${t('systemDataSource.title')} · ${systemMetric?.name || metricId}`
-    }
-    case 'extension': {
-      // Format: extension:extensionId:metricId - will be resolved in the component
-      return `Extension · ${parts[2]}`
-    }
-    case 'extension-command': {
-      // Format: extension-command:extensionId:commandName
-      return `Extension · ${parts.slice(2).join(':')}`
-    }
-    case 'transform': {
-      // Format: transform:transformId:field
-      return `${t('dataSource.transform')} · ${parts.slice(2).join(':')}`
-    }
+/** Derive unified source from type for legacy DataSources that lack the `source` field */
+function deriveSource(ds: DataSource): string {
+  if (ds.source) return ds.source
+  switch (ds.type) {
+    case 'telemetry': case 'metric': case 'command': case 'device-info': case 'device':
+      return 'device'
+    case 'system':
+      return 'system'
+    case 'extension': case 'extension-command':
+      return 'extension'
+    case 'transform':
+      return 'transform'
     default:
-      return item
+      return ''
   }
+}
+
+/** Internal identity key for checking if a DataSource is selected. NOT a state format. */
+function dsIdentityKey(ds: DataSource): string {
+  // Use helper functions with fallback chains for robustness with legacy DataSources
+  // that may only have legacy fields (sourceId/metricId) without unified fields (id/field)
+  return `${deriveSource(ds)}:${getUnifiedId(ds) ?? ''}:${getUnifiedField(ds) ?? ''}`
+}
+
+/** Make identity key from raw components */
+function makeKey(source: string, id: string, field: string): string {
+  return `${source}:${id}:${field}`
 }
 
 // ============================================================================
@@ -574,8 +189,14 @@ export function UnifiedDataSourceConfig({
   const { availability, summaries, loading: checkingData, checkDevice } = useDataAvailability()
 
   // Initialize selected items from current data source
-  const [selectedItems, setSelectedItems] = useState<Set<SelectedItem>>(() =>
-    dataSourceToSelectedItems(value)
+  const [selectedDataSources, setSelectedDataSources] = useState<DataSource[]>(() =>
+    value ? normalizeDataSource(value) : []
+  )
+
+  // Derive lookup Set from state for O(1) selection checks
+  const selectedKeys = useMemo(
+    () => new Set(selectedDataSources.map(dsIdentityKey)),
+    [selectedDataSources]
   )
 
   // Track previous value to detect actual selection changes
@@ -588,12 +209,8 @@ export function UnifiedDataSourceConfig({
   // Extract core identifying fields for comparison (ignores transform settings)
   const getCoreFields = (ds: DataSourceOrList | undefined): string => {
     if (!ds) return ''
-    const sources = Array.isArray(ds) ? ds : [ds]
-    return sources.map(s => {
-      // Only include fields that identify the selection, not transform settings
-      // Exclude: timeRange, limit, aggregate, aggregateExt, transform, params, timeWindow
-      return `${s.type}:${getSourceId(s) || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
-    }).sort().join('|')
+    const sources = normalizeDataSource(ds)
+    return sources.map(dsIdentityKey).sort().join('|')
   }
 
   // Calculate current core fields
@@ -612,13 +229,16 @@ export function UnifiedDataSourceConfig({
     if (prevCoreFieldsRef.current !== currentCoreFields) {
       prevValueRef.current = value
       prevCoreFieldsRef.current = currentCoreFields
-      setSelectedItems(dataSourceToSelectedItems(value))
+      setSelectedDataSources(value ? normalizeDataSource(value) : [])
     }
     // If only transform settings changed, update the value ref but don't reset selection
     else if (prevCoreFieldsRef.current === currentCoreFields && value !== prevValueRef.current) {
       prevValueRef.current = value
     }
   }, [value, currentCoreFields])
+
+  // Helper for checking selection in render code
+  const isSelected = (source: string, id: string, field: string) => selectedKeys.has(makeKey(source, id, field))
 
   // Available categories based on allowedTypes
   const availableCategories = useMemo(
@@ -817,54 +437,39 @@ export function UnifiedDataSourceConfig({
     return map
   }, [devices, deviceTypes])
 
-  // Handle item selection
-  const handleSelectItem = (itemKey: SelectedItem) => {
-    setSelectedItems(prev => {
-      const next = new Set(prev)
-
+  // Handle item selection - takes a DataSource object directly
+  const handleSelectItem = (ds: DataSource) => {
+    const key = dsIdentityKey(ds)
+    setSelectedDataSources(prev => {
       if (multiple) {
-        // Multiple selection mode - toggle
-        if (next.has(itemKey)) {
-          next.delete(itemKey)
-        } else if (next.size < maxSources) {
-          next.add(itemKey)
+        if (prev.some(d => dsIdentityKey(d) === key)) {
+          return prev.filter(d => dsIdentityKey(d) !== key)
+        } else if (prev.length < maxSources) {
+          return [...prev, ds]
         }
+        return prev
       } else {
-        // Single selection mode
-        if (next.has(itemKey)) {
-          next.clear()
-        } else {
-          next.clear()
-          next.add(itemKey)
+        if (prev.some(d => dsIdentityKey(d) === key)) {
+          return []
         }
+        return [ds]
       }
-
-      return next
-    })
-  }
-
-  // Remove a specific selected item
-  const handleRemoveItem = (itemKey: SelectedItem) => {
-    setSelectedItems(prev => {
-      const next = new Set(prev)
-      next.delete(itemKey)
-      return next
     })
   }
 
   // Clear all selections
-  const handleClearSelection = () => {
-    setSelectedItems(new Set())
-  }
+  const handleClearSelection = () => setSelectedDataSources([])
 
   // Notify parent of data source changes via effect (avoids setState-during-render warning)
   useEffect(() => {
-    const dataSource = selectedItemsToDataSource(selectedItems, multiple, suggestedMode)
-    onChange(dataSource as any)
-  }, [selectedItems, multiple, suggestedMode])
-
-  // Get current category config
-  const categoryConfig = getCategories(t).find(c => c.id === selectedCategory)
+    if (selectedDataSources.length === 0) {
+      onChange(undefined)
+    } else if (multiple) {
+      onChange(selectedDataSources)
+    } else {
+      onChange(selectedDataSources[0])
+    }
+  }, [selectedDataSources, multiple])
 
   // Filter devices by search query
   const filteredDevices = useMemo(() => {
@@ -877,8 +482,7 @@ export function UnifiedDataSourceConfig({
     )
   }, [devices, searchQuery])
 
-  // Convert selected items to array for display
-  const selectedItemsArray = useMemo(() => Array.from(selectedItems), [selectedItems])
+  // selectedDataSources is already an array for display
 
   // Check if category uses split layout
   const usesDeviceSplitLayout = selectedCategory === 'device-metric' || selectedCategory === 'device-command'
@@ -928,10 +532,12 @@ export function UnifiedDataSourceConfig({
         ) : (
           <div className="flex-1 overflow-y-auto">
             {filteredDevices.map(device => {
-              const isSelected = selectedDeviceId === device.id
+              const isDeviceRowSelected = selectedDeviceId === device.id
               // Count selected items for this device
-              const devicePrefix = `${selectedCategory}:${device.id}:`
-              const selectedCount = Array.from(selectedItems).filter(item => item.startsWith(devicePrefix)).length
+              const deviceSourcePrefix = selectedCategory === 'device-metric' || selectedCategory === 'device-command' ? 'device' : 'device'
+              const selectedCount = selectedDataSources.filter(ds =>
+                dsIdentityKey(ds).startsWith(`${deviceSourcePrefix}:${device.id}:`)
+              ).length
 
               // Get available items count (metrics or commands)
               let availableCount = 0
@@ -955,7 +561,7 @@ export function UnifiedDataSourceConfig({
                   }}
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 text-left border-b transition-all duration-150',
-                    isSelected
+                    isDeviceRowSelected
                       ? 'bg-muted border-l-2 border-l-primary'
                       : 'bg-transparent border-l-2 border-l-transparent hover:bg-muted'
                   )}
@@ -963,7 +569,7 @@ export function UnifiedDataSourceConfig({
                   <div className="flex-1 min-w-0">
                     <div className={cn(
                       'text-sm truncate',
-                      isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
+                      isDeviceRowSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                     )}>{device.name || device.id}</div>
                     <div className={cn(textNano, "text-muted-foreground truncate flex items-center gap-1.5")}>
                       <span>{device.device_type}</span>
@@ -1042,15 +648,14 @@ export function UnifiedDataSourceConfig({
 
       // Add template metrics
       for (const metric of metrics) {
-        const itemKey = `device-metric:${selectedDevice.id}:${metric.name}` as SelectedItem
         const availabilityKey = `${selectedDevice.id}:${metric.name}`
         const metricAvailability = availability.get(availabilityKey)
         items.push({
-          key: itemKey,
+          key: `device:${selectedDevice.id}:${metric.name}`,
           propertyName: metric.name,
           propertyDisplayName: metric.display_name || metric.name,
           currentValue: resolvePath(selectedDevice.current_values, metric.name),
-          isSelected: selectedItems.has(itemKey),
+          isSelected: isSelected('device', selectedDevice.id, metric.name),
           hasData: metricAvailability?.hasData ?? null,
           dataPointCount: metricAvailability?.dataPointCount,
           itemType: 'template',
@@ -1062,15 +667,14 @@ export function UnifiedDataSourceConfig({
       // Add virtual metrics from summary (not in template)
       for (const [metricId, metricSummary] of Object.entries(deviceSummary)) {
         if (!templateMetricNames.has(metricId) && metricSummary.is_virtual) {
-          const itemKey = `device-metric:${selectedDevice.id}:${metricId}` as SelectedItem
           const availabilityKey = `${selectedDevice.id}:${metricId}`
           const metricAvailability = availability.get(availabilityKey)
           items.push({
-            key: itemKey,
+            key: `device:${selectedDevice.id}:${metricId}`,
             propertyName: metricId,
             propertyDisplayName: metricSummary.display_name || metricId,
             currentValue: metricSummary.current,
-            isSelected: selectedItems.has(itemKey),
+            isSelected: isSelected('device', selectedDevice.id, metricId),
             hasData: metricAvailability?.hasData ?? null,
             dataPointCount: metricAvailability?.dataPointCount,
             itemType: 'virtual',
@@ -1082,7 +686,7 @@ export function UnifiedDataSourceConfig({
 
       // Add device info properties
       for (const infoProp of getDeviceInfoProperties(t)) {
-        const itemKey = `device-info:${selectedDevice.id}:${infoProp.id}` as SelectedItem
+        const itemKey = `device:${selectedDevice.id}:${infoProp.id}`
         let currentValue: unknown = undefined
 
         // Get current value from device
@@ -1115,7 +719,7 @@ export function UnifiedDataSourceConfig({
           propertyName: infoProp.id,
           propertyDisplayName: infoProp.name,
           currentValue,
-          isSelected: selectedItems.has(itemKey),
+          isSelected: isSelected('device', selectedDevice.id, infoProp.id),
           hasData: null, // Info props don't have historical data
           itemType: 'info',
         })
@@ -1139,11 +743,6 @@ export function UnifiedDataSourceConfig({
         return String(val)
       }
 
-      // Badge component for item type (uses module-level _ItemBadge)
-      const ItemBadge = (props: { itemType: 'template' | 'virtual' | 'info' }) => <_ItemBadge {...props} t={t} />
-
-      // Data indicator component (uses module-level _DataIndicator)
-      const DataIndicator = (props: { hasData: boolean | null; count?: number }) => <_DataIndicator {...props} t={t} />
 
       return (
         <div className="flex flex-col h-full">
@@ -1157,11 +756,19 @@ export function UnifiedDataSourceConfig({
             </span>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {items.map(item => (
+            {items.map(item => {
+              const [_source, deviceId, ...fieldParts] = item.key.split(':')
+              const field = fieldParts.join(':')
+              return (
               <button
                 key={item.key}
                 type="button"
-                onClick={() => handleSelectItem(item.key)}
+                onClick={() => {
+                  const ds = item.itemType === 'info'
+                    ? createDeviceInfoDS(selectedDevice.id, field)
+                    : createMetricDS(selectedDevice.id, field, suggestedMode)
+                  handleSelectItem(ds)
+                }}
                 className={cn(
                   'w-full text-left transition-colors duration-150',
                   'group relative rounded-md border',
@@ -1188,14 +795,14 @@ export function UnifiedDataSourceConfig({
                   <div className="flex-1 min-w-0 space-y-0.5">
                     {/* Header row */}
                     <div className="flex items-center gap-1.5">
-                      <ItemBadge itemType={item.itemType} />
+                      <ItemBadge itemType={item.itemType} t={t} />
                       <span className={cn(
                         'text-sm truncate',
                         item.isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>{item.propertyDisplayName}</span>
                       <div className="flex-1" />
                       {item.hasData !== null && (
-                        <DataIndicator hasData={item.hasData} count={item.dataPointCount} />
+                        <DataIndicator hasData={item.hasData} count={item.dataPointCount} t={t} />
                       )}
                       {item.hasData === null && checkingData && (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -1223,7 +830,8 @@ export function UnifiedDataSourceConfig({
                   </div>
                 </div>
               </button>
-            ))}
+              )
+            })}
           </div>
         </div>
       )
@@ -1239,12 +847,11 @@ export function UnifiedDataSourceConfig({
       }> = []
 
       for (const cmd of commands) {
-        const itemKey = `device-command:${selectedDevice.id}:${cmd.name}` as SelectedItem
         items.push({
-          key: itemKey,
+          key: `device:${selectedDevice.id}:${cmd.name}`,
           commandName: cmd.name,
           commandDisplayName: cmd.display_name || cmd.name,
-          isSelected: selectedItems.has(itemKey),
+          isSelected: isSelected('device', selectedDevice.id, cmd.name),
         })
       }
 
@@ -1262,7 +869,10 @@ export function UnifiedDataSourceConfig({
               <button
                 key={item.key}
                 type="button"
-                onClick={() => handleSelectItem(item.key)}
+                onClick={() => {
+                  const [_src, devId, ...cmdParts] = item.key.split(':')
+                  handleSelectItem(createCommandDS(selectedDevice.id, cmdParts.join(':')))
+                }}
                 className={cn(
                   'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
                   'hover:bg-accent',
@@ -1405,18 +1015,17 @@ export function UnifiedDataSourceConfig({
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {metrics.map(metric => {
-              const itemKey = `extension:${selectedExtension.id}:${metric.name}` as SelectedItem
-              const isSelected = selectedItems.has(itemKey)
+              const metricIsSelected = isSelected('extension', selectedExtension.id, `produce:${metric.name}`)
 
               return (
                 <button
                   key={metric.name}
                   type="button"
-                  onClick={() => handleSelectItem(itemKey)}
+                  onClick={() => handleSelectItem(createExtensionMetricDS(selectedExtension.id, metric.name, suggestedMode))}
                   className={cn(
                     'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
                     'hover:bg-accent',
-                    isSelected
+                    metricIsSelected
                       ? 'border-primary bg-muted'
                       : 'border-muted'
                   )}
@@ -1425,7 +1034,7 @@ export function UnifiedDataSourceConfig({
                     <div className="font-medium text-sm truncate">{metric.display_name || metric.name}</div>
                     <div className="text-xs text-muted-foreground truncate">{metric.name}</div>
                   </div>
-                  {isSelected && (
+                  {metricIsSelected && (
                     <Check className="h-4 w-4 text-primary shrink-0 ml-2" />
                   )}
                 </button>
@@ -1455,18 +1064,17 @@ export function UnifiedDataSourceConfig({
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {commands.map((cmd: ExtensionCommandDescriptor) => {
-              const itemKey = `extension-command:${selectedExtension.id}:${cmd.id}` as SelectedItem
-              const isSelected = selectedItems.has(itemKey)
+              const cmdIsSelected = isSelected('extension', selectedExtension.id, cmd.id)
 
               return (
                 <button
                   key={cmd.id}
                   type="button"
-                  onClick={() => handleSelectItem(itemKey)}
+                  onClick={() => handleSelectItem(createExtensionCommandDS(selectedExtension.id, cmd.id))}
                   className={cn(
                     'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
                     'hover:bg-accent',
-                    isSelected
+                    cmdIsSelected
                       ? 'border-primary bg-muted'
                       : 'border-muted'
                   )}
@@ -1477,7 +1085,7 @@ export function UnifiedDataSourceConfig({
                   </div>
                   <Zap className={cn(
                     'h-4 w-4 shrink-0 ml-2',
-                    isSelected ? 'text-warning' : 'text-muted-foreground'
+                    cmdIsSelected ? 'text-warning' : 'text-muted-foreground'
                   )} />
                 </button>
               )
@@ -1508,17 +1116,16 @@ export function UnifiedDataSourceConfig({
               <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noDevices')}</div>
             ) : (
               filteredDevices.map(device => {
-                const itemKey = `device:${device.id}` as SelectedItem
-                const isSelected = selectedItems.has(itemKey)
+                const devIsSelected = isSelected('device', device.id, 'location')
 
                 return (
                   <button
                     key={device.id}
                     type="button"
-                    onClick={() => handleSelectItem(itemKey)}
+                    onClick={() => handleSelectItem(createDeviceLocationDS(device.id))}
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
-                      isSelected
+                      devIsSelected
                         ? 'bg-muted border-border'
                         : 'bg-card border-border hover:bg-accent hover:border-border'
                     )}
@@ -1526,13 +1133,13 @@ export function UnifiedDataSourceConfig({
                     {/* Check icon */}
                     <div className={cn(
                       'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
-                      isSelected
+                      devIsSelected
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground'
                     )}>
                       <Check className={cn(
                         'h-4 w-4',
-                        isSelected ? 'opacity-100' : 'opacity-0'
+                        devIsSelected ? 'opacity-100' : 'opacity-0'
                       )} />
                     </div>
 
@@ -1540,7 +1147,7 @@ export function UnifiedDataSourceConfig({
                     <div className="flex-1 min-w-0">
                       <div className={cn(
                         'text-sm truncate',
-                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
+                        devIsSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>
                         {device.name || device.id}
                       </div>
@@ -1566,17 +1173,16 @@ export function UnifiedDataSourceConfig({
         return (
           <div className="space-y-1">
             {getSystemMetrics(t).map(metric => {
-              const itemKey = `system:${metric.id}` as SelectedItem
-              const isSelected = selectedItems.has(itemKey)
+              const metricIsSelected = isSelected('system', 'neomind', metric.id)
 
               return (
                 <button
                   key={metric.id}
                   type="button"
-                  onClick={() => handleSelectItem(itemKey)}
+                  onClick={() => handleSelectItem(createSystemDS(metric.id))}
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
-                    isSelected
+                    metricIsSelected
                       ? 'bg-muted border-border'
                       : 'bg-card border-border hover:bg-accent hover:border-border'
                   )}
@@ -1584,13 +1190,13 @@ export function UnifiedDataSourceConfig({
                   {/* Check icon */}
                   <div className={cn(
                     'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
-                    isSelected
+                    metricIsSelected
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted text-muted-foreground'
                   )}>
                     <Check className={cn(
                       'h-4 w-4',
-                      isSelected ? 'opacity-100' : 'opacity-0'
+                      metricIsSelected ? 'opacity-100' : 'opacity-0'
                     )} />
                   </div>
 
@@ -1598,7 +1204,7 @@ export function UnifiedDataSourceConfig({
                   <div className="flex-1 min-w-0">
                     <div className={cn(
                       'text-sm truncate',
-                      isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
+                      metricIsSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                     )}>
                       {metric.name}
                     </div>
@@ -1630,35 +1236,34 @@ export function UnifiedDataSourceConfig({
               <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noTransforms')}</div>
             ) : (
               transformSources.map(source => {
-                const itemKey = `transform:${source.source_name}:${source.field}` as SelectedItem
-                const isSelected = selectedItems.has(itemKey)
+                const tfIsSelected = isSelected('transform', source.source_name, source.field)
                 return (
                   <button
                     key={source.id}
                     type="button"
-                    onClick={() => handleSelectItem(itemKey)}
+                    onClick={() => handleSelectItem(createTransformDS(source.source_name, source.field))}
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
-                      isSelected
+                      tfIsSelected
                         ? 'bg-muted border-border'
                         : 'bg-card border-border hover:bg-accent hover:border-border'
                     )}
                   >
                     <div className={cn(
                       'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
-                      isSelected
+                      tfIsSelected
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground'
                     )}>
                       <Check className={cn(
                         'h-4 w-4',
-                        isSelected ? 'opacity-100' : 'opacity-0'
+                        tfIsSelected ? 'opacity-100' : 'opacity-0'
                       )} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className={cn(
                         'text-sm truncate',
-                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
+                        tfIsSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>
                         {source.source_display_name} · {source.field_display_name}
                       </div>
@@ -1699,21 +1304,22 @@ export function UnifiedDataSourceConfig({
     <>
       <div className={cn('flex flex-col h-full', className)}>
         {/* Selected items bar - compact single row */}
-      {selectedItems.size > 0 && (
+      {selectedDataSources.length > 0 && (
         <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
             <Check className="h-4 w-4" />
-            {t('dataSource.selectedItems', { count: selectedItems.size })}
+            {t('dataSource.selectedItems', { count: selectedDataSources.length })}
           </div>
           <div className="h-4 w-px bg-border" />
           <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
-            {selectedItemsArray.slice(0, 3).map(itemKey => {
-              const [type, entityId, ...rest] = itemKey.split(':')
-              const label = rest.join(':')
+            {selectedDataSources.slice(0, 3).map(ds => {
+              const source = ds.source ?? ''
+              const entityId = ds.id ?? ''
+              const field = ds.field ?? ''
 
-              // For extension types, find the extension by id
+              // Resolve entity name
               let entityName = entityId
-              if (type.startsWith('extension')) {
+              if (source === 'extension') {
                 const ext = extensions.find(e => e.id === entityId)
                 entityName = ext?.name || entityId
               } else {
@@ -1721,37 +1327,43 @@ export function UnifiedDataSourceConfig({
                 entityName = device?.name || entityId
               }
 
-              // Icon and color based on type
+              // Icon and color based on DataSource type
               let TypeIcon = Info
               let iconColor = 'text-accent-emerald'
-              let displayLabel = label
+              let displayLabel = field
               let showSeparator = true
 
-              if (type === 'device-metric') {
+              if (ds.type === 'telemetry') {
                 TypeIcon = Server
                 iconColor = 'text-info'
-              } else if (type === 'device-command') {
+              } else if (ds.type === 'command') {
                 TypeIcon = Zap
                 iconColor = 'text-warning'
-              } else if (type === 'device') {
+              } else if (ds.type === 'device') {
                 TypeIcon = MapPin
                 iconColor = 'text-accent-purple'
                 displayLabel = ''  // No label for device type, just device name
                 showSeparator = false
-              } else if (type === 'extension') {
+              } else if (ds.type === 'extension') {
                 TypeIcon = Puzzle
                 iconColor = 'text-accent-cyan'
-              } else if (type === 'extension-command') {
+              } else if (ds.type === 'extension-command') {
                 TypeIcon = Zap
                 iconColor = 'text-accent-orange'
-              } else if (type === 'transform') {
+              } else if (ds.type === 'transform') {
                 TypeIcon = Workflow
                 iconColor = 'text-accent-indigo'
+              } else if (ds.type === 'device-info') {
+                TypeIcon = Server
+                iconColor = 'text-info'
+              } else if (ds.type === 'system') {
+                TypeIcon = Activity
+                iconColor = 'text-accent-emerald'
               }
 
               return (
                 <div
-                  key={itemKey}
+                  key={dsIdentityKey(ds)}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border text-xs group hover:border-border transition-all max-w-[140px]"
                 >
                   <TypeIcon className={cn('h-4 w-4 shrink-0', iconColor)} />
@@ -1761,9 +1373,9 @@ export function UnifiedDataSourceConfig({
                 </div>
               )
             })}
-            {selectedItemsArray.length > 3 && (
+            {selectedDataSources.length > 3 && (
               <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted-50 text-xs text-muted-foreground">
-                +{selectedItemsArray.length - 3} {t('dataSource.more')}
+                +{selectedDataSources.length - 3} {t('dataSource.more')}
               </div>
             )}
           </div>
@@ -1868,8 +1480,55 @@ export function UnifiedDataSourceConfig({
         selectedDevice={selectedDevice}
         selectedExtension={selectedExtension}
         selectedCategory={selectedCategory}
-        selectedItems={selectedItems}
-        onSelectItem={handleSelectItem}
+        selectedItems={selectedKeys}
+        onSelectItem={(itemKey: string) => {
+          // Mobile components emit keys in unified format "source:id:field".
+          // Route to the correct factory based on selectedCategory (only one category is visible at a time).
+          const parts = itemKey.split(':')
+          const id = parts[1] ?? ''
+          switch (selectedCategory) {
+            case 'device':
+              handleSelectItem(createDeviceLocationDS(id))
+              break
+            case 'device-metric': {
+              const field = parts.slice(2).join(':')
+              // MobileMetricsList renders both metrics and device info properties with the same key format.
+              // Check if this field is a known info property to use the correct factory.
+              const isInfoProp = getDeviceInfoProperties(t).some(p => p.id === field)
+              if (isInfoProp) {
+                handleSelectItem(createDeviceInfoDS(id, field))
+              } else {
+                handleSelectItem(createMetricDS(id, field, suggestedMode))
+              }
+              break
+            }
+            case 'device-command': {
+              const field = parts.slice(2).join(':')
+              handleSelectItem(createCommandDS(id, field))
+              break
+            }
+            case 'system': {
+              handleSelectItem(createSystemDS(parts.slice(1).join(':')))
+              break
+            }
+            case 'extension': {
+              const field = parts.slice(2).join(':')
+              const metricName = field.startsWith('produce:') ? field.slice(8) : field
+              handleSelectItem(createExtensionMetricDS(id, metricName, suggestedMode))
+              break
+            }
+            case 'extension-command': {
+              const field = parts.slice(2).join(':')
+              handleSelectItem(createExtensionCommandDS(id, field))
+              break
+            }
+            case 'transform': {
+              const field = parts.slice(2).join(':')
+              handleSelectItem(createTransformDS(id, field))
+              break
+            }
+          }
+        }}
         deviceMetricsMap={deviceMetricsMap}
         deviceCommandsMap={deviceCommandsMap}
         extensionMetricsMap={extensionMetricsMap}
@@ -1884,591 +1543,6 @@ export function UnifiedDataSourceConfig({
       />
     )}
     </>
-  )
-}
-
-// ============================================================================
-// Mobile Item Selector Component
-// ============================================================================
-
-interface MobileItemSelectorProps {
-  isOpen: boolean
-  onClose: () => void
-  selectedDevice: any
-  selectedExtension: any
-  selectedCategory: CategoryType
-  selectedItems: Set<SelectedItem>
-  onSelectItem: (item: SelectedItem) => void
-  deviceMetricsMap: Map<string, MetricDefinition[]>
-  deviceCommandsMap: Map<string, CommandDefinition[]>
-  extensionMetricsMap: Map<string, Array<{ name: string; display_name: string; data_type: string; unit?: string }>>
-  devices: any[]
-  extensions: Extension[]
-  summaries: Map<string, any>
-  availability: Map<string, { hasData: boolean; dataPointCount?: number }>
-  checkingData: boolean
-  getDeviceInfoProperties: (t: (key: string) => string) => Array<{ id: string; name: string }>
-  t: (key: string) => string
-  insets: { top: number; bottom: number; left: number; right: number }
-}
-
-function MobileItemSelector({
-  isOpen,
-  onClose,
-  selectedDevice,
-  selectedExtension,
-  selectedCategory,
-  selectedItems,
-  onSelectItem,
-  deviceMetricsMap,
-  deviceCommandsMap,
-  extensionMetricsMap,
-  devices,
-  extensions,
-  summaries,
-  availability,
-  checkingData,
-  getDeviceInfoProperties,
-  t,
-  insets,
-}: MobileItemSelectorProps) {
-  // Lock body scroll when mobile selector is open
-  useMobileBodyScrollLock(isOpen)
-
-  if (!isOpen) return null
-
-  const title = selectedCategory === 'device-metric' || selectedCategory === 'device-command'
-    ? (selectedDevice?.name || selectedDevice?.id || t('dataSource.selectDevice'))
-    : (selectedExtension?.name || t('extensions:selectExtension') || 'Select Extension')
-
-  return createPortal(
-    <div className="fixed inset-0 z-[60] bg-background animate-in slide-in-from-right-0 duration-200">
-      <div className="flex h-full w-full flex-col">
-        {/* Header */}
-        <div
-          className={cn(dialogHeader, 'gap-3')}
-          style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-        >
-          <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-semibold truncate">{title}</h1>
-            <p className="text-xs text-muted-foreground truncate">
-              {selectedCategory === 'device-metric' && t('dataSource.selectMetrics')}
-              {selectedCategory === 'device-command' && t('dataSource.selectCommands')}
-              {selectedCategory === 'extension' && (t('dataSource.metrics') || 'Metrics')}
-              {selectedCategory === 'extension-command' && (t('dataSource.commands') || 'Commands')}
-            </p>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {selectedCategory === 'device-metric' && selectedDevice && (
-            <MobileMetricsList
-              device={selectedDevice}
-              deviceMetricsMap={deviceMetricsMap}
-              summaries={summaries}
-              availability={availability}
-              checkingData={checkingData}
-              getDeviceInfoProperties={getDeviceInfoProperties}
-              selectedItems={selectedItems}
-              onSelectItem={onSelectItem}
-              t={t}
-            />
-          )}
-
-          {selectedCategory === 'device-command' && selectedDevice && (
-            <MobileCommandsList
-              device={selectedDevice}
-              deviceCommandsMap={deviceCommandsMap}
-              selectedItems={selectedItems}
-              onSelectItem={onSelectItem}
-              t={t}
-            />
-          )}
-
-          {selectedCategory === 'extension' && selectedExtension && (
-            <MobileExtensionMetricsList
-              extension={selectedExtension}
-              extensionMetricsMap={extensionMetricsMap}
-              selectedItems={selectedItems}
-              onSelectItem={onSelectItem}
-              t={t}
-            />
-          )}
-
-          {selectedCategory === 'extension-command' && selectedExtension && (
-            <MobileExtensionCommandsList
-              extension={selectedExtension}
-              selectedItems={selectedItems}
-              onSelectItem={onSelectItem}
-              t={t}
-            />
-          )}
-
-          {selectedCategory === 'device-metric' && !selectedDevice && (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
-              {t('dataSource.selectDevice')}
-            </div>
-          )}
-
-          {selectedCategory === 'device-command' && !selectedDevice && (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
-              {t('dataSource.selectDevice')}
-            </div>
-          )}
-
-          {selectedCategory === 'extension' && !selectedExtension && (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
-              {t('extensions:selectExtension') || 'Select an extension'}
-            </div>
-          )}
-
-          {selectedCategory === 'extension-command' && !selectedExtension && (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
-              {t('extensions:selectExtension') || 'Select an extension'}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// Mobile metrics list
-interface MobileMetricsListProps {
-  device: any
-  deviceMetricsMap: Map<string, MetricDefinition[]>
-  summaries: Map<string, any>
-  availability: Map<string, { hasData: boolean; dataPointCount?: number }>
-  checkingData: boolean
-  getDeviceInfoProperties: (t: (key: string) => string) => Array<{ id: string; name: string }>
-  selectedItems: Set<SelectedItem>
-  onSelectItem: (item: SelectedItem) => void
-  t: (key: string) => string
-}
-
-function MobileMetricsList({
-  device,
-  deviceMetricsMap,
-  summaries,
-  availability,
-  checkingData,
-  getDeviceInfoProperties,
-  selectedItems,
-  onSelectItem,
-  t,
-}: MobileMetricsListProps) {
-  const metrics = deviceMetricsMap.get(device.id) || []
-  const deviceSummary = summaries.get(device.id) || {}
-  const templateMetricNames = new Set(metrics.map((m: MetricDefinition) => m.name))
-
-  type Item = {
-    key: string
-    propertyName: string
-    propertyDisplayName: string
-    currentValue?: unknown
-    isSelected: boolean
-    hasData: boolean | null
-    dataPointCount?: number
-    itemType: 'template' | 'virtual' | 'info'
-    unit?: string
-  }
-
-  const items: Item[] = []
-
-  // Template metrics
-  for (const metric of metrics) {
-    const itemKey = `device-metric:${device.id}:${metric.name}` as SelectedItem
-    const availabilityKey = `${device.id}:${metric.name}`
-    const metricAvailability = availability.get(availabilityKey)
-    items.push({
-      key: itemKey,
-      propertyName: metric.name,
-      propertyDisplayName: metric.display_name || metric.name,
-      currentValue: device.current_values?.[metric.name],
-      isSelected: selectedItems.has(itemKey),
-      hasData: metricAvailability?.hasData ?? null,
-      dataPointCount: metricAvailability?.dataPointCount,
-      itemType: 'template',
-      unit: metric.unit,
-    })
-  }
-
-  // Virtual metrics
-  for (const [metricId, metricSummary] of Object.entries(deviceSummary)) {
-    const summary = metricSummary as { is_virtual?: boolean; display_name?: string; current?: unknown; unit?: string }
-    if (!templateMetricNames.has(metricId) && summary.is_virtual) {
-      const itemKey = `device-metric:${device.id}:${metricId}` as SelectedItem
-      const availabilityKey = `${device.id}:${metricId}`
-      const metricAvailability = availability.get(availabilityKey)
-      items.push({
-        key: itemKey,
-        propertyName: metricId,
-        propertyDisplayName: summary.display_name || metricId,
-        currentValue: summary.current,
-        isSelected: selectedItems.has(itemKey),
-        hasData: metricAvailability?.hasData ?? null,
-        dataPointCount: metricAvailability?.dataPointCount,
-        itemType: 'virtual',
-        unit: summary.unit,
-      })
-    }
-  }
-
-  // Device info properties
-  for (const infoProp of getDeviceInfoProperties(t)) {
-    const itemKey = `device-info:${device.id}:${infoProp.id}` as SelectedItem
-    let currentValue: unknown = undefined
-
-    switch (infoProp.id) {
-      case 'name': currentValue = device.name; break
-      case 'status': currentValue = device.status; break
-      case 'online': currentValue = device.online; break
-      case 'last_seen': currentValue = device.last_seen; break
-      case 'device_type': currentValue = device.device_type; break
-      case 'plugin_name': currentValue = device.plugin_name; break
-      case 'adapter_id': currentValue = device.adapter_id; break
-    }
-
-    items.push({
-      key: itemKey,
-      propertyName: infoProp.id,
-      propertyDisplayName: infoProp.name,
-      currentValue,
-      isSelected: selectedItems.has(itemKey),
-      hasData: null,
-      itemType: 'info',
-    })
-  }
-
-  // Sort: template -> info -> virtual
-  items.sort((a, b) => {
-    const order = { template: 0, info: 1, virtual: 2 }
-    return order[a.itemType] - order[b.itemType]
-  })
-
-  const formatValue = (val: unknown): string => {
-    if (val === null || val === undefined) return '-'
-    if (typeof val === 'number') return val.toLocaleString('en-US', { maximumFractionDigits: 2 })
-    if (typeof val === 'boolean') return val ? t('dataSource.yes') : t('dataSource.no')
-    return String(val)
-  }
-
-  const ItemBadge = (props: { itemType: 'template' | 'virtual' | 'info' }) => <_ItemBadge {...props} t={t} />
-
-  return (
-    <div className="p-4 space-y-3">
-      {items.map(item => (
-        <button
-          key={item.key}
-          type="button"
-          onClick={() => onSelectItem(item.key)}
-          className={cn(
-            'w-full text-left transition-colors duration-150',
-            'group relative rounded-lg border p-4',
-            item.isSelected
-              ? 'bg-muted border-border'
-              : 'bg-card border-border active:bg-accent'
-          )}
-        >
-          <div className="flex items-start gap-3">
-            {/* Check icon */}
-            <div className={cn(
-              'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors mt-0.5',
-              item.isSelected
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground'
-            )}>
-              <Check className={cn(
-                'h-4 w-4',
-                item.isSelected ? 'opacity-100' : 'opacity-0'
-              )} />
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0 space-y-2">
-              {/* Header */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <ItemBadge itemType={item.itemType} />
-                <span className={cn(
-                  'text-base font-medium',
-                  item.isSelected ? 'text-foreground' : 'text-foreground'
-                )}>
-                  {item.propertyDisplayName}
-                </span>
-              </div>
-
-              {/* Subtitle */}
-              <div className="space-y-1">
-                <code className="text-xs text-muted-foreground px-2 py-1 bg-muted rounded-md block">
-                  {item.propertyName}
-                </code>
-                {item.currentValue !== undefined && item.currentValue !== null && (
-                  <div className="text-sm text-muted-foreground break-all">
-                    {t('dataSource.current')}: <span className="text-foreground font-medium" title={formatValue(item.currentValue)}>{formatValue(item.currentValue)}</span>
-                    {item.unit && item.unit !== '-' && <span className="ml-1 text-muted-foreground">{item.unit}</span>}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Data indicator */}
-            {item.hasData !== null && (
-              <div className="shrink-0">
-                {item.hasData ? (
-                  <div className="px-2 py-1 rounded-lg bg-success-light border border-success-light text-xs text-success font-medium" title={`${t('dataSource.hasHistoricalData')} (${item.dataPointCount ?? 0} ${t('dataSource.dataPoints')})`}>
-                    {item.dataPointCount ?? 0}
-                  </div>
-                ) : (
-                  <div className="px-2 py-1 rounded-lg bg-muted-30 border border-muted text-xs text-muted-foreground">
-                    {t('dataSource.noData')}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// Mobile commands list
-interface MobileCommandsListProps {
-  device: any
-  deviceCommandsMap: Map<string, CommandDefinition[]>
-  selectedItems: Set<SelectedItem>
-  onSelectItem: (item: SelectedItem) => void
-  t: (key: string) => string
-}
-
-function MobileCommandsList({
-  device,
-  deviceCommandsMap,
-  selectedItems,
-  onSelectItem,
-  t,
-}: MobileCommandsListProps) {
-  const commands = deviceCommandsMap.get(device.id) || []
-
-  if (commands.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
-        {t('dataSource.noAvailableCommands')}
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-4 space-y-3">
-      {commands.map(cmd => {
-        const itemKey = `device-command:${device.id}:${cmd.name}` as SelectedItem
-        const isSelected = selectedItems.has(itemKey)
-
-        return (
-          <button
-            key={cmd.name}
-            type="button"
-            onClick={() => onSelectItem(itemKey)}
-            className={cn(
-              'w-full text-left transition-colors duration-150',
-              'group relative rounded-lg border p-4',
-              isSelected
-                ? 'bg-muted border-border'
-                : 'bg-card border-border active:bg-accent'
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
-                isSelected
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
-              )}>
-                <Check className={cn(
-                  'h-4 w-4',
-                  isSelected ? 'opacity-100' : 'opacity-0'
-                )} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={cn(
-                  'text-base font-medium truncate',
-                  isSelected ? 'text-foreground' : 'text-foreground'
-                )}>
-                  {cmd.display_name || cmd.name}
-                </div>
-                <div className="text-sm text-muted-foreground truncate">
-                  {cmd.name}
-                </div>
-              </div>
-              <Zap className={cn(
-                'h-5 w-5 shrink-0',
-                isSelected ? 'text-warning' : 'text-muted-foreground'
-              )} />
-            </div>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// Mobile extension metrics list
-interface MobileExtensionMetricsListProps {
-  extension: Extension
-  extensionMetricsMap: Map<string, Array<{ name: string; display_name: string; data_type: string; unit?: string }>>
-  selectedItems: Set<SelectedItem>
-  onSelectItem: (item: SelectedItem) => void
-  t: (key: string) => string
-}
-
-function MobileExtensionMetricsList({
-  extension,
-  extensionMetricsMap,
-  selectedItems,
-  onSelectItem,
-  t,
-}: MobileExtensionMetricsListProps) {
-  const metrics = extensionMetricsMap.get(extension.id) || []
-
-  if (metrics.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
-        {t('extensions:noMetrics') || 'No metrics available'}
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-4 space-y-3">
-      {metrics.map(metric => {
-        const itemKey = `extension:${extension.id}:${metric.name}` as SelectedItem
-        const isSelected = selectedItems.has(itemKey)
-
-        return (
-          <button
-            key={metric.name}
-            type="button"
-            onClick={() => onSelectItem(itemKey)}
-            className={cn(
-              'w-full text-left transition-colors duration-150',
-              'group relative rounded-lg border p-4',
-              isSelected
-                ? 'bg-muted border-border'
-                : 'bg-card border-border active:bg-accent'
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
-                isSelected
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
-              )}>
-                <Check className={cn(
-                  'h-4 w-4',
-                  isSelected ? 'opacity-100' : 'opacity-0'
-                )} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={cn(
-                  'text-base font-medium truncate',
-                  isSelected ? 'text-foreground' : 'text-foreground'
-                )}>
-                  {metric.display_name || metric.name}
-                </div>
-                <div className="text-sm text-muted-foreground truncate">
-                  {metric.name}
-                  {metric.unit && ` (${metric.unit})`}
-                </div>
-              </div>
-            </div>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// Mobile extension commands list
-interface MobileExtensionCommandsListProps {
-  extension: Extension
-  selectedItems: Set<SelectedItem>
-  onSelectItem: (item: SelectedItem) => void
-  t: (key: string) => string
-}
-
-function MobileExtensionCommandsList({
-  extension,
-  selectedItems,
-  onSelectItem,
-  t,
-}: MobileExtensionCommandsListProps) {
-  const commands = extension.commands || []
-
-  if (commands.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
-        {t('extensions:noCommands') || 'No commands available'}
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-4 space-y-3">
-      {commands.map((cmd: ExtensionCommandDescriptor) => {
-        const itemKey = `extension-command:${extension.id}:${cmd.id}` as SelectedItem
-        const isSelected = selectedItems.has(itemKey)
-
-        return (
-          <button
-            key={cmd.id}
-            type="button"
-            onClick={() => onSelectItem(itemKey)}
-            className={cn(
-              'w-full text-left transition-colors duration-150',
-              'group relative rounded-lg border p-4',
-              isSelected
-                ? 'bg-muted border-border'
-                : 'bg-card border-border active:bg-accent'
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
-                isSelected
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
-              )}>
-                <Check className={cn(
-                  'h-4 w-4',
-                  isSelected ? 'opacity-100' : 'opacity-0'
-                )} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={cn(
-                  'text-base font-medium truncate',
-                  isSelected ? 'text-foreground' : 'text-foreground'
-                )}>
-                  {cmd.display_name || cmd.id}
-                </div>
-                <div className="text-sm text-muted-foreground truncate">
-                  {cmd.description || cmd.id}
-                </div>
-              </div>
-              <Zap className={cn(
-                'h-5 w-5 shrink-0',
-                isSelected ? 'text-warning' : 'text-muted-foreground'
-              )} />
-            </div>
-          </button>
-        )
-      })}
-    </div>
   )
 }
 

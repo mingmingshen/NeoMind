@@ -14,24 +14,6 @@ export { DualModeSourceField } from './DualModeSourceField'
 export type { DualModeSourceFieldProps, DualModeInputType } from './DualModeSourceField'
 
 export { ConfigSection } from './ConfigSection'
-export { DataSourceConfigSection } from './DataSourceConfigSection'
-export {
-  ValueConfig,
-  RangeConfig,
-  SizeConfig,
-  ColorConfig,
-  MultiColorConfig,
-  LabelConfig,
-  BooleanConfig,
-  SelectConfig,
-  TextContentConfig,
-  OrientationConfig,
-  AnimationConfig,
-  type SizeOption,
-  type BooleanOption,
-  type SelectOption,
-  type Orientation,
-} from './UIConfigSections'
 export { ConfigRenderer } from './ConfigRenderer'
 export { ComponentConfigDialog } from './ComponentConfigDialog'
 export type { ComponentConfigDialogProps } from './ComponentConfigDialog'
@@ -40,27 +22,19 @@ export type { ComponentConfigDialogProps } from './ComponentConfigDialog'
 export { ValueMapEditor } from './ValueMapEditor'
 export type { ValueStateMapping, LEDState } from './ValueMapEditor'
 
-export {
-  registerComponentConfig,
-  getComponentConfig,
-  createDataDisplayConfig,
-  createProgressConfig,
-  createControlConfig,
-  createIndicatorConfig,
-  createContentConfig,
-  createChartConfig,
-  type ComponentConfigSchema,
-  type DataSourceSection,
-  type ValueSection,
-  type RangeSection,
-  type SizeSection,
-  type ColorSection,
-  type MultiColorSection,
-  type LabelSection,
-  type BooleanSection,
-  type SelectSection,
-  type TextSection,
-  type OrientationSection,
-  type AnimationSection,
-  type CustomSection,
+export type {
+  ComponentConfigSchema,
+  DataSourceSection,
+  ValueSection,
+  RangeSection,
+  SizeSection,
+  ColorSection,
+  MultiColorSection,
+  LabelSection,
+  BooleanSection,
+  SelectSection,
+  TextSection,
+  OrientationSection,
+  AnimationSection,
+  CustomSection,
 } from './ComponentConfigBuilder'
