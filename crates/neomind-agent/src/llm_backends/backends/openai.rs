@@ -674,11 +674,10 @@ impl CloudRuntime {
                     e.into_inner()
                 })
                 .record_failure();
-            return Err(LlmError::Generation(format!(
-                "API error {}: {}",
-                status.as_u16(),
-                body
-            )));
+            return Err(LlmError::Api {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         let chat_response: ChatCompletionResponse =
@@ -816,11 +815,10 @@ impl CloudRuntime {
                     e.into_inner()
                 })
                 .record_failure();
-            return Err(LlmError::Generation(format!(
-                "Anthropic API error {}: {}",
-                status.as_u16(),
-                body
-            )));
+            return Err(LlmError::Api {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         // Check if the response is an error payload wrapped in HTTP 200
@@ -837,11 +835,10 @@ impl CloudRuntime {
                         e.into_inner()
                     })
                     .record_failure();
-                return Err(LlmError::Generation(format!(
-                    "Anthropic API error (HTTP {}): {}",
-                    status.as_u16(),
-                    body
-                )));
+                return Err(LlmError::Api {
+                    status: status.as_u16(),
+                    body,
+                });
             }
         }
 
@@ -1010,11 +1007,10 @@ impl CloudRuntime {
                     if !status.is_success() {
                         let body = response.text().await.unwrap_or_default();
                         let _ = tx
-                            .send(Err(LlmError::Generation(format!(
-                                "API error {}: {}",
-                                status.as_u16(),
-                                body
-                            ))))
+                            .send(Err(LlmError::Api {
+                                status: status.as_u16(),
+                                body,
+                            }))
                             .await;
                         return;
                     }
@@ -1232,11 +1228,10 @@ impl CloudRuntime {
                     if !status.is_success() {
                         let body = response.text().await.unwrap_or_default();
                         let _ = tx
-                            .send(Err(LlmError::Generation(format!(
-                                "Anthropic API error {}: {}",
-                                status.as_u16(),
-                                body
-                            ))))
+                            .send(Err(LlmError::Api {
+                                status: status.as_u16(),
+                                body,
+                            }))
                             .await;
                         return;
                     }
