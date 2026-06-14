@@ -30,7 +30,6 @@ export interface UseDashboardRealtimeParams {
   devicesRef: MutableRefObject<Device[]>
   fetchDashboards: () => Promise<void>
   fetchDevices: () => Promise<void>
-  fetchDeviceTypes: () => Promise<void>
   fetchDevicesCurrentBatch: (deviceIds: string[], signal?: AbortSignal) => Promise<void>
 }
 
@@ -44,7 +43,6 @@ export function useDashboardRealtime(params: UseDashboardRealtimeParams): void {
     devicesRef,
     fetchDashboards,
     fetchDevices,
-    fetchDeviceTypes,
     fetchDevicesCurrentBatch,
   } = params
 

@@ -414,7 +414,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     devicesRef,
     fetchDashboards,
     fetchDevices,
-    fetchDeviceTypes,
     fetchDevicesCurrentBatch,
   })
 

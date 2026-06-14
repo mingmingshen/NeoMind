@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { textNano } from '@/design-system/tokens/typography'
 import type { MetricDefinition } from '@/types'
+import { ItemBadge } from '../shared'
 
 interface MobileMetricsListProps {
   device: any
@@ -13,19 +13,6 @@ interface MobileMetricsListProps {
   selectedItems: Set<string>
   onSelectItem: (item: string) => void
   t: (key: string) => string
-}
-
-function _ItemBadge({ itemType, t }: { itemType: 'template' | 'virtual' | 'info'; t: (key: string) => string }) {
-  const config = {
-    template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-    virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
-    info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
-  }[itemType]
-  return (
-    <span className={cn('px-1.5 py-0.5 rounded-[3px] border shrink-0', config.className)} style={{ fontSize: '10px' }}>
-      {config.label}
-    </span>
-  )
 }
 
 export function MobileMetricsList({
@@ -135,8 +122,6 @@ export function MobileMetricsList({
     return String(val)
   }
 
-  const ItemBadge = (props: { itemType: 'template' | 'virtual' | 'info' }) => <_ItemBadge {...props} t={t} />
-
   return (
     <div className="p-4 space-y-3">
       {items.map(item => (
@@ -170,7 +155,7 @@ export function MobileMetricsList({
             <div className="flex-1 min-w-0 space-y-2">
               {/* Header */}
               <div className="flex items-center gap-2 flex-wrap">
-                <ItemBadge itemType={item.itemType} />
+                <ItemBadge itemType={item.itemType} t={t} />
                 <span className={cn(
                   'text-base font-medium',
                   item.isSelected ? 'text-foreground' : 'text-foreground'

@@ -7,7 +7,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database, MapPin, Activity, Puzzle, Workflow } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, Loader2, Database, MapPin, Activity, Puzzle, Workflow } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -19,10 +19,11 @@ import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { api } from '@/lib/api'
-import type { Extension, ExtensionCommandDescriptor, UnifiedDataSourceInfo } from '@/types'
+import type { ExtensionCommandDescriptor, UnifiedDataSourceInfo } from '@/types'
 import { findDevice } from '@/lib/deviceUtils'
 import { type CategoryType, getDeviceInfoProperties, getSystemMetrics, getCategories, normalizeAllowedTypes } from './categories'
 import { MobileItemSelector } from './mobile'
+import { ItemBadge, DataIndicator } from './shared'
 
 // ============================================================================
 // Types
@@ -38,43 +39,6 @@ export interface UnifiedDataSourceConfigProps {
   disabled?: boolean
   /** Suggested mode for the data source (e.g. 'latest' for LED, 'timeseries' for charts) */
   suggestedMode?: DataSourceMode
-}
-
-// ============================================================================
-// Shared sub-components (module-level to prevent remounting)
-// ============================================================================
-
-function _ItemBadge({ itemType, t }: { itemType: 'template' | 'virtual' | 'info'; t: (key: string) => string }) {
-  const config = {
-    template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-    virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
-    info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
-  }[itemType]
-  return (
-    <span className={cn('px-1.5 py-0.5', textNano, 'font-medium rounded-[3px] border shrink-0', config.className)}>
-      {config.label}
-    </span>
-  )
-}
-
-function _DataIndicator({ hasData, count, t }: { hasData: boolean | null; count?: number; t: (key: string) => string }) {
-  if (hasData === true) {
-    return (
-      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success-light border border-success-light" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
-        <Circle className="h-1.5 w-1.5 fill-success text-success" />
-        <span className={cn(textNano, "text-success font-medium")}>{count ?? 0}</span>
-      </div>
-    )
-  }
-  if (hasData === false) {
-    return (
-      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted-30 border border-muted" title={t('dataSource.noHistoricalData')}>
-        <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
-        <span className={cn(textNano, "text-muted-foreground")}>{t('dataSource.noData')}</span>
-      </div>
-    )
-  }
-  return null
 }
 
 // ============================================================================
@@ -769,11 +733,6 @@ export function UnifiedDataSourceConfig({
         return String(val)
       }
 
-      // Badge component for item type (uses module-level _ItemBadge)
-      const ItemBadge = (props: { itemType: 'template' | 'virtual' | 'info' }) => <_ItemBadge {...props} t={t} />
-
-      // Data indicator component (uses module-level _DataIndicator)
-      const DataIndicator = (props: { hasData: boolean | null; count?: number }) => <_DataIndicator {...props} t={t} />
 
       return (
         <div className="flex flex-col h-full">
@@ -826,14 +785,14 @@ export function UnifiedDataSourceConfig({
                   <div className="flex-1 min-w-0 space-y-0.5">
                     {/* Header row */}
                     <div className="flex items-center gap-1.5">
-                      <ItemBadge itemType={item.itemType} />
+                      <ItemBadge itemType={item.itemType} t={t} />
                       <span className={cn(
                         'text-sm truncate',
                         item.isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>{item.propertyDisplayName}</span>
                       <div className="flex-1" />
                       {item.hasData !== null && (
-                        <DataIndicator hasData={item.hasData} count={item.dataPointCount} />
+                        <DataIndicator hasData={item.hasData} count={item.dataPointCount} t={t} />
                       )}
                       {item.hasData === null && checkingData && (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
