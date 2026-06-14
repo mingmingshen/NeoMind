@@ -1,8 +1,24 @@
 # Agent LLM Error Surfacing — Design Spec
 
 **Date:** 2026-06-14
-**Status:** Approved (brainstormed)
+**Status:** Approved (brainstormed) — Rev 2 (post spec-review)
 **Author:** Claude + shenmingming
+
+> **Rev 2 changes** address spec-reviewer findings:
+> - Inner LLM functions return `Result<_, LlmError>` to preserve structured error (was lost via `NeoMindError::Llm(String)` conversion)
+> - Scheduler uses existing `Result<AgentExecutionRecord, NeoMindError>` shape, checks `record.status == Partial` in `Ok` arm (no new `Outcome` enum)
+> - `auto_paused: bool` added to `ScheduledTask` (avoids batch-loading agents each tick)
+> - Reuse existing `consecutive_failures` for transient retry; add `permanent_failure_count` for auto-pause counter (avoids parallel-counter confusion)
+> - Permanent errors bypass existing retry/backoff logic (retrying 403 is pointless)
+> - Frontend token corrected: `text-primary-foreground` per DESIGN_SPEC.md
+> - Partial executions do NOT set `AgentStatus::Error` (rule-based still ran) — requires modifying the `Completed → Active, else → Error` guard at mod.rs:942-946
+> - Auto-pause Message rate-limited per agent_id (60s cooldown)
+>
+> **Rev 3 changes** address round-2 spec-review findings:
+> - Explicit code change shown for mod.rs:942-946 guard (was wrongly claimed as already-safe)
+> - Field name in section 4.8 corrected to `permanent_failure_count` (was leftover `consecutive_permanent_failures`)
+> - `Ok(None)` path no longer hard-fails — degrades instead (consistent with design philosophy; avoids breaking change when backend deleted)
+> - `message_dedup` field on `AgentScheduler` explicitly noted as new
 
 ## 1. Problem
 
@@ -128,6 +144,16 @@ pub(crate) enum AnalysisResult {
 
 ### 4.4 Analyzer Branch Logic
 
+**Critical implementation note**: `NeoMindError::Llm(String)` currently stringifies the underlying `LlmError` at every callsite (e.g., analyzer.rs:272-274 uses `format!("LLM generation failed: {}", e)`). By the time the error reaches `analyze_situation_with_intent`, the structured `LlmError` is **lost** — `is_permanent()` cannot be called on a `NeoMindError`.
+
+**Fix**: Inner LLM functions return `Result<_, LlmError>` and only convert at the outer `analyze_situation_with_intent` boundary. Update signatures:
+
+- `analyze_with_llm` (analyzer.rs:143) → `Result<_, LlmError>` instead of `Result<_, NeoMindError>`
+- `execute_with_tools` (mod.rs:424) → `Result<_, LlmError>` for the LLM-specific failure path
+- `try_in_process_dispatch` paths unchanged (no LLM involvement)
+
+Inside these functions, remove the `?` conversions that wrap as `NeoMindError::Llm(String)` and let `LlmError` propagate naturally.
+
 `analyze_situation_with_intent` (analyzer.rs:42-135) becomes:
 
 ```rust
@@ -136,6 +162,7 @@ pub(crate) async fn analyze_situation_with_intent(
     parsed_intent: Option<&ParsedIntent>, execution_id: &str,
     invocation_input: Option<&AgentInput>,
 ) -> AgentResult<AnalysisResult> {
+    use neomind_core::llm::backend::LlmError;
     let mut degraded_reason: Option<String> = None;
 
     match self.get_llm_runtime_for_agent(agent).await {
@@ -143,16 +170,20 @@ pub(crate) async fn analyze_situation_with_intent(
             if self.should_use_tools(agent, &llm) {
                 match self.execute_with_tools(...).await {
                     Ok((dp, er)) => return Ok(AnalysisResult::Free { decision_process: dp, execution_result: er }),
-                    Err(e) if e.is_permanent() => return Err(e.into()),
+                    Err(e) if e.is_permanent() => {
+                        return Err(NeoMindError::Llm(format!("{}", e)));
+                    }
                     Err(e) => {
                         tracing::warn!(error = %e, "transient tool error, will try direct LLM");
                         degraded_reason = Some(format!("LLM 工具调用瞬时失败: {}", e));
                     }
                 }
             }
-            match self.analyze_with_llm(...).await {
+            match self.analyze_with_llm(...).await {  // Now returns Result<_, LlmError>
                 Ok(r) => return Ok(AnalysisResult::Focused { ..r, degraded_reason: None }),
-                Err(e) if e.is_permanent() => return Err(e.into()),
+                Err(e) if e.is_permanent() => {
+                    return Err(NeoMindError::Llm(format!("{}", e)));
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "transient LLM error, degrading to rule-based");
                     degraded_reason = Some(format!("LLM 瞬时错误: {}", e));
@@ -160,16 +191,27 @@ pub(crate) async fn analyze_situation_with_intent(
             }
         }
         Ok(None) => {
-            // Only fail hard if user explicitly bound a backend that's now missing.
-            // Rule-only agents (no llm_backend_id) proceed without LLM — backwards compat.
+            // LLM runtime unavailable. This could be because:
+            //  - Rule-only agent (no llm_backend_id) — normal, no degradation
+            //  - Backend was deleted or unset — degrade for visibility
+            //  - Default runtime not initialized — degrade for visibility
             if agent.llm_backend_id.is_some() {
-                return Err(NeoMindError::Validation(format!(
-                    "Agent '{}' 绑定的 LLM 后端不可用", agent.name
-                )));
+                // Agent expected an LLM but runtime is gone — degrade (don't hard-fail).
+                // This avoids breaking behavior change when user deletes a backend:
+                // previously agents silently fell back to rule-based; now they mark
+                // themselves Partial so the user knows LLM isn't running.
+                degraded_reason = Some(format!(
+                    "Agent '{}' 配置了 LLM 后端但运行时不可用（可能已被删除）",
+                    agent.name
+                ));
             }
             // Rule-only agent: proceed normally, no degradation flag
         }
-        Err(e) => return Err(e),
+        Err(e) => {
+            // Backend store read error — transient (storage hiccup)
+            tracing::warn!(error = %e, "LLM runtime load failed, degrading");
+            degraded_reason = Some(format!("LLM 后端加载失败: {}", e));
+        }
     }
 
     // Transient fallback path
@@ -188,48 +230,85 @@ pub(crate) async fn analyze_situation_with_intent(
 }
 ```
 
+**Note on `Ok(None)` for `get_llm_runtime_for_agent` errors**: previously these fell through to rule-based silently. Now we treat them as transient (storage read errors are typically transient) and set `degraded_reason` — the agent will be marked Partial instead of Completed, surfacing the issue without hard-failing.
+
 ### 4.5 execute_internal Wiring
 
-`crates/neomind-agent/src/ai_agent/executor/mod.rs:1184-1192`:
+`crates/neomind-agent/src/ai_agent/executor/mod.rs` currently destructures `AnalysisResult::Focused` by name (around line 1260-1268). Update the destructure to bind `degraded_reason`:
 
 ```rust
-let analysis = self.analyze_situation_with_intent(...).await?;
+AnalysisResult::Focused {
+    situation_analysis,
+    reasoning_steps,
+    decisions,
+    conclusion,
+    degraded_reason,  // NEW binding
+} => {
+    // ... existing post-analysis steps (execute_decisions, report, memory update) ...
 
-match analysis {
-    AnalysisResult::Focused { degraded_reason: Some(reason), .. } => {
-        // Mark execution as Partial + populate error field
+    // After all post-analysis steps, apply status override if degraded
+    if let Some(reason) = &degraded_reason {
         execution_record.status = ExecutionStatus::Partial;
-        execution_record.error = Some(reason);
-        // Still update memory with rule-based decisions (existing path)
+        execution_record.error = Some(reason.clone());
     }
-    AnalysisResult::Focused { degraded_reason: None, .. } => {
-        // Normal Completed path (existing)
-    }
-    AnalysisResult::Free { .. } => { /* existing */ }
 }
-
-// Err bubbles up to outer handler which already writes success:false journal
-// entry (per MEMORY.md "Error path journal write"). We additionally:
-//   1. Set execution_record.status = Failed
-//   2. Set execution_record.error = format!("{}", e)
-//   3. Notify scheduler of permanent failure (see 4.6)
 ```
 
-The outer `Err(e)` branch (mod.rs around line 1380+) is extended to record `Failed` status and propagate the error to the scheduler hook.
+**CRITICAL — also modify the AgentStatus guard at `mod.rs:942-946`**:
+
+Current code (WRONG for Partial):
+```rust
+let new_status = if record.status == ExecutionStatus::Completed {
+    neomind_storage::AgentStatus::Active
+} else {
+    neomind_storage::AgentStatus::Error  // ← Partial hits this branch
+};
+```
+
+Change to:
+```rust
+let new_status = if record.status == ExecutionStatus::Completed
+    || record.status == ExecutionStatus::Partial {
+    neomind_storage::AgentStatus::Active
+} else {
+    neomind_storage::AgentStatus::Error  // Only Failed/Cancelled
+};
+```
+
+This explicitly keeps `AgentStatus::Active` for Partial executions — the agent is still functionally working (rule-based analysis ran), just degraded. Only `Failed` and `Cancelled` should trigger `AgentStatus::Error`.
+
+The status override happens **after** existing post-analysis steps so that:
+1. Memory update still runs with rule-based decisions (learning continues)
+2. The existing `if record.status == Failed` guard at mod.rs:945 (for `AgentStatus::Error` assignment) doesn't accidentally trigger on Partial
+3. Notifications/reports still generate from rule-based decisions
+
+The outer `Err(e)` branch (mod.rs outermost error handler) is extended to ensure:
+1. `execution_record.status = Failed`
+2. `execution_record.error = Some(format!("{}", e))`
+3. Existing journal write of `success: false` entry (already in place per MEMORY.md)
+4. Scheduler hook receives the failure for counter increment (see 4.6)
 
 ### 4.6 Scheduler Auto-Pause
+
+**Existing field conflict**: `AiAgent` (`agents.rs:100-102`) already has `consecutive_failures: u32` used by scheduler retry logic (lines 444-484) for exponential backoff. To avoid parallel-counter confusion:
+
+- **Keep** `consecutive_failures` for **transient** retry/backoff semantics
+- **Add** `permanent_failure_count: u32` for permanent error auto-pause counter
+- **Add** `auto_paused: bool` for pause flag
 
 **New fields on `Agent`** (`crates/neomind-storage/src/agents.rs`):
 
 ```rust
 pub struct Agent {
-    // ...existing fields...
-    /// Counter of consecutive permanent failures (reset on any success).
-    /// Used by scheduler to trigger auto-pause.
-    #[serde(default)]
-    pub consecutive_permanent_failures: u32,
+    // ...existing fields including consecutive_failures: u32...
 
-    /// Set to true by scheduler after N consecutive permanent failures.
+    /// Counter of consecutive PERMANENT failures (4xx auth/quota, model
+    /// not found, etc.). Reset on any success. Drives auto-pause.
+    /// Distinct from `consecutive_failures` which tracks transient retry.
+    #[serde(default)]
+    pub permanent_failure_count: u32,
+
+    /// Set to true by scheduler after `permanent_failure_count` >= 3.
     /// Cleared by any successful execution (manual trigger or scheduled).
     /// When true, scheduled + event triggers are skipped; manual triggers
     /// still execute (so user can verify the fix).
@@ -238,67 +317,170 @@ pub struct Agent {
 }
 ```
 
-**Scheduler skip logic** (`crates/neomind-agent/src/ai_agent/scheduler.rs`):
+**Scheduler interaction with existing retry logic** (scheduler.rs:444-484):
+
+The existing retry logic increments `consecutive_failures` and applies exponential backoff for ALL failures. This is wrong for permanent errors (retrying 403 is pointless). Update the retry decision:
 
 ```rust
-// In task selection (around line 282-300):
-if task.agent.auto_paused {
-    // Skip scheduled/event triggers. Manual API trigger bypasses scheduler
-    // entirely (calls executor directly), so auto_pause doesn't block recovery.
+// Inside scheduler.rs retry logic (around line 444):
+let is_permanent = matches!(
+    &result,
+    Err(e) if is_permanent_llm_error(e)  // helper to extract from NeoMindError::Llm(String)
+);
+
+if is_permanent {
+    // Permanent error: skip retry, increment permanent counter, maybe auto-pause
+    agent.consecutive_failures = 0;  // reset transient counter
+    agent.permanent_failure_count = agent.permanent_failure_count.saturating_add(1);
+
+    if agent.permanent_failure_count >= 3 && !agent.auto_paused {
+        agent.auto_paused = true;
+        // Mark ScheduledTask.auto_paused for fast path skip
+        if let Some(task) = self.tasks.get(&agent_id) {
+            task.write().await.auto_paused = true;
+        }
+        // Emit Message (rate-limited per agent_id, see below)
+        self.emit_auto_pause_message(&agent).await;
+    }
+} else {
+    // Transient error: existing retry/backoff path (unchanged)
+    agent.consecutive_failures += 1;
+    // ... existing backoff logic ...
+}
+```
+
+**Add `auto_paused: bool` to `ScheduledTask`** (`scheduler.rs:96-111`):
+
+```rust
+pub struct ScheduledTask {
+    // ...existing fields...
+    /// Cached `agent.auto_paused` flag for O(1) skip in selection loop.
+    /// Synced when task is registered, updated, or when scheduler sets auto_paused.
+    pub auto_paused: bool,
+}
+```
+
+Sync points:
+- `schedule_agent` (line 196): initialize `auto_paused = agent.auto_paused`
+- After execution outcome modifies `agent.auto_paused`: update the cached task field
+- Optional: periodic reconcile loop (e.g., every 60s) reads agent store and resyncs
+
+**Task selection skip** (`scheduler.rs:282-300`):
+
+```rust
+// Inside the task selection loop (no need to load agents here):
+if task.auto_paused {
     skipped.push((task_id, task.next_execution, "auto_paused"));
     continue;
 }
 ```
 
-**Failure tracking** (after execution completes in scheduler):
+**Partial execution handling** (inside `Ok(record)` arm at scheduler.rs:397+):
 
 ```rust
-match execution_outcome {
-    Outcome::Failed(err) if err.is_permanent_llm_error() => {
-        agent.consecutive_permanent_failures += 1;
-        if agent.consecutive_permanent_failures >= 3 && !agent.auto_paused {
-            agent.auto_paused = true;
-            // Push critical Message via existing channel system
-            self.emit_message(Message {
-                source_type: "system".into(),
-                category: "agent_paused".into(),
-                severity: Severity::Critical,
-                content: format!(
-                    "Agent '{}' 已连续 3 次永久错误，自动暂停。最后错误: {}\n\
-                     修复后请手动触发一次执行以恢复。",
-                    agent.name, err
-                ),
-                metadata: serde_json::json!({"agent_id": agent.id}),
-                ..
-            }).await;
+match result {
+    Ok(record) => {
+        // Reset transient failure counter on any non-failure outcome
+        agent.consecutive_failures = 0;
+
+        if record.status == ExecutionStatus::Partial {
+            // Degrade — don't increment permanent counter (rule-based still ran)
+            // Don't reset auto_paused either — need clean success to recover
+            tracing::info!(
+                agent_id = %agent_id,
+                "Agent execution degraded (Partial), counters unchanged"
+            );
+        } else if record.status == ExecutionStatus::Completed {
+            // Clean success — reset all counters and clear auto_paused
+            agent.permanent_failure_count = 0;
+            agent.auto_paused = false;
+            if let Some(task) = self.tasks.get(&agent_id) {
+                task.write().await.auto_paused = false;
+            }
         }
+        // ... existing record storage ...
     }
-    Outcome::Failed(_) => {
-        // Transient failure — don't increment counter
-    }
-    Outcome::Partial(_) => {
-        // Degrade — don't increment counter (rule-based still ran)
-    }
-    Outcome::Success => {
-        // Clear failure state on any success
-        agent.consecutive_permanent_failures = 0;
-        agent.auto_paused = false;
+    Err(e) => {
+        let is_permanent = is_permanent_llm_error(&e);
+        if is_permanent {
+            // ... permanent error path as above ...
+        } else {
+            // ... existing transient retry path ...
+        }
     }
 }
 ```
 
-**Recovery flow (no UI button):**
+**Helper to extract LlmError from `NeoMindError::Llm(String)`**:
+
+Since `NeoMindError::Llm(String)` loses structured info, but the error message includes the status code (e.g., `"API error 403: ..."`), classify with a regex fallback:
+
+```rust
+fn is_permanent_llm_error(e: &NeoMindError) -> bool {
+    let NeoMindError::Llm(msg) = e else { return false; };
+    // The error string format from LlmError::Api display: "API error {status}: {body}"
+    // Conservative match: only treat clearly-permanent statuses as permanent.
+    // Falls back to transient for ambiguous cases (safer).
+    if let Some(status) = extract_status_from_message(msg) {
+        return status >= 400 && status < 500 && status != 429;
+    }
+    // Also detect by keyword for non-HTTP errors
+    msg.contains("Backend unavailable")
+        || msg.contains("Model not found")
+        || msg.contains("Context overflow")
+        || msg.contains("quota")
+        || msg.contains("exhausted")
+        || msg.contains("AllocationQuota")
+        || msg.contains("unauthorized")
+        || msg.contains("invalid api key")
+}
+```
+
+This is a bridge solution. Long-term: change `NeoMindError::Llm(String)` to `NeoMindError::Llm(LlmError)` to preserve structure end-to-end. Tracked as a follow-up.
+
+**Rate-limited auto-pause Message** (avoid spam if many agents fail simultaneously):
+
+Add new field to `AgentScheduler` (`scheduler.rs:113-131`):
+
+```rust
+pub struct AgentScheduler {
+    // ...existing fields...
+    /// Dedup window for auto-pause Messages: agent_id → last emit timestamp.
+    /// Prevents spamming channels if many agents fail simultaneously.
+    message_dedup: Arc<RwLock<HashMap<String, i64>>>,
+}
+
+async fn emit_auto_pause_message(&self, agent: &AiAgent) {
+    // Per-agent_id cooldown (60s), same pattern as event_trigger dedup
+    let key = format!("auto_pause:{}", agent.id);
+    let now = chrono::Utc::now().timestamp();
+    {
+        let dedup = self.message_dedup.read().await;
+        if let Some(&last) = dedup.get(&key) {
+            if now - last < 60 {
+                return;  // Already notified recently
+            }
+        }
+    }
+    self.message_dedup.write().await.insert(key, now);
+    // ... emit Message via existing channel system ...
+}
+```
+
+**Recovery flow (no UI button)**:
 
 1. User sees Message: "Agent X 已连续 3 次永久错误，自动暂停"
 2. User fixes root cause (top up quota, fix API key, change model)
 3. User clicks existing "Run now" button on agent detail page
-4. "Run now" bypasses scheduler → calls executor directly → executes
-5. If success: `consecutive_permanent_failures = 0`, `auto_paused = false`
+4. "Run now" bypasses scheduler → calls executor directly → executes (auto_paused check skipped for manual)
+5. If success: scheduler sees `ExecutionStatus::Completed`, resets `permanent_failure_count = 0`, `auto_paused = false`
 6. Agent resumes normal scheduling
 
 If "Run now" still fails, user gets another normal Failed execution record and can iterate.
 
 ### 4.7 Frontend Changes
+
+**Backend already has `Partial`** in `ExecutionStatus` (`agents.rs:375-384`) — no backend enum change needed. Frontend-only work.
 
 **`web/src/types/index.ts:2065`** — add Partial to ExecutionStatus:
 
@@ -324,32 +506,65 @@ Add `partial` key to i18n locale files (`web/src/i18n/locales/{en,zh}/agents.jso
 
 ```tsx
 {execution.status === 'Partial' && execution.error && (
-    <div className="mb-4 p-3 rounded-lg border bg-warning-light border-warning text-warning-foreground">
-        <div className="flex items-center gap-2 font-medium">
+    <div className="mb-4 p-3 rounded-lg border bg-warning-light border-warning">
+        <div className="flex items-center gap-2 font-medium text-warning">
             <AlertCircle className="h-4 w-4" />
             {t('agents:execution.degradedBanner')}
         </div>
-        <p className="text-sm mt-1 opacity-90">{execution.error}</p>
+        <p className="text-sm mt-1 text-muted-foreground">{execution.error}</p>
     </div>
 )}
 {execution.status === 'Failed' && execution.error && (
-    <div className="mb-4 p-3 rounded-lg border bg-error-light border-error text-error-foreground">
-        <div className="flex items-center gap-2 font-medium">
+    <div className="mb-4 p-3 rounded-lg border bg-error-light border-error">
+        <div className="flex items-center gap-2 font-medium text-error">
             <XCircle className="h-4 w-4" />
             {t('agents:execution.failedBanner')}
         </div>
-        <p className="text-sm mt-1 opacity-90 font-mono break-words">{execution.error}</p>
+        <p className="text-sm mt-1 text-muted-foreground font-mono break-words">{execution.error}</p>
     </div>
 )}
 ```
 
-(Uses design tokens per DESIGN_SPEC.md — no hardcoded Tailwind palette colors.)
+**Token note**: Per DESIGN_SPEC.md, text on colored backgrounds should use `text-primary-foreground`. For inline colored icons/labels, use the semantic color directly (`text-warning`, `text-error`). The `*-foreground` suffixed tokens (`text-warning-foreground`, `text-error-foreground`) are not in the standard set — using `text-muted-foreground` for body text on tinted backgrounds is the established pattern. Verify final classes against existing components in the codebase.
+
+**`AiAgent` type extension** (`web/src/types/index.ts`):
+
+```typescript
+export interface AiAgent {
+    // ...existing fields...
+    permanent_failure_count?: number;
+    auto_paused?: boolean;
+}
+```
+
+**Agent detail page** — show auto-paused banner:
+
+```tsx
+{agent.auto_paused && (
+    <div className="mb-4 p-3 rounded-lg border bg-error-light border-error">
+        <div className="flex items-center gap-2 font-medium text-error">
+            <PauseCircle className="h-4 w-4" />
+            {t('agents:detail.autoPausedBanner', {
+                count: agent.permanent_failure_count,
+                defaultValue: '已自动暂停（连续 {{count}} 次永久错误）'
+            })}
+        </div>
+        <p className="text-sm mt-1 text-muted-foreground">
+            {t('agents:detail.autoPausedHint', {
+                defaultValue: '修复后点击"立即运行"，成功后将自动恢复调度'
+            })}
+        </p>
+    </div>
+)}
+```
+
+The existing "立即运行 / Run now" button already exists and bypasses scheduler — no new UI affordance needed for recovery.
 
 **No changes to Message/channel UI** — existing components already render messages from any source.
 
 ### 4.8 Data Migration
 
-None. redb is schema-less. New fields `consecutive_permanent_failures` and `auto_paused` use `#[serde(default)]`, so loading legacy agent records yields `0` and `false`.
+None. redb is schema-less. New fields `permanent_failure_count` and `auto_paused` on `Agent` use `#[serde(default)]`, so loading legacy agent records yields `0` and `false`. The new `auto_paused: bool` on `ScheduledTask` is transient (rebuilt on each scheduler start from agent store).
 
 ## 5. Testing
 
@@ -383,13 +598,17 @@ None. redb is schema-less. New fields `consecutive_permanent_failures` and `auto
 
 ## 6. Build Sequence
 
-1. **LlmError variant + is_permanent()** — pure type change, no behavior change. CI must pass.
-2. **Cloud backend updates** — replace `Generation(format!(...))` with `Api { status, body }`. CI must pass (error messages slightly change format).
-3. **AnalysisResult + analyzer branch logic** — add degraded_reason, change fallthrough paths. Integration test for each branch.
-4. **execute_internal wiring** — propagate degraded_reason to ExecutionRecord. Status now varies.
-5. **Scheduler auto-pause** — add Agent fields, skip logic, counter, Message emission.
-6. **Frontend Partial status + banners + i18n** — visual polish, can ship behind feature flag if needed.
-7. **Documentation update** — add note to `docs/guides/en/03-agent.md` about auto-pause behavior.
+1. **LlmError variant + is_permanent()** — pure type change, no behavior change. CI must pass. (`crates/neomind-core/src/llm/backend.rs`)
+2. **Cloud backend updates** — replace `Generation(format!("API error N: ..."))` with `Api { status, body }`. ~10 sites across `openai.rs` and `ollama.rs`. CI must pass (error message format slightly changes).
+3. **Inner LLM function signatures** — `analyze_with_llm` and `execute_with_tools` return `Result<_, LlmError>` instead of `Result<_, NeoMindError>`. Boundary conversion happens in `analyze_situation_with_intent`. This is the most invasive step but isolated to 2-3 files.
+4. **AnalysisResult extension + analyzer branch logic** — add `degraded_reason`, change fallthrough paths. Integration tests for permanent-fail, transient-degrade, rule-only-passthrough, runtime-load-fail.
+5. **execute_internal wiring** — propagate `degraded_reason` to `ExecutionRecord.status = Partial` + `error` field. Verify `AgentStatus::Error` guard doesn't trigger for Partial.
+6. **Helper `is_permanent_llm_error(&NeoMindError)`** — regex-based extraction (bridge solution) for scheduler. Add unit tests for all common error message patterns.
+7. **Scheduler auto-pause** — add `permanent_failure_count`/`auto_paused` to Agent + `auto_paused` to ScheduledTask. Implement skip logic, counter, retry-permanent-bypass, rate-limited Message emission.
+8. **Frontend Partial status + banners + agent detail auto-paused banner + i18n** — visual polish only, last.
+9. **Documentation update** — add note to `docs/guides/en/03-agent.md` about auto-pause behavior and recovery flow.
+
+Step 1-2 ship first as a no-behavior-change refactor (zero risk). Steps 3-5 ship together as the core behavior change (most risk). Steps 6-7 ship as scheduler integration. Step 8-9 are polish.
 
 ## 7. Open Questions Resolved
 
@@ -412,3 +631,12 @@ None. redb is schema-less. New fields `consecutive_permanent_failures` and `auto
 
 - **Risk**: Frontend Partial status might confuse users who haven't seen the term before.
   **Mitigation**: Banner text explains "已降级为规则分析" with the reason. i18n labels are descriptive.
+
+- **Risk** (added Rev 2): Changing `analyze_with_llm` / `execute_with_tools` signatures to return `Result<_, LlmError>` is a larger refactor than initially scoped.
+  **Mitigation**: Build sequence stages this as step 3, after no-behavior-change LlmError variant work. Alternative: keep `NeoMindError::Llm(String)` and use the regex bridge (section 4.6 helper) throughout — less clean but less invasive. Decision deferred to implementation phase based on actual refactor scope.
+
+- **Risk** (added Rev 2): `is_permanent_llm_error(&NeoMindError)` regex bridge is fragile (depends on error message format).
+  **Mitigation**: Long-term fix is changing `NeoMindError::Llm(String)` → `NeoMindError::Llm(LlmError)` to preserve structure. Tracked as follow-up. The bridge has unit tests for all known message patterns.
+
+- **Risk** (added Rev 2): Cached `auto_paused: bool` on `ScheduledTask` could drift from `agent.auto_paused` if the agent is updated through non-scheduler paths.
+  **Mitigation**: All agent updates go through `executor.store().update_agent()` which triggers `schedule_agent` re-registration. Sync point is in `schedule_agent`. Optional 60s reconcile loop adds safety.
