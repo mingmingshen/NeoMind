@@ -518,15 +518,18 @@ impl AgentExecutor {
             )
             .await;
 
-        // Graceful degradation: when the tool-calling loop produced no useful
-        // results, fall back to the legacy analysis path (analyze_with_llm)
-        // which analyzes data directly without tool calling.
+        // Surface LLM failures as explicit errors.
         //
-        // Triggers:
-        // 1. LLM generation itself failed (network error, etc.)
-        // 2. LLM produced malformed/truncated tool calls that the parser
-        //    couldn't recognize — no tools were executed and the output
-        //    contains XML-like function call fragments
+        // Two failure modes:
+        // 1. `llm_generation_failed`: the LLM generate() call itself failed
+        //    (HTTP 403, timeout, network). This is a definitive failure —
+        //    the sentinel string is only set in tool_loop.rs when generate()
+        //    returns Err. Surface regardless of whether some tools ran first.
+        // 2. `has_malformed_output` + `no_tools_executed`: the LLM produced
+        //    XML-like fragments that the parser couldn't recognize, and no
+        //    tools were executed at all. Only trigger for this combination
+        //    because malformed output after successful tools might be the
+        //    LLM's legitimate final text containing XML.
         let no_tools_executed = loop_output.all_tool_results.is_empty();
         let has_malformed_output = loop_output.final_text.contains("</parameter>")
             || loop_output.final_text.contains("</function>")
@@ -534,7 +537,7 @@ impl AgentExecutor {
         let llm_generation_failed =
             loop_output.final_text == "LLM generation failed during tool execution.";
 
-        if no_tools_executed && (llm_generation_failed || has_malformed_output) {
+        if llm_generation_failed || (no_tools_executed && has_malformed_output) {
             // If we have the real LLM error, surface it. Otherwise use a generic
             // message for the malformed-output path (no LLM error captured).
             let msg = match &loop_output.last_llm_error {
@@ -548,6 +551,7 @@ impl AgentExecutor {
                 agent_id = %agent.id,
                 malformed_output = has_malformed_output,
                 has_llm_error = loop_output.last_llm_error.is_some(),
+                tools_executed = !no_tools_executed,
                 "Tool-calling failed — propagating error"
             );
             return Err(NeoMindError::Llm(msg));
