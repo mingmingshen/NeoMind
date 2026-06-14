@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { DataSource } from '@/types/dashboard'
-import { getUnifiedId, getUnifiedField, getUnifiedSource } from '@/types/dashboard'
+import { getUnifiedField, getEventDeviceId } from '@/types/dashboard'
 import type { NeoMindStore } from '@/store'
 import { useStore } from '@/store'
 import { logError } from '@/lib/errors'
@@ -152,17 +152,13 @@ export function useTelemetrySource(
         const results = await Promise.race([
           Promise.all(
             telemetrySources.map(async (ds) => {
-              let dsSourceId = getUnifiedId(ds)
               const dsMetricId = getUnifiedField(ds)
+              // getEventDeviceId returns the prefixed id ("transform:{id}", "ai:{id}")
+              // for transform/ai sources, or the bare id for devices.
+              // fetchHistoricalTelemetry uses the prefix to route to the unified
+              // telemetry endpoint (api.queryTelemetry) instead of the device endpoint.
+              const dsSourceId = getEventDeviceId(ds)
               if (!dsSourceId || !dsMetricId) return { data: [], raw: undefined }
-              // Restore prefix for transform/ai sources — fetchHistoricalTelemetry
-              // uses the prefix to route to the correct API endpoint
-              const dsSource = getUnifiedSource(ds)
-              if (dsSource === 'transform' && !dsSourceId.startsWith('transform:')) {
-                dsSourceId = `transform:${dsSourceId}`
-              } else if (dsSource === 'ai' && !dsSourceId.startsWith('ai:')) {
-                dsSourceId = `ai:${dsSourceId}`
-              }
               const includeRawPoints = ds.params?.includeRawPoints === true || ds.transform === 'raw'
               // Always prefer cache: it's 60s-bucket-aligned + 30s-TTL-protected.
               // Previous logic bypassed cache on (a) initial fetch and (b) raw/chart data,
