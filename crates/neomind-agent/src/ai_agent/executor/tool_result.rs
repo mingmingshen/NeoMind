@@ -304,6 +304,7 @@ pub(crate) fn build_tool_result(
         final_text,
         all_tool_results,
         round_data_list_raw,
+        last_llm_error: _,
     } = loop_output;
 
     // === Free mode: LLM natural language response is the primary output ===

@@ -54,6 +54,10 @@ pub(crate) struct ToolLoopOutput {
     pub(crate) all_tool_results: Vec<crate::toolkit::ToolResult>,
     /// (thought, tool_calls) per round
     pub(crate) round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
+    /// Captured LLM error if `generate()` failed during the loop.
+    /// Used by `execute_with_tools` to surface the real error cause instead
+    /// of a generic "tool-calling failed" message.
+    pub(crate) last_llm_error: Option<neomind_core::llm::backend::LlmError>,
 }
 
 /// Outcome of intra-round + cross-round deduplication.
@@ -531,14 +535,22 @@ impl AgentExecutor {
             loop_output.final_text == "LLM generation failed during tool execution.";
 
         if no_tools_executed && (llm_generation_failed || has_malformed_output) {
-            tracing::info!(
+            // If we have the real LLM error, surface it. Otherwise use a generic
+            // message for the malformed-output path (no LLM error captured).
+            let msg = match &loop_output.last_llm_error {
+                Some(e) => format!("LLM tool-calling failed: {}", e),
+                None if has_malformed_output => {
+                    "LLM tool-calling produced malformed output".to_string()
+                }
+                _ => "LLM tool-calling failed".to_string(),
+            };
+            tracing::warn!(
                 agent_id = %agent.id,
                 malformed_output = has_malformed_output,
-                "Tool-calling produced no results — falling back to direct LLM analysis"
+                has_llm_error = loop_output.last_llm_error.is_some(),
+                "Tool-calling failed — propagating error"
             );
-            return Err(NeoMindError::Llm(
-                "LLM tool-calling failed — falling back to direct analysis".to_string(),
-            ));
+            return Err(NeoMindError::Llm(msg));
         }
 
         let (decision_process, execution_result) =

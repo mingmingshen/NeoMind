@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use neomind_core::llm::backend::LlmRuntime;
+use neomind_core::llm::backend::{LlmError, LlmRuntime};
 use neomind_core::message::{Content, ContentPart, Message, MessageRole};
 use neomind_storage::AiAgent;
 
@@ -50,6 +50,7 @@ impl AgentExecutor {
         let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
         let mut round_data_list: Vec<RoundData> = Vec::new();
         let mut final_text = String::new();
+        let mut last_llm_error: Option<LlmError> = None;
         let mut step_num = 1u32;
         // Accumulate skill tool results separately — inject as concise prompt, not full history
         let mut skill_reference = String::new();
@@ -119,12 +120,14 @@ impl AgentExecutor {
                     tracing::warn!(
                         agent_id = %agent.id,
                         error = %e,
+                        permanent = e.is_permanent(),
                         round = round_num,
                         msg_count,
                         has_images,
                         model = %llm_runtime.model_name(),
-                        "LLM generation failed in tool loop — will trigger fallback to legacy path if first round"
+                        "LLM generation failed in tool loop"
                     );
+                    last_llm_error = Some(e);
                     final_text = "LLM generation failed during tool execution.".to_string();
                     break;
                 }
@@ -571,6 +574,7 @@ impl AgentExecutor {
                 .into_iter()
                 .map(|rd| (rd.thought, rd.tool_calls))
                 .collect(),
+            last_llm_error,
         }
     }
 }
