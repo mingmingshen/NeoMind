@@ -457,12 +457,6 @@ export function UnifiedDataSourceConfig({
     })
   }
 
-  // Remove a specific selected item
-  const handleRemoveItem = (ds: DataSource) => {
-    const key = dsIdentityKey(ds)
-    setSelectedDataSources(prev => prev.filter(d => dsIdentityKey(d) !== key))
-  }
-
   // Clear all selections
   const handleClearSelection = () => setSelectedDataSources([])
 
@@ -476,9 +470,6 @@ export function UnifiedDataSourceConfig({
       onChange(selectedDataSources[0])
     }
   }, [selectedDataSources, multiple])
-
-  // Get current category config
-  const categoryConfig = getCategories(t).find(c => c.id === selectedCategory)
 
   // Filter devices by search query
   const filteredDevices = useMemo(() => {
