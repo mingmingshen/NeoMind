@@ -24,7 +24,6 @@ import {
   Database,
   Rocket,
   Info,
-  HelpCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -421,10 +420,6 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                   <DropdownMenuItem onClick={() => navigate('/settings?tab=about')}>
                     <Info className="h-4 w-4 mr-2" />
                     {t('userMenu.about')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => window.open('https://github.com/camthink-ai/NeoMind', '_blank')}>
-                    <HelpCircle className="h-4 w-4 mr-2" />
-                    {t('userMenu.help')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
