@@ -32,7 +32,6 @@ import { dashboardCardBase, dashboardComponentSize } from '@/design-system/token
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
 import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer, useChartPipeline } from '../shared'
 import { isNameValueData, isNumberArray, isMultiSourceData, extractNumericValue } from '../shared'
 import {

@@ -8,7 +8,6 @@
 
 import { useRef, useMemo, memo } from 'react'
 import { cn } from '@/lib/utils'
-import { useDataSource } from '@/hooks/useDataSource'
 import { toNumberArray } from '@/design-system/utils/format'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,15 +18,9 @@ import {
 } from '@/design-system/tokens/indicator'
 
 import type { DataSourceOrList, TelemetryAggregate, TimeWindowType } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
-import { EmptyState, ErrorState } from '../shared'
+import { EmptyState, ErrorState, useChartPipeline } from '../shared'
 import type { SingleValueMappingConfig } from '@/lib/dataMapping'
-import { normalizeDataSource } from '@/types/dashboard'
-import {
-  getEffectiveAggregate,
-  getEffectiveTimeWindow,
-  timeWindowToHours,
-} from '@/lib/telemetryTransform'
+import { timeWindowToHours } from '@/lib/telemetryTransform'
 
 // Static style constants to avoid re-creation on each render
 const SVG_OVERFLOW_VISIBLE: React.CSSProperties = { overflow: 'visible' }
@@ -382,76 +375,23 @@ function SparklineComponent({
   editMode = false,
   className,
 }: SparklineProps) {
-  // Normalize data sources once
-  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+  // Compute default time range from props (preserves 'last_24hours' default).
+  // useChartPipeline's sourceTransform prefers each source's own timeWindow
+  // when present, falling back to this value.
+  const timeRange = useMemo(
+    () => timeWindowToHours(timeWindow ?? 'last_24hours'),
+    [timeWindow]
+  )
 
-  // Get effective aggregate and time window from dataSource or props
-  const effectiveAggregate = useMemo(() => {
-    if (sources.length > 0 && sources[0].aggregateExt) {
-      return sources[0].aggregateExt
-    }
-    return aggregate
-  }, [sources, aggregate])
-
-  const effectiveTimeWindow = useMemo(() => {
-    if (sources.length > 0 && sources[0].timeWindow?.type) {
-      return sources[0].timeWindow.type
-    }
-    return timeWindow ?? 'last_24hours'
-  }, [sources, timeWindow])
-
-  // Normalize data sources to telemetry type with transform settings
-  const telemetrySources = useMemo(() => {
-    const timeRange = timeWindowToHours(effectiveTimeWindow)
-
-    // Determine aggregate value with proper type
-    const aggregateValue: 'raw' | 'avg' | 'min' | 'max' | 'sum' = effectiveAggregate === 'raw' ? 'raw' : 'avg'
-
-    return sources.map(ds => {
-      // If already telemetry type, preserve existing settings
-      if (ds.type === 'telemetry') {
-        return {
-          ...ds,
-          limit: ds.limit ?? 50,
-          timeRange: ds.timeRange ?? timeRange,
-          aggregate: ds.aggregate ?? aggregateValue,
-          params: {
-            ...ds.params,
-            includeRawPoints: true,
-          },
-        }
-      }
-
-      // Convert device type to telemetry for historical data
-      // Note: metric type without deviceId should NOT be converted as it won't match events
-      const sourceId = getSourceId(ds)
-      if (ds.type === 'device' && sourceId) {
-        return {
-          type: 'telemetry' as const,
-          deviceId: sourceId,
-          sourceId: sourceId,
-          metricId: ds.metricId ?? ds.property ?? 'value',
-          timeRange: timeRange,
-          limit: ds.limit ?? 50,
-          aggregate: aggregateValue,
-          params: {
-            includeRawPoints: true,
-          },
-        }
-      }
-
-      return ds
-    })
-  }, [sources, effectiveAggregate, effectiveTimeWindow])
-
-  // Use telemetry sources if available, otherwise use original dataSource
-  const finalDataSource = telemetrySources.length > 0
-    ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources)
-    : dataSource
-
-  // Fetch data with proper array handling
-  // Don't use fallback for sparkline to avoid showing stale data during drag
-  const { data, loading, error } = useDataSource<unknown>(finalDataSource, {
+  // Shared data pipeline — same as LineChart/AreaChart/BarChart/PieChart.
+  // Replaces hand-written normalizeDataSource + telemetrySources conversion,
+  // which double-normalized, keyed useDataSource on the transformed object
+  // (causing resets), and collapsed min/max/sum aggregates to 'avg'.
+  const { data, loading, error } = useChartPipeline<unknown>({
+    dataSource,
+    aggregate,
+    limit: 50,
+    timeRange,
     preserveMultiple: true,
   })
 
