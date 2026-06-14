@@ -10,7 +10,7 @@
 
 import { useState, useCallback, useRef, useMemo } from 'react'
 import type { DataSourceOrList, DataSource } from '@/types/dashboard'
-import { normalizeDataSource, getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource } from '@/types/dashboard'
+import { normalizeDataSource, getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource, getEventDeviceId } from '@/types/dashboard'
 import { toNumberArray } from '@/design-system/utils/format'
 import { createStableKey } from '@/lib/stable-key'
 import { isImageDataSource } from './helpers'
@@ -169,9 +169,11 @@ export function useDataSource<T = unknown>(
     for (const ds of dataSources) {
       const mode = getUnifiedMode(ds)
       const source = getUnifiedSource(ds)
-      // Collect device IDs for WS event filtering
-      if (source === 'device') {
-        const id = getUnifiedId(ds)
+      // Collect device IDs for WS event filtering.
+      // Transform/AI sources use prefixed IDs ("transform:{id}") so WS events
+      // from the backend (which publish with storage_device_id namespace) match.
+      if (source === 'device' || source === 'transform' || source === 'ai') {
+        const id = getEventDeviceId(ds)
         if (id) deviceIds.add(id)
         if (mode === 'info') infoIds.add(id!)
       }

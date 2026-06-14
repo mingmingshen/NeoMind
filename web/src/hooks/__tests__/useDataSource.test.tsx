@@ -1,5 +1,7 @@
 /// Tests for useDataSource hook
 import { describe, it, expect } from 'vitest'
+import { getEventDeviceId } from '@/types/dashboard'
+import type { DataSource } from '@/types/dashboard'
 
 describe('Virtual Metric Exclusion', () => {
   // Test the logic that prevents virtual metrics from interfering with real metrics
@@ -192,6 +194,42 @@ describe('Virtual Metric Exclusion', () => {
       expect(shouldExtractValue('transform.temperature', 'temperature')).toBe(false)
       expect(shouldExtractValue('virtual.status', 'status')).toBe(false)
     })
+  })
+})
+
+describe('getEventDeviceId', () => {
+  it('should return bare ID for device sources', () => {
+    const ds: DataSource = { type: 'telemetry', sourceId: 'sensor-001', source: 'device', id: 'sensor-001', field: 'temperature', mode: 'timeseries' }
+    expect(getEventDeviceId(ds)).toBe('sensor-001')
+  })
+
+  it('should prefix transform source IDs', () => {
+    const ds: DataSource = { type: 'transform', sourceId: 'transform:weather', transformId: 'weather', source: 'transform', id: 'weather', field: 'temp', mode: 'timeseries' }
+    expect(getEventDeviceId(ds)).toBe('transform:weather')
+  })
+
+  it('should not double-prefix already-prefixed transform IDs', () => {
+    const ds: DataSource = { type: 'transform', sourceId: 'transform:weather', source: 'transform', id: 'transform:weather', field: 'temp', mode: 'timeseries' }
+    expect(getEventDeviceId(ds)).toBe('transform:weather')
+  })
+
+  it('should prefix AI source IDs', () => {
+    const ds: DataSource = { type: 'agent', source: 'ai', id: 'my-agent', field: 'analysis', mode: 'timeseries' } as DataSource
+    expect(getEventDeviceId(ds)).toBe('ai:my-agent')
+  })
+
+  it('should return undefined for missing ID', () => {
+    const ds: DataSource = { type: 'device', source: 'device', field: 'temp', mode: 'latest' } as DataSource
+    expect(getEventDeviceId(ds)).toBeUndefined()
+  })
+
+  it('should match backend transform event device_id format', () => {
+    // Backend uses storage_device_id() = "transform:{transform_id}"
+    // Frontend getEventDeviceId must produce the same format for WS matching
+    const ds: DataSource = { type: 'transform', transformId: 'converter', source: 'transform', id: 'converter', field: 'celsius', mode: 'timeseries' }
+    const frontendEventId = getEventDeviceId(ds)
+    const backendStorageId = `transform:${ds.transformId}`
+    expect(frontendEventId).toBe(backendStorageId)
   })
 })
 

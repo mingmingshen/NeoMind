@@ -370,6 +370,30 @@ export function getUnifiedField(ds: DataSource): string | undefined {
   return ds.field ?? ds.metricId ?? ds.property ?? ds.systemMetric ?? ds.command ?? ds.extensionMetric ?? ds.extensionCommand ?? ds.infoProperty
 }
 
+/**
+ * Get the device_id that WS events use for this data source.
+ *
+ * Transform/AI sources get prefixed ("transform:{id}" / "ai:{id}") to match
+ * the backend's event publishing namespace (storage_device_id format).
+ * Device/extension sources use the bare unified ID.
+ *
+ * Use this for WS event matching (telemetryByDevice keys, relevantDeviceIds,
+ * processTelemetryEvent device_id comparison). For API fetches, the prefix
+ * is added separately in useTelemetrySource.
+ */
+export function getEventDeviceId(ds: DataSource): string | undefined {
+  const id = getUnifiedId(ds)
+  if (!id) return undefined
+  const source = getUnifiedSource(ds)
+  if (source === 'transform' && !id.startsWith('transform:')) {
+    return `transform:${id}`
+  }
+  if (source === 'ai' && !id.startsWith('ai:')) {
+    return `ai:${id}`
+  }
+  return id
+}
+
 // ============================================================================
 // Component Type Definitions
 // ============================================================================

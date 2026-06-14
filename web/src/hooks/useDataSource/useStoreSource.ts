@@ -5,7 +5,7 @@
 
 import { useEffect, useCallback, useRef, useMemo } from 'react'
 import type { DataSource } from '@/types/dashboard'
-import { getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource, getEventDeviceId } from '@/types/dashboard'
 import type { Device } from '@/types'
 import type { NeoMindStore } from '@/store'
 import { useStore } from '@/store'
@@ -545,12 +545,14 @@ export function useStoreSource<T = unknown>(
     // the same dataSources via useMemo and doesn't change between renders
     const hasTelemetrySrc = hasTelemetrySource
 
-    // Build deviceId → telemetry sources map for O(1) lookup per event
+    // Build deviceId → telemetry sources map for O(1) lookup per event.
+    // Use getEventDeviceId so transform/ai sources are keyed by their
+    // WS event namespace ("transform:{id}"), matching backend event device_id.
     const telemetryByDevice = new Map<string, DataSource[]>()
     if (hasTelemetrySrc) {
       for (const ds of currentDataSources) {
         if (ds.mode !== 'timeseries') continue
-        const dsId = getUnifiedId(ds)
+        const dsId = getEventDeviceId(ds)
         if (!dsId) continue
         const existing = telemetryByDevice.get(dsId)
         if (existing) existing.push(ds)
@@ -589,33 +591,37 @@ export function useStoreSource<T = unknown>(
 
       let shouldUpdate = false
 
-      // Update store metrics
-      if (isDeviceMetricEvent && hasDeviceId) {
+      // Update store metrics — skip virtual metrics (transform/extension outputs)
+      // to prevent polluting device current_values with virtual metric data.
+      const isVirtualMetric = eventData.is_virtual === true
+      if (isDeviceMetricEvent && hasDeviceId && !isVirtualMetric) {
         const deviceId = eventData.device_id as string
         const store = useStore.getState()
         if ('metric' in eventData && 'value' in eventData) {
           store.updateDeviceMetric(deviceId, eventData.metric as string, eventData.value)
         }
         for (const [key, value] of Object.entries(eventData)) {
-          if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id' && key !== 'metric' && key !== 'value') {
+          if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id' && key !== 'metric' && key !== 'value' && key !== 'is_virtual') {
             store.updateDeviceMetric(deviceId, key, value)
           }
         }
         shouldUpdate = true
       }
 
-      // Check if event matches data sources
+      // Check if event matches data sources.
+      // Use getEventDeviceId for matching so transform/ai sources match
+      // events published with "transform:{id}" / "ai:{id}" device_id.
       for (const ds of currentDataSources) {
-        const dsId = getUnifiedId(ds)
+        const dsEventId = getEventDeviceId(ds)
         const dsField = getUnifiedField(ds) ?? 'value'
         const dsMode = getUnifiedMode(ds)
         const dsSource = getUnifiedSource(ds)
 
         // Mode-based matching
-        if (dsMode === 'latest' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsId && isDeviceMetricEvent) { shouldUpdate = true; break }
-        else if (dsMode === 'command' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsId && (isDeviceMetricEvent || eventType === 'device.command_result')) { shouldUpdate = true; break }
-        else if (dsMode === 'timeseries' && hasDeviceId && eventData.device_id === dsId && isDeviceMetricEvent && (!eventMetric || eventMetricMatches(eventMetric, dsField))) { shouldUpdate = true; break }
-        else if (dsMode === 'info' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsId && (isDeviceMetricEvent || eventType === 'DeviceOnline' || eventType === 'DeviceOffline')) { shouldUpdate = true; break }
+        if (dsMode === 'latest' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsEventId && isDeviceMetricEvent) { shouldUpdate = true; break }
+        else if (dsMode === 'command' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsEventId && (isDeviceMetricEvent || eventType === 'device.command_result')) { shouldUpdate = true; break }
+        else if (dsMode === 'timeseries' && hasDeviceId && eventData.device_id === dsEventId && isDeviceMetricEvent && (!eventMetric || eventMetricMatches(eventMetric, dsField))) { shouldUpdate = true; break }
+        else if (dsMode === 'info' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsEventId && (isDeviceMetricEvent || eventType === 'DeviceOnline' || eventType === 'DeviceOffline')) { shouldUpdate = true; break }
       }
 
       // Telemetry merge (optimized path) — only for timeseries mode
@@ -643,7 +649,7 @@ export function useStoreSource<T = unknown>(
           // Mark cache entries as stale — include aggregate in prefix to avoid
           // deleting entries for other components with different aggregation
           matchingSources.forEach((ds) => {
-            const keyPrefix = `${getUnifiedId(ds)}|${getUnifiedField(ds)}|`
+            const keyPrefix = `${getEventDeviceId(ds)}|${getUnifiedField(ds)}|`
             telemetryCache.deleteWhere((_, key) => key.startsWith(keyPrefix))
           })
         }

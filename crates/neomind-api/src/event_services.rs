@@ -320,10 +320,16 @@ impl TransformEventService {
 
                                         // Publish transformed metrics back to event bus AND store to telemetry
                                         for transformed_metric in result.metrics {
-                                            // Publish as DeviceMetric event so rules can also use them
+                                            // Use storage_device_id() ("transform:{transform_id}") as device_id
+                                            // so the event is consistent with time-series storage namespace,
+                                            // frontend fetch path, and rule engine data source filters.
+                                            // The transform trigger handler (above) skips is_virtual metrics,
+                                            // so this won't cause feedback loops.
+                                            let storage_device_id =
+                                                transformed_metric.storage_device_id();
                                             let _ = event_bus_clone
                                                 .publish(NeoMindEvent::DeviceMetric {
-                                                    device_id: transformed_metric.device_id.clone(),
+                                                    device_id: storage_device_id.clone(),
                                                     metric: transformed_metric.metric.clone(),
                                                     value: transformed_metric.value.clone(),
                                                     timestamp: transformed_metric.timestamp,
@@ -332,14 +338,7 @@ impl TransformEventService {
                                                 })
                                                 .await;
 
-                                            // Store to time series storage for historical queries
-                                            // Use storage_device_id() to get "transform:{transform_id}" format
-                                            // for proper querying from data explorer.
-                                            // Note: DeviceMetric event published above will also be consumed by
-                                            // DeviceService, which writes to "device:{device_id}" namespace
-                                            // so device details page can show virtual metrics.
-                                            let storage_device_id =
-                                                transformed_metric.storage_device_id();
+                                            // Store to time series storage using the same "transform:{id}" namespace
                                             // Convert neomind_core::MetricValue → neomind_devices::MetricValue for storage
                                             let storage_value = match &transformed_metric.value {
                                                 MetricValue::Float(f) => {
@@ -390,9 +389,8 @@ impl TransformEventService {
 
                                             // Update rule engine value provider + notify engine
                                             // so that rules referencing `transform:{transform_id}:{metric}` fire.
-                                            // The DeviceMetric event published above is stored under
-                                            // device:{device_id} namespace, which doesn't match the
-                                            // transform: prefix rules use.
+                                            // Both the DeviceMetric event and the time-series storage now use
+                                            // the "transform:{id}" namespace, consistent with rule data source filters.
                                             if let Some(ref transform_id) = transformed_metric.transform_id {
                                                 let rv = match &transformed_metric.value {
                                                     MetricValue::Float(v) => neomind_rules::RuleValue::Number(*v),

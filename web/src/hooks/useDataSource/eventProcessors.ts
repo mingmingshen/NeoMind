@@ -4,7 +4,7 @@
  */
 
 import type { DataSource } from '@/types/dashboard'
-import { getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource, getEventDeviceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
@@ -141,7 +141,7 @@ export function processTelemetryEvent(
   // Fast path: single source (covers ~90% of dashboard components)
   if (dataSources.length === 1) {
     const ds = dataSources[0]
-    if (ds.mode !== 'timeseries' || getUnifiedId(ds) !== eventDeviceId) return
+    if (ds.mode !== 'timeseries' || getEventDeviceId(ds) !== eventDeviceId) return
 
     const dsTimeRangeHours = ds.timeWindow
       ? timeWindowToHours(ds.timeWindow.type)
@@ -173,7 +173,7 @@ export function processTelemetryEvent(
 
   // Multi-source path: pre-compute matches outside updater
   const matchedResults = dataSources.map((ds) => {
-    if (ds.mode !== 'timeseries' || getUnifiedId(ds) !== eventDeviceId) return undefined
+    if (ds.mode !== 'timeseries' || getEventDeviceId(ds) !== eventDeviceId) return undefined
     const dsTimeRangeHours = ds.timeWindow
       ? timeWindowToHours(ds.timeWindow.type)
       : (ds.timeRange ?? 1)

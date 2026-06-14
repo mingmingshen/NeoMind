@@ -194,15 +194,21 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
             value,
             timestamp,
             quality,
-            ..
+            is_virtual,
         } => {
-            serde_json::json!({
+            let mut data = serde_json::json!({
                 "device_id": device_id,
                 "metric": metric,
                 "value": value,
                 "timestamp": timestamp,
                 "quality": quality,
-            })
+            });
+            // Include is_virtual flag so frontend can skip store pollution
+            // for transform/extension virtual metrics
+            if *is_virtual == Some(true) {
+                data["is_virtual"] = serde_json::json!(true);
+            }
+            data
         }
         // ExtensionOutput: payload for extension metric/output events
         NeoMindEvent::ExtensionOutput {
