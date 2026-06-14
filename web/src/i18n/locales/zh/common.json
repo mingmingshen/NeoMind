@@ -765,29 +765,12 @@
       "followup": "发布数据后，系统会自动发现该设备并生成草稿。执行以下命令查看并批准，即可完成接入："
     },
     "stepLabels": {
-      "intro": "平台介绍",
       "setup": "核心设置",
-      "capabilities": "能力全景"
-    },
-    "intro": {
-      "positioning": "NeoMind 是一款面向物联网的边缘 AI 平台。连接设备、运行 AI 分析、设置自动化、用实时仪表盘可视化一切——数据在本地采集、本地决策、本地响应。",
-      "diffTitle": "AI 优先的交互方式",
-      "diffBody": "传统平台需要你在每个页面手动配置；NeoMind 让你用自然语言完成大部分操作。配好 AI 模型后，连接设备、创建规则、搭建看板都能一句话搞定。",
-      "flow": {
-        "s1": "设备 / 摄像头",
-        "s2": "实时数据采集",
-        "s3": "AI 分析与决策",
-        "s4": "仪表盘 · 自动化 · 通知"
-      },
-      "pillars": {
-        "chat": { "title": "对话即操作", "desc": "用自然语言管理设备、数据、规则和看板" },
-        "unified": { "title": "设备与视觉统一", "desc": "MQTT 设备 + 摄像头 AI 识别，数据汇聚一处" },
-        "edge": { "title": "边缘实时响应", "desc": "数据本地处理，自动决策、即时告警" }
-      }
+      "ready": "准备就绪"
     },
     "setup": {
-      "title": "开始你的第一步",
-      "subtitle": "完成这两项，NeoMind 就能运转起来。",
+      "title": "欢迎使用 NeoMind",
+      "heroSubtitle": "面向物联网的边缘 AI 平台。配好 AI 模型、连上设备，然后用自然语言描述你想做的事。",
       "hint": "配好 AI 模型后，回到对话框试试说「帮我连接一个温度传感器」或「创建一个仪表盘」。",
       "llm": {
         "title": "配置 AI 模型",
@@ -802,28 +785,20 @@
         "action": "查看设备"
       }
     },
-    "capabilities": {
-      "title": "你还能做什么",
-      "subtitle": "这些能力大多也能通过 AI 对话触发——配好模型后，试着用一句话描述你想做的事。",
-      "monitoring": {
-        "title": "实时监控与可视化",
-        "description": "拖拽搭建实时仪表盘：数值卡片、趋势图表、LED 状态灯、地图、视频流、AI 分析师等 20+ 内置组件开箱即用。支持数据源绑定与公开链接分享（只读或可交互）。",
-        "example": "帮我创建一个温度监控看板"
+    "ready": {
+      "allSetTitle": "一切就绪！",
+      "allSetSubtitle": "AI 模型和设备都已配好。试试下面的提示，或直接开始对话探索 NeoMind。",
+      "partialTitle": "随时可以完成设置",
+      "partialSubtitle": "你可以稍后再完成设置。配好 AI 模型后，试试下面的提示。",
+      "prompts": {
+        "monitoring": { "title": "搭建仪表盘", "desc": "20+ 组件的实时可视化", "prompt": "帮我创建一个温度监控看板" },
+        "automation": { "title": "设置自动化", "desc": "规则、告警与定时 AI Agent", "prompt": "温度超过 35 度就通知我" },
+        "extensions": { "title": "安装扩展", "desc": "AI 视觉、天气预报等", "prompt": "帮我安装天气预报扩展" }
       },
-      "automation": {
-        "title": "自动化与智能 Agent",
-        "description": "设「当温度超阈值就通知」等规则，或创建定时 / 事件驱动的 AI Agent 自主巡检设备、生成报告、主动推送异常。支持钉钉、企业微信、飞书、Telegram、邮件等 7 种通知渠道。",
-        "example": "温度超过 35 度就在钉钉通知我"
-      },
-      "extensions": {
-        "title": "扩展生态",
-        "description": "从扩展市场一键安装 AI 视觉（YOLO 目标检测、人脸识别、OCR）、天气预报、第三方集成等能力。扩展提供的工具和指标会被 AI 自动识别——安装后直接对话调用。也支持上传本地 .nep 包或用 SDK 开发。",
-        "example": "帮我安装天气预报扩展"
-      },
-      "customDev": {
-        "title": "自定义组件开发",
-        "description": "用 React 独立设计自己的仪表盘组件：IIFE 格式、纯前端、无需写后端代码。用 neomind widget create 脚手架创建，打包成 ZIP 安装或发布到社区市场，平台自动适配亮色 / 暗色主题。",
-        "example": "帮我创建一个仪表盘组件"
+      "chatButton": "开始对话",
+      "statusLabels": {
+        "llm": "AI 模型",
+        "device": "设备"
       }
     }
   }

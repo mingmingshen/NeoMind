@@ -1,10 +1,9 @@
 /**
  * OnboardingDialog — Full-screen getting-started wizard
  *
- * Three-step paginated guide:
- *   1. Platform intro (what NeoMind is, AI-first differentiator, data flow)
- *   2. Core setup (configure LLM, connect devices) — with completion status
- *   3. Capability panorama (monitoring, vision, automation, extensions)
+ * Two-step guide:
+ *   1. Core setup (configure LLM, connect devices) — with completion status + CLI helpers
+ *   2. Ready (clickable prompt cards that hand off to chat via ?q= URL param)
  *
  * Freely browsable; clicking Finish or Skip marks the guide as seen.
  */
@@ -15,7 +14,7 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import {
   Rocket, Sparkles, Cpu, Check, X, ChevronLeft, ChevronRight,
-  LayoutDashboard, Zap, Puzzle, Code, MessageSquareText, Boxes, Gauge,
+  LayoutDashboard, Zap, Puzzle, MessageSquareText,
   Terminal, Copy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -31,13 +30,13 @@ interface OnboardingDialogProps {
   onDismiss: () => void
 }
 
-const STEPS = ["intro", "setup", "capabilities"] as const
+const STEPS = ["setup", "ready"] as const
 type StepKey = (typeof STEPS)[number]
 
 export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: OnboardingDialogProps) {
   const { t } = useTranslation("common")
   const navigate = useNavigate()
-  const [step, setStep] = useState<StepKey>("intro")
+  const [step, setStep] = useState<StepKey>("setup")
 
   const stepIndex = STEPS.indexOf(step)
   const isFirst = stepIndex === 0
@@ -45,7 +44,7 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
 
   // Reset to first step each time the dialog opens
   useEffect(() => {
-    if (open) setStep("intro")
+    if (open) setStep("setup")
   }, [open])
 
   // Lock body scroll + Escape to close
@@ -75,6 +74,18 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
     onOpenChange(false)
   }
 
+  const handlePromptNavigate = (prompt: string) => {
+    onDismiss()
+    onOpenChange(false)
+    navigate(`/chat?q=${encodeURIComponent(prompt)}`)
+  }
+
+  const handleStartChat = () => {
+    onDismiss()
+    onOpenChange(false)
+    navigate("/chat")
+  }
+
   const root = typeof document !== "undefined"
     ? document.getElementById("dialog-root") || document.body
     : null
@@ -93,7 +104,7 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
 
       {/* Progress indicator */}
       <div className="shrink-0 pt-8 pb-3 px-6">
-        <div className="max-w-3xl mx-auto flex items-center justify-center">
+        <div className="max-w-5xl mx-auto flex items-center justify-center">
           {STEPS.map((s, i) => (
             <button
               key={s}
@@ -125,16 +136,15 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 sm:px-10 py-6 sm:py-8">
-          {step === "intro" && <IntroStep />}
+        <div className="max-w-5xl mx-auto px-6 sm:px-10 py-6 sm:py-8">
           {step === "setup" && <SetupStep status={status} onAction={handleAction} />}
-          {step === "capabilities" && <CapabilitiesStep />}
+          {step === "ready" && <ReadyStep status={status} onPromptNavigate={handlePromptNavigate} onStartChat={handleStartChat} />}
         </div>
       </div>
 
       {/* Footer navigation */}
       <div className="shrink-0 border-t border-border bg-bg-95">
-        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
           <Button variant="ghost" size="sm" onClick={handleFinish} className="text-muted-foreground">
             {t("onboarding.dismiss")}
           </Button>
@@ -161,82 +171,6 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
       </div>
     </div>,
     root,
-  )
-}
-
-// ── Step 1: Platform intro ──
-
-function IntroStep() {
-  const { t } = useTranslation("common")
-  const pillars = [
-    { icon: <MessageSquareText className="w-4 h-4" />, key: "chat", tint: "bg-accent-indigo-light text-accent-indigo" },
-    { icon: <Boxes className="w-4 h-4" />, key: "unified", tint: "bg-accent-cyan-light text-accent-cyan" },
-    { icon: <Gauge className="w-4 h-4" />, key: "edge", tint: "bg-accent-emerald-light text-accent-emerald" },
-  ]
-  const flowNodes = ["s1", "s2", "s3", "s4"]
-
-  return (
-    <div>
-      {/* Hero */}
-      <div className="text-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-accent-indigo-light flex items-center justify-center mx-auto mb-4">
-          <Rocket className="w-7 h-7 text-accent-indigo" />
-        </div>
-        <p className="text-sm sm:text-base text-foreground leading-relaxed max-w-2xl mx-auto">
-          {t("onboarding.intro.positioning")}
-        </p>
-      </div>
-
-      {/* Differentiator callout */}
-      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 mb-8">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 rounded-xl bg-accent-emerald-light flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5 text-accent-emerald" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-sm text-foreground mb-1">
-              {t("onboarding.intro.diffTitle")}
-            </h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              {t("onboarding.intro.diffBody")}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Data flow ribbon */}
-      <div className="rounded-2xl bg-muted-30 p-4 mb-8">
-        <div className="flex items-center justify-between gap-1 flex-wrap">
-          {flowNodes.map((k, i) => (
-            <div key={k} className="flex items-center gap-1">
-              <span className="text-xs font-medium text-foreground whitespace-nowrap">
-                {t(`onboarding.intro.flow.${k}`)}
-              </span>
-              {i < flowNodes.length - 1 && (
-                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Value pillars */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {pillars.map((p) => (
-          <div key={p.key} className="rounded-xl border border-border bg-card p-4">
-            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-2", p.tint)}>
-              {p.icon}
-            </div>
-            <h4 className="text-sm font-semibold text-foreground mb-0.5">
-              {t(`onboarding.intro.pillars.${p.key}.title`)}
-            </h4>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {t(`onboarding.intro.pillars.${p.key}.desc`)}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
   )
 }
 
@@ -283,7 +217,7 @@ const FOLLOWUP_COMMANDS = "neomind llm test <ID>\nneomind llm activate <ID>"
 
 function LlmCliHelper() {
   const { t } = useTranslation("common")
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [providerId, setProviderId] = useState("ollama")
   const provider = LLM_PROVIDERS.find((p) => p.id === providerId) ?? LLM_PROVIDERS[0]
   const command = useMemo(() => buildLlmCommand(provider), [provider])
@@ -366,7 +300,7 @@ const DEVICE_FOLLOWUP_COMMANDS = [
 
 function DeviceQuickStart() {
   const { t } = useTranslation("common")
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
 
   const handleCopy = async () => {
     try {
@@ -427,8 +361,13 @@ function SetupStep({
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-bold text-foreground mb-1">{t("onboarding.setup.title")}</h2>
-        <p className="text-sm text-muted-foreground">{t("onboarding.setup.subtitle")}</p>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-accent-indigo-light flex items-center justify-center shrink-0">
+            <Rocket className="w-5 h-5 text-accent-indigo" />
+          </div>
+          <h2 className="text-lg font-bold text-foreground">{t("onboarding.setup.title")}</h2>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed">{t("onboarding.setup.heroSubtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -533,10 +472,25 @@ function SetupCard({
   )
 }
 
-// ── Step 3: Capability panorama ──
+// ── Step 2: Ready — actionable prompt cards that hand off to chat ──
 
-function CapabilitiesStep() {
+function ReadyStep({
+  status,
+  onPromptNavigate,
+  onStartChat,
+}: {
+  status: OnboardingStatus
+  onPromptNavigate: (prompt: string) => void
+  onStartChat: () => void
+}) {
   const { t } = useTranslation("common")
+  const allComplete = status.steps.llm.completed && status.steps.device.completed
+
+  const statusItems = [
+    { key: "llm", completed: status.steps.llm.completed },
+    { key: "device", completed: status.steps.device.completed },
+  ] as const
+
   const cards = [
     {
       icon: <LayoutDashboard className="w-5 h-5" />,
@@ -553,59 +507,87 @@ function CapabilitiesStep() {
       key: "extensions",
       tint: "bg-accent-cyan-light text-accent-cyan",
     },
-    {
-      icon: <Code className="w-5 h-5" />,
-      key: "customDev",
-      tint: "bg-accent-indigo-light text-accent-indigo",
-    },
   ]
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-lg font-bold text-foreground mb-1">{t("onboarding.capabilities.title")}</h2>
-        <p className="text-sm text-muted-foreground">{t("onboarding.capabilities.subtitle")}</p>
+      {/* Header — celebration banner when all complete */}
+      <div className={cn(
+        "rounded-2xl p-5 mb-6",
+        allComplete ? "bg-success-light" : "bg-card border border-border",
+      )}>
+        <div className="flex items-center gap-3 mb-2">
+          <div className={cn(
+            "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+            allComplete ? "bg-success text-primary-foreground" : "bg-accent-indigo-light text-accent-indigo",
+          )}>
+            {allComplete ? <Check className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+          </div>
+          <h2 className="text-lg font-bold text-foreground">
+            {allComplete ? t("onboarding.ready.allSetTitle") : t("onboarding.ready.partialTitle")}
+          </h2>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+          {allComplete ? t("onboarding.ready.allSetSubtitle") : t("onboarding.ready.partialSubtitle")}
+        </p>
+        {/* Status summary chips */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {statusItems.map((item) => (
+            <div
+              key={item.key}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium",
+                item.completed
+                  ? allComplete
+                    ? "bg-card text-success"
+                    : "bg-success-light text-success"
+                  : "bg-muted-30 text-muted-foreground",
+              )}
+            >
+              {item.completed ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full border-2 border-current opacity-40" />
+              )}
+              {t(`onboarding.ready.statusLabels.${item.key}`)}
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Prompt cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         {cards.map((c) => (
-          <CapabilityCard
+          <button
             key={c.key}
-            icon={c.icon}
-            tint={c.tint}
-            title={t(`onboarding.capabilities.${c.key}.title`)}
-            description={t(`onboarding.capabilities.${c.key}.description`)}
-            example={t(`onboarding.capabilities.${c.key}.example`)}
-          />
+            type="button"
+            onClick={() => onPromptNavigate(t(`onboarding.ready.prompts.${c.key}.prompt`))}
+            className="group text-left rounded-2xl border border-border bg-card p-5 flex flex-col h-full hover:border-primary transition-colors"
+          >
+            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3 shrink-0", c.tint)}>
+              {c.icon}
+            </div>
+            <h3 className="font-semibold text-sm text-foreground mb-1.5 shrink-0">
+              {t(`onboarding.ready.prompts.${c.key}.title`)}
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+              {t(`onboarding.ready.prompts.${c.key}.desc`)}
+            </p>
+            <div className="mt-auto flex items-start gap-1.5 rounded-lg bg-muted-30 px-3 py-2 shrink-0 group-hover:bg-muted-50 transition-colors">
+              <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+              <span className="text-xs text-muted-foreground italic leading-relaxed">
+                {t(`onboarding.ready.prompts.${c.key}.prompt`)}
+              </span>
+            </div>
+          </button>
         ))}
       </div>
-    </div>
-  )
-}
 
-function CapabilityCard({
-  icon,
-  tint,
-  title,
-  description,
-  example,
-}: {
-  icon: React.ReactNode
-  tint: string
-  title: string
-  description: string
-  example: string
-}) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5 flex flex-col h-full">
-      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3 shrink-0", tint)}>
-        {icon}
-      </div>
-      <h3 className="font-semibold text-sm text-foreground mb-1.5 shrink-0">{title}</h3>
-      <p className="text-xs text-muted-foreground leading-relaxed flex-1">{description}</p>
-      <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-muted-30 px-3 py-2 shrink-0">
-        <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-        <span className="text-xs text-muted-foreground italic">{example}</span>
+      <div className="flex justify-center">
+        <Button size="lg" onClick={onStartChat} className="gap-2">
+          <MessageSquareText className="w-4 h-4" />
+          {t("onboarding.ready.chatButton")}
+        </Button>
       </div>
     </div>
   )

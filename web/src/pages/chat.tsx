@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { generateId } from "@/lib/id"
 import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -165,6 +165,7 @@ export function ChatPage() {
   const { toast } = useToast()
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { handleError } = useErrorHandler()
   const llmBackends = useStore((state) => state.llmBackends)
   const llmBackendLoading = useStore((state) => state.llmBackendLoading)
@@ -697,6 +698,17 @@ export function ChatPage() {
     setInput(prompt)
     inputRef.current?.focus()
   }
+
+  // Pre-fill input from ?q= URL param (e.g. onboarding prompt navigation).
+  // Do NOT auto-send — user reviews and presses Enter.
+  useEffect(() => {
+    const q = searchParams.get("q")
+    if (q) {
+      setInput(q)
+      setSearchParams({}, { replace: true })
+      inputRef.current?.focus()
+    }
+  }, [searchParams, setSearchParams])
 
   // Handle pending stream recovery - restore
   const handleRestorePendingStream = () => {

@@ -33,6 +33,15 @@ export function useOnboarding() {
     fetchStatus()
   }, [fetchStatus])
 
+  // Poll for status updates while dialog is relevant (incomplete steps, not dismissed).
+  // Benefits the TopNav Rocket button badge and CLI-path users who configure via terminal.
+  useEffect(() => {
+    if (!status || status.dismissed) return
+    if (status.steps.llm.completed && status.steps.device.completed) return
+    const id = setInterval(fetchStatus, 5000)
+    return () => clearInterval(id)
+  }, [status, fetchStatus])
+
   const dismiss = useCallback(async () => {
     try {
       await fetchAPI("/onboarding/dismiss", { method: "POST" })
