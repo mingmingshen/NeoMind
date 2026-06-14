@@ -629,11 +629,10 @@ impl LlmRuntime for OllamaRuntime {
             if let Ok(mut metrics) = self.metrics.write() {
                 metrics.record_failure();
             }
-            return Err(LlmError::Generation(format!(
-                "Ollama API error {}: {}",
-                status.as_u16(),
-                body
-            )));
+            return Err(LlmError::Api {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         let ollama_response: OllamaChatResponse =
@@ -905,11 +904,10 @@ impl LlmRuntime for OllamaRuntime {
                         let body = response.text().await.unwrap_or_default();
                         println!("[ollama.rs] Ollama error response: {}", body);
                         let _ = tx
-                            .send(Err(LlmError::Generation(format!(
-                                "Ollama error {}: {}",
-                                status.as_u16(),
-                                body
-                            ))))
+                            .send(Err(LlmError::Api {
+                                status: status.as_u16(),
+                                body,
+                            }))
                             .await;
                         return;
                     }
