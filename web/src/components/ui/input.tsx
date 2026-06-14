@@ -33,9 +33,17 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive/20",
             className
           )}
+          style={{ imeMode: 'disabled', ...props.style }}
           ref={ref}
           value={valueProp}
           onChange={(e) => onChangeProp?.(e)}
+          onCompositionStart={(e) => {
+            // Prevent IME composition on password fields.
+            // In Tauri (WebKit), active IME (e.g. Chinese Pinyin) produces
+            // intermediate characters that bypass ● masking → garbled display.
+            e.preventDefault()
+            compStartProp?.(e)
+          }}
           {...props}
         />
       )
