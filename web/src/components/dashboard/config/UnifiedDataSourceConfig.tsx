@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { textMicro, textNano } from '@/design-system/tokens/typography'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList, DataSourceMode } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getUnifiedId, getUnifiedField } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
@@ -102,9 +102,28 @@ function createTransformDS(transformId: string, field: string): DataSource {
   }
 }
 
+/** Derive unified source from type for legacy DataSources that lack the `source` field */
+function deriveSource(ds: DataSource): string {
+  if (ds.source) return ds.source
+  switch (ds.type) {
+    case 'telemetry': case 'metric': case 'command': case 'device-info': case 'device':
+      return 'device'
+    case 'system':
+      return 'system'
+    case 'extension': case 'extension-command':
+      return 'extension'
+    case 'transform':
+      return 'transform'
+    default:
+      return ''
+  }
+}
+
 /** Internal identity key for checking if a DataSource is selected. NOT a state format. */
 function dsIdentityKey(ds: DataSource): string {
-  return `${ds.source ?? ''}:${ds.id ?? ''}:${ds.field ?? ''}`
+  // Use helper functions with fallback chains for robustness with legacy DataSources
+  // that may only have legacy fields (sourceId/metricId) without unified fields (id/field)
+  return `${deriveSource(ds)}:${getUnifiedId(ds) ?? ''}:${getUnifiedField(ds) ?? ''}`
 }
 
 /** Make identity key from raw components */
