@@ -141,6 +141,27 @@ Agent LLM backends are now **decoupled** from chat model selection:
 - Agents can use different LLM backends for different purposes
 - Separate configuration for extraction vs. execution
 
+### LLM Failure Handling
+
+When an agent's LLM call fails (e.g., quota exhausted, API key invalid,
+model not found, network timeout), the execution record is marked as
+**Failed** with the real error message. Common failure scenarios:
+
+- **HTTP 401/403**: API key invalid or quota exhausted — fix the API key
+  or top up quota in the LLM backend settings.
+- **HTTP 404**: Model name wrong or model not pulled — check the model
+  name in the agent's LLM backend.
+- **HTTP 429**: Rate limited — wait and retry; consider reducing
+  schedule frequency.
+- **HTTP 5xx**: Provider-side error — retry later.
+- **Timeout**: LLM took longer than the configured timeout — consider
+  using a faster model or simplifying the prompt.
+
+Previously, LLM failures silently fell back to rule-based analysis,
+producing misleading "No actions required - conditions not met" output.
+As of this update, LLM failures are explicit so you can diagnose and
+fix the underlying issue.
+
 ### Removed Modules (v0.5.x)
 - `agent/intent_classifier.rs` - Intent classification integrated into executor
 - `task_orchestrator.rs` - Task orchestration integrated into executor
