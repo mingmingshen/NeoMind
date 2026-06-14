@@ -4,6 +4,7 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { TopNav } from "@/components/layout/TopNav"
+import { NavigationProgress } from "@/components/layout/NavigationProgress"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager, getApiBase, isTauriEnv, setApiBase, getApiKey } from "@/lib/api"
@@ -33,6 +34,7 @@ const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default:
 const MessagesPage = lazy(() => import('@/pages/messages').then(m => ({ default: m.default })))
 const ExtensionsPage = lazy(() => import('@/pages/extensions').then(m => ({ default: m.ExtensionsPage })))
 const SharedDashboardPage = lazy(() => import('@/pages/share/SharedDashboard'))
+const NotFound = lazy(() => import('@/pages/NotFound'))
 // Suppress only the specific Radix UI Portal cleanup error during fast page transitions
 // Known issue: React 18 + Radix UI race condition where removeChild fails on unmounted portals
 const originalError = console.error
@@ -398,6 +400,7 @@ function App() {
 
   return (
     <>
+      <NavigationProgress />
       <Suspense fallback={<PageLoading />}>
         <Routes>
           {/* Setup route - protected, only accessible when setup required */}
@@ -427,6 +430,7 @@ function App() {
                   <main className="relative z-10 flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>
                     <div className="w-full h-full overflow-hidden" id="main-scroll-container">
                     <ErrorBoundary>
+                    <div key={location.pathname} className="animate-fade-in w-full h-full overflow-hidden">
                     <Routes>
                       <Route path="/" element={<ChatPage />} />
                       <Route path="/chat" element={<ChatPage />} />
@@ -455,9 +459,10 @@ function App() {
                       {/* Extensions */}
                       <Route path="/extensions" element={<ExtensionsPage />} />
                       <Route path="/plugins" element={<Navigate to="/extensions" replace />} />
-                      {/* Catch all - redirect to chat */}
-                      <Route path="*" element={<Navigate to="/" replace />} />
+                      {/* Catch all - 404 page */}
+                      <Route path="*" element={<NotFound />} />
                     </Routes>
+                    </div>
                     </ErrorBoundary>
                     </div>
                   </main>

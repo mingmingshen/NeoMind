@@ -801,5 +801,24 @@
         "device": "Devices"
       }
     }
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist or has been moved.",
+    "goHome": "Back to Chat",
+    "goBack": "Go Back"
+  },
+  "userMenu": {
+    "preferences": "Preferences",
+    "about": "About",
+    "help": "Help",
+    "role": "Role"
+  },
+  "systemHealth": {
+    "title": "System Status",
+    "backendConnected": "Backend Connected",
+    "backendDisconnected": "Backend Disconnected",
+    "devicesOnline": "{{online}}/{{total}} Devices Online",
+    "unreadAlerts": "{{count}} Unread Alerts"
   }
 }

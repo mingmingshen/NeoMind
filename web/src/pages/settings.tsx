@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 import { useStore } from "@/store"
@@ -34,6 +34,18 @@ export function SettingsPage() {
   const [mobileView, setMobileView] = useState<MobileView>(() => {
     return sectionFromUrl && validSections.includes(sectionFromUrl) ? "section" : "list"
   })
+
+  // Sync active section when the URL ?tab= param changes while already mounted
+  // (e.g. clicking "Preferences" in the user menu while on /settings?tab=llm)
+  useEffect(() => {
+    if (sectionFromUrl && validSections.includes(sectionFromUrl) && sectionFromUrl !== activeSection) {
+      setActiveSection(sectionFromUrl)
+      if (isMobile) {
+        setMobileView("section")
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionFromUrl])
 
   // LLM Backend actions from store
   const createBackend = useStore((state) => state.createBackend)

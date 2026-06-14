@@ -8,7 +8,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
 import { cn } from '@/lib/utils'
-import { Wifi, WifiOff } from 'lucide-react'
+import { Server } from 'lucide-react'
 
 interface InstanceSelectorProps {
   onManageInstances: () => void
@@ -44,11 +44,7 @@ export function InstanceSelector({ onManageInstances }: InstanceSelectorProps) {
           : "text-destructive bg-muted"
       )}
     >
-      {isOnline ? (
-        <Wifi className="h-4 w-4" />
-      ) : (
-        <WifiOff className="h-4 w-4" />
-      )}
+      <Server className="h-4 w-4 shrink-0" />
       <span className="hidden sm:inline max-w-[120px] truncate">
         {currentInstance?.name || t('local')}
       </span>

@@ -189,6 +189,18 @@ function triggerUnauthorizedCallbacks() {
   })
 }
 
+// Throttle 401 toasts: when a session expires, multiple concurrent API calls
+// return 401 almost simultaneously. Only show one "Unauthorized" toast per window.
+let lastUnauthorizedToastTime = 0
+function shouldShowUnauthorizedToast(): boolean {
+  const now = Date.now()
+  if (now - lastUnauthorizedToastTime < 3000) {
+    return false
+  }
+  lastUnauthorizedToastTime = now
+  return true
+}
+
 // ============================================================================
 // Re-export Token Manager from auth module
 // ============================================================================
@@ -317,7 +329,7 @@ export async function fetchAPI<T>(
       triggerUnauthorizedCallbacks()
     }
     const message = await parseErrorMessage(response)
-    if (!skipErrorToast) {
+    if (!skipErrorToast && shouldShowUnauthorizedToast()) {
       notifyFromError(message, 'Unauthorized')
     }
     const err = new Error(message)

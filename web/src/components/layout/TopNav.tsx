@@ -23,6 +23,8 @@ import {
   Check,
   Database,
   Rocket,
+  Info,
+  HelpCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -43,6 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ThemeToggle } from "./ThemeToggle"
 import { InstanceSelector } from "./InstanceSelector"
+import { SystemHealthButton } from "./SystemHealthButton"
 import { InstanceManagerDialog } from "@/components/instances/InstanceManagerDialog"
 import { OnboardingDialog } from "@/components/onboarding/OnboardingDialog"
 import { useOnboarding } from "@/hooks/useOnboarding"
@@ -249,20 +252,13 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
           {/* Spacer */}
           <div className="flex-1 max-md:max-w-4" />
 
-          {/* Right side: Instance + Theme + Alerts + User */}
+          {/* Right side: Instance + Health + Guide + Alerts + Preferences + User */}
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-            {/* Instance selector (replaces old connection status) */}
+            {/* Instance selector (identity anchor) */}
             <InstanceSelector onManageInstances={() => setInstanceManagerOpen(true)} />
 
-            {/* Language toggle */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleLanguage}
-              className="h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground text-xs font-medium"
-            >
-              {i18n.language === 'zh' ? '中' : 'EN'}
-            </Button>
+            {/* System health indicator */}
+            <SystemHealthButton />
 
             {/* Onboarding guide */}
             <Tooltip>
@@ -286,9 +282,6 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                 {t('onboarding.title')}
               </TooltipContent>
             </Tooltip>
-
-            {/* Theme toggle */}
-            <ThemeToggle />
 
             {/* Alerts notification */}
             <DropdownMenu open={alertDropdownOpen} onOpenChange={setAlertDropdownOpen}>
@@ -386,6 +379,19 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* Theme toggle */}
+            <ThemeToggle />
+
+            {/* Language toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleLanguage}
+              className="h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground text-xs font-medium"
+            >
+              {i18n.language === 'zh' ? '中' : 'EN'}
+            </Button>
+
             {/* User avatar with dropdown */}
             {user && (
               <DropdownMenu>
@@ -396,10 +402,30 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                     </AvatarFallback>
                   </Avatar>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-56">
                   <div className="px-3 py-2">
-                    <p className="text-sm font-medium">{user.username}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium truncate">{user.username}</p>
+                      {user.role && (
+                        <Badge variant="outline" className="text-xs shrink-0">
+                          {user.role}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/settings?tab=preferences')}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    {t('userMenu.preferences')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/settings?tab=about')}>
+                    <Info className="h-4 w-4 mr-2" />
+                    {t('userMenu.about')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => window.open('https://github.com/camthink-ai/NeoMind', '_blank')}>
+                    <HelpCircle className="h-4 w-4 mr-2" />
+                    {t('userMenu.help')}
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
                     <LogOut className="h-4 w-4 mr-2" />

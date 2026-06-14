@@ -801,5 +801,24 @@
         "device": "设备"
       }
     }
+  },
+  "notFound": {
+    "title": "页面未找到",
+    "description": "您访问的页面不存在或已被移动。",
+    "goHome": "回到对话",
+    "goBack": "返回上页"
+  },
+  "userMenu": {
+    "preferences": "偏好设置",
+    "about": "关于",
+    "help": "帮助",
+    "role": "角色"
+  },
+  "systemHealth": {
+    "title": "系统状态",
+    "backendConnected": "后端已连接",
+    "backendDisconnected": "后端未连接",
+    "devicesOnline": "{{online}}/{{total}} 设备在线",
+    "unreadAlerts": "{{count}} 条未读告警"
   }
 }
