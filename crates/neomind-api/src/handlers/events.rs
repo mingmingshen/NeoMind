@@ -188,6 +188,11 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
         }
         // DeviceMetric: payload must match frontend expectation (device_id, metric, value).
         // MetricValue serializes untagged (String => plain string, Float => number, etc.).
+        // Json variant is serialized as a STRING to match the storage/API format:
+        // storage converts MetricValue::Json → String(json_string) because
+        // neomind-devices::MetricValue has no Object variant. If WS sent the
+        // raw object, the frontend would receive an object via WS but a string
+        // via API — causing "[object Object]" display in ValueCard.
         NeoMindEvent::DeviceMetric {
             device_id,
             metric,
@@ -196,10 +201,14 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
             quality,
             is_virtual,
         } => {
+            let value_json = match value {
+                neomind_core::MetricValue::Json(v) => Value::String(v.to_string()),
+                _ => serde_json::to_value(value).unwrap_or(Value::Null),
+            };
             let mut data = serde_json::json!({
                 "device_id": device_id,
                 "metric": metric,
-                "value": value,
+                "value": value_json,
                 "timestamp": timestamp,
                 "quality": quality,
             });
