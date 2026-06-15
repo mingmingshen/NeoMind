@@ -215,10 +215,23 @@ impl AiAgentManager {
             .update_agent_status(agent_id, AgentStatus::Executing, None)
             .await?;
 
+        // For event-type agents invoked manually without explicit input,
+        // synthesize event data from the latest bound data point so the agent
+        // runs with the same triggering context as a real event (instead of
+        // having to discover its own inputs via tool calls).
+        use neomind_storage::ScheduleType;
+        let synthetic_event = if agent.schedule.schedule_type == ScheduleType::Event
+            && invocation_input.is_none()
+        {
+            self.executor.build_synthetic_event_data(&agent).await
+        } else {
+            None
+        };
+
         // Execute the agent with optional invocation input
         let result = self
             .executor
-            .execute_agent(agent.clone(), None, invocation_input)
+            .execute_agent(agent.clone(), synthetic_event, invocation_input)
             .await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;

@@ -493,6 +493,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Load agents — preload on mount, refresh when config opens for agent-monitor-widget
   useEffect(() => {
+    // When the config dialog opens for an agent-monitor-widget, force a fresh
+    // fetch so newly created agents (e.g. from the Agents page) appear in the
+    // dropdown immediately, bypassing the 10s fetchCache TTL.
+    if (configOpen && selectedComponent?.type === 'agent-monitor-widget') {
+      fetchCache.invalidate('agents-list')
+    }
     const loadAgents = async () => {
       if (!fetchCache.shouldFetch('agents-list')) return
       fetchCache.markFetching('agents-list')

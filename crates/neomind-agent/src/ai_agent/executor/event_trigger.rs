@@ -73,6 +73,10 @@ impl AgentExecutor {
                         continue;
                     }
 
+                    // Clone dedup_key before it's moved into the recent_executions map;
+                    // the spawned task needs a copy to clear the cooldown on failure.
+                    let dedup_key_clone = dedup_key.clone();
+
                     // Mark this execution as recent
                     {
                         let mut recent = self.recent_executions.write().await;
@@ -96,6 +100,7 @@ impl AgentExecutor {
                     // Build executor config for spawned task
                     let executor_config = self.build_spawn_config(&agent);
                     let agent_id_for_log = agent.id.clone();
+                    let recent_executions_clone = self.recent_executions.clone();
 
                     tokio::spawn(async move {
                         // Acquire per-backend semaphore (WAIT, not fail)
@@ -129,26 +134,27 @@ impl AgentExecutor {
                                     "Executing event-triggered agent with event data"
                                 );
 
-                                // Execute the agent with event data (includes the triggering metric value directly)
-                                match executor
-                                    .execute_agent(agent_clone, Some(event_trigger_data), None)
-                                    .await
-                                {
-                                    Ok(record) => {
-                                        tracing::debug!(
-                                            agent_id = %agent_id_for_log,
-                                            execution_id = %record.id,
-                                            status = ?record.status,
-                                            "Event-triggered agent execution completed"
-                                        );
-                                    }
-                                    Err(e) => {
-                                        tracing::error!(
-                                            agent_id = %agent_id_for_log,
-                                            error = %e,
-                                            "Event-triggered agent execution failed"
-                                        );
-                                    }
+                                // Execute the agent with event data (includes the triggering metric value directly).
+                                // On failure, perform one inline retry with a short backoff; if the retry
+                                // also fails, clear the cooldown marker so transient errors (API hiccups,
+                                // network blips) don't lock out subsequent events for 60 seconds.
+                                let result = Self::execute_with_retry(
+                                    &executor,
+                                    agent_clone,
+                                    event_trigger_data,
+                                    1,
+                                    &agent_id_for_log,
+                                )
+                                .await;
+
+                                if result.is_err() {
+                                    let mut recent = recent_executions_clone.write().await;
+                                    recent.remove(&dedup_key_clone);
+                                    tracing::info!(
+                                        agent_id = %agent_id_for_log,
+                                        dedup_key = %dedup_key_clone,
+                                        "Cleared event cooldown after failed execution"
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -157,6 +163,9 @@ impl AgentExecutor {
                                     error = %e,
                                     "Failed to create executor for event-triggered agent"
                                 );
+                                // Executor creation failed — clear cooldown so the next event can retry.
+                                let mut recent = recent_executions_clone.write().await;
+                                recent.remove(&dedup_key_clone);
                             }
                         }
                     });
@@ -235,6 +244,10 @@ impl AgentExecutor {
                 continue;
             }
 
+            // Clone dedup_key before it's moved into the recent_executions map;
+            // the spawned task needs a copy to clear the cooldown on failure.
+            let dedup_key_clone = dedup_key.clone();
+
             // Mark this execution as recent
             {
                 let mut recent = self.recent_executions.write().await;
@@ -260,6 +273,7 @@ impl AgentExecutor {
             // Build executor config for spawned task
             let executor_config = self.build_spawn_config(&agent);
             let agent_id_for_log = agent.id.clone();
+            let recent_executions_clone = self.recent_executions.clone();
 
             tokio::spawn(async move {
                 // Acquire per-backend semaphore (WAIT, not fail)
@@ -294,26 +308,26 @@ impl AgentExecutor {
                             "Executing data event-triggered agent with event data"
                         );
 
-                        // Execute the agent with event data
-                        match executor
-                            .execute_agent(agent_clone, Some(event_trigger_data), None)
-                            .await
-                        {
-                            Ok(record) => {
-                                tracing::debug!(
-                                    agent_id = %agent_id_for_log,
-                                    execution_id = %record.id,
-                                    status = ?record.status,
-                                    "Data event-triggered agent execution completed"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    agent_id = %agent_id_for_log,
-                                    error = %e,
-                                    "Data event-triggered agent execution failed"
-                                );
-                            }
+                        // Execute with one inline retry; clear cooldown on persistent failure
+                        // so transient errors (API hiccups, network blips) don't lock out
+                        // subsequent events for the full 60s cooldown window.
+                        let result = Self::execute_with_retry(
+                            &executor,
+                            agent_clone,
+                            event_trigger_data,
+                            1,
+                            &agent_id_for_log,
+                        )
+                        .await;
+
+                        if result.is_err() {
+                            let mut recent = recent_executions_clone.write().await;
+                            recent.remove(&dedup_key_clone);
+                            tracing::info!(
+                                agent_id = %agent_id_for_log,
+                                dedup_key = %dedup_key_clone,
+                                "Cleared event cooldown after failed execution"
+                            );
                         }
                     }
                     Err(e) => {
@@ -322,6 +336,8 @@ impl AgentExecutor {
                             error = %e,
                             "Failed to create executor for data event-triggered agent"
                         );
+                        let mut recent = recent_executions_clone.write().await;
+                        recent.remove(&dedup_key_clone);
                     }
                 }
             });
@@ -388,6 +404,176 @@ impl AgentExecutor {
             }
         } else {
             None
+        }
+    }
+
+    /// Build a synthetic `EventTriggerData` for manual execution of event-type agents.
+    ///
+    /// Picks the first bound source (from `event_filter.sources`, falling back to
+    /// resource bindings) that has a recent data point in time-series storage, and
+    /// returns it as an `EventTriggerData`. This lets manual "Run now" invocations
+    /// of event agents run with the same triggering context as a real event.
+    ///
+    /// Returns `None` if time-series storage is unavailable or no candidate has data.
+    pub async fn build_synthetic_event_data(
+        &self,
+        agent: &AiAgent,
+    ) -> Option<EventTriggerData> {
+        let ts = self.time_series_storage.as_ref()?;
+        let candidates = Self::extract_trigger_candidates(agent);
+
+        for (src_type, src_id, field) in candidates {
+            match ts.query_latest(&src_id, &field).await {
+                Ok(Some(point)) => {
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        source_type = %src_type,
+                        source_id = %src_id,
+                        field = %field,
+                        timestamp = point.timestamp,
+                        "Synthesized event data from latest data point for manual execution"
+                    );
+                    return Some(EventTriggerData {
+                        source: DataSourceRef {
+                            source_type: src_type,
+                            source_id: src_id,
+                            field,
+                        },
+                        value: neomind_core::MetricValue::Json(point.value),
+                        timestamp: point.timestamp,
+                    });
+                }
+                Ok(None) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        source_id = %src_id,
+                        field = %field,
+                        error = %e,
+                        "Failed to query latest data point while synthesizing event data"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        tracing::warn!(
+            agent_id = %agent.id,
+            "No recent data point found for any bound source; manual execution will run without event context"
+        );
+        None
+    }
+
+    /// Extract candidate `(source_type, source_id, field)` tuples from an agent's
+    /// trigger configuration — first from `event_filter.sources`, then from
+    /// resource bindings (Metric / ExtensionMetric). Sources with `id == "all"`
+    /// or empty fields are skipped (they cannot be resolved to a concrete query).
+    fn extract_trigger_candidates(agent: &AiAgent) -> Vec<(String, String, String)> {
+        let mut out: Vec<(String, String, String)> = Vec::new();
+
+        // 1. event_filter.sources
+        if let Some(ref filter_json) = agent.schedule.event_filter {
+            if let Ok(filter) = serde_json::from_str::<serde_json::Value>(filter_json) {
+                if let Some(sources) = filter.get("sources").and_then(|v| v.as_array()) {
+                    for s in sources {
+                        let s_type = match s.get("type").and_then(|v| v.as_str()) {
+                            Some(t) if !t.is_empty() => t.to_string(),
+                            _ => continue,
+                        };
+                        let s_id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        if s_id.is_empty() || s_id == "all" {
+                            continue;
+                        }
+                        let s_field = match s.get("field").and_then(|v| v.as_str()) {
+                            Some(f) if !f.is_empty() => f.to_string(),
+                            _ => continue,
+                        };
+                        out.push((s_type, s_id.to_string(), s_field));
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: resource bindings (device:metric or extension:metric)
+        for r in &agent.resources {
+            match r.resource_type {
+                ResourceType::Metric => {
+                    if let Some((dev, metric)) = r.resource_id.split_once(':') {
+                        if !dev.is_empty() && !metric.is_empty() {
+                            out.push(("device".to_string(), dev.to_string(), metric.to_string()));
+                        }
+                    }
+                }
+                ResourceType::ExtensionMetric => {
+                    if let Some((ext, metric)) = r.resource_id.split_once(':') {
+                        if !ext.is_empty() && !metric.is_empty() {
+                            out.push((
+                                "extension".to_string(),
+                                ext.to_string(),
+                                metric.to_string(),
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        out
+    }
+
+    /// Execute an event-triggered agent with up to `retries` inline retries.
+    ///
+    /// Between attempts, a 5-second backoff is applied. The agent clone and event
+    /// data are reused across attempts. Returns `Ok(())` on success (logging the
+    /// execution record), or `Err` if all attempts fail — callers should clear
+    /// the event cooldown marker on `Err` so transient failures don't lock out
+    /// subsequent events.
+    async fn execute_with_retry(
+        executor: &AgentExecutor,
+        agent: AiAgent,
+        event_data: EventTriggerData,
+        retries: u32,
+        agent_id: &str,
+    ) -> Result<(), crate::error::NeoMindError> {
+        let mut attempt: u32 = 0;
+        loop {
+            attempt += 1;
+            match executor
+                .execute_agent(agent.clone(), Some(event_data.clone()), None)
+                .await
+            {
+                Ok(record) => {
+                    tracing::debug!(
+                        agent_id = %agent_id,
+                        execution_id = %record.id,
+                        status = ?record.status,
+                        attempt = attempt,
+                        "Event-triggered agent execution completed"
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    if attempt <= retries {
+                        tracing::warn!(
+                            agent_id = %agent_id,
+                            attempt = attempt,
+                            retries = retries,
+                            error = %e,
+                            "Event-triggered agent execution failed, retrying after 5s backoff"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;
+                    }
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        attempt = attempt,
+                        error = %e,
+                        "Event-triggered agent execution failed (final)"
+                    );
+                    return Err(e);
+                }
+            }
         }
     }
 

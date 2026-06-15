@@ -15,6 +15,7 @@ import {
   FullScreenDialogContent,
   FullScreenDialogMain,
 } from '@/components/automation/dialog/FullScreenDialog'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import {
   Select,
   SelectContent,
@@ -23,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Tag, Clock, FileCode, Info, Send, Plus } from 'lucide-react'
+import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Clock, Copy, ChevronDown, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { isBase64Image, getImageDataUrl } from '@/pages/devices/utils'
 import { cn } from '@/lib/utils'
@@ -34,6 +35,7 @@ import { useAbortController } from '@/hooks/useAbortController'
 import { textNano, textMini } from "@/design-system/tokens/typography"
 import { ExportDataDialog } from '@/components/data/ExportDataDialog'
 import { formatTimestamp } from '@/lib/utils/format'
+import { notifySuccess, notifyError } from '@/lib/notify'
 import { PushTargetsTab } from '@/components/datapush/PushTargetsTab'
 
 type TabValue = 'data' | 'push'
@@ -466,73 +468,43 @@ export function DataExplorerPage() {
           <FullScreenDialogMain className="p-4 md:p-6 lg:p-8">
             {selectedSource && (
               <div className="max-w-4xl mx-auto space-y-6">
-                {/* Current Value Card */}
-                {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
-                  <div className="rounded-xl border bg-gradient-to-br from-muted-30 to-transparent p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="w-8 h-8 rounded-lg bg-success-light text-success flex items-center justify-center">
-                        <Eye className="h-4 w-4" />
-                      </div>
-                      <span className={cn(textMini, "text-muted-foreground font-medium")}>
-                        {t('data:currentValue', 'Current Value')}
-                      </span>
-                      {selectedSource.unit && (
-                        <Badge variant="outline" className="text-xs">{selectedSource.unit}</Badge>
-                      )}
-                    </div>
-                    <div className="font-mono text-lg font-semibold break-all max-h-32 overflow-y-auto">
-                      {typeof selectedSource.current_value === 'string' && isBase64Image(selectedSource.current_value) ? (
-                        <img src={getImageDataUrl(selectedSource.current_value) ?? undefined} alt="metric" className="max-h-28 rounded-lg object-contain" />
-                      ) : typeof selectedSource.current_value === 'object'
-                        ? JSON.stringify(selectedSource.current_value, null, 2)
-                        : String(selectedSource.current_value)}
-                    </div>
-                  </div>
-                )}
-
-                {/* Metadata Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {[
-                    { icon: Tag, label: t('data:field', 'Field'), value: selectedSource.field_display_name },
-                    { icon: FileCode, label: t('data:dataType', 'Data Type'), value: selectedSource.data_type, isBadge: true },
-                    { icon: Info, label: t('data:unit', 'Unit'), value: selectedSource.unit || '-' },
-                    { icon: Clock, label: t('data:lastUpdate', 'Last Update'), value: formatTime(selectedSource.last_update) },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-lg border p-3">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <item.icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className={cn(textMini, "text-muted-foreground")}>{item.label}</span>
-                      </div>
-                      {item.isBadge ? (
-                        <Badge variant="secondary" className={textNano}>{item.value}</Badge>
+                {/* Tier 1: Current Value (prominent) */}
+                <div className="rounded-xl border p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      {selectedSource.current_value !== undefined && selectedSource.current_value !== null ? (
+                        typeof selectedSource.current_value === 'string' && isBase64Image(selectedSource.current_value) ? (
+                          <img src={getImageDataUrl(selectedSource.current_value) ?? undefined} alt="metric" className="max-h-32 rounded-lg object-contain" />
+                        ) : typeof selectedSource.current_value === 'object' ? (
+                          <pre className="font-mono text-sm whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+                            {JSON.stringify(selectedSource.current_value, null, 2)}
+                          </pre>
+                        ) : (
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="font-mono text-2xl md:text-3xl font-semibold break-all">{String(selectedSource.current_value)}</span>
+                            {selectedSource.unit && (
+                              <span className="font-mono text-lg text-muted-foreground">{selectedSource.unit}</span>
+                            )}
+                          </div>
+                        )
                       ) : (
-                        <p className="text-sm font-medium truncate">{item.value}</p>
+                        <span className="text-lg text-muted-foreground">{t('data:noData', 'No current data')}</span>
                       )}
                     </div>
-                  ))}
+                    {selectedSource.data_type && (
+                      <Badge variant="secondary" className={cn(textNano, "shrink-0")}>{selectedSource.data_type}</Badge>
+                    )}
+                  </div>
+                  <div className="mt-3 flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>{t('data:lastUpdate', 'Last Update')} · {formatTime(selectedSource.last_update)}</span>
+                  </div>
+                  {selectedSource.description && (
+                    <p className="mt-2 text-sm text-muted-foreground">{selectedSource.description}</p>
+                  )}
                 </div>
 
-                {/* Source ID */}
-                <div className="rounded-lg border p-3">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className={cn(textMini, "text-muted-foreground")}>ID</span>
-                  </div>
-                  <code className="text-sm font-mono text-muted-foreground break-all">{selectedSource.id}</code>
-                </div>
-
-                {/* Description */}
-                {selectedSource.description && (
-                  <div className="rounded-lg border p-3">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className={cn(textMini, "text-muted-foreground")}>{t('data:description', 'Description')}</span>
-                    </div>
-                    <p className="text-sm">{selectedSource.description}</p>
-                  </div>
-                )}
-
-                {/* History Section */}
+                {/* Tier 2: History (main body) */}
                 <div className="rounded-xl border">
                   <div className="flex items-center justify-between p-4 border-b">
                     <div className="flex items-center gap-2 font-medium">
@@ -558,7 +530,7 @@ export function DataExplorerPage() {
                       <span className="text-xs">{t('common:loading', 'Loading...')}</span>
                     </div>
                   ) : historyData.length > 0 ? (
-                    <ScrollArea className="h-[320px]">
+                    <ScrollArea className="h-[400px]">
                       <table className="w-full text-sm">
                         <thead className="sticky top-0 bg-background">
                           <tr className="border-b">
@@ -593,6 +565,37 @@ export function DataExplorerPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Tier 3: Details (collapsed by default) */}
+                <Collapsible className="group">
+                  <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1">
+                    <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+                    {t('data:details', 'Details')}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-2 rounded-lg border p-3">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className={cn(textMini, "text-muted-foreground")}>ID</span>
+                        <button
+                          type="button"
+                          aria-label={t('common:copy', 'Copy')}
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(selectedSource.id)
+                              notifySuccess(t('data:idCopied', 'ID copied to clipboard'))
+                            } catch {
+                              notifyError(t('data:idCopyFailed', 'Failed to copy ID'))
+                            }
+                          }}
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <code className="text-sm font-mono text-muted-foreground break-all">{selectedSource.id}</code>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             )}
           </FullScreenDialogMain>
