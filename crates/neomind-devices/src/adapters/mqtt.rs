@@ -268,6 +268,129 @@ impl MqttAdapter {
         types.insert(device_id, device_type);
     }
 
+    /// Re-subscribe to telemetry topics of all registered devices for a broker.
+    ///
+    /// Handles the server-restart scenario: when a broker is (re-)added, devices
+    /// registered with custom `telemetry_topic`s need those topics re-subscribed so
+    /// their data flows through. Without this, registered devices silently receive no
+    /// data after restart until they are manually re-registered. (Bug 3)
+    async fn subscribe_device_telemetry_topics(
+        &self,
+        client: &rumqttc::AsyncClient,
+        broker_id: &str,
+        subscribed_topics: &Arc<RwLock<std::collections::HashSet<String>>>,
+    ) {
+        let registry = self.device_registry.read().await;
+        let devices = registry.list_devices();
+        drop(registry);
+
+        let mut subscribed_count = 0u32;
+        for device in &devices {
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                debug!(
+                    "Re-subscribing to device telemetry topic '{}' for broker '{}' (device '{}')",
+                    telemetry_topic, broker_id, device.device_id
+                );
+                if let Err(e) = client
+                    .subscribe(telemetry_topic.as_str(), rumqttc::QoS::AtLeastOnce)
+                    .await
+                {
+                    warn!(
+                        "Failed to re-subscribe to telemetry topic '{}' on broker {}: {}",
+                        telemetry_topic, broker_id, e
+                    );
+                } else {
+                    subscribed_topics.write().await.insert(telemetry_topic.clone());
+                    subscribed_count += 1;
+                }
+            }
+        }
+        if subscribed_count > 0 {
+            info!(
+                "Re-subscribed to {} device telemetry topics for broker '{}'",
+                subscribed_count, broker_id
+            );
+        }
+    }
+
+    /// Re-subscribe all previously-subscribed topics after a broker reconnect.
+    ///
+    /// With `clean_session=true` (the rumqttc default), the broker discards all
+    /// subscriptions on disconnect. rumqttc reconnects internally but does NOT
+    /// auto-resubscribe, so after a network drop + reconnect data silently stops
+    /// flowing. This is called from the event loop task when an `Ok` poll result
+    /// follows one or more `Err` results (i.e. a reconnect just succeeded). (Bug 6)
+    ///
+    /// Takes the `mqtt_clients` map (the spawned task owns an Arc clone) and
+    /// re-subscribes every topic currently tracked in the broker's
+    /// `subscribed_topics` set. Topics that fail to re-subscribe are removed from
+    /// the set so the dedup cache stays accurate.
+    async fn resubscribe_after_reconnect(
+        mqtt_clients: &Arc<RwLock<HashMap<String, MqttClientInner>>>,
+        broker_id: &str,
+    ) {
+        // Snapshot current topics + clone the client out so we don't hold any map
+        // or set locks across the subscribe awaits.
+        let (client, topics): (rumqttc::AsyncClient, Vec<String>) = {
+            let clients = mqtt_clients.read().await;
+            let Some(inner) = clients.get(broker_id) else {
+                return;
+            };
+            let client = inner.client.clone();
+            let topics = inner
+                .subscribed_topics
+                .read()
+                .await
+                .iter()
+                .cloned()
+                .collect();
+            (client, topics)
+        };
+
+        if topics.is_empty() {
+            debug!(
+                "No topics to re-subscribe after reconnect on broker '{}'",
+                broker_id
+            );
+            return;
+        }
+
+        let total = topics.len() as u32;
+        let mut failed: Vec<String> = Vec::new();
+        let mut ok: u32 = 0;
+        for topic in &topics {
+            match client
+                .subscribe(topic.as_str(), rumqttc::QoS::AtLeastOnce)
+                .await
+            {
+                Ok(_) => ok += 1,
+                Err(e) => {
+                    warn!(
+                        "Reconnect resubscribe failed for '{}' on broker '{}': {}",
+                        topic, broker_id, e
+                    );
+                    failed.push(topic.clone());
+                }
+            }
+        }
+
+        // Remove failed topics from the dedup set so they aren't falsely cached.
+        if !failed.is_empty() {
+            let clients = mqtt_clients.read().await;
+            if let Some(inner) = clients.get(broker_id) {
+                let mut set = inner.subscribed_topics.write().await;
+                for t in &failed {
+                    set.remove(t);
+                }
+            }
+        }
+
+        info!(
+            "Re-subscribed {}/{} topics after reconnect on broker '{}'",
+            ok, total, broker_id
+        );
+    }
+
     /// Add a broker connection to this adapter.
     ///
     /// This allows the MQTT adapter to connect to multiple brokers simultaneously.
@@ -297,6 +420,7 @@ impl MqttAdapter {
         let mut mqttoptions = rumqttc::MqttOptions::new(&client_id, &broker_host, broker_port);
         mqttoptions.set_max_packet_size(10 * 1024 * 1024, 10 * 1024 * 1024);
         mqttoptions.set_keep_alive(Duration::from_secs(60));
+        mqttoptions.set_clean_session(self.config.mqtt.clean_session);
 
         // Set credentials if provided
         if let (Some(user), Some(pass)) = (username, password) {
@@ -317,48 +441,24 @@ impl MqttAdapter {
             );
         }
 
-        // Create client
-        let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
+        // Create client with a larger request channel capacity (Bug 4: capacity 10
+        // risks deadlock when subscribing many topics before the event loop polls).
+        let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 100);
 
         let running = Arc::new(RwLock::new(true));
+        // Bug 6: with clean_session=true the broker forgets subscriptions on
+        // reconnect. The event loop task detects reconnects (Err then Ok) and calls
+        // `resubscribe_after_reconnect`, which re-subscribes every topic in this set
+        // and prunes any that fail. So this set is kept accurate across reconnects.
         let subscribed_topics = Arc::new(RwLock::new(std::collections::HashSet::new()));
 
-        // Subscribe to initial topics on this broker
-        let mut initial_topics = vec![
-            "device/+/+/uplink".to_string(),
-            "device/+/+/downlink".to_string(),
-        ];
-        for topic in &self.config.subscribe_topics {
-            initial_topics.push(topic.clone());
-        }
+        // Bug 4: clone client + subscribed set so we can subscribe AFTER spawning the
+        // event loop task. Subscribing before the event loop is polled can deadlock
+        // once the request channel fills up.
+        let client_for_sub = client.clone();
+        let subscribed_topics_for_sub = subscribed_topics.clone();
 
-        for topic in &initial_topics {
-            debug!(
-                "Attempting to subscribe to topic '{}' on broker '{}'...",
-                topic, broker_id
-            );
-            if let Err(e) = client.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
-                warn!(
-                    "Failed to subscribe to {} on broker {}: {}",
-                    topic, broker_id, e
-                );
-            } else {
-                subscribed_topics.write().await.insert(topic.clone());
-                info!(
-                    "Successfully subscribed to topic '{}' on broker '{}'",
-                    topic, broker_id
-                );
-            }
-        }
-
-        info!(
-            "Subscribed to {} topics for broker '{}': {:?}",
-            subscribed_topics.read().await.len(),
-            broker_id,
-            subscribed_topics.read().await
-        );
-
-        // Store the client
+        // Store the client BEFORE spawning the event loop
         let inner = MqttClientInner {
             _broker_id: broker_id.clone(),
             _broker_addr: broker_addr.clone(),
@@ -371,16 +471,18 @@ impl MqttAdapter {
             .await
             .insert(broker_id.clone(), inner);
 
-        // Restore topic_to_device and device_types mappings from device registry
-        // This is critical for server restart - devices must be able to receive data and metrics must be stored
+        // Restore topic_to_device and device_types mappings from device registry.
+        // This is critical for server restart - devices must be able to receive data
+        // and metrics must be stored.
         let registry = self.device_registry.read().await;
         let devices = registry.list_devices();
+        drop(registry);
         let mut topic_mapping = self.topic_to_device.write().await;
         let mut type_mapping = self.device_types.write().await;
         let mut restored_topic_count = 0;
         let mut restored_type_count = 0;
 
-        for device in devices {
+        for device in &devices {
             // Restore topic_to_device mapping
             if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
                 topic_mapping.insert(telemetry_topic.clone(), device.device_id.clone());
@@ -433,11 +535,20 @@ impl MqttAdapter {
         tokio::spawn(async move {
             let mut eventloop = eventloop;
             let mut error_count: u32 = 0;
+            // Bug 6: track whether we've seen at least one poll error since the last
+            // successful poll. When the next Ok arrives we re-subscribe, because
+            // clean_session=true brokers drop our subscriptions on every disconnect.
+            let mut was_disconnected = false;
 
             while *running_flag.read().await {
                 match eventloop.poll().await {
                     Ok(notification) => {
                         error_count = 0; // Reset error count on success
+                        if was_disconnected {
+                            was_disconnected = false;
+                            Self::resubscribe_after_reconnect(&mqtt_clients, &broker_id_clone)
+                                .await;
+                        }
                         Self::handle_mqtt_notification(
                             notification,
                             &config,
@@ -456,6 +567,7 @@ impl MqttAdapter {
                     }
                     Err(e) => {
                         error_count += 1;
+                        was_disconnected = true;
                         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
                         // rumqttc handles reconnection internally — just keep polling
                         let backoff = Duration::from_secs((1u64 << error_count.min(5)).min(30));
@@ -472,6 +584,78 @@ impl MqttAdapter {
             mqtt_clients.write().await.remove(&broker_id_clone);
             info!("MQTT broker {} connection closed", broker_id_clone);
         });
+
+        // Bug 4: subscribe AFTER the event loop task is spawned and polling. The event
+        // loop drains the request channel, so subscribe() calls won't block on a full
+        // channel. Bug 1: self.config.subscribe_topics is no longer mixed in here —
+        // callers pass explicit topics via add_broker_with_tls; add_broker uses only
+        // the built-in wildcard topics.
+        let initial_topics = vec![
+            "device/+/+/uplink".to_string(),
+            "device/+/+/downlink".to_string(),
+        ];
+
+        // Bug 5: track subscription success so a total failure surfaces as an error
+        // instead of silently marking the broker as "connected".
+        let mut success_count = 0u32;
+        let mut total_count = 0u32;
+        for topic in &initial_topics {
+            total_count += 1;
+            debug!(
+                "Attempting to subscribe to topic '{}' on broker '{}'...",
+                topic, broker_id
+            );
+            if let Err(e) = client_for_sub.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
+                warn!(
+                    "Failed to subscribe to {} on broker {}: {}",
+                    topic, broker_id, e
+                );
+            } else {
+                success_count += 1;
+                subscribed_topics_for_sub.write().await.insert(topic.clone());
+                info!(
+                    "Successfully subscribed to topic '{}' on broker '{}'",
+                    topic, broker_id
+                );
+            }
+        }
+
+        // Bug 3: re-subscribe telemetry topics of registered devices (server-restart)
+        self.subscribe_device_telemetry_topics(
+            &client_for_sub,
+            &broker_id,
+            &subscribed_topics_for_sub,
+        )
+        .await;
+
+        info!(
+            "Subscribed to {} topics for broker '{}': {:?}",
+            subscribed_topics_for_sub.read().await.len(),
+            broker_id,
+            subscribed_topics_for_sub.read().await
+        );
+
+        // Bug 5: if every subscription failed, fail the broker add entirely so the
+        // caller can surface the error rather than report a false "connected".
+        // Tear down the spawned event loop task + client so we don't leak a
+        // half-connected broker that pretends to be alive.
+        if success_count == 0 && total_count > 0 {
+            // Signal the event loop task to exit on its next loop iteration.
+            if let Some(running) = self
+                .mqtt_clients
+                .read()
+                .await
+                .get(&broker_id)
+                .map(|inner| inner.running.clone())
+            {
+                *running.write().await = false;
+            }
+            self.mqtt_clients.write().await.remove(&broker_id);
+            return Err(AdapterError::Configuration(format!(
+                "All {} subscriptions failed on broker {}",
+                total_count, broker_id
+            )));
+        }
 
         info!("Added MQTT broker: {} ({})", broker_id, broker_addr);
         Ok(())
@@ -512,6 +696,7 @@ impl MqttAdapter {
         let mut mqttoptions = rumqttc::MqttOptions::new(&mqtt_client_id, &broker_host, broker_port);
         mqttoptions.set_max_packet_size(10 * 1024 * 1024, 10 * 1024 * 1024);
         mqttoptions.set_keep_alive(Duration::from_secs(60));
+        mqttoptions.set_clean_session(self.config.mqtt.clean_session);
 
         // Set credentials if provided
         if let (Some(user), Some(pass)) = (username, password) {
@@ -537,52 +722,24 @@ impl MqttAdapter {
             );
         }
 
-        // Create client
-        let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
+        // Create client with a larger request channel capacity (Bug 4: capacity 10
+        // risks deadlock when subscribing many topics before the event loop polls).
+        let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 100);
 
         let running = Arc::new(RwLock::new(true));
+        // Bug 6: with clean_session=true the broker forgets subscriptions on
+        // reconnect. The event loop task detects reconnects (Err then Ok) and calls
+        // `resubscribe_after_reconnect`, which re-subscribes every topic in this set
+        // and prunes any that fail. So this set is kept accurate across reconnects.
         let subscribed_topics = Arc::new(RwLock::new(std::collections::HashSet::new()));
 
-        // Subscribe to initial topics on this broker
-        let mut initial_topics = vec![
-            "device/+/+/uplink".to_string(),
-            "device/+/+/downlink".to_string(),
-        ];
-        for topic in &self.config.subscribe_topics {
-            initial_topics.push(topic.clone());
-        }
-        // Add broker-specific topics
-        for topic in &subscribe_topics {
-            initial_topics.push(topic.clone());
-        }
+        // Bug 4: clone client + subscribed set so we can subscribe AFTER spawning the
+        // event loop task. Subscribing before the event loop is polled can deadlock
+        // once the request channel fills up.
+        let client_for_sub = client.clone();
+        let subscribed_topics_for_sub = subscribed_topics.clone();
 
-        for topic in &initial_topics {
-            debug!(
-                "Attempting to subscribe to topic '{}' on broker '{}'...",
-                topic, broker_id
-            );
-            if let Err(e) = client.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
-                warn!(
-                    "Failed to subscribe to {} on broker {}: {}",
-                    topic, broker_id, e
-                );
-            } else {
-                subscribed_topics.write().await.insert(topic.clone());
-                info!(
-                    "Successfully subscribed to topic '{}' on broker '{}'",
-                    topic, broker_id
-                );
-            }
-        }
-
-        info!(
-            "Subscribed to {} topics for broker '{}': {:?}",
-            subscribed_topics.read().await.len(),
-            broker_id,
-            subscribed_topics.read().await
-        );
-
-        // Store the client
+        // Store the client BEFORE spawning the event loop
         let inner = MqttClientInner {
             _broker_id: broker_id.clone(),
             _broker_addr: broker_addr.clone(),
@@ -595,15 +752,16 @@ impl MqttAdapter {
             .await
             .insert(broker_id.clone(), inner);
 
-        // Restore topic_to_device and device_types mappings from device registry
+        // Restore topic_to_device and device_types mappings from device registry.
         let registry = self.device_registry.read().await;
         let devices = registry.list_devices();
+        drop(registry);
         let mut topic_mapping = self.topic_to_device.write().await;
         let mut type_mapping = self.device_types.write().await;
         let mut restored_topic_count = 0;
         let mut restored_type_count = 0;
 
-        for device in devices {
+        for device in &devices {
             if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
                 topic_mapping.insert(telemetry_topic.clone(), device.device_id.clone());
                 restored_topic_count += 1;
@@ -622,7 +780,7 @@ impl MqttAdapter {
         // Update connection status
         self.update_connection_status().await;
 
-        // Spawn message processing task
+        // Spawn message processing task (consumes notifications from the channel).
         let running_flag = running.clone();
         let running_flag2 = running.clone();
         let config = self.config.clone();
@@ -672,20 +830,31 @@ impl MqttAdapter {
             broker_id, broker_addr
         );
 
+        // Bug 4: spawn the event loop poll task BEFORE subscribing. The poll task
+        // drains the request channel, so subscribe() calls won't deadlock.
         tokio::spawn(async move {
             let mut eventloop = eventloop;
             let mut error_count: u32 = 0;
+            // Bug 6: clean_session=true brokers forget our subscriptions on every
+            // disconnect. When the next Ok follows one or more Errs, re-subscribe.
+            let mut was_disconnected = false;
 
             while *running_flag2.read().await {
                 match eventloop.poll().await {
                     Ok(notification) => {
                         error_count = 0;
+                        if was_disconnected {
+                            was_disconnected = false;
+                            Self::resubscribe_after_reconnect(&mqtt_clients, &broker_id_clone2)
+                                .await;
+                        }
                         if let Err(e) = eventloop_tx.send(notification).await {
                             warn!("Failed to send MQTT notification to channel: {}", e);
                         }
                     }
                     Err(e) => {
                         error_count += 1;
+                        was_disconnected = true;
                         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
                         // rumqttc handles reconnection internally — just keep polling
                         let backoff = Duration::from_secs((1u64 << error_count.min(5)).min(30));
@@ -701,6 +870,79 @@ impl MqttAdapter {
             mqtt_clients.write().await.remove(&broker_id_clone2);
             info!("MQTT broker {} connection closed", broker_id_clone2);
         });
+
+        // Bug 4: subscribe AFTER the event loop poll task is spawned. Bug 1: only the
+        // explicit `subscribe_topics` function parameter is used — the duplicate
+        // self.config.subscribe_topics loop was removed (the API handler already sets
+        // config.subscribe_topics from the same broker data, so adding it twice
+        // caused rumqttc to receive duplicate SUBSCRIBE requests).
+        let mut initial_topics = vec![
+            "device/+/+/uplink".to_string(),
+            "device/+/+/downlink".to_string(),
+        ];
+        for topic in &subscribe_topics {
+            initial_topics.push(topic.clone());
+        }
+
+        // Bug 5: track subscription success so a total failure surfaces as an error
+        // instead of silently marking the broker as "connected".
+        let mut success_count = 0u32;
+        let mut total_count = 0u32;
+        for topic in &initial_topics {
+            total_count += 1;
+            debug!(
+                "Attempting to subscribe to topic '{}' on broker '{}'...",
+                topic, broker_id
+            );
+            if let Err(e) = client_for_sub.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
+                warn!(
+                    "Failed to subscribe to {} on broker {}: {}",
+                    topic, broker_id, e
+                );
+            } else {
+                success_count += 1;
+                subscribed_topics_for_sub.write().await.insert(topic.clone());
+                info!(
+                    "Successfully subscribed to topic '{}' on broker '{}'",
+                    topic, broker_id
+                );
+            }
+        }
+
+        // Bug 3: re-subscribe telemetry topics of registered devices (server-restart)
+        self.subscribe_device_telemetry_topics(
+            &client_for_sub,
+            &broker_id,
+            &subscribed_topics_for_sub,
+        )
+        .await;
+
+        info!(
+            "Subscribed to {} topics for broker '{}': {:?}",
+            subscribed_topics_for_sub.read().await.len(),
+            broker_id,
+            subscribed_topics_for_sub.read().await
+        );
+
+        // Bug 5: if every subscription failed, fail the broker add entirely.
+        // Tear down the spawned event loop tasks + client so we don't leak a
+        // half-connected broker that pretends to be alive.
+        if success_count == 0 && total_count > 0 {
+            if let Some(running) = self
+                .mqtt_clients
+                .read()
+                .await
+                .get(&broker_id)
+                .map(|inner| inner.running.clone())
+            {
+                *running.write().await = false;
+            }
+            self.mqtt_clients.write().await.remove(&broker_id);
+            return Err(AdapterError::Configuration(format!(
+                "All {} subscriptions failed on broker {}",
+                total_count, broker_id
+            )));
+        }
 
         info!(
             "Added MQTT broker with TLS: {} ({})",

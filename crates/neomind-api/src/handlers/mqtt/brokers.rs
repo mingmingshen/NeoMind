@@ -450,9 +450,12 @@ pub async fn create_broker_handler(
     broker.client_key = req.client_key.clone();
     broker.client_id = req.client_id.clone();
     broker.enabled = req.enabled;
-    // Use custom subscribe_topics if provided, otherwise keep default
+    // Use custom subscribe_topics if provided and non-empty, otherwise keep default.
+    // An empty array is ignored so it isn't treated as an intentional "clear all".
     if let Some(topics) = &req.subscribe_topics {
-        broker.subscribe_topics = topics.clone();
+        if !topics.is_empty() {
+            broker.subscribe_topics = topics.clone();
+        }
     }
 
     // Run security validation
@@ -613,9 +616,12 @@ pub async fn update_broker_handler(
     broker.enabled = req.enabled;
     // Update client_id if provided
     broker.client_id = req.client_id;
-    // Update subscribe_topics if provided
+    // Update subscribe_topics only if provided and non-empty. An empty array is
+    // ignored so it doesn't wipe out the existing topics by accident.
     if let Some(topics) = req.subscribe_topics {
-        broker.subscribe_topics = topics;
+        if !topics.is_empty() {
+            broker.subscribe_topics = topics;
+        }
     }
     broker.touch();
 

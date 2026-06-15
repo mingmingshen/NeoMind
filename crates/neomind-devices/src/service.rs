@@ -947,41 +947,57 @@ impl DeviceService {
             }
         }
 
-        // Then notify the adapter to subscribe to this device's telemetry topic
+        // Then notify adapter(s) to subscribe to this device's telemetry topic.
         // Skip adapter subscription for extension-managed devices - the extension
-        // handles data collection itself via produce_metrics
+        // handles data collection itself via produce_metrics.
+        //
+        // Binding rules (resolves the adapter_id=None ambiguity):
+        // - adapter_id specified  → notify ONLY that exact adapter (deterministic).
+        // - adapter_id is None    → notify ALL adapters matching adapter_type.
+        //   This is required because multiple MQTT adapters may coexist
+        //   (internal-mqtt + external-{id}) and without an explicit adapter_id we
+        //   cannot know which broker the device publishes to. Broadcasting ensures
+        //   the device's telemetry topic is subscribed on every connected broker so
+        //   data flows regardless. This matches the server-restart path where
+        //   add_broker / add_broker_with_tls re-subscribe all registered devices'
+        //   telemetry topics on every adapter.
         if adapter_type != "extension" {
-            let adapters = self.adapters.read().await;
-            let mut adapter_found = false;
-            for (adapter_id, adapter) in adapters.iter() {
-                // Check if this adapter can handle the device type
-                // If adapter_id is specified in config, also check for exact match
-                let adapter_match = if let Some(ref target_id) = target_adapter_id {
-                    adapter.adapter_type() == adapter_type && adapter_id == target_id
-                } else {
-                    adapter.adapter_type() == adapter_type
-                };
-
-                if adapter_match {
-                    tracing::info!(
-                        "Notifying adapter '{}' to subscribe to device '{}'",
-                        adapter_id,
-                        device_id
-                    );
-                    // Subscribe the adapter to this device
-                    let _ = adapter.subscribe_device(&device_id).await;
-                    adapter_found = true;
-                    break;
+            // Collect matching adapters first, then subscribe outside the lock to
+            // avoid holding the adapters read lock across multiple async awaits.
+            let matched = {
+                let adapters = self.adapters.read().await;
+                let mut result = Vec::new();
+                for (adapter_id, adapter) in adapters.iter() {
+                    let is_match = if let Some(ref target_id) = target_adapter_id {
+                        adapter.adapter_type() == adapter_type && adapter_id == target_id
+                    } else {
+                        adapter.adapter_type() == adapter_type
+                    };
+                    if is_match {
+                        result.push((adapter_id.clone(), adapter.clone()));
+                    }
                 }
-            }
+                result
+            };
 
-            if !adapter_found {
+            if matched.is_empty() {
                 tracing::warn!(
                     "No adapter found for device '{}' (type: {}, adapter_id: {:?})",
                     device_id,
                     adapter_type,
                     target_adapter_id
                 );
+            } else {
+                for (adapter_id, adapter) in &matched {
+                    tracing::info!(
+                        "Notifying adapter '{}' to subscribe to device '{}'",
+                        adapter_id,
+                        device_id
+                    );
+                    // No `break`: notify ALL matching adapters so a device with a
+                    // custom telemetry_topic is subscribed on every connected broker.
+                    let _ = adapter.subscribe_device(&device_id).await;
+                }
             }
         } else {
             tracing::info!(
