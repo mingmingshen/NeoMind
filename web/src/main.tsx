@@ -202,8 +202,10 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
       const cv: Record<string, unknown> = {}
       if (metrics && typeof metrics === 'object') {
         for (const [key, entry] of Object.entries(metrics as Record<string, any>)) {
-          // Each metric is { name, value, is_virtual, ... } — extract the raw value
-          cv[key] = entry?.value ?? entry
+          // Each metric is { name, value, is_virtual, ... } — extract the raw value.
+          // Skip metrics with null value (no data) to avoid returning the wrapper object.
+          const val = entry && typeof entry === 'object' ? entry.value : entry
+          if (val != null) cv[key] = val
         }
       }
       // Also check legacy flat formats
