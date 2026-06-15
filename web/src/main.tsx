@@ -196,11 +196,25 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
     const { api } = await import('@/lib/api')
     try {
       const result = await api.getDeviceCurrent(deviceId)
-      const cv = (result as any)?.current_values || (result as any)?.values
-      if (!cv || typeof cv !== 'object' || Object.keys(cv).length === 0) return null
+      // The API returns { device, metrics: { name: { value, is_virtual, ... } }, commands }
+      // Extract raw values from the metrics map, handling both current and legacy formats.
+      const metrics = (result as any)?.metrics
+      const cv: Record<string, unknown> = {}
+      if (metrics && typeof metrics === 'object') {
+        for (const [key, entry] of Object.entries(metrics as Record<string, any>)) {
+          // Each metric is { name, value, is_virtual, ... } — extract the raw value
+          cv[key] = entry?.value ?? entry
+        }
+      }
+      // Also check legacy flat formats
+      const legacy = (result as any)?.current_values || (result as any)?.values
+      if (legacy && typeof legacy === 'object') {
+        Object.assign(cv, legacy)
+      }
+      if (Object.keys(cv).length === 0) return null
       // Convert flat dot-separated keys to nested structure (matching store behavior)
       const nested: Record<string, unknown> = {}
-      for (const [key, value] of Object.entries(cv as Record<string, unknown>)) {
+      for (const [key, value] of Object.entries(cv)) {
         const parts = key.split('.')
         let target = nested
         for (let i = 0; i < parts.length - 1; i++) {
