@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.14] - 2026-06-16
+
+### Device Connectivity — External MQTT Broker Fixes
+
+Fixes a long-standing bug where devices stayed stuck at "未连接" (disconnected) after connecting to an external `mqtts://` broker (e.g. on Windows or any platform). Seven issues in the external broker subscription path are resolved:
+
+- **Duplicate SUBSCRIBE eliminated:** removed a double-merge of `subscribe_topics` in `add_broker_with_tls` that caused each topic to be subscribed twice.
+- **Empty `subscribe_topics` no longer clobbers defaults:** `Some([])` in create/update broker handlers is now ignored, so the default three telemetry topics survive.
+- **Re-subscribe on broker add:** every registered device's `telemetry_topic` is now re-subscribed when a broker is added (covers the server-restart path) via the new `subscribe_device_telemetry_topics` helper.
+- **Event loop deadlock fixed:** the event loop is now spawned *before* the first `client.subscribe()` call, and the request channel capacity is raised 10 → 100 — previously subscribing more than 10 topics deadlocked silently.
+- **All-failed subscriptions now surface an error:** instead of silently marking the broker "connected" when every subscription failed, the broker now returns an error and tears down its spawned task + client (no more half-connected brokers leaking).
+- **Auto re-subscribe on reconnect:** broker reconnects (Err → Ok transition) now trigger `resubscribe_after_reconnect`, since `clean_session=true` brokers forget subscriptions on every disconnect.
+- **`clean_session` honored:** the `MqttConfig.clean_session` flag is now actually applied via `set_clean_session`, instead of being a dead field.
+- **Adapter broadcast:** `register_device` now broadcasts to *all* matching MQTT adapters instead of stopping at the first, so a device with `adapter_id=None` is subscribed on every connected broker.
+
+### Agent — Default Ollama Model & Schema Localization
+
+- **Default model switched:** the default Ollama model across `default_model`, the placeholder, and the schema default is now `qwen3.5:4b` (was `ministral-3:3b`), matching the eval model and a generally available Ollama tag.
+- **LLM backend schema localized to English:** all form schema strings (titles, descriptions, display names) in `instance_manager.rs` were converted from Chinese to English for consistency with the rest of the schema.
+
 ## [0.8.13] - 2026-06-14
 
 ### Frontend Polish & TopNav Redesign
