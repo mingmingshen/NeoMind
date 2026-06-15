@@ -338,8 +338,12 @@ impl TransformEventService {
                                                 })
                                                 .await;
 
-                                            // Store to time series storage using the same "transform:{id}" namespace
-                                            // Convert neomind_core::MetricValue → neomind_devices::MetricValue for storage
+                                            // Store to time series storage.
+                                            // Dual-write: transform namespace (for Data Explorer, rules, useDataSource)
+                                            // AND original device namespace (so GET /api/devices/:id/current and
+                                            // community components using fetchDeviceValues can discover virtual metrics).
+                                            // The frontend Redux store skips is_virtual events, so this does NOT
+                                            // pollute deviceTelemetry — it only makes metrics queryable via REST.
                                             let storage_value = match &transformed_metric.value {
                                                 MetricValue::Float(f) => {
                                                     neomind_devices::MetricValue::Float(*f)
@@ -364,11 +368,12 @@ impl TransformEventService {
                                                 value: storage_value,
                                                 quality: transformed_metric.quality,
                                             };
+                                            // Primary: transform namespace
                                             if let Err(e) = time_series_storage_inner
                                                 .write(
                                                     &storage_device_id,
                                                     &transformed_metric.metric,
-                                                    data_point,
+                                                    data_point.clone(),
                                                 )
                                                 .await
                                             {
@@ -377,6 +382,24 @@ impl TransformEventService {
                                                     metric = %transformed_metric.metric,
                                                     error = %e,
                                                     "Failed to store transformed metric to time series storage"
+                                                );
+                                            }
+
+                                            // Secondary: original device namespace (for REST API discovery)
+                                            let device_source_id = format!("device:{}", device_id_clone);
+                                            if let Err(e) = time_series_storage_inner
+                                                .write(
+                                                    &device_source_id,
+                                                    &transformed_metric.metric,
+                                                    data_point,
+                                                )
+                                                .await
+                                            {
+                                                tracing::debug!(
+                                                    device_id = %device_source_id,
+                                                    metric = %transformed_metric.metric,
+                                                    error = %e,
+                                                    "Failed to store transformed metric to device namespace (non-critical)"
                                                 );
                                             }
 
