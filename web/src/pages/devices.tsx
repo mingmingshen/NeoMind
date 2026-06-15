@@ -42,7 +42,7 @@ export function DevicesPage() {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
   const { handleError, withErrorHandling } = useErrorHandler()
-  const { deviceId: urlDeviceId } = useParams<{ deviceId?: string }>()
+  const { id: urlDeviceId } = useParams<{ id?: string }>()
   const isMobile = useIsMobile()
 
   // Group device data selectors (change together)
@@ -415,19 +415,11 @@ export function DevicesPage() {
     toast({ title: t('common:success'), description: t('devices:deviceDeleted') })
   }
 
-  const handleOpenDeviceDetails = async (device: Device) => {
-    // Clear stale data immediately to prevent flash of previous device
-    clearDeviceDetails()
-    // Navigate to device detail URL
+  const handleOpenDeviceDetails = (device: Device) => {
+    // Only navigate — the [urlDeviceId] useEffect is the single source of truth
+    // for loading device data. Doing fetches here too causes a race that can
+    // leave the detail view blank on the first click.
     navigate(`/devices/${device.id}`)
-    setDeviceDetailView(device.id)
-    setSelectedMetric(null)
-    // All three fetches are independent — run in parallel
-    await Promise.all([
-      fetchDeviceDetails(device.id),
-      fetchDeviceTypeDetails(device.device_type),
-      fetchDeviceCurrentState(device.id),
-    ])
   }
 
   const handleCloseDeviceDetail = () => {
@@ -435,6 +427,8 @@ export function DevicesPage() {
     navigate('/devices')
     setDeviceDetailView(null)
     setSelectedMetric(null)
+    // Clear stale detail data so reopening doesn't flash the previous device
+    clearDeviceDetails()
   }
 
   const handleRefreshDeviceDetail = async () => {

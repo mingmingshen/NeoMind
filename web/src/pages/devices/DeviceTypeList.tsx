@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { TransformsBadge } from "@/components/automation"
 import { useIsMobile } from "@/hooks/useMobile"
+import { useTransformCounts } from "@/hooks/useTransformCounts"
 import { textNano, textMini } from "@/design-system/tokens/typography"
 
 interface DeviceTypeListProps {
@@ -42,6 +43,7 @@ export function DeviceTypeList({
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
   const isMobile = useIsMobile()
+  const { deviceTypeCounts, refresh: refreshTransformCounts } = useTransformCounts()
 
   // Export single device type as JSON file
   const handleExport = async (deviceType: DeviceType) => {
@@ -214,7 +216,7 @@ export function DeviceTypeList({
               )
 
             case 'transforms':
-              return <TransformsBadge deviceTypeId={type.device_type} onRefresh={onRefresh} />
+              return <TransformsBadge deviceTypeId={type.device_type} count={deviceTypeCounts[type.device_type] ?? 0} onRefresh={() => { refreshTransformCounts(); onRefresh() }} />
 
             default:
               return null

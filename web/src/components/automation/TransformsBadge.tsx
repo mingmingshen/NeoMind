@@ -10,17 +10,25 @@ import { DeviceTransformsDialog } from './DeviceTransformsDialog'
 interface TransformsBadgeProps {
   deviceId?: string
   deviceTypeId?: string
+  /** Pre-computed count from parent (useTransformCounts). When provided, skips self-fetch. */
+  count?: number
+  /** Parent refresh callback — called after dialog edits so the parent re-fetches counts. */
   onRefresh?: () => void
 }
 
-export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: TransformsBadgeProps) {
+export function TransformsBadge({ deviceId, deviceTypeId, count: countProp, onRefresh }: TransformsBadgeProps) {
   const { handleError } = useErrorHandler()
-  const [count, setCount] = useState(0)
+  const [localCount, setLocalCount] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const mountedRef = useRef(true)
 
+  // Only self-fetch when parent doesn't provide a count (standalone usage)
+  const hasCountProp = countProp !== undefined
+
   const fetchTransformCount = async () => {
+    if (hasCountProp) return
+
     // Use shared cache key — all TransformsBadge instances share one endpoint
     const cacheKey = 'transforms-list'
     if (!fetchCache.shouldFetch(cacheKey)) return
@@ -43,7 +51,7 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
         )
       }
 
-      setCount(filtered.length)
+      setLocalCount(filtered.length)
       fetchCache.markFetched(cacheKey)
     } catch (error) {
       fetchCache.invalidate('transforms-list')
@@ -57,13 +65,17 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
     mountedRef.current = true
     fetchTransformCount()
     return () => { mountedRef.current = false }
-  }, [deviceId, deviceTypeId])
+  }, [deviceId, deviceTypeId, hasCountProp])
 
   const handleRefresh = () => {
-    fetchCache.invalidate('transforms-list')
-    fetchTransformCount()
     onRefresh?.()
+    if (!hasCountProp) {
+      fetchCache.invalidate('transforms-list')
+      fetchTransformCount()
+    }
   }
+
+  const count = hasCountProp ? countProp! : localCount
 
   if (loading) {
     return <Badge variant="outline" className="text-xs">...</Badge>

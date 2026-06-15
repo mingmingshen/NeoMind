@@ -12,6 +12,7 @@ import { TransformsBadge } from "@/components/automation"
 import { useDeviceEvents } from "@/hooks/useEvents"
 import { useIsMobile } from "@/hooks/useMobile"
 import { useStore } from "@/store"
+import { useTransformCounts } from "@/hooks/useTransformCounts"
 
 interface DeviceListProps {
   devices: Device[]
@@ -45,6 +46,7 @@ export function DeviceList({
   const { t } = useTranslation(['common', 'devices'])
   const updateDeviceStatus = useStore((state) => state.updateDeviceStatus)
   const isMobile = useIsMobile()
+  const { deviceCounts, refresh: refreshTransformCounts } = useTransformCounts()
 
   // Listen to device status change events
   useDeviceEvents({
@@ -219,7 +221,7 @@ export function DeviceList({
               )
 
             case 'transforms':
-              return <TransformsBadge deviceId={device.id} onRefresh={onRefresh} />
+              return <TransformsBadge deviceId={device.id} count={deviceCounts[device.id] ?? 0} onRefresh={() => { refreshTransformCounts(); onRefresh() }} />
 
             case 'status':
               return <StatusBadge status={device.status} />

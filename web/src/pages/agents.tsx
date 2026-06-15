@@ -435,14 +435,9 @@ export function AgentsPage() {
     loadEditorResources()
   }
 
-  // Refresh detail when sheet is open
-  useEffect(() => {
-    if (detailDialogOpen && selectedAgent) {
-      api.getAgent(selectedAgent.id).then(setSelectedAgent).catch(err =>
-        handleError(err, { operation: 'Refresh agent details', showToast: false })
-      )
-    }
-  }, [detailDialogOpen, selectedAgent?.id, handleError])
+  // Note: detail data is loaded solely by handleViewDetail. The dialog's only
+  // open path is through that handler (which fetches fresh data each click),
+  // so no separate refresh effect is needed.
 
   // Merge executing state from WebSocket with agent data (memoized to avoid re-rendering all cards)
   // Only show Executing if agent is currently executing AND not paused/error in database
