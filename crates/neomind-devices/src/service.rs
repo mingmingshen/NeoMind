@@ -1215,52 +1215,99 @@ impl DeviceService {
             }
         }
 
-        // Get adapter for sending command (non-extension devices)
-        let adapter_id = config
-            .adapter_id
-            .as_deref()
-            .ok_or_else(|| DeviceError::InvalidParameter("Device has no adapter_id set".into()))?;
-
         // Build command payload from template (MQTT/adapter devices only)
         let payload = self.build_command_payload(command_def, &validated_params)?;
-
-        let adapter = {
-            let adapters = self.adapters.read().await;
-            adapters.get(adapter_id).cloned().ok_or_else(|| {
-                DeviceError::NotFoundStr(format!("Adapter '{}' not found", adapter_id))
-            })?
-        };
 
         // Determine command topic from device connection config
         let command_topic = config.connection_config.command_topic.clone();
 
-        match adapter
-            .send_command(device_id, command_name, payload, command_topic)
-            .await
-        {
-            Ok(()) => {
-                self.update_command_status(
-                    device_id,
-                    &command_id,
-                    CommandStatus::Success,
-                    Some("Command sent successfully".into()),
-                    None,
-                )
-                .await;
-                Ok(None)
+        // Resolve target adapter(s). When adapter_id is explicitly set, send only
+        // to that adapter (deterministic). When adapter_id is None (API-created
+        // devices), broadcast to all adapters matching the device's adapter_type —
+        // this mirrors the subscribe_device path so commands reach a device
+        // regardless of which broker it lives on. Publishing to a broker the
+        // device isn't listening on is harmless.
+        let adapter_type = config.adapter_type.clone();
+        let target_adapter_id = config.adapter_id.clone();
+        let matched: Vec<std::sync::Arc<dyn DeviceAdapter>> = {
+            let adapters = self.adapters.read().await;
+            let mut result = Vec::new();
+            for (aid, adapter) in adapters.iter() {
+                let is_match = if let Some(ref target) = target_adapter_id {
+                    adapter.adapter_type() == adapter_type && aid == target
+                } else {
+                    adapter.adapter_type() == adapter_type
+                };
+                if is_match {
+                    result.push(adapter.clone());
+                }
             }
-            Err(e) => {
-                let err_msg = format!("Failed to send command via adapter: {}", e);
-                self.update_command_status(
-                    device_id,
-                    &command_id,
-                    CommandStatus::Failed,
-                    None,
-                    Some(err_msg.clone()),
+            result
+        };
+
+        if matched.is_empty() {
+            let err_msg = if let Some(ref target) = target_adapter_id {
+                format!("Adapter '{}' not found for device '{}'", target, device_id)
+            } else {
+                format!(
+                    "No adapter of type '{}' found for device '{}'",
+                    adapter_type, device_id
                 )
-                .await;
-                Err(DeviceError::InvalidParameter(err_msg))
+            };
+            self.update_command_status(
+                device_id,
+                &command_id,
+                CommandStatus::Failed,
+                None,
+                Some(err_msg.clone()),
+            )
+            .await;
+            return Err(DeviceError::NotFoundStr(err_msg));
+        }
+
+        // Send to every matching adapter. Succeed if at least one accepts it.
+        let mut success_count = 0u32;
+        let mut last_error: Option<String> = None;
+        for adapter in &matched {
+            match adapter
+                .send_command(
+                    device_id,
+                    command_name,
+                    payload.clone(),
+                    command_topic.clone(),
+                )
+                .await
+            {
+                Ok(()) => success_count += 1,
+                Err(e) => {
+                    last_error =
+                        Some(format!("Failed to send command via adapter: {}", e));
+                }
             }
+        }
+
+        if success_count > 0 {
+            self.update_command_status(
+                device_id,
+                &command_id,
+                CommandStatus::Success,
+                Some(format!("Command sent to {} adapter(s)", success_count)),
+                None,
+            )
+            .await;
+            Ok(None)
+        } else {
+            let err_msg = last_error
+                .unwrap_or_else(|| "Failed to send command on any adapter".to_string());
+            self.update_command_status(
+                device_id,
+                &command_id,
+                CommandStatus::Failed,
+                None,
+                Some(err_msg.clone()),
+            )
+            .await;
+            Err(DeviceError::InvalidParameter(err_msg))
         }
     }
 
