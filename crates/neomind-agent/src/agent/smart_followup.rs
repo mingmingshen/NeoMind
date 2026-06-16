@@ -87,6 +87,12 @@ pub struct SmartFollowUpManager {
     max_followups: usize,
 }
 
+impl Default for SmartFollowUpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SmartFollowUpManager {
     /// 创建新的智能追问管理器
     pub fn new() -> Self {

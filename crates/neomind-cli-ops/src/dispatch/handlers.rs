@@ -341,7 +341,6 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
 }
 
 /// Run device draft management commands.
-
 pub async fn run_draft_cmd(cmd: DraftCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::device::*;
 
@@ -386,7 +385,6 @@ pub async fn run_draft_cmd(cmd: DraftCommand) -> Result<(CliResponse, OutputForm
 }
 
 /// Run device type management commands.
-
 pub async fn run_device_type_cmd(
     client: crate::ApiClient,
     cmd: DeviceTypeCommand,
@@ -419,7 +417,6 @@ pub async fn run_device_type_cmd(
 }
 
 /// Run dashboard management commands.
-
 pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{dashboard::*, ApiClient};
 
@@ -556,7 +553,6 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
 }
 
 /// Run rule management commands.
-
 pub async fn run_rule_cmd(cmd: RuleCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{rule::*, ApiClient};
 
@@ -596,7 +592,6 @@ pub async fn run_rule_cmd(cmd: RuleCommand) -> Result<(CliResponse, OutputFormat
 }
 
 /// Run transform management commands.
-
 pub async fn run_transform_cmd(cmd: TransformCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{transform::*, ApiClient};
 
@@ -671,7 +666,6 @@ pub async fn run_transform_cmd(cmd: TransformCommand) -> Result<(CliResponse, Ou
 }
 
 /// Run agent management commands.
-
 pub async fn run_agent_cmd(cmd: AgentCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{agent_cmd::*, ApiClient};
 
@@ -806,7 +800,6 @@ pub async fn run_agent_cmd(cmd: AgentCommand) -> Result<(CliResponse, OutputForm
 }
 
 /// Run message management commands.
-
 pub async fn run_message_cmd(cmd: MessageCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{message::*, ApiClient};
 
@@ -871,7 +864,6 @@ pub async fn run_message_cmd(cmd: MessageCommand) -> Result<(CliResponse, Output
 }
 
 /// Run push management commands.
-
 pub async fn run_push_cmd(cmd: PushCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{data_push::*, ApiClient};
 
@@ -918,7 +910,6 @@ pub async fn run_push_cmd(cmd: PushCommand) -> Result<(CliResponse, OutputFormat
 }
 
 /// Run widget management commands.
-
 pub async fn run_widget_cmd(cmd: WidgetCommand) -> Result<(CliResponse, OutputFormat)> {
     use crate::{widget::*, ApiClient};
 

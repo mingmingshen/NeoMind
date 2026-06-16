@@ -131,6 +131,12 @@ mod metric_data_type_serde {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub Uuid);
 
+impl Default for DeviceId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeviceId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())

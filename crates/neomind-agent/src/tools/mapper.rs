@@ -20,6 +20,12 @@ pub struct ToolNameMapper {
     alias_to_real: HashMap<String, String>,
 }
 
+impl Default for ToolNameMapper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolNameMapper {
     /// 创建新的映射器，包含所有内置映射
     pub fn new() -> Self {

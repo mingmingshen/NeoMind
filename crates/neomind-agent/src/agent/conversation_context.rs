@@ -85,6 +85,12 @@ impl Default for ContextCleanupConfig {
     }
 }
 
+impl Default for ConversationContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConversationContext {
     /// 创建新的对话上下文
     pub fn new() -> Self {

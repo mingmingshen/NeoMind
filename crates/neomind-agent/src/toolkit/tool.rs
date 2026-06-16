@@ -11,6 +11,12 @@ use super::error::{Result, ToolError};
 // Re-export from core for unified types
 pub use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
 
+/// Per-execution handles returned by the memory tool for agent-scoped state.
+pub type MemoryToolHandles = Option<(
+    std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+    std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
+)>;
+
 /// Tool execution result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolOutput {
@@ -225,10 +231,7 @@ pub trait Tool: Send + Sync {
         &self,
         _agent_id: String,
         _knowledge_files: Vec<neomind_storage::KnowledgeFileRef>,
-    ) -> Option<(
-        std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
-        std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
-    )> {
+    ) -> MemoryToolHandles {
         None
     }
 

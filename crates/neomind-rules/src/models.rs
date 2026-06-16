@@ -340,18 +340,15 @@ pub enum ExecuteTarget {
 /// Notification severity level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum NotifySeverity {
+    #[default]
     Info,
     Warning,
     Critical,
     Emergency,
 }
 
-impl Default for NotifySeverity {
-    fn default() -> Self {
-        Self::Info
-    }
-}
 
 /// A rule action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -420,6 +417,7 @@ impl RuleTrigger {
 
 /// Runtime state of a rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct RuleState {
     pub trigger_count: u64,
     pub last_triggered: Option<DateTime<Utc>>,
@@ -428,15 +426,6 @@ pub struct RuleState {
     pub condition_since: Option<DateTime<Utc>>,
 }
 
-impl Default for RuleState {
-    fn default() -> Self {
-        Self {
-            trigger_count: 0,
-            last_triggered: None,
-            condition_since: None,
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Compiled rule (complete)
@@ -606,7 +595,7 @@ mod datasource_id_vec_serde {
     use neomind_core::datasource::DataSourceId;
     use serde::{self, Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(v: &Vec<DataSourceId>, s: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(v: &[DataSourceId], s: S) -> Result<S::Ok, S::Error> {
         s.collect_seq(v.iter().map(|ds| ds.storage_key()))
     }
 

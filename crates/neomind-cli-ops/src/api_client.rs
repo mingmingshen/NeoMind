@@ -13,6 +13,12 @@ pub struct ApiClient {
     api_key: RwLock<Option<String>>,
 }
 
+impl Default for ApiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApiClient {
     pub fn new() -> Self {
         let base_url =

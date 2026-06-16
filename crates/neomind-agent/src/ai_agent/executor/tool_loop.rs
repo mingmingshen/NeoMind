@@ -304,7 +304,7 @@ impl AgentExecutor {
                 // Inject hint so LLM knows there's more work to do
                 messages.push(Message::new(
                     MessageRole::User,
-                    Content::text(&format!(
+                    Content::text(format!(
                         "[System] {} tool call(s) were deferred to save time. Remaining tasks: {}. \
                          Continue in the next round if needed.",
                         total - MAX_TOOL_CALLS_PER_ROUND,
@@ -349,7 +349,7 @@ impl AgentExecutor {
                         .collect();
                     messages.push(Message::new(
                         MessageRole::User,
-                        Content::text(&format!(
+                        Content::text(format!(
                             "[System] Skipped {} duplicate tool call(s). Commands already executed: {}. \
                              Use the results from previous rounds instead of re-querying.",
                             skipped_cross_round.len(),
@@ -484,7 +484,7 @@ impl AgentExecutor {
                         all_executed_signatures.iter().map(|s| s.as_str()).collect();
                     messages.push(Message::new(
                         MessageRole::User,
-                        Content::text(&format!(
+                        Content::text(format!(
                             "[System] Context was compacted. You have already executed {} tool call(s) — do NOT re-execute them:\n{}",
                             sig_count,
                             sigs.join("\n")
@@ -493,7 +493,7 @@ impl AgentExecutor {
                 } else if sig_count > 30 {
                     messages.push(Message::new(
                         MessageRole::User,
-                        Content::text(&format!(
+                        Content::text(format!(
                             "[System] Context was compacted. You have already executed {} tool calls across previous rounds. \
                              Do NOT re-query any entities you have already checked.",
                             sig_count
@@ -508,7 +508,7 @@ impl AgentExecutor {
             // so the agent can complete its work instead of being cut off mid-task.
             let had_tool_calls = !round_data_list
                 .last()
-                .map_or(true, |rd| rd.tool_calls.is_empty());
+                .is_none_or(|rd| rd.tool_calls.is_empty());
             if round + 1 == max_rounds && had_tool_calls {
                 let extension = MAX_CONTINUATION_ROUNDS;
                 max_rounds += extension;

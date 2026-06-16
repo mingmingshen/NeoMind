@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use crate::memory::dedup::DedupProcessor;
 
 use super::error::{Result, ToolError};
-use super::tool::{Tool, ToolCategory};
+use super::tool::{MemoryToolHandles, Tool, ToolCategory};
 use super::ToolOutput;
 
 /// Type alias for the per-execution agent_id handle.
@@ -447,10 +447,7 @@ Examples:
         &self,
         agent_id: String,
         knowledge_files: Vec<neomind_storage::KnowledgeFileRef>,
-    ) -> Option<(
-        std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
-        std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
-    )> {
+    ) -> MemoryToolHandles {
         let id_handle = std::sync::Arc::new(tokio::sync::RwLock::new(Some(agent_id)));
         let kf_handle = std::sync::Arc::new(tokio::sync::RwLock::new(knowledge_files));
 

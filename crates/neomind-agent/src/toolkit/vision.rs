@@ -306,9 +306,7 @@ impl VisionTool {
             .iter()
             .any(|prefix| canonical_lower.starts_with(prefix))
         {
-            return Err(ToolError::PermissionDenied(format!(
-                "Access to system path is not allowed"
-            )));
+            return Err(ToolError::PermissionDenied("Access to system path is not allowed".to_string()));
         }
 
         // Block hidden files (dotfiles) in home directories
@@ -316,9 +314,7 @@ impl VisionTool {
             if name.starts_with('.')
                 && (canonical_lower.starts_with("/home") || canonical_lower.starts_with("/users"))
             {
-                return Err(ToolError::PermissionDenied(format!(
-                    "Access to hidden file is not allowed"
-                )));
+                return Err(ToolError::PermissionDenied("Access to hidden file is not allowed".to_string()));
             }
         }
 

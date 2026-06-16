@@ -685,6 +685,12 @@ pub struct MdlRegistry {
     pub storage: Arc<RwLock<Option<Arc<MdlStorage>>>>,
 }
 
+impl Default for MdlRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MdlRegistry {
     /// Create a new MDL registry
     pub fn new() -> Self {

@@ -211,6 +211,12 @@ pub struct VectorStore {
     dimension: Option<usize>,
 }
 
+impl Default for VectorStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VectorStore {
     /// Create a new in-memory vector store.
     pub fn new() -> Self {

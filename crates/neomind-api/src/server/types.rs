@@ -331,7 +331,7 @@ impl ServerState {
                         if username == "__neomind_internal__" {
                             return cache.system_password.as_deref() == Some(password);
                         }
-                        cache.users.get(username).map_or(false, |hash| {
+                        cache.users.get(username).is_some_and(|hash| {
                             bcrypt::verify(password, hash).unwrap_or(false)
                         })
                     });

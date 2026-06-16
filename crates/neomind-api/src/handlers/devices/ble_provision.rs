@@ -160,7 +160,7 @@ pub async fn ble_provision_handler(
                 },
                 adapter_id: existing.adapter_id.clone(),
                 last_seen: existing.last_seen,
-                offline_timeout_secs: existing.offline_timeout_secs.clone(),
+                offline_timeout_secs: existing.offline_timeout_secs,
             };
 
             state

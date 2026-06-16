@@ -98,7 +98,7 @@ impl AgentExecutor {
                     let timestamp = chrono::Utc::now().timestamp();
 
                     // Build executor config for spawned task
-                    let executor_config = self.build_spawn_config(&agent);
+                    let executor_config = self.build_spawn_config(agent);
                     let agent_id_for_log = agent.id.clone();
                     let recent_executions_clone = self.recent_executions.clone();
 
@@ -271,7 +271,7 @@ impl AgentExecutor {
             let timestamp = chrono::Utc::now().timestamp();
 
             // Build executor config for spawned task
-            let executor_config = self.build_spawn_config(&agent);
+            let executor_config = self.build_spawn_config(agent);
             let agent_id_for_log = agent.id.clone();
             let recent_executions_clone = self.recent_executions.clone();
 

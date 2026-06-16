@@ -180,7 +180,7 @@ fn render_severity(sev: NotifySeverity) -> &'static str {
 
 fn render_duration(dur: std::time::Duration) -> String {
     let secs = dur.as_secs();
-    if secs >= 60 && secs % 60 == 0 {
+    if secs >= 60 && secs.is_multiple_of(60) {
         format!("{}min", secs / 60)
     } else {
         format!("{}s", secs)

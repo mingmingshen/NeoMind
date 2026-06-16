@@ -727,7 +727,7 @@ pub async fn update_device_handler(
     if let Some(secs) = req.offline_timeout_secs {
         const MIN_OFFLINE_TIMEOUT: u64 = 30;      // 30s — below this causes status flicker
         const MAX_OFFLINE_TIMEOUT: u64 = 86400;    // 24h — beyond this is unreasonable
-        if secs < MIN_OFFLINE_TIMEOUT || secs > MAX_OFFLINE_TIMEOUT {
+        if !(MIN_OFFLINE_TIMEOUT..=MAX_OFFLINE_TIMEOUT).contains(&secs) {
             return Err(ErrorResponse::bad_request(format!(
                 "offline_timeout_secs must be between {} and {} (got {})",
                 MIN_OFFLINE_TIMEOUT, MAX_OFFLINE_TIMEOUT, secs

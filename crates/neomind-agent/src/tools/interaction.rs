@@ -35,6 +35,12 @@ pub struct AskUserTool {
     _private: (),
 }
 
+impl Default for AskUserTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AskUserTool {
     /// Create a new ask user tool.
     pub fn new() -> Self {
@@ -172,6 +178,12 @@ pub struct ConfirmActionTool {
     _private: (),
 }
 
+impl Default for ConfirmActionTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfirmActionTool {
     /// Create a new confirm action tool.
     pub fn new() -> Self {
@@ -290,6 +302,12 @@ Operations that require confirmation:
 /// Clarify Intent Tool - enables LLM to ask for clarification when intent is ambiguous.
 pub struct ClarifyIntentTool {
     _private: (),
+}
+
+impl Default for ClarifyIntentTool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClarifyIntentTool {

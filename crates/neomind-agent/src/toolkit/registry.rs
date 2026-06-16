@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use serde_json::Value;
 
 use super::error::{Result, ToolError};
-use super::tool::{DynTool, ToolDefinition, ToolOutput};
+use super::tool::{DynTool, MemoryToolHandles, ToolDefinition, ToolOutput};
 
 /// Tool registry for managing available tools.
 ///
@@ -198,10 +198,7 @@ impl ToolRegistry {
         &self,
         agent_id: String,
         knowledge_files: Vec<neomind_storage::KnowledgeFileRef>,
-    ) -> Option<(
-        std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
-        std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
-    )> {
+    ) -> MemoryToolHandles {
         let tool = self.tools.get("memory")?;
         tool.swap_agent_context(agent_id, knowledge_files)
     }
@@ -264,6 +261,12 @@ pub struct ToolResult {
 pub struct ToolRegistryBuilder {
     registry: ToolRegistry,
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+}
+
+impl Default for ToolRegistryBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ToolRegistryBuilder {

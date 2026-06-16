@@ -292,7 +292,7 @@ impl TransformEventService {
                                                     .expect("exec_flush poisoned");
                                                 let last = map.get(tid).copied();
                                                 let do_flush =
-                                                    last.map_or(true, |t| now.duration_since(t) >= FLUSH_INTERVAL);
+                                                    last.is_none_or(|t| now.duration_since(t) >= FLUSH_INTERVAL);
                                                 if do_flush {
                                                     map.insert(tid.to_string(), now);
                                                 }

@@ -260,6 +260,12 @@ pub struct ResourceIndex {
     type_index: Arc<RwLock<HashMap<String, Vec<ResourceId>>>>,
 }
 
+impl Default for ResourceIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResourceIndex {
     /// Create a new resource index.
     pub fn new() -> Self {

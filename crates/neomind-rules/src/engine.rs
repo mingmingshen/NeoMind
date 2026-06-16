@@ -53,6 +53,12 @@ pub struct InMemoryValueProvider {
     values: Arc<StdRwLock<HashMap<String, RuleValue>>>,
 }
 
+impl Default for InMemoryValueProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryValueProvider {
     pub fn new() -> Self {
         Self {
@@ -689,7 +695,7 @@ impl RuleEngine {
                     }
                 } else {
                     tracing::warn!("TRIGGER_AGENT: {} (no callback wired)", agent_id);
-                    Err(format!("TRIGGER_AGENT failed: agent trigger callback not initialized"))
+                    Err("TRIGGER_AGENT failed: agent trigger callback not initialized".to_string())
                 }
             }
         }

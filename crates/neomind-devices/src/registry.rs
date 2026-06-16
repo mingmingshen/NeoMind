@@ -403,6 +403,12 @@ pub struct DeviceRegistry {
     auto_save: AtomicBool,
 }
 
+impl Default for DeviceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeviceRegistry {
     /// Create a new in-memory device registry (no persistence)
     pub fn new() -> Self {

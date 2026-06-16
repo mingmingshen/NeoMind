@@ -17,6 +17,12 @@ pub struct SkillRegistry {
     skills: HashMap<String, Skill>,
 }
 
+impl Default for SkillRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SkillRegistry {
     /// Create a new empty registry.
     pub fn new() -> Self {

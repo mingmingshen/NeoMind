@@ -31,6 +31,12 @@ pub struct MessageManager {
     dedup_cache: Arc<RwLock<HashMap<String, chrono::DateTime<chrono::Utc>>>>,
 }
 
+impl Default for MessageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageManager {
     /// Create a new in-memory message manager (no persistence).
     pub fn new() -> Self {

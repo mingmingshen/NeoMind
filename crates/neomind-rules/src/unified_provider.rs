@@ -54,6 +54,12 @@ pub struct UnifiedValueProvider {
     default_ttl_ms: u64,
 }
 
+impl Default for UnifiedValueProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UnifiedValueProvider {
     /// Create a new unified value provider.
     pub fn new() -> Self {

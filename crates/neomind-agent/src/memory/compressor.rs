@@ -43,7 +43,7 @@ pub fn evict_to_limit(content: &str, max_chars: usize) -> EvictionResult {
     let mut lo = 0usize;
     let mut hi = total_lines;
     while lo < hi {
-        let mid = lo + (hi - lo + 1) / 2;
+        let mid = lo + (hi - lo).div_ceil(2);
         if prefix_bytes[mid] <= max_chars {
             lo = mid;
         } else {

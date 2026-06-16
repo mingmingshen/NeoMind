@@ -128,6 +128,12 @@ pub struct ChannelRegistry {
     storage: RwLock<Option<Arc<redb::Database>>>,
 }
 
+impl Default for ChannelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChannelRegistry {
     /// Create a new in-memory channel registry (no persistence).
     pub fn new() -> Self {
