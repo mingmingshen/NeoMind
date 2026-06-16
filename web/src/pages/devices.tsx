@@ -398,6 +398,20 @@ export function DevicesPage() {
     !deviceDetailView && !deviceEventsConnected,
   )
 
+  // Refresh device details periodically in detail view (keeps status badge fresh)
+  useVisiblePolling(
+    async () => {
+      if (deviceDetailView) {
+        await Promise.all([
+          fetchDeviceDetails(deviceDetailView),
+          fetchDeviceCurrentState(deviceDetailView),
+        ])
+      }
+    },
+    15000,
+    !!deviceDetailView,
+  )
+
   // Handlers
   const handleAddDevice = async (request: import('@/types').AddDeviceRequest) => {
     setAddingDevice(true)
