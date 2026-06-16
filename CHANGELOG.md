@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.14] - 2026-06-16
+## [0.8.15] - 2026-06-16
+
+### LLM Backend — Multimodal Capability Override
+
+- **Manual override switch added:** the LLM backend edit dialog now exposes a Switch + "Reset to auto" control that PATCHes `/api/llm-backends/:id/capabilities` immediately, decoupled from the dialog's Save button. Previously the override endpoint existed but was only reachable via raw `curl`, leaving users no in-product way to correct auto-detection false positives (text-only Qwen tiers misclassified as vision, registry gaps for bare aliases like `claude-3-sonnet`, future unregistered vision models).
+- **Three-state semantics:** `multimodal_user_override == null` → Auto (Switch reflects the auto-detected value, caption shows `Vision (Auto)`); `true`/`false` → pinned, caption shows `Vision (Override)` and a Reset button appears.
+- **Create vs edit mode:** the Switch only renders when editing an existing backend (PATCH needs an id). Create mode keeps the original read-only Vision badge.
+- **Error handling:** uses `useErrorHandler` + `extractErrorMessage`; the API client passes `skipErrorToast: true` to avoid double-toasting. 404 → "Backend not found", other → generic failure toast with the API message.
+- **No `onRefresh()` after success:** the parent's `loadData` would `setLoading(true)` and unmount the dialog mid-interaction; the PATCH response is authoritative for local state, and the parent card list reconciles on the next natural refresh.
+
 
 ### Device Connectivity — External MQTT Broker Fixes
 
