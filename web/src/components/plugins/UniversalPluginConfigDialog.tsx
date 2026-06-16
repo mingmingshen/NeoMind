@@ -503,51 +503,49 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
         // Edit mode: Switch + optional Reset button. Switch reflects the
         // *effective* value (override when set, else auto-detected). Toggling
-        // pins the new value via PATCH.
+        // pins the new value via PATCH. Label stays short — on/off is conveyed
+        // by the Switch position; source provenance and the "click to override"
+        // hint go into the Switch's `title` tooltip to keep the row compact
+        // alongside Thinking/Tools/ctx badges.
         const effective = overrideState.effective
         const override = overrideState.override
         const source = overrideState.source
-        const stateLabel = effective
-          ? t("plugins:llm.stateOn")
-          : t("plugins:llm.stateOff")
 
         return (
-          <div className="flex flex-col gap-1 min-w-[220px]">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Switch
-                checked={effective}
-                onCheckedChange={handleToggleMultimodalOverride}
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={effective}
+              onCheckedChange={handleToggleMultimodalOverride}
+              disabled={overrideState.pending}
+              aria-label={t("plugins:llm.capabilityVision")}
+              title={
+                override == null
+                  ? source
+                    ? `${t("plugins:llm.overrideHint")} (${source})`
+                    : t("plugins:llm.overrideHint")
+                  : undefined
+              }
+            />
+            <span className="text-xs">
+              {override != null
+                ? t("plugins:llm.capabilityVisionOverrideLabelText")
+                : t("plugins:llm.capabilityVisionAutoLabel")}
+            </span>
+            {override != null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={handleResetMultimodalOverride}
                 disabled={overrideState.pending}
-                aria-label={t("plugins:llm.capabilityVision")}
-              />
-              <Eye className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs">
-                {override != null
-                  ? t("plugins:llm.capabilityVisionOverrideLabel")
-                  : t("plugins:llm.capabilityVisionAuto", { state: stateLabel })}
-              </span>
-              {override != null && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={handleResetMultimodalOverride}
-                  disabled={overrideState.pending}
-                  title={t("plugins:llm.resetToAuto")}
-                >
-                  <RotateCcw className="h-3 w-3 mr-1" />
-                  {t("plugins:llm.resetToAuto")}
-                </Button>
-              )}
-              {overrideState.pending && (
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-              )}
-            </div>
-            {override == null && (
-              <span className="text-[10px] text-muted-foreground">
-                {source && <span className="mr-1">({source})</span>}
-                {t("plugins:llm.overrideHint")}
-              </span>
+                aria-label={t("plugins:llm.resetToAuto")}
+                title={t("plugins:llm.resetToAuto")}
+              >
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+            )}
+            {overrideState.pending && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             )}
           </div>
         )
