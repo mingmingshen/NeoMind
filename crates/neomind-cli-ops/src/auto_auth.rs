@@ -136,10 +136,14 @@ pub fn resolve_data_dir() -> String {
             return dir;
         }
     }
-    // 2. Platform user-level default (only if it already exists)
+    // 2. Platform user-level default (only if it has api_keys.redb).
+    //    On macOS, data_local_dir() == config_dir() == ~/Library/Application Support/,
+    //    so `neomind login` creating ~/Library/Application Support/neomind/ for the
+    //    credential file would make resolve_data_dir() wrongly return it as the
+    //    data dir. Checking for api_keys.redb prevents this false positive.
     if let Some(local) = dirs::data_local_dir() {
         let candidate = local.join("neomind");
-        if candidate.is_dir() {
+        if candidate.join("api_keys.redb").exists() {
             return candidate.to_string_lossy().into_owned();
         }
     }

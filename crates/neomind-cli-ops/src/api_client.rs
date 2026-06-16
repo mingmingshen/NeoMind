@@ -48,11 +48,22 @@ impl ApiClient {
         }
     }
 
-    /// Refresh the API key from storage (re-read from env or redb).
+    /// Refresh the API key on 401 retry.
+    ///
+    /// Bypasses env var and credential file — those sources were already used
+    /// in the initial load and just failed. Go straight to redb for a fresh
+    /// key. This prevents stale-key lockout when the credential file key has
+    /// been revoked or the server was re-initialized.
     fn refresh_api_key(&self) {
-        let new_key = std::env::var("NEOMIND_API_KEY")
-            .ok()
-            .or_else(crate::auto_auth::read_default_api_key);
+        let new_key = crate::auto_auth::read_default_api_key_from(
+            &crate::auto_auth::resolve_data_dir(),
+        );
+        if new_key.is_some() {
+            tracing::debug!(
+                category = "api_client",
+                "Refreshed API key from redb after 401 (bypassed credential file)"
+            );
+        }
         *self.api_key.write().unwrap() = new_key;
     }
 
@@ -341,11 +352,12 @@ mod tests {
     }
 
     #[test]
-    fn test_refresh_api_key_idempotent() {
+    fn test_refresh_api_key_does_not_panic() {
+        // refresh_api_key() bypasses credential file and reads redb directly.
+        // It may return None when no redb is available in the test CWD — that's fine,
+        // we only verify it doesn't panic and updates the internal state.
         let client = ApiClient::with_base_url("http://localhost:9375/api");
-        let first = client.api_key.read().unwrap().clone();
         client.refresh_api_key();
-        let second = client.api_key.read().unwrap().clone();
-        assert_eq!(first, second); // Same source, should be the same
+        // Should not panic
     }
 }

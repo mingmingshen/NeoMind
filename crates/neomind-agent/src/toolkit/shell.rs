@@ -94,11 +94,20 @@ impl ShellTool {
     }
 
     /// Resolve API key for neomind CLI commands.
-    /// Checks env var first, then auto-auth from local redb.
+    ///
+    /// Checks env var first, then reads directly from the server's redb.
+    /// Deliberately skips the credential file layer (`read_default_api_key`)
+    /// because the agent runs inside the server process — it should use the
+    /// server's own key, not a credential file that may have been written by
+    /// `neomind login` against a different server instance.
     fn resolve_api_key() -> Option<String> {
         std::env::var("NEOMIND_API_KEY")
             .ok()
-            .or_else(neomind_cli_ops::auto_auth::read_default_api_key)
+            .or_else(|| {
+                neomind_cli_ops::auto_auth::read_default_api_key_from(
+                    &neomind_cli_ops::auto_auth::resolve_data_dir(),
+                )
+            })
     }
 
     /// Attempt in-process dispatch for `neomind` data commands.
