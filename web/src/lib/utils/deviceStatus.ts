@@ -60,8 +60,8 @@ export function getDeviceState(device: Pick<Device, 'online' | 'transport_connec
   const lastSeenEpoch = lastSeenStr ? Date.parse(lastSeenStr) : 0
   const neverSeen = !lastSeenEpoch || Number.isNaN(lastSeenEpoch) || lastSeenEpoch <= 0
 
-  // New backend → 4-state resolution
-  if (transportConnected !== undefined) {
+  // New backend → 4-state resolution (null/undefined → legacy fallback)
+  if (transportConnected != null) {
     if (online) {
       return { state: 'online', online, transportConnected, neverSeen }
     }

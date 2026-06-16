@@ -237,7 +237,11 @@
   "edit": {
     "title": "Edit Device",
     "success": "Device updated",
-    "error": "Failed to update device"
+    "error": "Failed to update device",
+    "offlineTimeoutLabel": "Offline Timeout (seconds)",
+    "offlineTimeoutHint": "Range 30–86400. Leave blank to use the default ({{default}}s).",
+    "offlineTimeoutPlaceholder": "Default: {{default}}s",
+    "invalidOfflineTimeout": "Offline timeout must be between {{min}} and {{max}} seconds"
   },
   "discoveryDialog": {
     "title": "Device Discovery",

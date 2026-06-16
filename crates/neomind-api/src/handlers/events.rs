@@ -219,6 +219,52 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
             }
             data
         }
+        NeoMindEvent::DeviceOnline {
+            device_id,
+            device_type,
+            timestamp,
+        } => {
+            serde_json::json!({
+                "device_id": device_id,
+                "device_type": device_type,
+                "timestamp": timestamp,
+            })
+        }
+        NeoMindEvent::DeviceOffline {
+            device_id,
+            reason,
+            timestamp,
+        } => {
+            serde_json::json!({
+                "device_id": device_id,
+                "reason": reason,
+                "timestamp": timestamp,
+            })
+        }
+        NeoMindEvent::DeviceTransportOnline {
+            device_id,
+            client_id,
+            timestamp,
+        } => {
+            serde_json::json!({
+                "device_id": device_id,
+                "client_id": client_id,
+                "timestamp": timestamp,
+            })
+        }
+        NeoMindEvent::DeviceTransportOffline {
+            device_id,
+            client_id,
+            reason,
+            timestamp,
+        } => {
+            serde_json::json!({
+                "device_id": device_id,
+                "client_id": client_id,
+                "reason": reason,
+                "timestamp": timestamp,
+            })
+        }
         // ExtensionOutput: payload for extension metric/output events
         NeoMindEvent::ExtensionOutput {
             extension_id,

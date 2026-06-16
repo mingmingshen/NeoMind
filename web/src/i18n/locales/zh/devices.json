@@ -237,7 +237,11 @@
   "edit": {
     "title": "编辑设备",
     "success": "设备已更新",
-    "error": "更新设备失败"
+    "error": "更新设备失败",
+    "offlineTimeoutLabel": "离线超时（秒）",
+    "offlineTimeoutHint": "范围 30–86400。留空则使用默认值（{{default}}秒）。",
+    "offlineTimeoutPlaceholder": "默认：{{default}}秒",
+    "invalidOfflineTimeout": "离线超时必须在 {{min}} 到 {{max}} 秒之间"
   },
   "discoveryDialog": {
     "title": "设备发现",
