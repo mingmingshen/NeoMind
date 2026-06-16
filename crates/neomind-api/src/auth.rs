@@ -123,7 +123,7 @@ impl AuthState {
     /// Used by the CLI for `--data-dir` support.
     pub fn new_with_data_dir(data_dir: &str) -> Self {
         let db_path = format!("{}/api_keys.redb", data_dir);
-        let crypto = Arc::new(CryptoService::from_env_or_generate());
+        let crypto = Arc::new(CryptoService::from_env_or_generate_with_data_dir(data_dir));
 
         // Ensure directory exists
         let _ = std::fs::create_dir_all(data_dir);

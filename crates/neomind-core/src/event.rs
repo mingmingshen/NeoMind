@@ -29,6 +29,25 @@ pub enum NeoMindEvent {
         timestamp: i64,
     },
 
+    /// MQTT/transport-level session came online (from broker hook, not from data).
+    /// Fired by the embedded rmqtt broker's `client_connected` hook or via
+    /// `$SYS` topic subscription when using an external broker. The `device_id`
+    /// is derived from the MQTT client_id by convention.
+    DeviceTransportOnline {
+        device_id: String,
+        client_id: String,
+        timestamp: i64,
+    },
+
+    /// MQTT/transport-level session went offline (from broker hook, not from
+    /// data staleness). Counterpart to `DeviceTransportOnline`.
+    DeviceTransportOffline {
+        device_id: String,
+        client_id: String,
+        reason: Option<String>,
+        timestamp: i64,
+    },
+
     /// Device metric update (core event!)
     ///
     /// This is the primary event that drives rule evaluation and
@@ -437,6 +456,8 @@ impl NeoMindEvent {
         match self {
             Self::DeviceOnline { .. } => "DeviceOnline",
             Self::DeviceOffline { .. } => "DeviceOffline",
+            Self::DeviceTransportOnline { .. } => "DeviceTransportOnline",
+            Self::DeviceTransportOffline { .. } => "DeviceTransportOffline",
             Self::DeviceMetric { .. } => "DeviceMetric",
             Self::DeviceCommandResult { .. } => "DeviceCommandResult",
             Self::DeviceDiscovered { .. } => "DeviceDiscovered",
@@ -490,6 +511,8 @@ impl NeoMindEvent {
         match self {
             Self::DeviceOnline { timestamp, .. }
             | Self::DeviceOffline { timestamp, .. }
+            | Self::DeviceTransportOnline { timestamp, .. }
+            | Self::DeviceTransportOffline { timestamp, .. }
             | Self::DeviceMetric { timestamp, .. }
             | Self::DeviceCommandResult { timestamp, .. }
             | Self::DeviceDiscovered { timestamp, .. }
@@ -537,6 +560,8 @@ impl NeoMindEvent {
             self,
             Self::DeviceOnline { .. }
                 | Self::DeviceOffline { .. }
+                | Self::DeviceTransportOnline { .. }
+                | Self::DeviceTransportOffline { .. }
                 | Self::DeviceMetric { .. }
                 | Self::DeviceCommandResult { .. }
                 | Self::DeviceDiscovered { .. }

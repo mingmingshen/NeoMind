@@ -1,6 +1,6 @@
 [package]
 name = "neomind-extension-runner"
-version = "0.8.15"
+version = "0.8.16"
 edition = "2021"
 description = "Standalone extension process runner for process-isolated extensions"
 authors = ["NeoMind Team"]

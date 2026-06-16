@@ -145,6 +145,27 @@ pub enum Command {
         #[command(subcommand)]
         connector_cmd: ConnectorCommand,
     },
+    /// System settings (timezone, data retention).
+    Settings {
+        #[command(subcommand)]
+        settings_cmd: SettingsCommand,
+    },
+    /// Log in by reading a key from the server's auth DB and saving it locally.
+    ///
+    /// After `neomind login`, the CLI works from any working directory without
+    /// needing `NEOMIND_API_KEY`. Mirrors `gh auth login`.
+    Login {
+        /// Server data directory (auto-detected if omitted).
+        #[arg(long)]
+        data_dir: Option<String>,
+        /// Re-fetch and overwrite the credential even if already logged in.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove the locally saved API key credential.
+    Logout,
+    /// Show the current API key and validate it against the server.
+    Whoami,
 }
 
 /// API key subcommands.
@@ -1887,6 +1908,65 @@ pub enum WidgetCommand {
 pub enum SystemCommand {
     /// Show system infrastructure info (MQTT broker, webhook URL, network).
     Info {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// System settings subcommands (timezone, data retention).
+#[derive(Subcommand, Debug)]
+pub enum SettingsCommand {
+    /// Get the current global timezone.
+    Timezone {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set the global timezone (IANA format, e.g. Asia/Shanghai).
+    SetTimezone {
+        /// Timezone in IANA format (e.g. "Asia/Shanghai", "UTC").
+        #[arg(required = true)]
+        timezone: String,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// List available timezones.
+    Timezones {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get data retention configuration.
+    Retention {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update data retention configuration.
+    ///
+    /// Controls automatic cleanup of telemetry data in `data/telemetry.redb`.
+    /// Example: `neomind settings set-retention --enabled --interval-hours 1 --default-retention 168`
+    SetRetention {
+        /// Enable or disable automatic retention cleanup.
+        #[arg(long)]
+        enabled: bool,
+        /// Cleanup interval in hours (must be greater than 0).
+        #[arg(long)]
+        interval_hours: u64,
+        /// Default retention limit in hours for telemetry points.
+        #[arg(long)]
+        default_retention: Option<u64>,
+        /// Retention limit in hours for image data.
+        #[arg(long)]
+        image_retention: Option<u64>,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Trigger a manual data cleanup now.
+    Cleanup {
         /// Output as JSON.
         #[arg(long)]
         json: bool,

@@ -21,7 +21,7 @@ interface EditDeviceDialogProps {
   onOpenChange: (open: boolean) => void
   device: Device | null
   deviceTypes: DeviceType[]
-  onEdit: (id: string, data: Partial<{ name: string; adapter_type: string; connection_config: ConnectionConfig }>) => Promise<boolean>
+  onEdit: (id: string, data: Partial<{ name: string; adapter_type: string; connection_config: ConnectionConfig; offline_timeout_secs: number | null }>) => Promise<boolean>
   editing: boolean
 }
 
@@ -38,6 +38,8 @@ export function EditDeviceDialog({
   const [deviceName, setDeviceName] = useState("")
   const [adapterType, setAdapterType] = useState<string>("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
+  // Per-device offline-timeout override (seconds). Empty string → cleared (use template/global).
+  const [offlineTimeout, setOfflineTimeout] = useState<string>("")
 
   // Memoize device type info to prevent unnecessary re-renders
   const deviceTypeInfo = useMemo(() => {
@@ -54,6 +56,9 @@ export function EditDeviceDialog({
     if (open && device) {
       setDeviceName(device.name || "")
       setAdapterType(device.adapter_type || "mqtt")
+      setOfflineTimeout(
+        device.offline_timeout_secs != null ? String(device.offline_timeout_secs) : "",
+      )
 
       const config = device.connection_config || {}
 
@@ -68,10 +73,33 @@ export function EditDeviceDialog({
   const handleEdit = async () => {
     if (!device) return
 
+    // Parse offline-timeout override: empty → null (clear), otherwise seconds.
+    const trimmed = offlineTimeout.trim()
+    let offlineTimeoutSecs: number | null = null
+    if (trimmed) {
+      const parsed = Number(trimmed)
+      const MIN = 30
+      const MAX = 86400
+      if (!Number.isFinite(parsed) || parsed < MIN || parsed > MAX) {
+        toast({
+          title: t('common:failed'),
+          description: t('devices:edit.invalidOfflineTimeout', {
+            defaultValue: 'Offline timeout must be between {{min}} and {{max}} seconds',
+            min: MIN,
+            max: MAX,
+          }),
+          variant: "destructive",
+        })
+        return
+      }
+      offlineTimeoutSecs = Math.floor(parsed)
+    }
+
     const success = await onEdit(device.id, {
       name: deviceName,
       adapter_type: adapterType,
       connection_config: connectionConfig,
+      offline_timeout_secs: offlineTimeoutSecs,
     })
 
     if (success) {
@@ -201,6 +229,27 @@ export function EditDeviceDialog({
             </div>
           </FormSection>
         )}
+
+        {/* Per-device offline timeout override (seconds) — applies to all adapter types */}
+        <FormField
+          label={t('devices:edit.offlineTimeoutLabel', {
+            defaultValue: 'Offline Timeout (seconds)',
+          })}
+          helpText={t('devices:edit.offlineTimeoutHint', {
+            defaultValue: 'Range 30–86400. Leave blank to use the default ({{default}}s).',
+            default: device?.effective_offline_timeout_secs ?? 300,
+          })}
+        >
+          <Input
+            value={offlineTimeout}
+            onChange={(e) => setOfflineTimeout(e.target.value)}
+            placeholder={t('devices:edit.offlineTimeoutPlaceholder', {
+              defaultValue: 'Default: {{default}}s',
+              default: device?.effective_offline_timeout_secs ?? 300,
+            })}
+            inputMode="numeric"
+          />
+        </FormField>
       </FormSectionGroup>
     </UnifiedFormDialog>
   )

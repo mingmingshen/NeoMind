@@ -141,8 +141,32 @@ pub async fn dispatch(argv: &[String]) -> Result<CliResponse, DispatchError> {
                 .map_err(|e| DispatchError::Api(e.to_string()))?;
             Ok(resp)
         }
+        Command::Settings { settings_cmd } => {
+            let (resp, _) = handlers::run_settings_cmd(settings_cmd)
+                .await
+                .map_err(|e| DispatchError::Api(e.to_string()))?;
+            Ok(resp)
+        }
         Command::Connector { connector_cmd } => {
             let (resp, _) = handlers::run_connector_cmd(connector_cmd)
+                .await
+                .map_err(|e| DispatchError::Api(e.to_string()))?;
+            Ok(resp)
+        }
+        Command::Login { data_dir, force } => {
+            let (resp, _) = handlers::run_login_cmd(data_dir, force)
+                .await
+                .map_err(|e| DispatchError::Api(e.to_string()))?;
+            Ok(resp)
+        }
+        Command::Logout => {
+            let (resp, _) = handlers::run_logout_cmd()
+                .await
+                .map_err(|e| DispatchError::Api(e.to_string()))?;
+            Ok(resp)
+        }
+        Command::Whoami => {
+            let (resp, _) = handlers::run_whoami_cmd()
                 .await
                 .map_err(|e| DispatchError::Api(e.to_string()))?;
             Ok(resp)

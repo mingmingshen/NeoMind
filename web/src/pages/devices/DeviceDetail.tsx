@@ -21,6 +21,7 @@ import {
   FullScreenDialogMain,
 } from "@/components/automation/dialog"
 import { ResponsiveTable, type TableColumn, EmptyState, Pagination } from "@/components/shared"
+import { DeviceStatusBadge } from "@/components/shared/DeviceStatusBadge"
 import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -544,18 +545,7 @@ export function DeviceDetail({
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <div className={cn(
-              "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm",
-              device.status === 'online'
-                ? "bg-success-light text-success"
-                : "bg-muted text-muted-foreground"
-            )}>
-              <span className={cn(
-                "h-2 w-2 rounded-full animate-pulse",
-                device.status === 'online' ? "bg-success" : "bg-muted-foreground"
-              )} />
-              {device.status === 'online' ? t('devices:status.online') : t('devices:status.offline')}
-            </div>
+            <DeviceStatusBadge device={device} className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm" />
           </div>
         </div>
 

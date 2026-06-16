@@ -35,6 +35,7 @@ pub fn device_instance_to_config(instance: &DeviceInstance) -> DeviceConfig {
         connection_config,
         adapter_id: instance.adapter_id.clone(),
         last_seen: 0,
+        offline_timeout_secs: None,
     }
 }
 
@@ -109,6 +110,7 @@ pub fn device_type_to_template(def: &DeviceTypeDefinition) -> DeviceTypeTemplate
         uplink_samples: def.uplink.samples.clone(),
         // Extract commands from downlink
         commands: def.downlink.commands.clone(),
+        default_offline_timeout_secs: None,
     }
 }
 

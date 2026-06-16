@@ -313,6 +313,9 @@ impl ServerState {
             });
 
         let broker = EmbeddedBroker::new(broker_config.clone(), credential_validator);
+        if let Some(bus) = self.core.event_bus.as_ref() {
+            broker.set_event_bus(bus.clone());
+        }
 
         if let Err(e) = broker.start().await {
             // Attempt rollback: restart with the old config and rebuild adapter
@@ -333,6 +336,9 @@ impl ServerState {
                         })
                     });
                 let rollback_broker = EmbeddedBroker::new(old_cfg.clone(), rollback_validator);
+                if let Some(bus) = self.core.event_bus.as_ref() {
+                    rollback_broker.set_event_bus(bus.clone());
+                }
                 if let Ok(()) = rollback_broker.start().await {
                     *self.devices.embedded_broker.write().unwrap() =
                         Some(Arc::new(rollback_broker));
@@ -1482,6 +1488,11 @@ impl ServerState {
             });
 
         let broker = EmbeddedBroker::new(broker_config.clone(), credential_validator);
+        // Wire up transport-level presence events (DeviceTransportOnline/Offline)
+        // so connected-but-idle devices no longer display as "Never Connected".
+        if let Some(bus) = self.core.event_bus.as_ref() {
+            broker.set_event_bus(bus.clone());
+        }
 
         match broker.start().await {
             Ok(_) => {

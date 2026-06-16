@@ -52,6 +52,7 @@ async fn create_test_registry_with_template() -> DeviceRegistry {
         ],
         commands: vec![],
         uplink_samples: vec![],
+        default_offline_timeout_secs: None,
     };
 
     registry.register_template(template).await.unwrap();

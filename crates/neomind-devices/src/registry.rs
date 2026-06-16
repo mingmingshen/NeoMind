@@ -179,6 +179,12 @@ pub struct DeviceTypeTemplate {
     /// Commands that this device accepts (simplified - no downlink wrapper)
     #[serde(default)]
     pub commands: Vec<CommandDefinition>,
+    /// Suggested offline threshold (seconds) for devices of this type.
+    /// Applied to `DeviceConfig::offline_timeout_secs` when a device is
+    /// registered through the template, unless the caller explicitly
+    /// overrides it. `None` = use the global default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_offline_timeout_secs: Option<u64>,
 }
 
 impl DeviceTypeTemplate {
@@ -193,6 +199,7 @@ impl DeviceTypeTemplate {
             metrics: Vec::new(),
             uplink_samples: Vec::new(),
             commands: Vec::new(),
+            default_offline_timeout_secs: None,
         }
     }
 
@@ -241,6 +248,13 @@ pub struct DeviceConfig {
     /// Last seen timestamp (persisted, 0 = never connected)
     #[serde(default)]
     pub last_seen: i64,
+    /// Per-device offline threshold (seconds). When `None`, falls back to
+    /// the global `HeartbeatConfig::offline_timeout`. Use `Some(n)` for
+    /// low-frequency devices (battery sensors, LoRaWAN, NB-IoT) so they
+    /// don't flicker to "Offline" between reports. Honored by
+    /// `effective_offline_timeout()` in `service.rs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offline_timeout_secs: Option<u64>,
 }
 
 /// Unified connection configuration for different protocols
@@ -509,6 +523,7 @@ impl DeviceRegistry {
                             .collect(),
                     })
                     .collect(),
+                default_offline_timeout_secs: storage_template.default_offline_timeout_secs,
             };
 
             self.templates
@@ -542,6 +557,7 @@ impl DeviceRegistry {
                 connection_config: convert_connection_config(storage_device.connection_config),
                 adapter_id: storage_device.adapter_id,
                 last_seen,
+                offline_timeout_secs: storage_device.offline_timeout_secs,
             };
 
             let device_id = config.device_id.clone();
@@ -660,6 +676,7 @@ impl DeviceRegistry {
                             .collect(),
                     })
                     .collect(),
+                default_offline_timeout_secs: template.default_offline_timeout_secs,
                 builtin_version: None,
             };
             store
@@ -681,6 +698,7 @@ impl DeviceRegistry {
                 ),
                 adapter_id: device.adapter_id.clone(),
                 last_seen: device.last_seen,
+                offline_timeout_secs: device.offline_timeout_secs,
             };
             store
                 .save_device(&storage_config)
@@ -794,6 +812,7 @@ impl DeviceRegistry {
                         .collect(),
                 })
                 .collect(),
+            default_offline_timeout_secs: template.default_offline_timeout_secs,
             builtin_version: None,
         };
 
@@ -936,6 +955,7 @@ impl DeviceRegistry {
                             ),
                             adapter_id: updated.adapter_id.clone(),
                             last_seen: updated.last_seen,
+                            offline_timeout_secs: updated.offline_timeout_secs,
                         };
                         let _ = storage.save_device(&sc);
                     }
@@ -957,6 +977,7 @@ impl DeviceRegistry {
                 ),
                 adapter_id: config.adapter_id.clone(),
                 last_seen: config.last_seen,
+                offline_timeout_secs: config.offline_timeout_secs,
             })
         } else {
             None
@@ -1104,6 +1125,7 @@ impl DeviceRegistry {
                 ),
                 adapter_id: config.adapter_id.clone(),
                 last_seen: config.last_seen,
+                offline_timeout_secs: config.offline_timeout_secs,
             })
         } else {
             None
@@ -1214,6 +1236,7 @@ mod tests {
             connection_config: ConnectionConfig::mqtt("sensors/sensor1/data", None::<String>),
             adapter_id: None,
             last_seen: 0,
+            offline_timeout_secs: None,
         };
 
         registry.register_device(config).await.unwrap();
@@ -1235,6 +1258,7 @@ mod tests {
             connection_config: ConnectionConfig::new(),
             adapter_id: None,
             last_seen: 0,
+            offline_timeout_secs: None,
         };
 
         let result = registry.register_device(config).await;
@@ -1259,6 +1283,7 @@ mod tests {
                 connection_config: ConnectionConfig::new(),
                 adapter_id: None,
                 last_seen: 0,
+                offline_timeout_secs: None,
             };
             registry.register_device(config).await.unwrap();
         }
@@ -1283,6 +1308,7 @@ mod tests {
             connection_config: ConnectionConfig::new(),
             adapter_id: None,
             last_seen: 0,
+            offline_timeout_secs: None,
         };
         registry.register_device(config).await.unwrap();
 

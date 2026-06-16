@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable, StatusBadge, EmptyState } from "@/components/shared"
+import { DeviceStatusBadge } from "@/components/shared/DeviceStatusBadge"
 import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { textMini } from "@/design-system/tokens/typography"
@@ -99,7 +100,7 @@ export function DeviceList({
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm truncate">{device.name || "-"}</div>
                     </div>
-                    <StatusBadge status={device.status} />
+                    <DeviceStatusBadge device={device} />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <button className="p-1 rounded-md hover:bg-muted">
@@ -224,7 +225,7 @@ export function DeviceList({
               return <TransformsBadge deviceId={device.id} count={deviceCounts[device.id] ?? 0} onRefresh={() => { refreshTransformCounts(); onRefresh() }} />
 
             case 'status':
-              return <StatusBadge status={device.status} />
+              return <DeviceStatusBadge device={device} />
 
             case 'lastOnline':
               return (

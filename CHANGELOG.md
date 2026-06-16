@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.16] - 2026-06-16
+
+### Device Connectivity — 4-State Connection Model
+
+Resolves a customer-reported UX bug where MQTT-connected devices that hadn't published data within the default 5-minute window displayed "Never Connected" (disconnected), misleading users into thinking the device was misconfigured. The fix introduces a 4-state connection model that decouples transport-level (MQTT session) connectivity from data-driven (telemetry) activity.
+
+#### Phase 0 — Hardcoded Timeout Fix
+- `DeviceStatus::is_connected()` used a hardcoded 300s timeout that bypassed the configurable `HeartbeatConfig::offline_timeout`. Replaced with `is_connected_within(timeout_secs)` and updated all 6 call sites in the API layer (`crud.rs`, `agents.rs`, `stats.rs`) to use the configurable value.
+
+#### Phase 1 — Transport-Layer Tracking (Embedded Broker)
+- New `DevicePresenceHook` in `embedded_broker.rs` hooks into rmqtt's `ClientConnected`/`ClientDisconnected` lifecycle events, publishing `DeviceTransportOnline`/`DeviceTransportOffline` events independently of data activity.
+- `DeviceStatus` gained `transport_connected: bool` and `transport_changed_at: i64` (with `#[serde(default)]` for forward compatibility with existing storage).
+- EventBus wired to all 3 `EmbeddedBroker::new` call sites in `server/types.rs` (initial + 2 rollback paths).
+
+#### Phase 2 — Per-Device Offline Timeout Override
+- `DeviceConfig.offline_timeout_secs: Option<u64>` and `DeviceTypeTemplate.default_offline_timeout_secs: Option<u64>` added with forward-compatible serde defaults.
+- Resolution priority: **device override → template default → global `HeartbeatConfig::offline_timeout`**.
+- `DeviceService::effective_offline_timeout(device_id)` helper resolves the fully-qualified timeout for any device.
+- All 6 `is_connected_within()` call sites in `crud.rs` now resolve per-device timeouts.
+- Exposed via `PUT /api/devices/:id` (`UpdateDeviceRequest.offline_timeout_secs`) and `DeviceDto` responses.
+- **Backend validation:** 30–86400 seconds (30s min to avoid status flicker, 24h max).
+- `DeviceDto.effective_offline_timeout_secs` lets the frontend display the resolved default without a separate API call.
+
+#### Phase 3 — Frontend 4-State UI
+- New `web/src/lib/utils/deviceStatus.ts` with `getDeviceState()` returning `online | connectedIdle | offline | disconnected`. Gracefully degrades to legacy 3-state when `transport_connected` is undefined (older backend or external broker).
+- New `DeviceStatusBadge` component (`web/src/components/shared/DeviceStatusBadge.tsx`) renders all 4 states with proper color variants (success / info / warning / muted).
+- Wired into `DeviceList.tsx` (desktop table + mobile card) and `DeviceDetail.tsx` header.
+- `EditDeviceDialog` gained an offline-timeout input field with inline validation, default-value display, and placement at the bottom of the form.
+- **i18n:** Added `statusLabels.connectedIdle` (en: "Connected·Idle", zh: "已连接·空闲"); clarified zh `disconnected` from ambiguous "未连接" to "从未上线".
+
+#### External Broker Behavior
+- External MQTT brokers (Mosquitto, EMQX, etc.) without rmqtt hooks gracefully degrade to 3-state: **Online / Offline / Never Connected**. The "Connected·Idle" state only appears with the embedded broker. This is correct behavior — NeoMind cannot detect MQTT session state without broker-level hooks.
+
 ## [0.8.15] - 2026-06-16
 
 ### LLM Backend — Multimodal Capability Override

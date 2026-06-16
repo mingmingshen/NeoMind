@@ -28,22 +28,27 @@ pub async fn get_retention(client: &ApiClient) -> Result<CliResponse> {
     Ok(CliResponse::success(data, "Retention settings retrieved"))
 }
 
-/// Update data retention settings
+/// Update data retention settings.
+///
+/// Matches the backend `RetentionConfigRequest`: `enabled` and `interval_hours`
+/// are required; `default_retention` and `image_retention` are optional limits
+/// in hours.
 pub async fn update_retention(
     client: &ApiClient,
-    enabled: Option<bool>,
+    enabled: bool,
+    interval_hours: u64,
     default_retention: Option<u64>,
-    topic_retention: Option<serde_json::Value>,
+    image_retention: Option<u64>,
 ) -> Result<CliResponse> {
-    let mut body = json!({});
-    if let Some(e) = enabled {
-        body["enabled"] = json!(e);
-    }
+    let mut body = json!({
+        "enabled": enabled,
+        "interval_hours": interval_hours,
+    });
     if let Some(r) = default_retention {
-        body["default_retention_hours"] = json!(r);
+        body["default_retention"] = json!(r);
     }
-    if let Some(tr) = topic_retention {
-        body["topic_retention"] = tr;
+    if let Some(i) = image_retention {
+        body["image_retention"] = json!(i);
     }
     let data = client.put("/settings/retention", &body).await?;
     Ok(CliResponse::success(data, "Retention settings updated"))

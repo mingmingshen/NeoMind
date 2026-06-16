@@ -624,6 +624,12 @@ pub struct BackendCapabilitiesBuilder {
     capabilities: BackendCapabilities,
 }
 
+impl Default for BackendCapabilitiesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BackendCapabilitiesBuilder {
     /// Create a new builder.
     pub fn new() -> Self {

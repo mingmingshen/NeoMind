@@ -194,6 +194,7 @@ async fn test_e2e_device_registration_and_command() {
         ),
         adapter_id: Some("test_adapter".to_string()),
         last_seen: 0,
+        offline_timeout_secs: None,
     };
 
     service
@@ -355,6 +356,7 @@ async fn test_e2e_device_with_template() {
         ),
         adapter_id: None,
         last_seen: 0,
+        offline_timeout_secs: None,
     };
 
     service.register_device(device_config).await.unwrap();

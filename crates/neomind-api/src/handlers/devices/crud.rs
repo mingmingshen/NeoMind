@@ -83,10 +83,26 @@ pub async fn list_devices_handler(
     let configs = state.devices.service.list_devices();
     let all_statuses = state.devices.service.get_all_device_statuses().await;
     let all_templates = state.devices.service.list_templates();
-    let template_map: std::collections::HashMap<&str, _> = all_templates
+    // Use the globally-configured offline timeout (instead of hardcoded 5 min)
+    let global_offline_timeout = state.devices.service.heartbeat_config().offline_timeout;
+    // Build device_type → template map for per-device offline-timeout resolution
+    let template_map: std::collections::HashMap<&str, &neomind_devices::DeviceTypeTemplate> = all_templates
         .iter()
         .map(|t| (t.device_type.as_str(), t))
         .collect();
+    // Resolve per-device effective offline timeout.
+    // Priority: device override > template default > global.
+    let effective_timeout = |config: &neomind_devices::DeviceConfig| -> u64 {
+        if let Some(secs) = config.offline_timeout_secs {
+            return secs;
+        }
+        if let Some(tpl) = template_map.get(config.device_type.as_str()) {
+            if let Some(secs) = tpl.default_offline_timeout_secs {
+                return secs;
+            }
+        }
+        global_offline_timeout
+    };
 
     struct DeviceWithStatus {
         config: neomind_devices::DeviceConfig,
@@ -112,7 +128,7 @@ pub async fn list_devices_handler(
         // Three-state: online / offline / disconnected
         // Support legacy filters: "connected" → "online", "disconnected" → "disconnected"
         if let Some(ref filter_status) = pagination.status {
-            let is_connected = device_status.is_connected();
+            let is_connected = device_status.is_connected_within(effective_timeout(&config));
             let device_status_str = if is_connected {
                 "online"
             } else if config.last_seen > 0 {
@@ -151,9 +167,8 @@ pub async fn list_devices_handler(
 
         let (plugin_id, plugin_name) = get_plugin_info(&config.adapter_id);
 
-        // Use is_connected() to properly check both status and last_seen timeout
-        // This ensures devices that haven't reported in >5 minutes show as offline
-        let online = device_status.is_connected();
+        // Use per-device effective offline timeout (device override > template > global)
+        let online = device_status.is_connected_within(effective_timeout(&config));
 
         // Determine status string based on actual connectivity
         //   - online: currently connected and active (is_connected() && last_seen < 5min)
@@ -206,9 +221,17 @@ pub async fn list_devices_handler(
             status: status_str.to_string(),
             last_seen,
             online,
+            transport_connected: device_status.transport_connected,
+            transport_changed_at: if device_status.transport_changed_at > 0 {
+                Some(device_status.transport_changed_at)
+            } else {
+                None
+            },
             plugin_id,
             plugin_name,
             adapter_id: config.adapter_id.clone(),
+            offline_timeout_secs: config.offline_timeout_secs,
+            effective_offline_timeout_secs: effective_timeout(&config),
             metric_count,
             command_count,
             current_values: None, // Skip for list view to reduce payload
@@ -258,8 +281,12 @@ pub async fn get_device_handler(
     // Get real device status from DeviceService
     let device_status = state.devices.service.get_device_status(&device_id).await;
 
-    // Use is_connected() which checks both status and last_seen时效
-    let online = device_status.is_connected();
+    // Resolve per-device effective offline timeout
+    // (device override > template default > global)
+    let effective_timeout = config.offline_timeout_secs
+        .or(template.default_offline_timeout_secs)
+        .unwrap_or(state.devices.service.heartbeat_config().offline_timeout);
+    let online = device_status.is_connected_within(effective_timeout);
 
     // Determine status string based on actual connectivity
     let status = if online {
@@ -292,6 +319,14 @@ pub async fn get_device_handler(
         "status": format_status_to_str(&instance.status),
         "last_seen": last_seen,
         "online": online,
+        "transport_connected": device_status.transport_connected,
+        "transport_changed_at": if device_status.transport_changed_at > 0 {
+            Some(device_status.transport_changed_at)
+        } else {
+            None
+        },
+        "offline_timeout_secs": config.offline_timeout_secs,
+        "effective_offline_timeout_secs": effective_timeout,
         "metric_count": metric_count,
         "command_count": command_count,
         "current_values": current_values_json,
@@ -322,7 +357,10 @@ pub async fn get_device_current_handler(
 
     // Get device status
     let device_status = state.devices.service.get_device_status(&device_id).await;
-    let online = device_status.is_connected();
+    let effective_timeout = config.offline_timeout_secs
+        .or(template.default_offline_timeout_secs)
+        .unwrap_or(state.devices.service.heartbeat_config().offline_timeout);
+    let online = device_status.is_connected_within(effective_timeout);
     let status = if online {
         MdlConnectionStatus::Connected
     } else {
@@ -496,6 +534,14 @@ pub async fn get_device_current_handler(
             "status": format_status_to_str(&instance.status),
             "last_seen": last_seen,
             "online": online,
+            "transport_connected": device_status.transport_connected,
+            "transport_changed_at": if device_status.transport_changed_at > 0 {
+                Some(device_status.transport_changed_at)
+            } else {
+                None
+            },
+            "offline_timeout_secs": config.offline_timeout_secs,
+            "effective_offline_timeout_secs": effective_timeout,
             "plugin_id": plugin_id,
             "plugin_name": plugin_name,
             "adapter_id": config.adapter_id,
@@ -646,6 +692,7 @@ pub async fn add_device_handler(
         connection_config,
         adapter_id: None, // Will be set by adapter when registered
         last_seen: 0,
+        offline_timeout_secs: None,
     };
 
     // Register device using new DeviceService
@@ -676,6 +723,18 @@ pub async fn update_device_handler(
         .get_device(&device_id)
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
 
+    // Validate offline_timeout_secs if provided
+    if let Some(secs) = req.offline_timeout_secs {
+        const MIN_OFFLINE_TIMEOUT: u64 = 30;      // 30s — below this causes status flicker
+        const MAX_OFFLINE_TIMEOUT: u64 = 86400;    // 24h — beyond this is unreasonable
+        if secs < MIN_OFFLINE_TIMEOUT || secs > MAX_OFFLINE_TIMEOUT {
+            return Err(ErrorResponse::bad_request(format!(
+                "offline_timeout_secs must be between {} and {} (got {})",
+                MIN_OFFLINE_TIMEOUT, MAX_OFFLINE_TIMEOUT, secs
+            )));
+        }
+    }
+
     // Parse connection_config if provided
     let connection_config = if let Some(config_json) = req.connection_config {
         serde_json::from_value(config_json)
@@ -693,6 +752,9 @@ pub async fn update_device_handler(
         connection_config,
         adapter_id: req.adapter_id.or(existing.adapter_id),
         last_seen: existing.last_seen,
+        // Direct assignment: frontend always sends this field explicitly.
+        // null/None = clear override (fall back to template/global), Some(n) = set.
+        offline_timeout_secs: req.offline_timeout_secs,
     };
 
     // Update device using new DeviceService
@@ -718,14 +780,21 @@ pub async fn get_device_state_handler(
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
-    let _config = state
+    if state
         .devices
         .service
         .get_device(&device_id)
-        .ok_or_else(|| ErrorResponse::not_found("Device"))?;
+        .is_none()
+    {
+        return Err(ErrorResponse::not_found("Device"));
+    }
 
     // Get device status
     let device_status = state.devices.service.get_device_status(&device_id).await;
+    let effective_timeout = state
+        .devices
+        .service
+        .effective_offline_timeout(&device_id);
 
     ok(json!({
         "device_id": device_id,
@@ -738,7 +807,7 @@ pub async fn get_device_state_handler(
         },
         "last_seen": device_status.last_seen,
         "adapter_id": device_status.adapter_id,
-        "is_connected": device_status.is_connected(),
+        "is_connected": device_status.is_connected_within(effective_timeout),
     }))
 }
 
@@ -749,26 +818,34 @@ pub async fn get_device_health_handler(
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
-    let _config = state
+    if state
         .devices
         .service
         .get_device(&device_id)
-        .ok_or_else(|| ErrorResponse::not_found("Device"))?;
+        .is_none()
+    {
+        return Err(ErrorResponse::not_found("Device"));
+    }
 
     let device_status = state.devices.service.get_device_status(&device_id).await;
+    let effective_timeout = state
+        .devices
+        .service
+        .effective_offline_timeout(&device_id);
     let now = chrono::Utc::now().timestamp();
     let seconds_since_last_seen = now - device_status.last_seen;
 
-    // Determine health status
-    let (health, message) = if device_status.is_connected() {
-        if seconds_since_last_seen < 60 {
+    // Determine health status using proportional thresholds relative to effective_timeout
+    let (health, message) = if device_status.is_connected_within(effective_timeout) {
+        let timeout = effective_timeout as i64;
+        if seconds_since_last_seen < timeout / 3 {
             ("healthy", "Device is connected and actively reporting")
-        } else if seconds_since_last_seen < 300 {
+        } else if seconds_since_last_seen < (timeout * 2) / 3 {
             ("stale", "Device is connected but hasn't reported recently")
         } else {
             (
                 "warning",
-                "Device is connected but hasn't reported for over 5 minutes",
+                "Device is connected but hasn't reported recently",
             )
         }
     } else {

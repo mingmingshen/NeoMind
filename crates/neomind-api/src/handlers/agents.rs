@@ -2397,7 +2397,9 @@ pub async fn get_available_resources(
             .get(&device.device_id)
             .cloned()
             .unwrap_or_default();
-        let is_connected = status.is_connected();
+        let is_connected = status.is_connected_within(
+            state.devices.service.effective_offline_timeout(&device.device_id),
+        );
 
         device_resources.push(json!({
             "id": device.device_id,

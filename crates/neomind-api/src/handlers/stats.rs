@@ -475,7 +475,9 @@ pub async fn get_device_stats_handler(
             .service
             .get_device_status(&config.device_id)
             .await;
-        let is_online = device_status.is_connected();
+        let is_online = device_status.is_connected_within(
+            state.devices.service.effective_offline_timeout(&config.device_id),
+        );
 
         devices_with_stats.push(json!({
             "device_id": config.device_id,

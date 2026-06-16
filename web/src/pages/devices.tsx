@@ -505,7 +505,7 @@ export function DevicesPage() {
     }
   }
 
-  const handleEditDeviceSubmit = async (id: string, data: Partial<{ name: string; adapter_type: string; connection_config: Record<string, unknown> }>) => {
+  const handleEditDeviceSubmit = async (id: string, data: Partial<{ name: string; adapter_type: string; connection_config: Record<string, unknown>; offline_timeout_secs: number | null }>) => {
     setUpdatingDevice(true)
     try {
       const success = await updateDevice(id, data)

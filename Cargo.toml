@@ -19,7 +19,7 @@ exclude = ["web"]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.15"
+version = "0.8.16"
 edition = "2021"
 rust-version = "1.85"
 authors = ["NeoMind Contributors"]
@@ -102,6 +102,9 @@ toml = "0.8"
 async-stream = "0.3"
 tempfile = "3"
 parking_lot = "0.12"
+
+# Cross-platform directories (CLI auto-auth data dir lookup)
+dirs = "5"
 
 [profile.release]
 lto = "thin"

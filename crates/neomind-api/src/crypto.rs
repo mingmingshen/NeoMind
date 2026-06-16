@@ -15,7 +15,6 @@ use tracing::{info, warn};
 use base64::Engine;
 
 const ENCRYPTION_KEY_ENV: &str = "NEOMIND_ENCRYPTION_KEY";
-const ENCRYPTION_KEY_FILE: &str = "data/encryption_key";
 const DEFAULT_ITERATIONS: u32 = 100_000;
 
 /// Error type for cryptographic operations.
@@ -68,6 +67,18 @@ impl CryptoService {
     /// 2. `data/encryption_key` file (auto-generated on first run)
     /// 3. Generate random key and persist to file
     pub fn from_env_or_generate() -> Self {
+        Self::from_env_or_generate_with_data_dir("data")
+    }
+
+    /// Same as [`from_env_or_generate`](Self::from_env_or_generate) but with a
+    /// custom data directory for the encryption key file.
+    ///
+    /// This fixes a path-pairing bug: when `AuthState::new_with_data_dir` opens
+    /// the redb from a custom path, the encryption key MUST also be read from
+    /// that same directory — otherwise decryption fails.
+    pub fn from_env_or_generate_with_data_dir(data_dir: &str) -> Self {
+        let key_file = format!("{}/encryption_key", data_dir);
+
         // 1. Try environment variable first
         if let Ok(key_str) = env::var(ENCRYPTION_KEY_ENV) {
             let key = key_str.as_bytes();
@@ -76,24 +87,24 @@ impl CryptoService {
                     category = "crypto",
                     "Invalid encryption key in environment, falling back to file"
                 );
-                Self::from_file_or_generate()
+                Self::from_file_or_generate(&key_file)
             });
         }
 
         // 2. Try persistent key file, or generate and save
-        Self::from_file_or_generate()
+        Self::from_file_or_generate(&key_file)
     }
 
     /// Load encryption key from file, or generate and persist a new one.
-    fn from_file_or_generate() -> Self {
+    fn from_file_or_generate(key_file: &str) -> Self {
         // Try to load from file
-        if let Ok(key_hex) = std::fs::read_to_string(ENCRYPTION_KEY_FILE) {
+        if let Ok(key_hex) = std::fs::read_to_string(key_file) {
             let key_hex = key_hex.trim();
             if let Ok(key_bytes) = hex::decode(key_hex) {
                 if key_bytes.len() >= 32 {
                     info!(
                         category = "crypto",
-                        "Loaded encryption key from {}", ENCRYPTION_KEY_FILE
+                        "Loaded encryption key from {}", key_file
                     );
                     return Self::new(&key_bytes).unwrap_or_else(|_| Self::generate_random());
                 }
@@ -109,11 +120,11 @@ impl CryptoService {
         let key_hex = hex::encode(raw_key);
 
         // Ensure data directory exists
-        if let Some(parent) = std::path::Path::new(ENCRYPTION_KEY_FILE).parent() {
+        if let Some(parent) = std::path::Path::new(key_file).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        if let Err(e) = std::fs::write(ENCRYPTION_KEY_FILE, &key_hex) {
+        if let Err(e) = std::fs::write(key_file, &key_hex) {
             warn!(
                 category = "crypto",
                 error = %e,
@@ -122,7 +133,7 @@ impl CryptoService {
         } else {
             info!(
                 category = "crypto",
-                "Generated and persisted encryption key to {}", ENCRYPTION_KEY_FILE
+                "Generated and persisted encryption key to {}", key_file
             );
         }
 
@@ -282,5 +293,41 @@ mod tests {
 
         let encrypted = crypto1.encrypt_str("secret").unwrap();
         assert!(crypto2.decrypt_str(&encrypted).is_err());
+    }
+
+    #[test]
+    fn test_data_dir_path_pairing() {
+        // Regression: from_env_or_generate_with_data_dir must place the key file
+        // inside the given data_dir, NOT the hardcoded "data/encryption_key".
+        let tmp = std::env::temp_dir().join(format!(
+            "neomind-crypto-pairing-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Ensure the env var doesn't interfere
+        std::env::remove_var(ENCRYPTION_KEY_ENV);
+
+        let _crypto = CryptoService::from_env_or_generate_with_data_dir(
+            tmp.to_str().unwrap(),
+        );
+
+        let key_file = tmp.join("encryption_key");
+        assert!(
+            key_file.exists(),
+            "encryption_key should be inside the custom data_dir"
+        );
+
+        // Loading again should reuse the same file (round-trip)
+        let crypto2 = CryptoService::from_env_or_generate_with_data_dir(tmp.to_str().unwrap());
+        let encrypted = crypto2.encrypt_str("hello").unwrap();
+        let decrypted = crypto2.decrypt_str(&encrypted).unwrap();
+        assert_eq!(decrypted, "hello");
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

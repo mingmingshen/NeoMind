@@ -1020,6 +1020,62 @@ pub async fn run_system_cmd(cmd: SystemCommand) -> Result<(CliResponse, OutputFo
     Ok(result)
 }
 
+pub async fn run_settings_cmd(cmd: SettingsCommand) -> Result<(CliResponse, OutputFormat)> {
+    let client = crate::ApiClient::new();
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let result = match cmd {
+        SettingsCommand::Timezone { json } => {
+            let fmt = if json { OutputFormat::Json } else { base_format };
+            let resp = crate::settings::get_timezone(&client).await?;
+            (resp, fmt)
+        }
+        SettingsCommand::SetTimezone { timezone, json } => {
+            let fmt = if json { OutputFormat::Json } else { base_format };
+            let resp = crate::settings::update_timezone(&client, &timezone).await?;
+            (resp, fmt)
+        }
+        SettingsCommand::Timezones { json } => {
+            let fmt = if json { OutputFormat::Json } else { base_format };
+            let resp = crate::settings::list_timezones(&client).await?;
+            (resp, fmt)
+        }
+        SettingsCommand::Retention { json } => {
+            let fmt = if json { OutputFormat::Json } else { base_format };
+            let resp = crate::settings::get_retention(&client).await?;
+            (resp, fmt)
+        }
+        SettingsCommand::SetRetention {
+            enabled,
+            interval_hours,
+            default_retention,
+            image_retention,
+            json,
+        } => {
+            let fmt = if json { OutputFormat::Json } else { base_format };
+            let resp = crate::settings::update_retention(
+                &client,
+                enabled,
+                interval_hours,
+                default_retention,
+                image_retention,
+            )
+            .await?;
+            (resp, fmt)
+        }
+        SettingsCommand::Cleanup { json } => {
+            let fmt = if json { OutputFormat::Json } else { base_format };
+            let resp = crate::settings::trigger_cleanup(&client).await?;
+            (resp, fmt)
+        }
+    };
+    Ok(result)
+}
+
 pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, OutputFormat)> {
     let client = crate::ApiClient::new();
     let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
@@ -1139,5 +1195,38 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
         }
     };
     Ok(result)
+}
+
+pub async fn run_login_cmd(
+    data_dir: Option<String>,
+    force: bool,
+) -> Result<(CliResponse, OutputFormat)> {
+    let fmt = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+    let resp = crate::auth_cmd::run_login(data_dir, force).await?;
+    Ok((resp, fmt))
+}
+
+pub async fn run_logout_cmd() -> Result<(CliResponse, OutputFormat)> {
+    let fmt = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+    let resp = crate::auth_cmd::run_logout().await?;
+    Ok((resp, fmt))
+}
+
+pub async fn run_whoami_cmd() -> Result<(CliResponse, OutputFormat)> {
+    let fmt = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+    let resp = crate::auth_cmd::run_whoami().await?;
+    Ok((resp, fmt))
 }
 

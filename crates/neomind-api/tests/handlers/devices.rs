@@ -100,6 +100,7 @@ mod tests {
             connection_config: Some(json!({"key": "value"})),
             adapter_type: None,
             adapter_id: None,
+            offline_timeout_secs: None,
         };
 
         assert_eq!(request.name, Some("Updated Device".to_string()));
@@ -202,6 +203,7 @@ mod tests {
             adapter_type: None,
             connection_config: None,
             adapter_id: None,
+            offline_timeout_secs: None,
         };
 
         assert!(request.name.is_none());
@@ -218,6 +220,7 @@ mod tests {
             adapter_type: None,
             connection_config: None,
             adapter_id: Some("adapter-123".to_string()),
+            offline_timeout_secs: None,
         };
 
         assert_eq!(request.name, Some("New Name".to_string()));

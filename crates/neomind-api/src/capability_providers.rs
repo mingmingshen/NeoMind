@@ -298,6 +298,7 @@ impl DeviceCapabilityProvider {
             metrics,
             uplink_samples: vec![],
             commands,
+            default_offline_timeout_secs: None,
         };
 
         device_service
@@ -355,6 +356,7 @@ impl DeviceCapabilityProvider {
             connection_config,
             adapter_id,
             last_seen: now_ms,
+            offline_timeout_secs: None,
         };
 
         device_service

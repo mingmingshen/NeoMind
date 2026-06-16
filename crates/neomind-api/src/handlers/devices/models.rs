@@ -14,6 +14,18 @@ pub struct DeviceDto {
     pub status: String,
     pub last_seen: Option<String>,
     pub online: bool,
+    /// Transport-layer (MQTT session) connected flag.
+    /// Independent of `online` (which is data-driven): a device can be
+    /// `transport_connected=true` while `online=false` if it has an active
+    /// MQTT session but hasn't published data within the offline timeout
+    /// window. Frontend uses this to display a 4th "Connected (idle)" state.
+    #[serde(default)]
+    pub transport_connected: bool,
+    /// Epoch seconds of the last transport_connected state change.
+    /// `None` if the broker never reported a transition (e.g. running
+    /// against an external broker without $SYS subscription).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport_changed_at: Option<i64>,
     /// Plugin ID that manages this device (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_id: Option<String>,
@@ -23,6 +35,14 @@ pub struct DeviceDto {
     /// Adapter/Plugin ID that manages this device
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
+    /// Per-device override of offline timeout (seconds).
+    /// None → falls back to template default → global config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offline_timeout_secs: Option<u64>,
+    /// The fully resolved offline timeout actually in effect for this device
+    /// (device override → template default → global). Read-only — included
+    /// so the frontend can display "Default: Ns" without a separate API call.
+    pub effective_offline_timeout_secs: u64,
     /// Metric and command counts (from template)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metric_count: Option<usize>,
@@ -129,6 +149,11 @@ pub struct UpdateDeviceRequest {
     /// Adapter/Plugin ID that manages this device
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
+    /// Per-device override for offline timeout (seconds).
+    /// When `None`, falls back to template default, then global
+    /// `HeartbeatConfig::offline_timeout`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offline_timeout_secs: Option<u64>,
 }
 
 /// Pagination query parameters

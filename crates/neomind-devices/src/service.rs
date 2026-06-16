@@ -180,12 +180,26 @@ pub struct AdapterStats {
 /// Device status information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceStatus {
-    /// Current connection status
+    /// Current connection status (legacy field; derived from data activity).
+    /// Kept for backward compatibility. New code should prefer
+    /// `transport_connected` + `last_seen` for accurate 4-state status.
     pub status: ConnectionStatus,
-    /// Last activity timestamp
+    /// Last data-activity timestamp (when the device last reported a metric).
     pub last_seen: i64,
     /// Adapter that manages this device
     pub adapter_id: Option<String>,
+    /// Transport-layer (MQTT session) connected flag.
+    /// Set by the rmqtt `client_connected`/`client_disconnected` hooks or by
+    /// the external-broker `$SYS` topic listener. Decoupled from `last_seen`
+    /// so a connected-but-idle device can be distinguished from a truly
+    /// offline one. Older clients that don't send this field default to
+    /// `false`, which preserves legacy behavior (status derived from data).
+    #[serde(default)]
+    pub transport_connected: bool,
+    /// Timestamp of the last `transport_connected` state change. Useful for
+    /// diagnosing "connected but no data" scenarios.
+    #[serde(default)]
+    pub transport_changed_at: i64,
 }
 
 impl Default for DeviceStatus {
@@ -196,6 +210,8 @@ impl Default for DeviceStatus {
             // offline detection for devices that haven't sent any metrics yet
             last_seen: 0,
             adapter_id: None,
+            transport_connected: false,
+            transport_changed_at: 0,
         }
     }
 }
@@ -251,6 +267,8 @@ impl DeviceStatus {
             status,
             last_seen: chrono::Utc::now().timestamp(),
             adapter_id: None,
+            transport_connected: false,
+            transport_changed_at: 0,
         }
     }
 
@@ -260,16 +278,15 @@ impl DeviceStatus {
         self.last_seen = chrono::Utc::now().timestamp();
     }
 
-    /// Check if device is currently connected
-    /// Returns true only if status is Connected AND last_seen was within 5 minutes
-    pub fn is_connected(&self) -> bool {
+    /// Check if device is connected within a configurable timeout window.
+    /// Returns true only if status is Connected AND last_seen was within `timeout_secs`.
+    pub fn is_connected_within(&self, timeout_secs: u64) -> bool {
         if !matches!(self.status, ConnectionStatus::Connected) {
             return false;
         }
-        // Check if device was seen in the last 5 minutes (300 seconds)
         let now = chrono::Utc::now().timestamp();
         let elapsed = now - self.last_seen;
-        elapsed < 300 // 5 minutes = 300 seconds
+        elapsed < timeout_secs as i64
     }
 }
 
@@ -357,6 +374,34 @@ impl DeviceService {
         &self.heartbeat_config
     }
 
+    /// Resolve the effective offline timeout (seconds) for a specific device.
+    ///
+    /// Priority order (highest first):
+    /// 1. Per-device override (`DeviceConfig::offline_timeout_secs`)
+    /// 2. Template default (`DeviceTypeTemplate::default_offline_timeout_secs`)
+    /// 3. Global `HeartbeatConfig::offline_timeout`
+    ///
+    /// This is the canonical resolution used by API handlers when building
+    /// `DeviceDto.online` and any consumer-visible "online within" check.
+    pub fn effective_offline_timeout(&self, device_id: &str) -> u64 {
+        // Global fallback
+        let global = self.heartbeat_config.offline_timeout;
+
+        // Try per-device override
+        if let Some(device) = self.registry.get_device(device_id) {
+            if let Some(secs) = device.offline_timeout_secs {
+                return secs;
+            }
+            // Try template default
+            if let Some(template) = self.registry.get_template(&device.device_type) {
+                if let Some(secs) = template.default_offline_timeout_secs {
+                    return secs;
+                }
+            }
+        }
+        global
+    }
+
     /// Start the device service - listens for device events and updates status
     /// Also loads command history from storage if available
     pub async fn start(&self) {
@@ -385,6 +430,8 @@ impl DeviceService {
                     event,
                     neomind_core::NeoMindEvent::DeviceOnline { .. }
                         | neomind_core::NeoMindEvent::DeviceOffline { .. }
+                        | neomind_core::NeoMindEvent::DeviceTransportOnline { .. }
+                        | neomind_core::NeoMindEvent::DeviceTransportOffline { .. }
                         | neomind_core::NeoMindEvent::DeviceMetric { .. }
                 )
             };
@@ -400,6 +447,34 @@ impl DeviceService {
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.update(ConnectionStatus::Disconnected);
+                    }
+                    neomind_core::NeoMindEvent::DeviceTransportOnline {
+                        device_id, timestamp, ..
+                    } => {
+                        let mut status = device_status.write().await;
+                        let entry = status.entry(device_id.clone()).or_default();
+                        entry.transport_connected = true;
+                        entry.transport_changed_at = timestamp;
+                        tracing::debug!(
+                            "Device {} transport session online (t={})",
+                            device_id,
+                            timestamp
+                        );
+                    }
+                    neomind_core::NeoMindEvent::DeviceTransportOffline {
+                        device_id,
+                        timestamp,
+                        ..
+                    } => {
+                        let mut status = device_status.write().await;
+                        let entry = status.entry(device_id.clone()).or_default();
+                        entry.transport_connected = false;
+                        entry.transport_changed_at = timestamp;
+                        tracing::debug!(
+                            "Device {} transport session offline (t={})",
+                            device_id,
+                            timestamp
+                        );
                     }
                     neomind_core::NeoMindEvent::DeviceMetric {
                         device_id,
@@ -555,14 +630,27 @@ impl DeviceService {
                                 status: ConnectionStatus::Disconnected,
                                 last_seen: 0, // Never seen - very old timestamp to trigger offline
                                 adapter_id: device_config.adapter_id.clone(),
+                                transport_connected: false,
+                                transport_changed_at: 0,
                             }
                         });
 
-                        // Check if this device is stale
-                        // Use status field directly (not is_connected()) because is_connected()
-                        // also checks last_seen timeout, making the conditions mutually exclusive
+                        // Check if this device is stale using per-device effective timeout
+                        // (device override > template default > global)
+                        let effective_timeout = {
+                            let mut t = config.offline_timeout;
+                            if let Some(secs) = device_config.offline_timeout_secs {
+                                t = secs;
+                            } else if let Some(tpl) = registry.get_template(&device_config.device_type) {
+                                if let Some(secs) = tpl.default_offline_timeout_secs {
+                                    t = secs;
+                                }
+                            }
+                            t
+                        };
+                        let elapsed = now - status.last_seen;
                         if matches!(status.status, ConnectionStatus::Connected)
-                            && config.is_stale(status.last_seen)
+                            && elapsed > effective_timeout as i64
                         {
                             stale_devices.push((device_id.clone(), status.last_seen));
                         } else if status.last_seen == 0 {
@@ -607,10 +695,13 @@ impl DeviceService {
     }
 
     /// Check if a device is currently stale (hasn't been seen within timeout)
+    /// Uses per-device effective timeout (device > template > global).
     pub async fn is_device_stale(&self, device_id: &str) -> bool {
         let status_map = self.device_status.read().await;
         if let Some(status) = status_map.get(device_id) {
-            self.heartbeat_config.is_stale(status.last_seen)
+            let effective_timeout = self.effective_offline_timeout(device_id);
+            let elapsed = (chrono::Utc::now().timestamp() - status.last_seen) as u64;
+            elapsed > effective_timeout
         } else {
             // Unknown devices are considered stale
             true
@@ -621,18 +712,18 @@ impl DeviceService {
     pub async fn get_device_health(&self) -> HashMap<String, DeviceHealth> {
         let status_map = self.device_status.read().await;
         let now = chrono::Utc::now().timestamp();
-        let config = self.heartbeat_config.clone();
 
         status_map
             .iter()
             .map(|(device_id, status)| {
                 let elapsed = now - status.last_seen;
-                let is_stale = config.is_stale(status.last_seen);
+                let effective_timeout = self.effective_offline_timeout(device_id) as i64;
+                let is_stale = elapsed > effective_timeout;
                 let health_score = if is_stale {
                     0
-                } else if elapsed < config.offline_timeout as i64 / 3 {
+                } else if elapsed < effective_timeout / 3 {
                     100
-                } else if elapsed < (config.offline_timeout as i64 * 2) / 3 {
+                } else if elapsed < (effective_timeout * 2) / 3 {
                     50
                 } else {
                     25
@@ -938,6 +1029,8 @@ impl DeviceService {
                         status: ConnectionStatus::Disconnected,
                         last_seen: chrono::Utc::now().timestamp(),
                         adapter_id: target_adapter_id.clone(),
+                        transport_connected: false,
+                        transport_changed_at: 0,
                     },
                 );
                 tracing::debug!(
@@ -1896,6 +1989,7 @@ mod tests {
             connection_config: ConnectionConfig::new(),
             adapter_id: None,
             last_seen: 0,
+            offline_timeout_secs: None,
         };
 
         service.register_device(config).await.unwrap();

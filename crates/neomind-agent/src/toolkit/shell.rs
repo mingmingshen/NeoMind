@@ -96,12 +96,9 @@ impl ShellTool {
     /// Resolve API key for neomind CLI commands.
     /// Checks env var first, then auto-auth from local redb.
     fn resolve_api_key() -> Option<String> {
-        std::env::var("NEOMIND_API_KEY").ok().or_else(|| {
-            // Try auto-auth (reads data/api_keys.redb)
-            // Use the same path resolution as the neomind CLI
-            let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-            neomind_cli_ops::auto_auth::read_default_api_key_from(&data_dir)
-        })
+        std::env::var("NEOMIND_API_KEY")
+            .ok()
+            .or_else(neomind_cli_ops::auto_auth::read_default_api_key)
     }
 
     /// Attempt in-process dispatch for `neomind` data commands.

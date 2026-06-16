@@ -254,6 +254,7 @@ pub async fn approve_draft_device(
                 connection_config,
                 adapter_id: draft.adapter_id.clone().or(Some(default_adapter_id)),
                 last_seen: chrono::Utc::now().timestamp(),
+                offline_timeout_secs: None,
             };
 
             // Register the device
@@ -315,6 +316,7 @@ pub async fn approve_draft_device(
                 metrics: convert_metrics_to_template(&gen_type.metrics),
                 commands: Vec::new(),       // No commands generated yet
                 uplink_samples: Vec::new(), // Samples not stored in draft
+                default_offline_timeout_secs: None,
             };
 
             // Register the device type template
@@ -354,6 +356,7 @@ pub async fn approve_draft_device(
                 connection_config,
                 adapter_id: draft.adapter_id.clone().or(Some(default_adapter_id)),
                 last_seen: chrono::Utc::now().timestamp(),
+                offline_timeout_secs: None,
             };
 
             // Register the device

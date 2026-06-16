@@ -23,6 +23,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use neomind_core::{EventBus, NeoMindEvent};
+
 /// Embedded MQTT broker error type
 #[derive(Debug, Error)]
 pub enum EmbeddedBrokerError {
@@ -229,7 +231,89 @@ impl rmqtt::hook::Handler for NeoMindAuthHandler {
     }
 }
 
-/// Embedded MQTT broker handle.
+/// Hook that emits `DeviceTransportOnline` / `DeviceTransportOffline` events
+/// to the NeoMind EventBus whenever an MQTT client connects or disconnects
+/// at the transport layer.
+///
+/// This decouples "MQTT session is alive" from "device has recently sent
+/// data", which is what `DeviceStatus::last_seen` tracks. Without this hook,
+/// a device that's connected to the broker but hasn't published yet shows
+/// up as "Never Connected" in the UI — a common customer-reported bug.
+///
+/// The `device_id` is taken from the MQTT `client_id` verbatim. Devices are
+/// expected to use their NeoMind `device_id` as the MQTT client_id; if they
+/// don't, the event is still emitted (best-effort) and downstream consumers
+/// can decide whether to ignore unknown client_ids.
+struct DevicePresenceHook {
+    event_bus: Arc<EventBus>,
+}
+
+impl DevicePresenceHook {
+    fn new(event_bus: Arc<EventBus>) -> Self {
+        Self { event_bus }
+    }
+
+    /// Convert an rmqtt client_id into a NeoMind device_id. Currently a
+    /// passthrough — the convention is that the MQTT client_id IS the
+    /// NeoMind device_id. Centralized here so future remapping logic
+    /// (e.g. prefix stripping) has a single home.
+    fn client_id_to_device_id(client_id: &rmqtt::types::ClientId) -> String {
+        client_id.to_string()
+    }
+}
+
+#[async_trait]
+impl rmqtt::hook::Handler for DevicePresenceHook {
+    async fn hook(
+        &self,
+        param: &rmqtt::hook::Parameter,
+        _acc: Option<rmqtt::hook::HookResult>,
+    ) -> rmqtt::hook::ReturnType {
+        let now = chrono::Utc::now().timestamp();
+        match param {
+            rmqtt::hook::Parameter::ClientConnected(session) => {
+                let device_id = Self::client_id_to_device_id(&session.id.client_id);
+                tracing::debug!(
+                    "DevicePresenceHook: client_connected client_id='{}' -> device_id='{}'",
+                    session.id.client_id,
+                    device_id
+                );
+                self.event_bus
+                    .publish(NeoMindEvent::DeviceTransportOnline {
+                        device_id,
+                        client_id: session.id.client_id.to_string(),
+                        timestamp: now,
+                    })
+                    .await;
+            }
+            rmqtt::hook::Parameter::ClientDisconnected(session, reason) => {
+                let device_id = Self::client_id_to_device_id(&session.id.client_id);
+                let reason_str = match reason {
+                    rmqtt::types::Reason::Unknown => None,
+                    other => Some(format!("{:?}", other)),
+                };
+                tracing::debug!(
+                    "DevicePresenceHook: client_disconnected client_id='{}' reason={:?}",
+                    session.id.client_id,
+                    reason
+                );
+                self.event_bus
+                    .publish(NeoMindEvent::DeviceTransportOffline {
+                        device_id,
+                        client_id: session.id.client_id.to_string(),
+                        reason: reason_str,
+                        timestamp: now,
+                    })
+                    .await;
+            }
+            _ => {}
+        }
+        // Always continue to next handler — presence tracking is observe-only.
+        (true, _acc)
+    }
+}
+
+
 ///
 /// Manages the lifecycle of the embedded broker running as a tokio task.
 /// The broker can be stopped and restarted with new configuration.
@@ -242,6 +326,11 @@ pub struct EmbeddedBroker {
     auth_enabled: Arc<AtomicBool>,
     /// Credential validator function — validates (username, password).
     credential_validator: CredentialValidatorFn,
+    /// Optional EventBus for emitting transport-level presence events
+    /// (DeviceTransportOnline/Offline). Set via `set_event_bus` before
+    /// `start()` is called; if `None`, the broker runs without presence
+    /// tracking (legacy behavior).
+    event_bus: Mutex<Option<Arc<EventBus>>>,
 }
 
 impl EmbeddedBroker {
@@ -257,12 +346,20 @@ impl EmbeddedBroker {
             abort_handle: Mutex::new(None),
             auth_enabled,
             credential_validator,
+            event_bus: Mutex::new(None),
         }
     }
 
     /// Create with default configuration
     pub fn with_default() -> Self {
         Self::new(EmbeddedBrokerConfig::default(), Arc::new(|_, _| false))
+    }
+
+    /// Provide the EventBus used to publish transport-level presence events.
+    /// Must be called before `start()`. Has no effect on an already-running
+    /// broker — call `stop()` then `start()` again to pick up a new bus.
+    pub fn set_event_bus(&self, bus: Arc<EventBus>) {
+        *self.event_bus.lock().unwrap() = Some(bus);
     }
 
     /// Check if the broker is running
@@ -357,6 +454,34 @@ impl EmbeddedBroker {
             Box::new(auth_handler),
         )
         .await;
+
+        // Register presence hook (transport-level connect/disconnect) if an
+        // EventBus was provided. This is what makes "device connected to MQTT
+        // but hasn't published yet" show up correctly in the UI instead of
+        // appearing as "Never Connected".
+        let presence_bus = self.event_bus.lock().unwrap().clone();
+        if let Some(bus) = presence_bus {
+            let presence_handler = DevicePresenceHook::new(bus);
+            reg.add(
+                rmqtt::hook::Type::ClientConnected,
+                Box::new(presence_handler),
+            )
+            .await;
+            // rmqtt shares Handler instances across hook Types registered with
+            // the same `reg`, so we register the same handler for the
+            // disconnect hook too. We need a second boxed instance because
+            // `reg.add` takes ownership of the Box.
+            let presence_handler_disc = DevicePresenceHook::new(
+                self.event_bus.lock().unwrap().clone().expect("bus re-acquired"),
+            );
+            reg.add(
+                rmqtt::hook::Type::ClientDisconnected,
+                Box::new(presence_handler_disc),
+            )
+            .await;
+            tracing::info!("Embedded broker: DevicePresenceHook registered (transport events will be emitted)");
+        }
+
         reg.start().await;
 
         tracing::info!(

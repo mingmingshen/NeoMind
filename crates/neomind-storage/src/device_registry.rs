@@ -52,6 +52,10 @@ pub struct DeviceTypeTemplate {
     pub uplink_samples: Vec<serde_json::Value>,
     #[serde(default)]
     pub commands: Vec<CommandDefinition>,
+    /// Suggested offline threshold (seconds) for devices of this type.
+    /// `None` = use global default. Forward-compatible via `#[serde(default)]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_offline_timeout_secs: Option<u64>,
     /// Builtin template version (e.g. "1.0.0"). Only set for official templates.
     /// When present, the seeder will update the template if a newer version is bundled.
     /// User-created templates have this as None and are never overwritten by the seeder.
@@ -263,6 +267,11 @@ pub struct DeviceConfig {
     pub adapter_id: Option<String>,
     #[serde(default)]
     pub last_seen: i64,
+    /// Per-device offline threshold (seconds). None = use global default.
+    /// Forward-compatible: old stored devices without this field deserialize
+    /// to None via `#[serde(default)]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offline_timeout_secs: Option<u64>,
 }
 
 /// Connection configuration.
@@ -1016,6 +1025,7 @@ mod tests {
             }],
             uplink_samples: vec![],
             commands: vec![],
+            default_offline_timeout_secs: None,
             builtin_version: None,
         };
 
@@ -1048,6 +1058,7 @@ mod tests {
                 ..Default::default()
             },
             adapter_id: Some("main-mqtt".to_string()),
+            offline_timeout_secs: None,
             last_seen: 0,
         };
 
@@ -1079,6 +1090,7 @@ mod tests {
                 connection_config: Default::default(),
                 adapter_id: None,
                 last_seen: 0,
+                offline_timeout_secs: None,
             })
             .unwrap();
 
@@ -1091,6 +1103,7 @@ mod tests {
                 connection_config: Default::default(),
                 adapter_id: None,
                 last_seen: 0,
+                offline_timeout_secs: None,
             })
             .unwrap();
 
@@ -1103,6 +1116,7 @@ mod tests {
                 connection_config: Default::default(),
                 adapter_id: None,
                 last_seen: 0,
+                offline_timeout_secs: None,
             })
             .unwrap();
 
@@ -1225,6 +1239,7 @@ mod tests {
             metrics: vec![],
             uplink_samples: vec![],
             commands: vec![],
+            default_offline_timeout_secs: None,
             builtin_version: None, // No version = user-created
         };
         store.save_template(&user_template).unwrap();

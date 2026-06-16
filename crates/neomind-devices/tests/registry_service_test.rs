@@ -78,6 +78,7 @@ async fn test_registry_device_crud() {
         connection_config,
         adapter_id: Some("mqtt_adapter".to_string()),
         last_seen: 0,
+        offline_timeout_secs: None,
     };
 
     // Register device
@@ -191,6 +192,7 @@ async fn test_service_device_operations() {
         connection_config,
         adapter_id: None,
         last_seen: 0,
+        offline_timeout_secs: None,
     };
 
     service.register_device(device_config).await.unwrap();
@@ -257,6 +259,7 @@ async fn test_service_command_validation() {
         connection_config: ConnectionConfig::new(),
         adapter_id: None,
         last_seen: 0,
+        offline_timeout_secs: None,
     };
     service.register_device(device_config).await.unwrap();
 

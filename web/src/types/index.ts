@@ -46,6 +46,18 @@ export interface Device {
   plugin_id?: string
   plugin_name?: string
   adapter_id?: string
+  // Per-device offline-timeout override (seconds). Undefined = use template/global default.
+  offline_timeout_secs?: number
+  // Fully resolved offline timeout in effect (device override → template → global).
+  // Read-only — lets the UI show "Default: Ns" without a separate API call.
+  effective_offline_timeout_secs?: number
+  // Transport-layer (MQTT session) connected flag — independent of `online`.
+  // A device can be transport_connected=true but online=false if it has an
+  // active MQTT session but hasn't published data within the offline timeout.
+  transport_connected?: boolean
+  // Epoch seconds of the last transport_connected state change. Undefined if
+  // the broker never reported a transition (e.g. external broker w/o $SYS).
+  transport_changed_at?: number
   // Metric and command counts (from template)
   metric_count?: number
   command_count?: number
@@ -672,6 +684,8 @@ export interface AddDeviceRequest {
   device_type: string  // Must reference an existing template
   adapter_type: string  // "mqtt"
   connection_config: ConnectionConfig
+  /** Per-device offline-timeout override (seconds). null clears the override. */
+  offline_timeout_secs?: number | null
 }
 
 export interface SendCommandRequest {

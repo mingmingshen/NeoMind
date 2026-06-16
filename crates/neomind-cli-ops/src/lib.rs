@@ -1,4 +1,5 @@
 pub mod api_client;
+pub mod auth_cmd;
 pub mod auto_auth;
 pub mod dispatch;
 pub mod output;
@@ -6,7 +7,6 @@ pub mod types;
 
 // Command modules
 pub mod agent_cmd;
-pub mod automation;
 pub mod config_cmd;
 pub mod connector;
 pub mod dashboard;

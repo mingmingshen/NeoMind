@@ -155,6 +155,18 @@ async fn main() -> Result<()> {
         Command::Connector { connector_cmd } => print_result(
             neomind_cli_ops::dispatch::handlers::run_connector_cmd(connector_cmd).await,
         ),
+        Command::Settings { settings_cmd } => print_result(
+            neomind_cli_ops::dispatch::handlers::run_settings_cmd(settings_cmd).await,
+        ),
+        Command::Login { data_dir, force } => print_result(
+            neomind_cli_ops::dispatch::handlers::run_login_cmd(data_dir, force).await,
+        ),
+        Command::Logout => print_result(
+            neomind_cli_ops::dispatch::handlers::run_logout_cmd().await,
+        ),
+        Command::Whoami => print_result(
+            neomind_cli_ops::dispatch::handlers::run_whoami_cmd().await,
+        ),
     }
 }
 
