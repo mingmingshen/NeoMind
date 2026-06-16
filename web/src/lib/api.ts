@@ -956,6 +956,28 @@ export const api = {
     }>(`/llm-backends/llamacpp/server-info${qs ? `?${qs}` : ''}`)
   },
 
+  /**
+   * Set or clear the user override on a backend's multimodal/vision capability.
+   * PATCH /api/llm-backends/:id/capabilities
+   *
+   * - `multimodal: true/false` pins the value, auto-detection is skipped.
+   * - `multimodal: null` clears the override, backend re-runs layered detection.
+   */
+  updateLlmBackendCapabilitiesOverride: (id: string, body: { multimodal: boolean | null }) =>
+    fetchAPI<{
+      id: string
+      supports_multimodal: boolean
+      multimodal_user_override: boolean | null
+      multimodal_source: string | null
+      message: string
+    }>(`/llm-backends/${id}/capabilities`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      // Caller handles error toast via useErrorHandler — skip fetchAPI's
+      // automatic notifyFromError to avoid double-toasting on PATCH failure.
+      skipErrorToast: true,
+    }),
+
   // ========== MQTT / Brokers API ==========
   // Used by UnifiedDeviceConnectionsTab to display connection status
 

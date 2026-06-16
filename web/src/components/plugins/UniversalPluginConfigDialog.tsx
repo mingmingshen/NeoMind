@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { RefreshCw, Eye, Brain, Wrench, Loader2, Server } from "lucide-react"
+import { RefreshCw, Eye, Brain, Wrench, Loader2, Server, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FormField } from "@/components/ui/field"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
@@ -12,6 +13,7 @@ import { ConfigFormBuilder } from "@/components/plugins/ConfigFormBuilder"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { useToast } from "@/hooks/use-toast"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { extractErrorMessage } from "@/lib/notify"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { PluginConfigSchema } from "@/types"
@@ -105,7 +107,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
   const { t } = useTranslation(["common", "plugins", "devices"])
   const { toast } = useToast()
-  const { handleError } = useErrorHandler()
+  const { handleError, showSuccess } = useErrorHandler()
 
   const [saving, setSaving] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState("")
@@ -147,6 +149,18 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     supports_tools: true,
     max_context: 8192,
   })
+
+  // Multimodal override state — only meaningful in edit mode (requires backend id for PATCH).
+  // `override`: user-set pin (true/false) or null (auto-detection).
+  // `effective`: what the backend currently reports (override value when set, else auto).
+  // `source`: provenance string from backend (registry / heuristic / runtime_api / user_override).
+  // `pending`: disables the switch while a PATCH is in flight.
+  const [overrideState, setOverrideState] = useState<{
+    override: boolean | null
+    effective: boolean
+    source: string | null
+    pending: boolean
+  }>({ override: null, effective: false, source: null, pending: false })
 
   const testResults = externalTestResults ?? internalTestResults
   const setTestResults = setExternalTestResults ?? setInternalTestResults
@@ -214,6 +228,9 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
       setNewInstanceName("")
       setSelectedModel("")
       setNameError(null)
+      // Reset override state on every dialog open; the edit-mode branch below
+      // will re-initialise it from the editing instance's saved capabilities.
+      setOverrideState({ override: null, effective: false, source: null, pending: false })
 
       if (editingInstance && (editingInstance as any).capabilities) {
         const existingCaps = (editingInstance as any).capabilities
@@ -222,6 +239,15 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           supports_thinking: existingCaps.supports_thinking ?? false,
           supports_tools: existingCaps.supports_tools ?? true,
           max_context: existingCaps.max_context ?? 8192,
+        })
+        // Initialise multimodal override state from saved instance capabilities.
+        // In create mode this branch is skipped — overrideState stays at its default
+        // (override=null) and the switch is not rendered.
+        setOverrideState({
+          override: existingCaps.multimodal_user_override ?? null,
+          effective: existingCaps.supports_multimodal ?? false,
+          source: existingCaps.multimodal_source ?? null,
+          pending: false,
         })
         if (pluginType.id === "ollama") {
           const instanceEndpoint = editingInstance?.config?.endpoint as string | undefined
@@ -420,14 +446,112 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const isEditing = !!editingInstance
   const schema = getConfigSchema()
 
+  // PATCH the multimodal override. The dialog's main Save button is decoupled —
+  // override is a correction to auto-detection, not a model-parameter edit, and
+  // should take effect on the next chat turn without a full save.
+  //
+  // We deliberately do NOT call `onRefresh()` here: the parent's `loadData`
+  // flips `setLoading(true)` which replaces the whole tab with a page-level
+  // loading skeleton — that would unmount this dialog mid-interaction. The
+  // PATCH response is authoritative, so local state stays correct; the card
+  // list's Eye tooltip reconciles on the next natural parent refresh.
+  const patchMultimodalOverride = async (value: boolean | null) => {
+    if (!editingInstance || overrideState.pending) return
+    const prev = overrideState
+    setOverrideState({ ...prev, pending: true })
+    try {
+      const res = await api.updateLlmBackendCapabilitiesOverride(editingInstance.id, {
+        multimodal: value,
+      })
+      setOverrideState({
+        override: res.multimodal_user_override,
+        effective: res.supports_multimodal,
+        source: res.multimodal_source,
+        pending: false,
+      })
+      setDetectedCapabilities((cur) => ({ ...cur, supports_multimodal: res.supports_multimodal }))
+      showSuccess(t("plugins:llm.overrideSavedToast"))
+    } catch (error) {
+      setOverrideState(prev)
+      const isNotFound = (error as { status?: number })?.status === 404
+      handleError(error as Error, {
+        operation: "Update multimodal override",
+        userMessage: isNotFound
+          ? t("plugins:llm.backendNotFound")
+          : t("plugins:llm.overrideSaveFailed", { message: extractErrorMessage(error) }),
+      })
+    }
+  }
+
+  const handleToggleMultimodalOverride = () =>
+    patchMultimodalOverride(!overrideState.effective)
+  const handleResetMultimodalOverride = () => patchMultimodalOverride(null)
+
   const renderCapabilityBadges = () => (
-    <div className="flex flex-wrap gap-2 mt-2">
-      {detectedCapabilities.supports_multimodal && (
-        <Badge variant="outline" className="text-xs">
-          <Eye className="h-4 w-4 mr-1" />
-          Vision
-        </Badge>
-      )}
+    <div className="flex flex-wrap gap-2 mt-2 items-center">
+      {/* Multimodal / Vision — interactive override in edit mode, read-only badge in create mode */}
+      {(() => {
+        // Create mode: no backend id → no PATCH possible → original read-only badge.
+        if (!isEditing) {
+          return detectedCapabilities.supports_multimodal ? (
+            <Badge variant="outline" className="text-xs">
+              <Eye className="h-4 w-4 mr-1" />
+              {t("plugins:llm.capabilityVision")}
+            </Badge>
+          ) : null
+        }
+
+        // Edit mode: Switch + optional Reset button. Switch reflects the
+        // *effective* value (override when set, else auto-detected). Toggling
+        // pins the new value via PATCH.
+        const effective = overrideState.effective
+        const override = overrideState.override
+        const source = overrideState.source
+        const stateLabel = effective
+          ? t("plugins:llm.stateOn")
+          : t("plugins:llm.stateOff")
+
+        return (
+          <div className="flex flex-col gap-1 min-w-[220px]">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Switch
+                checked={effective}
+                onCheckedChange={handleToggleMultimodalOverride}
+                disabled={overrideState.pending}
+                aria-label={t("plugins:llm.capabilityVision")}
+              />
+              <Eye className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs">
+                {override != null
+                  ? t("plugins:llm.capabilityVisionOverrideLabel")
+                  : t("plugins:llm.capabilityVisionAuto", { state: stateLabel })}
+              </span>
+              {override != null && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={handleResetMultimodalOverride}
+                  disabled={overrideState.pending}
+                  title={t("plugins:llm.resetToAuto")}
+                >
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                  {t("plugins:llm.resetToAuto")}
+                </Button>
+              )}
+              {overrideState.pending && (
+                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+              )}
+            </div>
+            {override == null && (
+              <span className="text-[10px] text-muted-foreground">
+                {source && <span className="mr-1">({source})</span>}
+                {t("plugins:llm.overrideHint")}
+              </span>
+            )}
+          </div>
+        )
+      })()}
       {detectedCapabilities.supports_thinking && (
         <Badge variant="outline" className="text-xs">
           <Brain className="h-4 w-4 mr-1" />
