@@ -588,3 +588,31 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ========== Auto-cleanup old releases (keep latest 3) ==========
+  cleanup-releases:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Delete old releases (keep latest 3)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          KEEP=3
+          echo "🧹 Cleaning up releases, keeping latest $KEEP..."
+
+          # List all non-draft releases sorted newest-first, skip top $KEEP
+          DELETED=0
+          gh release list --limit 100 --json tagName,isDraft,createdAt \
+            --jq "[.[] | select(.isDraft == false)] | sort_by(.createdAt) | reverse | .[$KEEP:][] | .tagName" \
+            | while read -r tag; do
+              echo "  deleting release: $tag"
+              gh release delete "$tag" --yes --cleanup-tag=false 2>/dev/null && echo "    ✅ deleted" || echo "    ⚠️ skip (may be draft)"
+              DELETED=$((DELETED + 1))
+            done
+
+          REMAINING=$(gh release list --limit 100 --json tagName --jq 'length')
+          echo "✅ Cleanup done. Remaining releases: $REMAINING"
