@@ -52,6 +52,8 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
 
   // Update device metric from real-time events
   updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => void
+  // Update transport connection state from real-time events (MQTT session)
+  updateDeviceTransportStatus: (deviceId: string, connected: boolean) => void
   // Update device metric from real-time events
   updateDeviceMetric: (deviceId: string, property: string, value: unknown) => void
   // Apply current_values batch directly (bypasses BatchUpdater RAF for instant store notification)
@@ -546,6 +548,25 @@ export const createDeviceSlice: StateCreator<
         state.selectedDevice?.id === deviceId ||
         state.selectedDevice?.device_id === deviceId
           ? { ...state.selectedDevice, status, online: status === 'online', last_seen: now }
+          : state.selectedDevice,
+    }))
+  },
+
+  // Update transport connection state from DeviceTransportOnline/Offline events
+  updateDeviceTransportStatus: (deviceId: string, connected: boolean) => {
+    const now = Math.floor(Date.now() / 1000)
+    set((state) => ({
+      devices: state.devices.map((device) =>
+        device.id === deviceId || device.device_id === deviceId
+          ? { ...device, transport_connected: connected, transport_changed_at: now }
+          : device
+      ),
+    }))
+    set((state) => ({
+      selectedDevice:
+        state.selectedDevice?.id === deviceId ||
+        state.selectedDevice?.device_id === deviceId
+          ? { ...state.selectedDevice, transport_connected: connected, transport_changed_at: now }
           : state.selectedDevice,
     }))
   },

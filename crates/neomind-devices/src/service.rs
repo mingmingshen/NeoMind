@@ -613,10 +613,32 @@ impl DeviceService {
                     // First, get all registered device IDs from the registry
                     let registered_devices = registry.list_devices();
 
-                    // Then check status for each device
+                    // Precompute effective timeouts OUTSIDE the write lock to minimize
+                    // contention with event handlers that also need status_map access.
+                    let device_checks: Vec<(_, u64)> = registered_devices
+                        .iter()
+                        .map(|dc| {
+                            let timeout = {
+                                let mut t = config.offline_timeout;
+                                if let Some(secs) = dc.offline_timeout_secs {
+                                    t = secs;
+                                } else if let Some(tpl) =
+                                    registry.get_template(&dc.device_type)
+                                {
+                                    if let Some(secs) = tpl.default_offline_timeout_secs {
+                                        t = secs;
+                                    }
+                                }
+                                t
+                            };
+                            (dc.clone(), timeout)
+                        })
+                        .collect();
+
+                    // Acquire write lock only for status map operations
                     let mut status_map = device_status.write().await;
 
-                    for device_config in registered_devices {
+                    for (device_config, effective_timeout) in device_checks {
                         let device_id = &device_config.device_id;
 
                         // Get or create status entry for this device
@@ -635,19 +657,6 @@ impl DeviceService {
                             }
                         });
 
-                        // Check if this device is stale using per-device effective timeout
-                        // (device override > template default > global)
-                        let effective_timeout = {
-                            let mut t = config.offline_timeout;
-                            if let Some(secs) = device_config.offline_timeout_secs {
-                                t = secs;
-                            } else if let Some(tpl) = registry.get_template(&device_config.device_type) {
-                                if let Some(secs) = tpl.default_offline_timeout_secs {
-                                    t = secs;
-                                }
-                            }
-                            t
-                        };
                         let elapsed = now - status.last_seen;
                         if matches!(status.status, ConnectionStatus::Connected)
                             && elapsed > effective_timeout as i64

@@ -8,6 +8,8 @@ import { buildWsUrl } from '@/lib/urls'
 export type EventType =
   | 'DeviceOnline'
   | 'DeviceOffline'
+  | 'DeviceTransportOnline'
+  | 'DeviceTransportOffline'
   | 'DeviceMetric'
   | 'DeviceCommandResult'
   | 'RuleEvaluated'

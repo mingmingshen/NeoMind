@@ -90,6 +90,7 @@ export function DevicesPage() {
   const fetchDeviceCurrentState = useStore((s) => s.fetchDeviceCurrentState)
   const clearDeviceDetails = useStore((s) => s.clearDeviceDetails)
   const updateDeviceStatus = useStore((s) => s.updateDeviceStatus)
+  const updateDeviceTransportStatus = useStore((s) => s.updateDeviceTransportStatus)
 
   // Pagination state
   const [devicePage, setDevicePage] = useState(1)
@@ -356,6 +357,12 @@ export function DevicesPage() {
         // Optimistic update for instant UI feedback
         if (deviceId) updateDeviceStatus(deviceId, 'offline')
         break
+      case 'DeviceTransportOnline':
+        if (deviceId) updateDeviceTransportStatus(deviceId, true)
+        break
+      case 'DeviceTransportOffline':
+        if (deviceId) updateDeviceTransportStatus(deviceId, false)
+        break
       case 'DeviceRegistered':
       case 'DeviceUnregistered':
         // Device list changed - force refresh (bypass TTL cache)
@@ -374,7 +381,7 @@ export function DevicesPage() {
         debouncedFetchDevices()
         break
     }
-  }, [updateDeviceStatus, debouncedFetchDevices, debouncedFetchDeviceTypes])
+  }, [updateDeviceStatus, updateDeviceTransportStatus, debouncedFetchDevices, debouncedFetchDeviceTypes])
 
   // Subscribe to device events for real-time updates
   const { isConnected: deviceEventsConnected } = useEvents({
