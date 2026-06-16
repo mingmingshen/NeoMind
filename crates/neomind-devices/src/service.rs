@@ -451,6 +451,11 @@ impl DeviceService {
                     neomind_core::NeoMindEvent::DeviceTransportOnline {
                         device_id, timestamp, ..
                     } => {
+                        // Skip unknown clients (e.g., MQTT tools, test clients)
+                        // to avoid creating phantom status entries
+                        if registry.get_device(&device_id).is_none() {
+                            continue;
+                        }
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.transport_connected = true;
@@ -466,6 +471,9 @@ impl DeviceService {
                         timestamp,
                         ..
                     } => {
+                        if registry.get_device(&device_id).is_none() {
+                            continue;
+                        }
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.transport_connected = false;
