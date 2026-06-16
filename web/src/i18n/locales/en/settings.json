@@ -85,6 +85,8 @@
   "display": "Display",
   "version": "Version",
   "license": "License",
+  "website": "Website",
+  "documentation": "Documentation",
   "checkForUpdates": "Check for Updates",
   "checkingForUpdates": "Checking for updates...",
   "newVersionAvailable": "New Version Available",

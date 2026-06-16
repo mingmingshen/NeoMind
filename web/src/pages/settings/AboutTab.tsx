@@ -1,21 +1,23 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { BrandName } from "@/components/shared/BrandName"
+import type { LucideIcon } from "lucide-react"
 import {
   Server,
   Clock,
   Cpu,
   HardDrive,
-  Database,
   Layers,
-  Github,
   Activity,
   Monitor,
   Download,
   Loader2,
+  Terminal,
+  ExternalLink,
 } from "lucide-react"
 import { api, isTauriEnv } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
@@ -42,6 +44,162 @@ interface SystemInfo {
   gpus: GpuInfo[]
 }
 
+/* ============================================================================
+ * Sub-components
+ * ========================================================================== */
+
+function MetricTile({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  mono,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+  sub?: string
+  mono?: boolean
+}) {
+  return (
+    <div className="rounded-lg border bg-muted-30 p-4 space-y-2 transition-colors hover:bg-muted-50">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        <span className="uppercase tracking-wider truncate">{label}</span>
+      </div>
+      <div
+        className={`text-2xl font-bold leading-none truncate ${mono ? "font-mono" : ""}`}
+      >
+        {value}
+      </div>
+      {/* Unified secondary line: always rendered (preserves vertical rhythm across tiles) */}
+      <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider truncate min-h-[1rem]">
+        {sub ?? "\u00A0"}
+      </div>
+    </div>
+  )
+}
+
+function MemoryGauge({
+  used,
+  total,
+  available,
+  formatBytes,
+  usedLabel,
+  availableLabel,
+  memoryLabel,
+}: {
+  used: number
+  total: number
+  available: number
+  formatBytes: (b: number) => string
+  usedLabel: string
+  availableLabel: string
+  memoryLabel: string
+}) {
+  const pct = Math.round((used / total) * 100)
+  const barColor = pct >= 80 ? "bg-error" : pct >= 60 ? "bg-warning" : "bg-success"
+  const textColor = pct >= 80 ? "text-error" : pct >= 60 ? "text-warning" : "text-success"
+
+  return (
+    <div className="rounded-lg border bg-muted-30 p-4 space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <HardDrive className="h-3.5 w-3.5" />
+            <span className="uppercase tracking-wider">{memoryLabel}</span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-bold leading-none">
+              {pct}
+              <span className="text-lg text-muted-foreground">%</span>
+            </span>
+            <span className={`text-xs font-mono ${textColor}`}>
+              {formatBytes(used)} / {formatBytes(total)}
+            </span>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-muted-foreground uppercase tracking-wider">
+            {availableLabel}
+          </div>
+          <div className="font-mono text-sm font-medium">{formatBytes(available)}</div>
+        </div>
+      </div>
+      {/* Segmented gauge with tick marks */}
+      <div className="relative h-2.5 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full ${barColor} rounded-full transition-all duration-700 ease-out`}
+          style={{ width: `${pct}%` }}
+        />
+        {[25, 50, 75].map((p) => (
+          <div
+            key={p}
+            className="absolute top-0 bottom-0 w-px bg-background/60"
+            style={{ left: `${p}%` }}
+          />
+        ))}
+      </div>
+      <div className="flex justify-between text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+        <span>{usedLabel}: {formatBytes(used)}</span>
+      </div>
+    </div>
+  )
+}
+
+function InfoRow({
+  label,
+  children,
+  last,
+}: {
+  label: string
+  children: ReactNode
+  last?: boolean
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-4 py-3 ${
+        !last ? "border-b border-border" : ""
+      }`}
+    >
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="text-sm text-right">{children}</div>
+    </div>
+  )
+}
+
+function ExternalLinkValue({ href, text }: { href: string; text: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 font-mono text-info hover:underline"
+    >
+      <span>{text}</span>
+      <ExternalLink className="h-3 w-3 text-muted-foreground/70" />
+    </a>
+  )
+}
+
+function TelemetrySkeleton() {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="rounded-lg border bg-muted-30 p-4 space-y-2.5">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-7 w-20" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ============================================================================
+ * Main component
+ * ========================================================================== */
+
 export function AboutTab() {
   const { t } = useTranslation(["common", "settings"])
   const { handleError, showSuccess } = useErrorHandler()
@@ -51,9 +209,8 @@ export function AboutTab() {
   const [loading, setLoading] = useState(true)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
-  // Reuse global useUpdateCheck - only need checkUpdate for manual trigger
   const handleUpToDate = useCallback(() => {
-    showSuccess(t('settings:alreadyUpToDate'))
+    showSuccess(t("settings:alreadyUpToDate"))
   }, [showSuccess, t])
 
   const { checkUpdate, getAppVersion } = useUpdateCheck({
@@ -66,13 +223,14 @@ export function AboutTab() {
       const response = await api.getSystemStats()
       setSystemInfo(response)
     } catch (e) {
-      handleError(e, { operation: 'Load system info', showToast: false })
-      // Fallback: get version from Tauri when API isn't ready yet
+      handleError(e, { operation: "Load system info", showToast: false })
       if (isTauriEnv() && !appVersion) {
         try {
           const v = await getAppVersion()
           setAppVersion(v)
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     } finally {
       setLoading(false)
@@ -83,17 +241,15 @@ export function AboutTab() {
     setCheckingUpdate(true)
     try {
       await checkUpdate()
-      // checkUpdate sets store updateInfo; if available, global useUpdateCheck in App.tsx
-      // will open the dialog. Read latest state directly from store to decide toast.
       const latestInfo = useAppStore.getState().updateInfo
       if (!latestInfo?.available) {
-        showSuccess(t('settings:alreadyUpToDate'))
+        showSuccess(t("settings:alreadyUpToDate"))
       } else {
         setUpdateDialogOpen(true)
       }
     } catch (error) {
-      console.error('[AboutTab] checkUpdate error:', error)
-      handleError(error, { operation: 'Check for updates' })
+      console.error("[AboutTab] checkUpdate error:", error)
+      handleError(error, { operation: "Check for updates" })
     } finally {
       setCheckingUpdate(false)
     }
@@ -108,54 +264,68 @@ export function AboutTab() {
     return gb.toFixed(2) + " GB"
   }
 
-  const formatUptime = (seconds: number) => {
+  const formatUptimeParts = (
+    seconds: number
+  ): { primary: string; secondary: string } => {
     const days = Math.floor(seconds / 86400)
     const hours = Math.floor((seconds % 86400) / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
-
-    if (days > 0) {
-      return `${days}d ${hours}h ${minutes}m`
-    }
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`
-    }
-    return `${minutes}m`
+    if (days > 0) return { primary: `${days}d`, secondary: `${hours}h ${minutes}m` }
+    if (hours > 0) return { primary: `${hours}h`, secondary: `${minutes}m` }
+    return { primary: `${minutes}m`, secondary: t("common:runStatus.running") }
   }
 
-  const getMemoryPercent = (used: number, total: number) => {
-    return Math.round((used / total) * 100)
-  }
+  const versionTag = systemInfo?.version || (appVersion ? `v${appVersion}` : "")
 
-  const getMemoryBarColor = (percent: number) => {
-    if (percent >= 80) return "bg-error"
-    if (percent >= 60) return "bg-warning"
-    return "bg-success"
-  }
-
-  const getMemoryTextColor = (percent: number) => {
-    if (percent >= 80) return "text-error"
-    if (percent >= 60) return "text-warning"
-    return "text-success"
-  }
+  const heroVersion = versionTag || "---"
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-bold"><BrandName /></h1>
-            <p className="text-sm text-muted-foreground">
-              {t("settings:aboutDesc")}
+      {/* Hero — Brand wordmark + build tag */}
+      <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm p-8 md:p-10">
+        {/* Grid background */}
+        <div
+          className="absolute inset-0 opacity-[0.04] pointer-events-none"
+          style={{
+            backgroundImage: `linear-gradient(var(--foreground) 1px, transparent 1px), linear-gradient(90deg, var(--foreground) 1px, transparent 1px)`,
+            backgroundSize: "32px 32px",
+          }}
+        />
+        {/* Brand glow */}
+        <div
+          className="absolute -top-24 -right-24 w-80 h-80 rounded-full pointer-events-none"
+          style={{ background: "var(--brand-bg)", filter: "blur(60px)" }}
+        />
+
+        <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+          <div className="space-y-3 min-w-0">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground font-mono">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 animate-ping" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+              </span>
+              <span>{t("settings:aboutDesc")}</span>
+            </div>
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight leading-none">
+              <BrandName />
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-md">
+              {t("settings:aboutDesc1")}
             </p>
           </div>
+
+          <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
+            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.2em]">
+              build
+            </div>
+            <div className="font-mono text-2xl md:text-3xl font-bold text-brand leading-none">
+              [{heroVersion}]
+            </div>
+          </div>
         </div>
-        <Badge variant="outline" className="text-sm">
-          {systemInfo?.version || (appVersion ? `v${appVersion}` : "")}
-        </Badge>
       </div>
 
-      {/* System Info */}
+      {/* System Information Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -163,115 +333,102 @@ export function AboutTab() {
             {t("settings:systemInfo")}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {loading ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              {t("common:loading")}
-            </div>
+            <TelemetrySkeleton />
           ) : systemInfo ? (
-            <div className="space-y-4">
-              {/* Platform & Architecture */}
-              <div className="flex items-center justify-between p-3 bg-muted-50 rounded-lg">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Server className="h-4 w-4" />
-                  {t("settings:platform")}
-                </div>
-                <div className="text-sm font-medium">
-                  {systemInfo.platform} {systemInfo.arch}
-                </div>
+            (() => {
+              const uptime = formatUptimeParts(systemInfo.uptime)
+              return (
+            <>
+              {/* Telemetry tiles */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MetricTile
+                  icon={Server}
+                  label={t("settings:platform")}
+                  value={systemInfo.platform}
+                  sub={systemInfo.arch}
+                />
+                <MetricTile
+                  icon={Clock}
+                  label={t("settings:uptime")}
+                  value={uptime.primary}
+                  sub={uptime.secondary}
+                  mono
+                />
+                <MetricTile
+                  icon={Cpu}
+                  label={t("settings:cpuCores")}
+                  value={String(systemInfo.cpu_count)}
+                  sub={t("settings:cores")}
+                  mono
+                />
+                {systemInfo.gpus.length > 0 ? (
+                  <MetricTile
+                    icon={Monitor}
+                    label={t("settings:gpu")}
+                    value={String(systemInfo.gpus.length)}
+                    sub={systemInfo.gpus[0]?.vendor ?? "GPU"}
+                    mono
+                  />
+                ) : (
+                  <MetricTile
+                    icon={Layers}
+                    label={t("settings:memory")}
+                    value={formatBytes(systemInfo.total_memory)}
+                    sub="total"
+                    mono
+                  />
+                )}
               </div>
 
-              {/* Uptime */}
-              <div className="flex items-center justify-between p-3 bg-muted-50 rounded-lg">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  {t("settings:uptime")}
-                </div>
-                <div className="text-sm font-medium">
-                  {formatUptime(systemInfo.uptime)}
-                </div>
-              </div>
+              {/* Memory gauge */}
+              <MemoryGauge
+                used={systemInfo.used_memory}
+                total={systemInfo.total_memory}
+                available={systemInfo.available_memory}
+                formatBytes={formatBytes}
+                usedLabel={t("settings:usedMemory")}
+                availableLabel={t("settings:availableMemory")}
+                memoryLabel={t("settings:memory")}
+              />
 
-              {/* CPU */}
-              <div className="flex items-center justify-between p-3 bg-muted-50 rounded-lg">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Cpu className="h-4 w-4" />
-                  {t("settings:cpuCores")}
-                </div>
-                <div className="text-sm font-medium">
-                  {systemInfo.cpu_count} {t("settings:cores")}
-                </div>
-              </div>
-
-              {/* GPU */}
-              {systemInfo.gpus.length > 0 ? (
-                <div className="p-3 bg-muted-50 rounded-lg space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Monitor className="h-4 w-4" />
-                    {t("settings:gpu")}
-                  </div>
-                  <div className="space-y-1">
-                    {systemInfo.gpus.map((gpu, idx) => (
-                      <div key={idx} className="text-sm flex items-center justify-between">
-                        <span className="font-medium">{gpu.name}</span>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge variant="outline" className="text-xs uppercase">
+              {/* GPU detail rows */}
+              {systemInfo.gpus.length > 0 && (
+                <div className="space-y-2">
+                  {systemInfo.gpus.map((gpu, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border bg-muted-30 p-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-bg text-brand">
+                          <Monitor className="h-4.5 w-4.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{gpu.name}</div>
+                          <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
                             {gpu.vendor}
-                          </Badge>
-                          {gpu.total_memory_mb && (
-                            <span>{(gpu.total_memory_mb / 1024).toFixed(1)} GB</span>
-                          )}
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      {gpu.total_memory_mb && (
+                        <div className="text-right shrink-0">
+                          <div className="font-mono text-base font-bold leading-none">
+                            {(gpu.total_memory_mb / 1024).toFixed(1)}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-[0.16em] mt-1">
+                            GB VRAM
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : null}
-
-              {/* Memory with progress bar */}
-              <div className="p-3 bg-muted-50 rounded-lg space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <HardDrive className="h-4 w-4" />
-                    {t("settings:memory")}
-                  </div>
-                  <span className="text-muted-foreground">
-                    {formatBytes(systemInfo.used_memory)} / {formatBytes(systemInfo.total_memory)}
-                  </span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                  <div
-                    className={`h-full ${getMemoryBarColor(getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory))} rounded-full transition-all`}
-                    style={{ width: `${getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory)}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{t("settings:usedMemory")}: {formatBytes(systemInfo.used_memory)}</span>
-                  <span className={getMemoryTextColor(getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory))}>
-                    {getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory)}%
-                  </span>
-                  <span>{t("settings:freeMemory")}: {formatBytes(systemInfo.available_memory)}</span>
-                </div>
-              </div>
-
-              {/* Memory breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3 bg-muted-30 rounded-lg text-center">
-                  <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
-                    <Database className="h-4 w-4" />
-                    {t("settings:usedMemory")}
-                  </div>
-                  <div className="text-sm font-medium">{formatBytes(systemInfo.used_memory)}</div>
-                </div>
-                <div className="p-3 bg-muted-30 rounded-lg text-center">
-                  <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
-                    <Layers className="h-4 w-4" />
-                    {t("settings:availableMemory")}
-                  </div>
-                  <div className="text-sm font-medium">{formatBytes(systemInfo.available_memory)}</div>
-                </div>
-              </div>
-            </div>
+              )}
+            </>
+              )
+            })()
           ) : (
             <div className="text-center py-8 text-muted-foreground text-sm">
               {t("settings:systemInfoUnavailable")}
@@ -280,45 +437,60 @@ export function AboutTab() {
         </CardContent>
       </Card>
 
-      {/* Project Info */}
+      {/* Project Information Card */}
       <Card>
         <CardHeader>
-          <CardTitle>{t("settings:projectInfo")}</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Terminal className="h-5 w-5 text-info" />
+            {t("settings:projectInfo")}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <div className="flex items-center justify-between border-b pb-2">
-            <span className="text-muted-foreground">{t("settings:version")}</span>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">{systemInfo?.version || (appVersion ? `v${appVersion}` : "---")}</Badge>
-              {isTauriEnv() && updateInfo?.available && updateInfo.version !== systemInfo?.version && (
-                <Badge variant="default" className="text-xs">
-                  v{updateInfo.version} {t("settings:update")}
+        <CardContent className="space-y-4">
+          <div>
+            <InfoRow label={t("settings:version")}>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="font-mono">
+                  {versionTag || "---"}
                 </Badge>
-              )}
-            </div>
+                {isTauriEnv() &&
+                  updateInfo?.available &&
+                  updateInfo.version !== systemInfo?.version && (
+                    <Badge variant="default" className="text-xs gap-1">
+                      <Download className="h-3 w-3" />
+                      v{updateInfo.version} {t("settings:update")}
+                    </Badge>
+                  )}
+              </div>
+            </InfoRow>
+            <InfoRow label={t("settings:license")}>
+              <span className="font-mono">Apache-2.0</span>
+            </InfoRow>
+            <InfoRow label={t("settings:repository")}>
+              <ExternalLinkValue
+                href="https://github.com/camthink-ai/NeoMind"
+                text="github.com/camthink-ai/NeoMind"
+              />
+            </InfoRow>
+            <InfoRow label={t("settings:website")}>
+              <ExternalLinkValue href="https://www.camthink.ai" text="www.camthink.ai" />
+            </InfoRow>
+            <InfoRow label={t("settings:documentation")} last>
+              <ExternalLinkValue
+                href="https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind"
+                text="wiki.camthink.ai"
+              />
+            </InfoRow>
           </div>
-          <div className="flex items-center justify-between border-b pb-2">
-            <span className="text-muted-foreground">{t("settings:license")}</span>
-            <span>Apache-2.0</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">{t("settings:repository")}</span>
-            <a
-              href="https://github.com/camthink-ai/NeoMind"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-info hover:underline flex items-center gap-1"
-            >
-              <Github className="h-4 w-4" />
-              github.com/camthink-ai/NeoMind
-            </a>
-          </div>
+
           {isTauriEnv() && (
-          <div className="pt-2">
             <Button
               variant={updateInfo?.available ? "default" : "outline"}
               className="w-full"
-              onClick={() => updateInfo?.available ? setUpdateDialogOpen(true) : handleCheckForUpdates()}
+              onClick={() =>
+                updateInfo?.available
+                  ? setUpdateDialogOpen(true)
+                  : handleCheckForUpdates()
+              }
               disabled={checkingUpdate}
             >
               {checkingUpdate ? (
@@ -329,7 +501,7 @@ export function AboutTab() {
               ) : updateInfo?.available ? (
                 <>
                   <Download className="w-4 h-4 mr-2" />
-                  {t("settings:updateNow")}
+                  {t("settings:updateNow")} · v{updateInfo.version}
                 </>
               ) : (
                 <>
@@ -338,14 +510,13 @@ export function AboutTab() {
                 </>
               )}
             </Button>
-          </div>
           )}
         </CardContent>
       </Card>
 
       {/* Footer */}
-      <div className="text-center text-sm text-muted-foreground">
-        © 2025 CamThink
+      <div className="text-center text-xs text-muted-foreground">
+        © 2025–2026 CamThink · NeoMind
       </div>
     </div>
   )

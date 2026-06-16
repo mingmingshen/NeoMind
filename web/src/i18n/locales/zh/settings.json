@@ -85,6 +85,8 @@
   "display": "显示",
   "version": "版本",
   "license": "许可证",
+  "website": "官网",
+  "documentation": "文档",
   "checkForUpdates": "检查更新",
   "checkingForUpdates": "正在检查更新...",
   "newVersionAvailable": "发现新版本",
