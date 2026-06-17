@@ -319,19 +319,36 @@ impl AuthUserState {
 
     /// Hash password using bcrypt (secure for production use).
     /// Uses default cost factor (12) which provides good security.
-    fn hash_password(password: &str) -> String {
-        bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_else(|e| {
-            error!(category = "auth", error = %e, "Failed to hash password");
-            // Fallback to a simple hash on error (should not happen)
-            format!("fallback_hash_{}", password)
+    ///
+    /// Returns Err on bcrypt failure (e.g., password >72 bytes, RNG unavailable)
+    /// rather than degrading to a plaintext fallback — the previous
+    /// `format!("fallback_hash_{}", password)` fallback stored passwords in
+    /// cleartext, defeating the purpose of hashing entirely. Callers MUST
+    /// surface the error to the user (typically as a 500 / "internal error
+    /// during password reset, please try a shorter password").
+    fn hash_password(password: &str) -> Result<String, AuthError> {
+        bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| {
+            error!(category = "auth", error = %e, "bcrypt password hashing failed");
+            AuthError::InvalidInput(format!(
+                "Password could not be hashed (likely too long; bcrypt limit is 72 bytes): {}",
+                e
+            ))
         })
     }
 
     /// Verify password against bcrypt hash.
     fn verify_password(password: &str, hash: &str) -> bool {
-        // Handle legacy SHA-256 hashes for migration
+        // Legacy `fallback_hash_<plaintext>` entries from prior versions stored
+        // passwords in cleartext. We deliberately refuse to verify against
+        // them — affected users must reset their password via admin tooling.
+        // (No new entries can be created after the hash_password fix above.)
         if hash.starts_with("fallback_hash_") {
-            return hash == format!("fallback_hash_{}", password);
+            error!(
+                category = "auth",
+                "Refusing login against legacy plaintext password fallback — \
+                 admin must reset this user's password"
+            );
+            return false;
         }
         // Check if it looks like a bcrypt hash (starts with $2a$, $2b$, or $2y$)
         if hash.starts_with("$2") {
@@ -452,7 +469,7 @@ impl AuthUserState {
         let user = User {
             id: uuid::Uuid::new_v4().to_string(),
             username: username.to_string(),
-            password_hash: Self::hash_password(password),
+            password_hash: Self::hash_password(password)?,
             role: role.clone(),
             created_at: chrono::Utc::now().timestamp(),
             last_login: None,
@@ -599,7 +616,7 @@ impl AuthUserState {
             return Err(AuthError::InvalidCredentials);
         }
 
-        user.password_hash = Self::hash_password(new_password);
+        user.password_hash = Self::hash_password(new_password)?;
 
         info!(category = "auth", username = username, "Password changed");
 

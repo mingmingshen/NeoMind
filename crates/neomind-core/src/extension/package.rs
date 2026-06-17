@@ -817,6 +817,36 @@ impl ExtensionPackage {
         Ok(())
     }
 
+    /// Resolve `rel_path` against `dst_dir`, rejecting any entry that would
+    /// escape `dst_dir` via `..` traversal or absolute paths.
+    ///
+    /// This is the central zip-slip defense — both `extract_directory_sync`
+    /// and `extract_directory` MUST route every zip entry through this helper.
+    /// A malicious `.nep` package could otherwise include an entry such as
+    /// `frontend/../../etc/cron.d/backdoor` and write outside the install dir.
+    fn safe_join_within(dst_dir: &Path, rel_path: &str) -> Result<std::path::PathBuf, PackageError> {
+        let mut resolved = dst_dir.to_path_buf();
+        for component in std::path::Path::new(rel_path).components() {
+            match component {
+                std::path::Component::Normal(p) => resolved.push(p),
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    return Err(PackageError::Zip(format!(
+                        "path traversal rejected ( '..' in '{}')",
+                        rel_path
+                    )));
+                }
+                std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                    return Err(PackageError::Zip(format!(
+                        "absolute path rejected in '{}'",
+                        rel_path
+                    )));
+                }
+            }
+        }
+        Ok(resolved)
+    }
+
     /// Extract a directory from the archive (synchronous)
     fn extract_directory_sync<R: Read + std::io::Seek>(
         archive: &mut ZipArchive<R>,
@@ -836,7 +866,7 @@ impl ExtensionPackage {
             if name.starts_with(src_prefix) && !name.ends_with('/') {
                 // Remove prefix to get relative path
                 let rel_path = name[src_prefix.len()..].to_string();
-                let dst_path = dst_dir.join(&rel_path);
+                let dst_path = Self::safe_join_within(dst_dir, &rel_path)?;
 
                 // Create parent directory
                 if let Some(parent) = dst_path.parent() {
@@ -986,7 +1016,7 @@ impl ExtensionPackage {
             if name.starts_with(src_prefix) && !name.ends_with('/') {
                 // Remove prefix to get relative path
                 let rel_path = name[src_prefix.len()..].to_string();
-                let dst_path = dst_dir.join(&rel_path);
+                let dst_path = Self::safe_join_within(dst_dir, &rel_path)?;
 
                 // Create parent directory
                 if let Some(parent) = dst_path.parent() {
@@ -1190,6 +1220,37 @@ pub fn convert_platform_format(platform: &str, target_format: PlatformFormat) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_safe_join_within_rejects_traversal() {
+        use ExtensionPackage;
+        let dst = std::path::Path::new("/tmp/ext-install");
+
+        // Normal relative path resolves within dst_dir
+        let ok = ExtensionPackage::safe_join_within(dst, "frontend/dist/bundle.js").unwrap();
+        assert!(ok.starts_with(dst), "normal path should stay within dst_dir");
+
+        // '..' in rel_path must be rejected (zip slip)
+        assert!(
+            ExtensionPackage::safe_join_within(dst, "../../etc/cron.d/backdoor").is_err(),
+            "traversal via .. must be rejected"
+        );
+        // Mid-path '..' also rejected
+        assert!(
+            ExtensionPackage::safe_join_within(dst, "frontend/../../../etc/passwd").is_err(),
+            "mid-path traversal must be rejected"
+        );
+        // Absolute path rejected
+        assert!(
+            ExtensionPackage::safe_join_within(dst, "/etc/passwd").is_err(),
+            "absolute path must be rejected"
+        );
+        // '.' is allowed (no-op)
+        assert!(
+            ExtensionPackage::safe_join_within(dst, "frontend/./bundle.js").is_ok(),
+            "current-dir component should be allowed"
+        );
+    }
 
     #[test]
     fn test_detect_platform() {
