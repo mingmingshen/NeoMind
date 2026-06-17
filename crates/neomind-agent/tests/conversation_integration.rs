@@ -289,7 +289,7 @@ async fn test_conversation_turn_structure() -> anyhow::Result<()> {
 
     // Verify the execution record has expected fields
     assert!(!record.id.is_empty());
-    assert!(record.duration_ms >= 0);
+    // duration_ms is u64 — always >= 0, so no assert needed
 
     println!("\n✅ 执行记录结构测试通过！");
     Ok(())

@@ -484,14 +484,25 @@ impl MqttAdapter {
 
         for device in &devices {
             // Restore topic_to_device mapping
-            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
-                topic_mapping.insert(telemetry_topic.clone(), device.device_id.clone());
-                restored_topic_count += 1;
-                debug!(
-                    "Restored topic mapping: '{}' -> '{}'",
-                    telemetry_topic, device.device_id
-                );
-            }
+            // Use explicit telemetry_topic if set, otherwise default pattern
+            // device/{type}/{id}/uplink. The default pattern MUST be in the map —
+            // otherwise the auto-onboarding check at message intake (which queries
+            // this map to decide if a standard-uplink topic is registered) will
+            // misroute every message from default-topic devices to the discovery
+            // path, even though they are registered.
+            let topic = device
+                .connection_config
+                .telemetry_topic
+                .clone()
+                .unwrap_or_else(|| {
+                    format!("device/{}/{}/uplink", device.device_type, device.device_id)
+                });
+            topic_mapping.insert(topic.clone(), device.device_id.clone());
+            restored_topic_count += 1;
+            debug!(
+                "Restored topic mapping: '{}' -> '{}'",
+                topic, device.device_id
+            );
 
             // Restore device_types mapping (required for metric processing)
             type_mapping.insert(device.device_id.clone(), device.device_type.clone());
@@ -773,10 +784,17 @@ impl MqttAdapter {
         let mut restored_type_count = 0;
 
         for device in &devices {
-            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
-                topic_mapping.insert(telemetry_topic.clone(), device.device_id.clone());
-                restored_topic_count += 1;
-            }
+            // Use explicit telemetry_topic if set, otherwise default pattern
+            // device/{type}/{id}/uplink (see add_broker restore comment for rationale).
+            let topic = device
+                .connection_config
+                .telemetry_topic
+                .clone()
+                .unwrap_or_else(|| {
+                    format!("device/{}/{}/uplink", device.device_type, device.device_id)
+                });
+            topic_mapping.insert(topic, device.device_id.clone());
+            restored_topic_count += 1;
             type_mapping.insert(device.device_id.clone(), device.device_type.clone());
             restored_type_count += 1;
         }
@@ -1357,25 +1375,29 @@ impl DeviceAdapter for MqttAdapter {
             );
 
             // Subscribe to the device's telemetry topic if configured
-            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
-                // Subscribe to the exact topic specified by the user
-                self.subscribe_topic(telemetry_topic).await?;
-                info!(
-                    "Subscribed to device {} telemetry topic: {}",
-                    device_id, telemetry_topic
-                );
-                // Store topic-to-device mapping for message routing
+            // Use explicit telemetry_topic if set, otherwise default pattern
+            // device/{type}/{id}/uplink. Both branches MUST record the mapping —
+            // the auto-onboarding check at message intake queries this map to
+            // decide whether a standard-uplink topic belongs to a registered
+            // device, and missing entries cause registered devices to be
+            // misrouted to the discovery path.
+            let topic = device
+                .connection_config
+                .telemetry_topic
+                .clone()
+                .unwrap_or_else(|| {
+                    format!("device/{}/{}/uplink", device.device_type, device_id)
+                });
+            self.subscribe_topic(&topic).await?;
+            info!(
+                "Subscribed to device {} telemetry topic: {}",
+                device_id, topic
+            );
+            // Store topic-to-device mapping for message routing
+            {
                 let mut mapping = self.topic_to_device.write().await;
-                mapping.insert(telemetry_topic.clone(), device_id.to_string());
-                info!("Stored topic mapping: {} -> {}", telemetry_topic, device_id);
-            } else {
-                // Use default topic pattern if not specified: device/{device_type}/{device_id}/uplink
-                let default_topic = format!("device/{}/{}/uplink", device.device_type, device_id);
-                self.subscribe_topic(&default_topic).await?;
-                info!(
-                    "No telemetry_topic specified for device {}, subscribed to default: {}",
-                    device_id, default_topic
-                );
+                mapping.insert(topic.clone(), device_id.to_string());
+                info!("Stored topic mapping: {} -> {}", topic, device_id);
             }
 
             // Store device type mapping for metric extraction

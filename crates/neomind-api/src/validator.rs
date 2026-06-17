@@ -909,7 +909,7 @@ mod tests {
 
         // Zero-width space is NOT trimmed by Rust's trim() (it's not considered whitespace)
         // This is expected behavior - zero-width spaces are invisible but have length
-        assert!(validate_required_string("​", "field").is_ok()); // Zero-width space (U+200B)
+        assert!(validate_required_string("\u{200B}", "field").is_ok()); // Zero-width space (U+200B)
 
         // Other Unicode whitespace that IS trimmed
         let result = validate_required_string("\u{2003}", "field"); // Em space

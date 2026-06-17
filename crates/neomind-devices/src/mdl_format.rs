@@ -1719,7 +1719,7 @@ mod tests {
                                 "name": "float_param",
                                 "display_name": "Float",
                                 "data_type": "Float",
-                                "default_value": {"Float": 3.14}
+                                "default_value": {"Float": 2.71}
                             },
                             {
                                 "name": "string_param",
@@ -1750,7 +1750,7 @@ mod tests {
         ));
         assert!(matches!(
             &cmd.parameters[2].default_value,
-            Some(MetricValue::Float(v)) if (*v - 3.14).abs() < 0.001
+            Some(MetricValue::Float(v)) if (*v - 2.71).abs() < 0.001
         ));
         assert!(matches!(
             &cmd.parameters[3].default_value,
@@ -1788,7 +1788,7 @@ mod tests {
                                 "name": "float_param",
                                 "display_name": "Float",
                                 "data_type": "Float",
-                                "default_value": 3.14
+                                "default_value": 2.71
                             },
                             {
                                 "name": "string_param",
@@ -1819,7 +1819,7 @@ mod tests {
         ));
         assert!(matches!(
             &cmd.parameters[2].default_value,
-            Some(MetricValue::Float(v)) if (*v - 3.14).abs() < 0.001
+            Some(MetricValue::Float(v)) if (*v - 2.71).abs() < 0.001
         ));
         assert!(matches!(
             &cmd.parameters[3].default_value,

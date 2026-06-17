@@ -252,7 +252,14 @@ impl HeartbeatConfig {
         Duration::from_secs(self.heartbeat_interval)
     }
 
-    /// Check if a device is stale based on last_seen timestamp
+    /// Check if a device is stale based on last_seen timestamp.
+    ///
+    /// # Deprecated
+    /// Uses the GLOBAL `offline_timeout` and silently ignores per-device overrides
+    /// and template defaults. Callers MUST use
+    /// `DeviceService::effective_offline_timeout(device_id)` instead, which resolves
+    /// the correct timeout via: device override > template default > global.
+    #[deprecated(since = "0.8.18", note = "use DeviceService::effective_offline_timeout() instead")]
     pub fn is_stale(&self, last_seen: i64) -> bool {
         let now = chrono::Utc::now().timestamp();
         let elapsed = (now - last_seen) as u64;

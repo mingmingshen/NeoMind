@@ -2067,7 +2067,13 @@ mod tests_new_layout {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
+    // These tests intentionally exercise the legacy MarkdownMemoryStore API
+    // (append/read/write_category/aggregate_all/prune/list_files/
+    // read_raw_markdown/write_raw_markdown/delete_file/export_all) to verify
+    // backwards compatibility. The new API (write_file/stats) is covered by
+    // tests_new_layout above.
     use super::*;
     use tempfile::TempDir;
 
