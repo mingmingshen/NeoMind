@@ -1045,12 +1045,6 @@ export function DevicesPage() {
             </p>
           </div>
 
-          {/* Info box */}
-          <div className="rounded-md bg-muted p-3 text-sm">
-            <p className="text-muted-foreground">
-              💡 {t('devices:pending.configSettings.info')}
-            </p>
-          </div>
         </div>
       </UnifiedFormDialog>
     </>

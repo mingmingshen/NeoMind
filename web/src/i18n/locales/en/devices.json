@@ -636,8 +636,7 @@
       "maxSamples": "Max Samples per Device",
       "maxSamplesDesc": "Maximum number of data samples to collect before analysis",
       "retention": "Draft Retention (seconds)",
-      "retentionDesc": "How long to keep unapproved draft devices before cleanup",
-      "info": "Changes take effect for newly discovered devices. AI enhancement is triggered manually."
+      "retentionDesc": "How long to keep unapproved draft devices before cleanup"
     },
     "hours": "hours",
     "noBrokerTitle": "No Device Connection Source",

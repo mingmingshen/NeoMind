@@ -1558,8 +1558,24 @@ impl MqttAdapter {
 
                 // Check if this is a standard uplink format first
                 let parts: Vec<&str> = topic.split('/').collect();
-                let is_standard_uplink =
+                let mut is_standard_uplink =
                     parts.len() >= 4 && parts[0] == "device" && parts.get(3) == Some(&"uplink");
+
+                // If the topic is in standard uplink format but the device is NOT registered,
+                // treat it as a discovery candidate so it falls through to the auto-onboarding
+                // branch below. Without this, unregistered standard-uplink devices are silently
+                // dropped (UnifiedExtractor returns 0 metrics for unknown device types) and never
+                // appear in the Pending Devices list.
+                if is_standard_uplink {
+                    let is_registered = topic_to_device.read().await.contains_key(&topic);
+                    if !is_registered {
+                        info!(
+                            "Standard uplink topic '{}' has no registered device, falling through to auto-onboarding",
+                            topic
+                        );
+                        is_standard_uplink = false;
+                    }
+                }
 
                 // For standard uplink format, handle normally
                 if is_standard_uplink {

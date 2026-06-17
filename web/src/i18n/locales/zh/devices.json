@@ -636,8 +636,7 @@
       "maxSamples": "每设备最大样本数",
       "maxSamplesDesc": "分析前收集的最大数据样本数量",
       "retention": "草稿保留时间（秒）",
-      "retentionDesc": "未批准的草稿设备在清理前保留的时间",
-      "info": "更改将对新发现的设备生效。AI 增强需手动触发。"
+      "retentionDesc": "未批准的草稿设备在清理前保留的时间"
     },
     "hours": "小时",
     "noBrokerTitle": "未配置设备连接来源",
