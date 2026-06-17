@@ -367,13 +367,27 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Create tray menu (don't fail if tray creation fails)
-    if let Ok(tray) = create_tray_menu(app) {
-        app.manage(TrayState { _tray: Some(tray) });
-    }
+    // Track success so the close handler below can decide whether
+    // hide-to-tray is safe. On Linux WMs without StatusNotifierApplet
+    // (e.g. bare i3/sway), tray creation fails; if we still hid the
+    // window on close, the user would have no way to bring it back.
+    let tray_created = match create_tray_menu(app) {
+        Ok(tray) => {
+            app.manage(TrayState { _tray: Some(tray) });
+            true
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Tray icon creation failed; close button will exit instead of hiding");
+            false
+        }
+    };
 
     // Handle window close event
     // On Windows: close button quits the app (user expectation)
-    // On macOS/Linux: close button minimizes to tray
+    // On macOS/Linux with tray: close button hides to tray
+    // On macOS/Linux without tray: let the close proceed normally
+    //   (macOS: app keeps running, Dock click reopens via RunEvent::Reopen;
+    //    Linux: app exits, user relaunches — better than an invisible window.)
     if let Some(window) = app.get_webview_window("main") {
         let window_clone = window.clone();
         #[cfg(target_os = "windows")]
@@ -389,9 +403,12 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    // On macOS/Linux, minimize to tray
-                    api.prevent_close();
-                    let _ = window_clone.hide();
+                    if tray_created {
+                        // Tray exists — safe to hide; user can re-open via tray icon.
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                    // else: fall through, allow normal close.
                 }
             }
         });
