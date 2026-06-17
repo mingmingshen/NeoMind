@@ -424,6 +424,16 @@ pub struct MarkdownMemoryStore {
     config: MemoryConfig,
     /// In-memory cache (legacy, for backward compatibility)
     cache: Arc<RwLock<HashMap<String, Vec<MemoryEntry>>>>,
+    /// Serializes writers to shared files (USER.md / KNOWLEDGE.md).
+    ///
+    /// Multiple call sites concurrently read-modify-write these files:
+    /// the system-context background task, the agent-summary background
+    /// task, agent `memory` tool calls, and user-initiated API edits.
+    /// Without this lock, a read-modify-write in `replace_marker_section`
+    /// can lose the update written by a concurrent caller. The lock is held
+    /// only across a single file operation (microseconds for typical
+    /// memory-file sizes), so it has no measurable impact on throughput.
+    write_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl MarkdownMemoryStore {
@@ -433,6 +443,7 @@ impl MarkdownMemoryStore {
             base_path: base_path.into(),
             config: MemoryConfig::default(),
             cache: Arc::new(RwLock::new(HashMap::new())),
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -442,6 +453,7 @@ impl MarkdownMemoryStore {
             base_path: base_path.into(),
             config,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -525,6 +537,11 @@ impl MarkdownMemoryStore {
             _ => unreachable!(), // Already checked above
         };
 
+        // Hold the write lock across the file write so concurrent
+        // read-modify-write callers (replace_marker_section, replace_section)
+        // cannot lose this update. See `write_lock` doc on the struct.
+        let _lock = self.write_lock.lock().await;
+
         fs::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write {}.md: {}", target, e)))?;
 
@@ -571,6 +588,9 @@ impl MarkdownMemoryStore {
                 "Section replacement only works for 'knowledge' target".to_string(),
             ));
         }
+
+        // Serialize against concurrent writers to KNOWLEDGE.md.
+        let _lock = self.write_lock.lock().await;
 
         let path = self.base_path.join("KNOWLEDGE.md");
         let current = if path.exists() {
@@ -622,6 +642,10 @@ impl MarkdownMemoryStore {
             "knowledge" => self.base_path.join("KNOWLEDGE.md"),
             _ => return Err(Error::InvalidInput(format!("Invalid target: {}", target))),
         };
+
+        // Serialize the read-modify-write so a concurrent writer cannot
+        // read our pre-write state and clobber our update (and vice versa).
+        let _lock = self.write_lock.lock().await;
 
         let current = if path.exists() {
             fs::read_to_string(&path)
