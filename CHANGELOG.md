@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.18] - 2026-06-17
+
+### MQTT — Internal Broker Subscription Regression Fix
+
+Fixes a regression introduced in `0.8.16` (`7903c7e3`) that silently broke device auto-discovery on the **internal embedded broker**.
+
+- **Root cause:** when fixing external broker duplicate-subscription bugs, `self.config.subscribe_topics` was removed from `add_broker()`'s initial subscriptions. However, the internal embedded broker starts via `MqttAdapter::start()` → `add_broker()` (not `add_broker_with_tls`), and its config sets `subscribe_topics = ["#"]` to subscribe to ALL topics for auto-discovery. As a result, the internal broker only subscribed to `device/+/+/uplink` and `device/+/+/downlink`, and devices publishing to any custom topic (e.g. `ne101/abc`, `sensor/foo`) were silently dropped at the adapter boundary.
+- **Fix:** restore `self.config.subscribe_topics` inclusion in `add_broker()`, with deduplication to avoid the original duplicate-subscription issue. `add_broker_with_tls` (external brokers) is unaffected because it takes `subscribe_topics` as an explicit parameter.
+- **Symptom resolved:** custom-topic devices publishing to the embedded broker (port 8883) now correctly appear in Pending Devices after a few samples.
+
+## [0.8.17] - 2026-06-17
+
+### Pending Devices — Standard-Uplink Auto-Onboarding Fix
+
+Fixes a silent-drop bug where devices publishing to standard uplink topics (`device/{type}/{id}/uplink`) were **never added to the Pending Devices draft list**, even when the device was unregistered.
+
+- **Root cause:** in `mqtt.rs`, the `is_standard_uplink` branch extracted `device_id`/`device_type` from the topic, ran `UnifiedExtractor` (which returns 0 metrics for unknown device types), published `DeviceOnline`, and `return`-ed early — so `DeviceDiscovered` was never published and auto-onboarding never triggered. Only non-standard topics (e.g. `sensor/foo`) reached the auto-onboarding branch.
+- **Fix:** at the top of the `is_standard_uplink` branch, check `topic_to_device` for registration; if the topic has no registered device, treat it as a discovery candidate and fall through to the auto-onboarding branch, which publishes `DeviceDiscovered` and creates a draft.
+- **Side effect:** the standard branch no longer pollutes the in-memory `device_types` cache with entries for unregistered devices.
+- **UI cleanup:** removed a redundant "💡 Changes take effect for newly discovered devices…" info box from the auto-onboarding config dialog (i18n keys pruned).
+
 ## [0.8.16] - 2026-06-16
 
 ### Device Connectivity — 4-State Connection Model
