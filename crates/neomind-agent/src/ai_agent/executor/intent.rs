@@ -56,6 +56,10 @@ Respond in JSON format:
             params: GenerationParams {
                 temperature: Some(0.3),
                 max_tokens: Some(1024),
+                // Disable thinking for non-chat analytical calls (gotcha #7):
+                // thinking models (qwen3.x, deepseek-r1) otherwise waste tokens
+                // on internal reasoning for a simple JSON extraction task.
+                thinking_enabled: Some(false),
                 ..Default::default()
             },
             model: None,

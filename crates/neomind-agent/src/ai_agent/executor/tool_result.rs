@@ -234,6 +234,11 @@ impl AgentExecutor {
             params: GenerationParams {
                 temperature: Some(0.7),
                 max_tokens: Some(8192),
+                // Disable thinking for Phase 2 fallback summary (gotcha #7):
+                // this summarizes already-collected tool results, not user-facing
+                // reasoning. Thinking models would burn tokens on hidden CoT
+                // before producing the summary.
+                thinking_enabled: Some(false),
                 ..Default::default()
             },
             model: None,
