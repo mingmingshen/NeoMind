@@ -51,6 +51,37 @@ impl BackendSemaphores {
     }
 }
 
+/// RAII guard that releases a reserved slot in `running_executions` on drop.
+///
+/// This MUST cover *every* exit path from the scheduler's spawned task body:
+/// normal completion, early `return`, task cancellation (future drop), and
+/// panics (the default `tokio::spawn` catches unwinds and drops the future,
+/// which runs this Drop). Without it, a panic or cancel between the initial
+/// `insert` and the trailing manual `remove` would leak the slot; after
+/// `max_concurrent` (10) leaks the scheduler silently skips every future
+/// execution until process restart.
+///
+/// `Drop` cannot `.await`, so we spawn the async removal onto the current
+/// tokio runtime. If no runtime is available (process tearing down), the
+/// removal is a no-op — acceptable because the scheduler is dying anyway
+/// and the in-memory set is discarded with it.
+struct RunningSlotGuard {
+    agent_id: String,
+    running: Arc<RwLock<std::collections::HashSet<String>>>,
+}
+
+impl Drop for RunningSlotGuard {
+    fn drop(&mut self) {
+        let agent_id = std::mem::take(&mut self.agent_id);
+        let running = self.running.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                running.write().await.remove(&agent_id);
+            });
+        }
+    }
+}
+
 /// Scheduler configuration.
 #[derive(Debug, Clone)]
 pub struct SchedulerConfig {
@@ -340,13 +371,22 @@ impl AgentScheduler {
                         .insert(agent_id.clone());
 
                     tokio::spawn(async move {
+                        // RAII guard: removes the agent_id from running_executions
+                        // on *every* exit path (normal return, early return,
+                        // cancellation, or panic). Placed at the very top so its
+                        // Drop runs last. See RunningSlotGuard docs for why this
+                        // is required instead of a trailing manual remove().
+                        let _slot_guard = RunningSlotGuard {
+                            agent_id: agent_id.clone(),
+                            running: running_executions_clone.clone(),
+                        };
+
                         // Acquire semaphore permit for concurrency control
                         // If semaphore is closed, log and skip execution
                         let _permit = match semaphore_clone.acquire().await {
                             Ok(p) => p,
                             Err(_) => {
                                 tracing::error!(agent_id = %agent_id, "Semaphore closed, skipping agent execution");
-                                running_executions_clone.write().await.remove(&agent_id);
                                 return;
                             }
                         };
@@ -373,7 +413,6 @@ impl AgentScheduler {
                                     Ok(p) => p,
                                     Err(_) => {
                                         tracing::warn!(agent_id = %agent_id, "Backend semaphore closed");
-                                        running_executions_clone.write().await.remove(&agent_id);
                                         return;
                                     }
                                 };
@@ -497,8 +536,8 @@ impl AgentScheduler {
                             }
                         }
 
-                        // Mark as no longer running
-                        running_executions_clone.write().await.remove(&agent_id);
+                        // `_slot_guard` drops here and removes the agent_id
+                        // from running_executions on every exit path.
                     });
                 }
             }
