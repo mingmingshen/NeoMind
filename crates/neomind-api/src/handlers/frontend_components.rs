@@ -106,6 +106,53 @@ fn http_client() -> Result<reqwest::Client, ErrorResponse> {
         .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))
 }
 
+/// Upper bound on a marketplace download. The manual-upload path is gated by
+/// `MAX_REQUEST_BODY_SIZE` (10 MB), so we mirror that here — without a cap,
+/// `resp.bytes().await` buffers the entire response into memory and a
+/// compromised marketplace URL (or `NEOMIND_MARKET_URL` env override) could
+/// OOM the server or fill `data/frontend-components/` within the 15s timeout.
+const MARKETPLACE_DOWNLOAD_CAP_BYTES: usize = 10 * 1024 * 1024;
+
+/// Read a response body into a `Vec<u8>` with a hard byte cap.
+///
+/// Pre-checks `Content-Length` (when the server advertises one) for a fast
+/// rejection, then streams the body chunk-by-chunk so a server that omits
+/// `Content-Length` (or under-reports it) is still caught mid-stream rather
+/// than after buffering gigabytes. Returns the bytes accumulated so far are
+/// discarded on cap-overflow so we don't hold a giant allocation while
+/// constructing the error response.
+async fn collect_capped(
+    resp: reqwest::Response,
+    label: &str,
+) -> Result<Vec<u8>, ErrorResponse> {
+    // Fast path: trust server-advertised length when present.
+    if let Some(len) = resp.content_length() {
+        if len as usize > MARKETPLACE_DOWNLOAD_CAP_BYTES {
+            return Err(ErrorResponse::bad_request(format!(
+                "{} is too large ({} bytes); marketplace download cap is {} bytes",
+                label, len, MARKETPLACE_DOWNLOAD_CAP_BYTES
+            )));
+        }
+    }
+
+    use futures::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result
+            .map_err(|e| ErrorResponse::internal(format!("Failed to read {}: {}", label, e)))?;
+        // Check before extending so we never exceed the cap in memory.
+        if buf.len().saturating_add(chunk.len()) > MARKETPLACE_DOWNLOAD_CAP_BYTES {
+            return Err(ErrorResponse::bad_request(format!(
+                "{} exceeded the {} byte download cap during streaming",
+                label, MARKETPLACE_DOWNLOAD_CAP_BYTES
+            )));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
 /// Fetch the marketplace index from GitHub.
 async fn fetch_market_index(client: &reqwest::Client) -> Result<MarketIndex, ErrorResponse> {
     let cache_buster = std::time::SystemTime::now()
@@ -287,22 +334,30 @@ pub async fn market_install_handler(
         }
     };
 
-    let manifest_text = match manifest_resp.text().await {
-        Ok(t) => t,
+    let manifest_text = match collect_capped(manifest_resp, "manifest").await {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                return ok(json!({
+                    "success": false,
+                    "error": format!("Manifest is not valid UTF-8: {}", e)
+                }));
+            }
+        },
         Err(e) => {
             return ok(json!({
                 "success": false,
-                "error": format!("Failed to read manifest: {}", e)
+                "error": e.to_string()
             }));
         }
     };
 
-    let bundle_bytes = match bundle_resp.bytes().await {
+    let bundle_bytes = match collect_capped(bundle_resp, "bundle").await {
         Ok(b) => b,
         Err(e) => {
             return ok(json!({
                 "success": false,
-                "error": format!("Failed to read bundle: {}", e)
+                "error": e.to_string()
             }));
         }
     };
