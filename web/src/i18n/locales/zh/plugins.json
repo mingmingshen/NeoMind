@@ -5,6 +5,7 @@
     "status": "状态",
     "instances": "实例",
     "instancesCount": "{{count}} 个",
+    "devices": "设备",
     "capabilityVision": "视觉 / 多模态",
     "capabilityVisionOverride": "视觉（{{source}}）",
     "capabilityVisionAutoLabel": "视觉（自动）",

@@ -14,6 +14,7 @@ import {
   FileText,
   ArrowLeft,
   CheckCircle2,
+  Radar,
 } from 'lucide-react'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { FormField } from '@/components/ui/field'
@@ -244,6 +245,41 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }
       submitDisabled={!config || (tlsEnabled && !certsExist && certMode !== 'auto' && !(certMode === 'manual' && !!certPem && !!keyPem))}
     >
       <FormSectionGroup>
+        {/* Auto-Discovery (read-only status) */}
+        <FormSection title={t('broker.autoDiscovery')} defaultExpanded>
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 p-3 rounded-lg border bg-success-light">
+              <Radar className="h-5 w-5 text-success shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">
+                    {t('broker.autoDiscovery')}
+                  </span>
+                  <Badge variant="default" className="bg-success text-primary-foreground">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    {t('broker.autoDiscoveryEnabled')}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('broker.autoDiscoveryDescription')}
+                </p>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {t('broker.autoDiscoveryListening')}:
+                  </span>
+                  <code className="px-1.5 py-0.5 rounded bg-muted-30 font-mono">
+                    {t('broker.autoDiscoveryAllTopics')}
+                  </code>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+              <ArrowLeft className="h-3.5 w-3.5 shrink-0 mt-0.5 rotate-180" />
+              {t('broker.autoDiscoveryHint')}
+            </p>
+          </div>
+        </FormSection>
+
         {/* General Settings */}
         <FormSection title={t('broker.general')} defaultExpanded>
           <div className="space-y-4">

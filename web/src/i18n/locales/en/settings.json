@@ -189,7 +189,13 @@
     "caCertDownloadSuccess": "Distribute to IoT devices for TLS connections",
     "certsConfigured": "TLS certificates configured",
     "noCertsDescription": "No certificates configured. Choose setup method:",
-    "back": "Back"
+    "back": "Back",
+    "autoDiscovery": "Auto-Discovery",
+    "autoDiscoveryDescription": "Internal broker automatically discovers devices publishing to any topic",
+    "autoDiscoveryEnabled": "Enabled",
+    "autoDiscoveryListening": "Listening on",
+    "autoDiscoveryAllTopics": "# (all topics)",
+    "autoDiscoveryHint": "Discovered devices appear in the Pending Devices tab for review and onboarding."
   },
   "timezones": {
     "Asia.Shanghai": "Shanghai (UTC+8)",

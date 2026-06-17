@@ -5,6 +5,7 @@
     "status": "Status",
     "instances": "Instances",
     "instancesCount": "{{count}} instance(s)",
+    "devices": "Devices",
     "capabilityVision": "Vision / Multimodal",
     "capabilityVisionOverride": "Vision ({{source}})",
     "capabilityVisionAutoLabel": "Vision (Auto)",

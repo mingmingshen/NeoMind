@@ -108,7 +108,7 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
           subscribe_topics: {
             type: 'array',
             description: 'Extra custom topics to subscribe (one per line). System topics (device/+/+/uplink, device/+/+/downlink) are always auto-subscribed. Wildcards: + matches single level, # matches all levels (must be last).',
-            default: ['ne301/#'],
+            default: ['device/#'],
           },
         },
         required: ['broker'],
@@ -306,10 +306,6 @@ export function UnifiedDeviceConnectionsTab() {
         !d.plugin_id || d.plugin_id === 'internal-mqtt' || d.plugin_id === 'builtin' ||
         externalBrokers.some((b: any) => b.id === d.plugin_id)
       ).length
-    }
-    if (type === 'webhook') {
-      // Count webhook devices
-      return devices.filter((d: any) => d.adapter_type === 'webhook').length
     }
     if (type === 'webhook') {
       // Count webhook devices
@@ -541,7 +537,7 @@ export function UnifiedDeviceConnectionsTab() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center mt-2">
-                    <span className="text-muted-foreground">{t('plugins:llm.instances')}:</span>
+                    <span className="text-muted-foreground">{t('plugins:llm.devices')}:</span>
                     <span className="font-medium">{deviceCount}</span>
                   </div>
                 </CardContent>

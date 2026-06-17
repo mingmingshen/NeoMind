@@ -189,7 +189,13 @@
     "caCertDownloadSuccess": "分发到 IoT 设备以实现安全 TLS 连接",
     "certsConfigured": "TLS 证书已配置",
     "noCertsDescription": "尚未配置证书，请选择配置方式：",
-    "back": "返回"
+    "back": "返回",
+    "autoDiscovery": "自动发现",
+    "autoDiscoveryDescription": "内置 Broker 自动发现发布到任意主题的设备",
+    "autoDiscoveryEnabled": "已启用",
+    "autoDiscoveryListening": "监听主题",
+    "autoDiscoveryAllTopics": "#（全部主题）",
+    "autoDiscoveryHint": "被发现的设备会出现在「待处理设备」标签页，供您审阅并完成入驻。"
   },
   "timezones": {
     "Asia.Shanghai": "中国 (UTC+8)",
