@@ -422,9 +422,14 @@ impl AuthUserState {
         let payload: serde_json::Value = serde_json::from_str(&payload_str)
             .map_err(|_| AuthError::InvalidToken("Invalid payload JSON".into()))?;
 
-        // Check expiration
+        // Check expiration with ±30s clock-skew tolerance. Without this,
+        // clients whose clock is a few seconds ahead of the server get
+        // intermittent 401s right at token expiry, and clients behind on
+        // slow networks can hit the boundary mid-request. 30s matches the
+        // de-facto standard used by most JWT libraries.
         let exp = payload["exp"].as_i64().unwrap_or(0);
-        if exp < chrono::Utc::now().timestamp() {
+        const CLOCK_SKEW_SECS: i64 = 30;
+        if exp + CLOCK_SKEW_SECS < chrono::Utc::now().timestamp() {
             return Err(AuthError::ExpiredToken);
         }
 

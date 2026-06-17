@@ -1004,8 +1004,12 @@ pub async fn share_proxy_handler(
         req_builder = req_builder.header("content-type", ct);
     }
 
-    // Mark as internal proxy so auth middleware bypasses JWT check
-    req_builder = req_builder.header("x-internal-proxy", "share");
+    // Mark as internal proxy so auth middleware bypasses JWT check.
+    // MUST include the per-process secret — the auth middleware rejects
+    // bypass attempts that lack it (blocks spoofed external requests).
+    req_builder = req_builder
+        .header("x-internal-proxy", "share")
+        .header("x-internal-proxy-secret", state.internal_proxy_secret.as_str());
 
     if !body.is_empty() {
         req_builder = req_builder.body(body.to_vec());

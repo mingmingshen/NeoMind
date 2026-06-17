@@ -102,6 +102,18 @@ use neomind_devices::EmbeddedBroker;
 /// Maximum request body size (10 MB)
 pub const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
 
+/// Generate a fresh per-process random secret used to authenticate the
+/// internal share-proxy bypass. Returns a 43-char base64-encoded string
+/// (32 bytes of entropy). Regenerated on every server startup, so leaked
+/// secrets from one process do not transfer to another.
+fn generate_internal_proxy_secret() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    // Hex encoding avoids extra base64 dependencies.
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
 /// Maximum request body size for extension uploads (100 MB - base64 encoded files are ~33% larger)
 pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 100 * 1024 * 1024;
 
@@ -185,6 +197,14 @@ pub struct ServerState {
     /// In-memory credential cache for fast auth validation (I5: avoids redb on every CONNECT).
     #[cfg(feature = "embedded-broker")]
     pub credential_cache: Arc<std::sync::RwLock<CredentialCache>>,
+
+    /// Random secret generated at startup, required to use the
+    /// `x-internal-proxy: share` auth bypass. Without this check, any network
+    /// client (server binds 0.0.0.0 by default) could spoof the header and
+    /// bypass authentication as `share-proxy` User. The share dashboard proxy
+    /// sets BOTH headers when forwarding via loopback reqwest; external
+    /// attackers cannot know this per-process random secret.
+    pub internal_proxy_secret: Arc<String>,
 }
 
 // Backward compatibility: Provide direct field access as before
@@ -1083,6 +1103,7 @@ impl ServerState {
             broker_restart_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "embedded-broker")]
             credential_cache: Arc::new(std::sync::RwLock::new(CredentialCache::default())),
+            internal_proxy_secret: Arc::new(generate_internal_proxy_secret()),
         }
     }
 
@@ -1262,6 +1283,7 @@ impl ServerState {
             broker_restart_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "embedded-broker")]
             credential_cache: Arc::new(std::sync::RwLock::new(CredentialCache::default())),
+            internal_proxy_secret: Arc::new(generate_internal_proxy_secret()),
         }
     }
 

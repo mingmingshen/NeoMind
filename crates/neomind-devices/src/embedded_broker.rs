@@ -260,6 +260,19 @@ impl DevicePresenceHook {
     fn client_id_to_device_id(client_id: &rmqtt::types::ClientId) -> String {
         client_id.to_string()
     }
+
+    /// True if this client_id belongs to a NeoMind-internal MQTT client
+    /// (the embedded broker itself, or one of the adapter's broker-bridge
+    /// connections to external brokers). Such clients must NOT fire
+    /// `DeviceTransportOnline/Offline` events — they would create phantom
+    /// devices and pollute the device-status map.
+    ///
+    /// The `neomind-` prefix is reserved for internal use. User-registered
+    /// devices that need a stable client_id should use a different prefix
+    /// (typically the device_id itself, which is unconstrained).
+    fn is_internal_client(client_id: &rmqtt::types::ClientId) -> bool {
+        client_id.to_string().starts_with("neomind-")
+    }
 }
 
 #[async_trait]
@@ -272,6 +285,17 @@ impl rmqtt::hook::Handler for DevicePresenceHook {
         let now = chrono::Utc::now().timestamp();
         match param {
             rmqtt::hook::Parameter::ClientConnected(session) => {
+                // Skip NeoMind-internal clients (embedded broker's own
+                // connections, external-broker bridges). Otherwise they'd
+                // fire DeviceTransportOnline for phantom devices like
+                // "neomind-<broker_id>-<uuid>" and pollute the status map.
+                if Self::is_internal_client(&session.id.client_id) {
+                    tracing::trace!(
+                        "DevicePresenceHook: skipping internal client '{}'",
+                        session.id.client_id
+                    );
+                    return (true, _acc);
+                }
                 let device_id = Self::client_id_to_device_id(&session.id.client_id);
                 tracing::debug!(
                     "DevicePresenceHook: client_connected client_id='{}' -> device_id='{}'",
@@ -287,6 +311,9 @@ impl rmqtt::hook::Handler for DevicePresenceHook {
                     .await;
             }
             rmqtt::hook::Parameter::ClientDisconnected(session, reason) => {
+                if Self::is_internal_client(&session.id.client_id) {
+                    return (true, _acc);
+                }
                 let device_id = Self::client_id_to_device_id(&session.id.client_id);
                 let reason_str = match reason {
                     rmqtt::types::Reason::Unknown => None,

@@ -207,6 +207,45 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         });
     }
 
+    // Start data-push delivery log cleanup background task.
+    // Without this, data-push.redb grows unbounded in high-frequency push
+    // scenarios and can fill the disk. Default retention: 30 days. Re-runs
+    // every 24h. Failures are logged and retried next cycle — non-fatal.
+    {
+        let dp_state = state.clone();
+        tokio::spawn(async move {
+            // Wait for server to initialize (matches telemetry retention task)
+            tokio::time::sleep(Duration::from_secs(15)).await;
+
+            const DATA_PUSH_LOG_RETENTION_DAYS: u32 = 30;
+            const RUN_INTERVAL_SECS: u64 = 24 * 60 * 60;
+
+            loop {
+                let push_manager_guard = dp_state.data_push.read().await;
+                if let Some(pm) = push_manager_guard.as_ref() {
+                    match pm.cleanup_logs(DATA_PUSH_LOG_RETENTION_DAYS) {
+                        Ok(0) => tracing::debug!(
+                            days = DATA_PUSH_LOG_RETENTION_DAYS,
+                            "DataPush log cleanup: no old entries removed"
+                        ),
+                        Ok(n) => tracing::info!(
+                            removed = n,
+                            days = DATA_PUSH_LOG_RETENTION_DAYS,
+                            "DataPush log cleanup removed old entries"
+                        ),
+                        Err(e) => tracing::warn!(
+                            category = "data_push",
+                            error = %e,
+                            "DataPush log cleanup failed (will retry next cycle)"
+                        ),
+                    }
+                }
+                drop(push_manager_guard);
+                tokio::time::sleep(Duration::from_secs(RUN_INTERVAL_SECS)).await;
+            }
+        });
+    }
+
     // Heavy background services — extension loading, agent manager, MQTT
     {
         let bg_state = state.clone();

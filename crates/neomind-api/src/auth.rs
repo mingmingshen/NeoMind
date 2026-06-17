@@ -584,11 +584,34 @@ pub async fn hybrid_auth_middleware(
 ) -> Result<Response, AuthError> {
     // Internal share proxy bypass — requests forwarded from the share proxy
     // handler already validated the share token, so we trust them.
+    //
+    // SECURITY: requires BOTH `x-internal-proxy: share` AND a per-process
+    // random secret in `x-internal-proxy-secret`. Without the secret check,
+    // any network client (server binds 0.0.0.0 by default) could spoof the
+    // header and bypass auth entirely. The share proxy handler in
+    // dashboards.rs sets both headers when forwarding via loopback reqwest.
     if headers
         .get("x-internal-proxy")
         .and_then(|v| v.to_str().ok())
         == Some("share")
     {
+        let secret_ok = headers
+            .get("x-internal-proxy-secret")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| constant_time_eq_str(s, state.internal_proxy_secret.as_str()))
+            .unwrap_or(false);
+
+        if !secret_ok {
+            tracing::warn!(
+                category = "auth",
+                "x-internal-proxy: share header without matching secret — \
+                 likely spoofed request, rejecting"
+            );
+            return Err(AuthError::unauthorized(
+                "Internal proxy secret missing or invalid",
+            ));
+        }
+
         // Insert a service account session for logging purposes
         let proxy_session = crate::auth_users::SessionInfo {
             user_id: "share-proxy".to_string(),
@@ -655,6 +678,22 @@ pub async fn hybrid_auth_middleware(
     Err(AuthError::unauthorized(
         "Authentication required. Provide a valid JWT token or API key.",
     ))
+}
+
+/// Constant-time string comparison. Prevents timing side-channels when
+/// comparing secrets. Returns false immediately if lengths differ (this
+/// leaks length info, which is acceptable for random secrets where length
+/// is fixed and known).
+fn constant_time_eq_str(a: &str, b: &str) -> bool {
+    let (a_bytes, b_bytes) = (a.as_bytes(), b.as_bytes());
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut result: u8 = 0;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
 }
 
 #[cfg(test)]
