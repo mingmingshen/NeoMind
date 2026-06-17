@@ -587,13 +587,24 @@ impl MqttAdapter {
 
         // Bug 4: subscribe AFTER the event loop task is spawned and polling. The event
         // loop drains the request channel, so subscribe() calls won't block on a full
-        // channel. Bug 1: self.config.subscribe_topics is no longer mixed in here —
-        // callers pass explicit topics via add_broker_with_tls; add_broker uses only
-        // the built-in wildcard topics.
-        let initial_topics = vec![
+        // channel.
+        //
+        // NOTE: add_broker() is used by the INTERNAL embedded broker via start(). The
+        // internal broker configures subscribe_topics = ["#"] (subscribe to all topics
+        // for auto-discovery), so we MUST include self.config.subscribe_topics here —
+        // otherwise the internal broker only sees device/+/+/uplink|downlink messages
+        // and devices publishing to custom topics (e.g. "ne101/abc") are never seen.
+        // add_broker_with_tls (external brokers) takes subscribe_topics as an explicit
+        // parameter and is unaffected.
+        let mut initial_topics = vec![
             "device/+/+/uplink".to_string(),
             "device/+/+/downlink".to_string(),
         ];
+        for topic in &self.config.subscribe_topics {
+            if !initial_topics.contains(topic) {
+                initial_topics.push(topic.clone());
+            }
+        }
 
         // Bug 5: track subscription success so a total failure surfaces as an error
         // instead of silently marking the broker as "connected".
