@@ -367,6 +367,14 @@ impl AiAgentManager {
         *running = true;
         drop(running);
 
+        // Reset any agents left in `Executing` status from a previous run.
+        // On a clean startup no agent can be executing — `Executing` means the
+        // prior process died mid-execution (kill -9, OOM, crash, power loss).
+        // Without this sweep, `reload_active_agents` (which only loads Active)
+        // silently drops those agents from the scheduler forever, and the UI
+        // shows them as "running" with no signal that anything is wrong.
+        self.reset_stale_executing_agents().await;
+
         // Reload and reschedule all active agents from storage
         // This ensures scheduled tasks continue after server restarts
         self.reload_active_agents().await?;
@@ -436,6 +444,75 @@ impl AiAgentManager {
         }
 
         Ok(())
+    }
+
+    /// Sweep storage for agents stuck in `Executing` status and reset them
+    /// to `Active`. Called once at startup before `reload_active_agents`.
+    ///
+    /// An `Executing` row on startup can only mean the previous process died
+    /// mid-execution (the `StatusGuard` resets status on clean shutdown,
+    /// cancel, panic, and timeout — but NOT across process death). Left
+    /// untreated, these agents are silently dropped by `reload_active_agents`
+    /// (which filters by `Active`) and never rescheduled, while the UI shows
+    /// them as "currently running" with no signal that anything is wrong.
+    ///
+    /// Resets to `Active` (not `Error`) because the failure was environmental
+    /// (process died), not a flaw in the agent itself — the user expects the
+    /// agent to keep running on its schedule after a restart.
+    async fn reset_stale_executing_agents(&self) {
+        use neomind_storage::{AgentFilter, AgentStatus};
+
+        let stuck = match self
+            .list_agents(AgentFilter {
+                status: Some(AgentStatus::Executing),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(agents) => agents,
+            Err(e) => {
+                tracing::warn!(
+                    category = "agent",
+                    error = %e,
+                    "Failed to scan for stale Executing agents; skipping reset"
+                );
+                return;
+            }
+        };
+
+        if stuck.is_empty() {
+            return;
+        }
+
+        let count = stuck.len();
+        tracing::info!(
+            stuck_count = count,
+            "Resetting agents stuck in Executing status from previous run"
+        );
+
+        for agent in &stuck {
+            let id = agent.id.clone();
+            if let Err(e) = self
+                .executor
+                .store()
+                .update_agent_status(&id, AgentStatus::Active, None)
+                .await
+            {
+                tracing::warn!(
+                    agent_id = %id,
+                    error = %e,
+                    "Failed to reset stale Executing agent"
+                );
+            } else {
+                tracing::info!(
+                    agent_id = %id,
+                    name = %agent.name,
+                    "Reset stale Executing agent to Active"
+                );
+            }
+        }
+
+        tracing::info!(reset_count = count, "Stale Executing agents reset to Active");
     }
 
     /// Stop the scheduler.
