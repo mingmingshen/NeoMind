@@ -246,6 +246,46 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         });
     }
 
+    // Start rule execution history cleanup background task.
+    // Without this, rule_history.redb grows unbounded for long-running
+    // deployments — `cleanup_history` was previously only called once at
+    // startup (types.rs), so a server up for months would accumulate
+    // months of trigger history. Default retention: 30 days. Re-runs
+    // every 24h. Mirrors the data-push log cleanup task above. Failures
+    // are logged and retried next cycle — non-fatal.
+    {
+        let rule_state = state.clone();
+        tokio::spawn(async move {
+            // Wait for server to initialize (matches data-push retention task).
+            tokio::time::sleep(Duration::from_secs(20)).await;
+
+            const RULE_HISTORY_RETENTION_DAYS: u64 = 30;
+            const RUN_INTERVAL_SECS: u64 = 24 * 60 * 60;
+
+            loop {
+                if let Some(store) = rule_state.rule_store() {
+                    match store.cleanup_history(RULE_HISTORY_RETENTION_DAYS) {
+                        Ok(0) => tracing::debug!(
+                            days = RULE_HISTORY_RETENTION_DAYS,
+                            "Rule history cleanup: no old entries removed"
+                        ),
+                        Ok(n) => tracing::info!(
+                            removed = n,
+                            days = RULE_HISTORY_RETENTION_DAYS,
+                            "Rule history cleanup removed old entries"
+                        ),
+                        Err(e) => tracing::warn!(
+                            category = "rules",
+                            error = %e,
+                            "Rule history cleanup failed (will retry next cycle)"
+                        ),
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(RUN_INTERVAL_SECS)).await;
+            }
+        });
+    }
+
     // Heavy background services — extension loading, agent manager, MQTT
     {
         let bg_state = state.clone();
