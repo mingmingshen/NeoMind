@@ -154,7 +154,7 @@ impl PushScheduler {
                     _ = cancel.changed() => {
                         // Flush remaining buffer before stopping
                         if !buffer.is_empty() {
-                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, None).await;
                         }
                         tracing::info!(target_id = %target.id, "Event-driven target stopped");
                         return;
@@ -162,7 +162,7 @@ impl PushScheduler {
                     result = rx.recv() => {
                         if cancel.has_changed().unwrap_or(false) {
                             if !buffer.is_empty() {
-                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, None).await;
                             }
                             return;
                         }
@@ -184,6 +184,7 @@ impl PushScheduler {
                                                 &source_id,
                                                 &value,
                                                 ts,
+                                                Some(&cancel),
                                             ).await {
                                                 tracing::warn!(target_id = %target.id, error = %e, "Delivery failed after retries");
                                             }
@@ -191,7 +192,7 @@ impl PushScheduler {
                                             // Buffer for batch
                                             buffer.push((source_id, value, ts));
                                             if buffer.len() >= batch_size {
-                                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, Some(&cancel)).await;
                                                 flush_timer = tokio::time::Instant::now() + batch_interval;
                                             }
                                         }
@@ -200,14 +201,14 @@ impl PushScheduler {
                             }
                             None => {
                                 if !buffer.is_empty() {
-                                    flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                                    flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, None).await;
                                 }
                                 return;
                             }
                         }
                     }
                     _ = tokio::time::sleep_until(flush_timer), if batch_enabled && !buffer.is_empty() => {
-                        flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                        flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, Some(&cancel)).await;
                         flush_timer = tokio::time::Instant::now() + batch_interval;
                     }
                 }
@@ -256,7 +257,7 @@ impl PushScheduler {
                     _ = cancel.changed() => {
                         // Flush remaining buffer before stopping
                         if !buffer.is_empty() {
-                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, None).await;
                         }
                         tracing::info!(target_id = %target.id, "Interval target stopped");
                         return;
@@ -264,7 +265,7 @@ impl PushScheduler {
                     result = rx.recv() => {
                         if cancel.has_changed().unwrap_or(false) {
                             if !buffer.is_empty() {
-                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, None).await;
                             }
                             return;
                         }
@@ -280,7 +281,7 @@ impl PushScheduler {
                     _ = flush_timer.tick() => {
                         if !buffer.is_empty() {
                             tracing::debug!(target_id = %target.id, count = buffer.len(), "Interval flush");
-                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer, Some(&cancel)).await;
                         }
                     }
                 }
@@ -346,6 +347,12 @@ fn extract_event_data(
 }
 
 /// Deliver data with retry logic.
+///
+/// `cancel` — when `Some`, the inter-retry backoff sleeps are racing against
+/// this watch receiver. As soon as the receiver observes a change, the
+/// in-flight retry loop aborts and the function returns `Err`. This lets
+/// `PushScheduler::stop` interrupt a target stuck in a long backoff tail
+/// instead of blocking the stop call for the full backoff sum.
 async fn deliver_with_retry(
     target: &PushTarget,
     store: &DataPushStore,
@@ -354,6 +361,7 @@ async fn deliver_with_retry(
     source_id: &str,
     value: &serde_json::Value,
     timestamp: i64,
+    cancel: Option<&tokio::sync::watch::Receiver<bool>>,
 ) -> Result<()> {
     let ctx = TemplateContext {
         source_id: source_id.to_string(),
@@ -406,7 +414,23 @@ async fn deliver_with_retry(
                         error = %e,
                         "Delivery failed, retrying"
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(effective_backoff)).await;
+                    if sleep_or_cancel(
+                        std::time::Duration::from_secs(effective_backoff),
+                        cancel,
+                    )
+                    .await
+                    {
+                        log.status = DeliveryStatus::Failed;
+                        log.error = Some(format!("Cancelled during retry backoff: {}", e));
+                        log.completed_at = Some(chrono::Utc::now().timestamp());
+                        let _ = store.save_delivery_log(&log);
+                        tracing::info!(
+                            target_id = %target.id,
+                            attempt,
+                            "Delivery retry aborted by stop signal"
+                        );
+                        return Err(anyhow::anyhow!("Cancelled during retry backoff: {}", e));
+                    }
                     backoff *= 2;
                 } else {
                     log.status = DeliveryStatus::Failed;
@@ -421,13 +445,40 @@ async fn deliver_with_retry(
     Err(anyhow::anyhow!("Max retries exceeded"))
 }
 
+/// Sleep for `dur`, returning early when `cancel` observes a value change.
+/// Returns `true` if cancelled (returned via the watch), `false` on natural
+/// completion. When `cancel` is `None`, this is a plain sleep.
+async fn sleep_or_cancel(
+    dur: std::time::Duration,
+    cancel: Option<&tokio::sync::watch::Receiver<bool>>,
+) -> bool {
+    let Some(rx) = cancel else {
+        tokio::time::sleep(dur).await;
+        return false;
+    };
+    // Use a borrowed clone of the watch receiver so the parent's
+    // last_observed version is untouched (cloning a Receiver creates an
+    // independent version cursor).
+    let mut rx = rx.clone();
+    tokio::select! {
+        _ = tokio::time::sleep(dur) => false,
+        _ = rx.changed() => true,
+    }
+}
+
 /// Flush a batch of buffered events as a single aggregated payload.
+///
+/// `cancel` semantics mirror [`deliver_with_retry`]: when `Some`, an
+/// in-flight backoff is aborted on stop. The final-flush call paths inside
+/// the `select!` cancel arms pass `None` because the task is already
+/// tearing down and we want the flush to complete unconditionally.
 async fn flush_batch(
     target: &PushTarget,
     store: &DataPushStore,
     renderer: &TemplateRenderer,
     dest: &dyn crate::targets::PushDestination,
     buffer: &mut Vec<(String, serde_json::Value, i64)>,
+    cancel: Option<&tokio::sync::watch::Receiver<bool>>,
 ) {
     if buffer.is_empty() {
         return;
@@ -511,7 +562,25 @@ async fn flush_batch(
                         error = %e,
                         "Batch delivery failed, retrying"
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(effective_backoff)).await;
+                    if sleep_or_cancel(
+                        std::time::Duration::from_secs(effective_backoff),
+                        cancel,
+                    )
+                    .await
+                    {
+                        log.status = DeliveryStatus::Failed;
+                        log.error = Some(format!("Cancelled during retry backoff: {}", e));
+                        log.completed_at = Some(chrono::Utc::now().timestamp());
+                        let _ = store.save_delivery_log(&log);
+                        tracing::info!(
+                            target_id = %target.id,
+                            batch_count = count,
+                            attempt,
+                            "Batch delivery retry aborted by stop signal"
+                        );
+                        buffer.clear();
+                        return;
+                    }
                     backoff *= 2;
                 } else {
                     log.status = DeliveryStatus::Failed;
