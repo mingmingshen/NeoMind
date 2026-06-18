@@ -9,6 +9,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.19] - 2026-06-18
+
+### Overview
+
+Multi-round security & reliability audit (rounds 3–16). 20 commits across 6 audit domains: agent executor, rules engine, LLM backends, storage, CLI ops, API auth, devices, messages, data-push, extensions. Several critical security fixes (zip-slip paths, public admin-register, broken channel-disable), plus numerous crash-avoidance and concurrency hardening fixes. No breaking API changes; all fixes are drop-in.
+
+### Security
+
+#### Zip-slip / path traversal
+- **Extension `install_sync`** (`crates/neomind-core/src/extension/package.rs`): manifest-controlled `binary_rel_path` and bundled-library paths were joined raw to `ext_dir`, allowing a malicious `.nep` to write binaries outside the install directory via `../` traversal. Now routed through `safe_join_within`. The async install path was already defended via `file_name()`; `install_sync` (used by `POST /api/extensions/upload/file`) was missed. *(Round 16, `7051afb2`)*
+- **Extension `extract_directory` / `extract_directory_sync`** (same file): zip entry names were joined directly to `dst_dir`. A malicious community-marketplace `.nep` could ship `frontend/../../etc/cron.d/backdoor`. *(Round 3, `185d6c33`)* — central defense via `safe_join_within` with tests for plain traversal, mid-path `..`, absolute paths, and cur-dir no-op.
+
+#### Public endpoints that shouldn't be
+- **`POST /api/auth/register`** (`crates/neomind-api/src/handlers/auth_users.rs`): read `role` from the request body, so anyone on the network could self-register an admin JWT and bypass the admin-only `create_user_handler`. Now always creates `UserRole::User`; the `role` field is still accepted for backwards-compat with older clients but silently ignored. *(Round 16, `7051afb2`)*
+- **`POST /api/setup/llm-config`** (`crates/neomind-api/src/handlers/setup.rs`): public endpoint that wrote the active LLM backend config (including API key) without checking `users.is_empty()`. After server boot, anonymous callers could redirect agent traffic to attacker-controlled endpoints or exfiltrate keys. Now gated by the same first-time-setup invariant used by `initialize_admin_handler`. *(Round 16, `7051afb2`)*
+- **`x-internal-proxy: share` auth bypass** (`hybrid_auth_middleware`): the header alone granted User role, exploitable from the network because the server binds 0.0.0.0 by default. Now requires a second `x-internal-proxy-secret` header matching a fresh 32-byte per-process random secret. Constant-time compare. *(Round 3, `e179b0df`)*
+
+#### Credential handling
+- **Plaintext password fallback** (`auth_users.rs`): when bcrypt failed (password >72 bytes, RNG unavailable), `hash_password` silently degraded to `format!("fallback_hash_{}", password)` — cleartext storage, with `verify_password` doing direct string comparison. `hash_password` now returns `Result` and propagates errors; `verify_password` refuses legacy `fallback_hash_` entries and logs a critical warning (admin must reset affected accounts). *(Round 3, `185d6c33`)*
+- **MQTT credential creation TOCTOU** (`add_credential_handler`): uniqueness check and insert ran as two separate redb transactions; concurrent requests for the same username both passed the check, second write silently overwrote the first credential's bcrypt hash while both callers got HTTP 200. New `try_add_mqtt_credential` does check-then-insert inside a single write transaction. *(Round 11, `defccf96`)*
+
+#### Share proxy & dashboard auth
+- **Share proxy allowlist** (`crates/neomind-api/src/handlers/dashboards.rs`): the previous blocklist silently allowed share-link holders to read every device, telemetry series, agent execution, and extension output. Switched to allowlist (telemetry/devices/extensions/agents/data-sources/messages read paths only); writes still blocked by method check. *(Round 15, `1f27e6e2`)*
+
+#### Marketplace DoS
+- **`market_install_handler` OOM** (`crates/neomind-api/src/handlers/extensions.rs`): called `.bytes().await` / `.text().await` on manifest/bundle responses with no size limit (only a 15s timeout). A compromised marketplace repo or tampered `NEOMIND_MARKET_URL` could serve a multi-GB payload buffered fully into memory. New `collect_capped` short-circuits on advertised `Content-Length > 10 MB` AND streams chunk-by-chunk to catch servers that omit/under-report length. *(Round 11, `ba9e1162`)*
+
+### Critical Bug Fixes
+
+#### Message channels
+- **`set_enabled` didn't stop delivery** (`crates/neomind-messages/src/manager.rs:333`): `create_message` called `channel.is_enabled()` on the channel struct, whose internal `enabled` field is set once at factory create and never mutated by `set_enabled`. Disabling a channel via `PUT /channels/:name/enabled` kept delivery running while the UI reported it as disabled. New `ChannelRegistry::is_enabled_effective()` consults the registry override first; `create_message` uses it. *(Round 16, `7051afb2`)*
+- **`set_enabled` wiped persisted filter** (`channels/mod.rs:493-501`): constructed a fresh `StoredChannelConfig` with `filter: ChannelFilter::default()`. Toggling enable silently turned any restricted channel into accept-all (since `get_filter` reads from disk on every send). Now preserves the existing filter. *(Round 16, `7051afb2`)*
+- **Telegram CJK panic** (`channels/telegram.rs:111-115`): `&text[..4090]` sliced on byte index, panicking whenever a multi-byte character (Chinese, emoji) straddled the cut — taking down delivery for all subsequent channels in the loop. Now truncates on UTF-8 char boundary (`chars().take(4094)` + `…`). *(Round 16, `7051afb2`)*
+
+#### Agent executor
+- **`running_executions` slot leak** (`crates/neomind-agent/src/ai_agent/scheduler/...`): scheduler task inserted `agent_id` at the top but only removed it at a single trailing statement. Any intermediate exit (semaphore close, panic, cancellation) leaked the slot; after max_concurrent (10) leaks the scheduler silently skipped every future execution. RAII `RunningSlotGuard` removes via `Drop`. *(Round 12, `bc337d50`)*
+- **Stale `Executing` agents on startup**: if the prior process died mid-execution (kill -9, OOM, crash, power loss), the agent row stayed in `Executing` because `StatusGuard` only fires on in-process drop. `reload_active_agents` filters by `Active` only, so such agents were silently dropped from the scheduler forever. New `reset_stale_executing_agents` runs once at startup and resets them to `Active` (not `Error` — environmental failure). *(Round 12, `af2e0d0a`)*
+- **`update_memory` stale-snapshot overwrote failure journal** (gotcha #10): based write on `agent.memory.clone()` taken when agent was loaded. In the event-trigger retry path this snapshot overwrote the failure journal written by the prior attempt's outer `Err` branch. Now reloads latest memory from store before writing. *(Round 13, `50a61b70`)*
+- **Empty event data skipped journal entirely**: `execute_internal`'s early return for empty event data skipped `update_memory`, leaving no trace while outer `Ok` counted the run as success in stats. Now writes `success:false` journal entry. *(Round 13, `50a61b70`)*
+- **Prefixed metrics never triggered rules**: rule-engine subscription index only saw raw keys (`values.temperature`), rules authored against the stripped name (`temperature`) silently never fired. Mirror the prefix-stripping loop at the rule-engine trigger boundary. *(Round 13, `50a61b70`)*
+- **`thinking_enabled` leaked into analytical LLM calls** (gotcha #7): `parse_intent_with_llm` (JSON extraction) and Phase 2 fallback summary inherited the backend's thinking mode, burning tokens on hidden chain-of-thought before a short response. Both now set `thinking_enabled: Some(false)`. *(Round 4, `d74e3898`)*
+
+#### Extensions
+- **Stuck extension process on command timeout** (`crates/neomind-extension-runner/...`): `execute_command` only cancelled the in-flight request tracker on Timeout; the extension process kept running, turning into a zombie where every subsequent command hit the same timeout. Now acquires the process lock and calls `kill_internal`, which restarts the extension cleanly via the death-monitor path. *(Round 9, `8b202505`)*
+- **`restart_count` reset to 0 on crash-recovery reload**: crash-loop detection never accumulated — persistently crashing extensions (init panic, missing dep) were restarted forever instead of being disabled. `load()` now preserves `restart_count` and `last_restart_at` from any prior `info_cache` entry. *(Round 9, `6a184e24`)*
+- **`cleanup_orphaned_runners` killed ALL instances' runners**: `pkill -f neomind-extension-runner` murdered every matching process system-wide — on multi-instance hosts, starting instance B killed all of instance A's live runners. Now scoped to processes whose PPID is 1 (kernel-reparented orphans). Skipped entirely when NeoMind itself runs as PID 1 (container init). *(Round 9, `6a184e24`)*
+
+#### Devices
+- **`unregister_device` left zombie MQTT subscriptions** (`crates/neomind-devices/src/service.rs`): only removed the registry entry; the adapter's topic subscriptions stayed on the broker. Messages kept arriving and getting discarded until connection drop or restart. `unregister_device` is now async and iterates adapters calling `unsubscribe_device` BEFORE registry removal. *(Round 9, `bff575ae`)*
+- **MQTT adapter ignored custom `command_topic`** (`crates/neomind-devices/src/adapters/mqtt.rs:1333`): trait method received `_topic: Option<String>` but discarded it; `send_command_mqtt` always built `device/{type}/{id}/downlink`. Devices with non-standard command topics never received downlink commands. Now honors the device-configured topic. *(Round 16, `7051afb2`)*
+- **Default-topic devices misrouted to discovery path** (regression from `e78df472`): default topic `device/{type}/{id}/uplink` was never inserted into `topic_to_device`, so `topic_to_device.contains_key(topic)` returned false for every default-topic device — registered devices were misrouted to discovery, re-triggering `DeviceDiscovered` indefinitely. *(Round 0, `8c158111`)*
+- **`DevicePresenceHook` fired for internal clients**: `ClientConnected/Disconnected` fired for the embedded broker's own connections and external-broker bridge clients (both use `neomind-<broker_id>-<uuid>` client_id). Now skips any `neomind-` namespace client_id. *(Round 3, `e179b0df`)*
+
+#### LLM backends
+- **Capability refresh race reverted concurrent edits** (`instance_manager.rs::refresh_all_capabilities`): snapshotted instances, awaited Ollama `/api/show`, then wrote back the stale snapshot — silently reverting any concurrent user edits (name, endpoint, model, API key). Now re-fetches the current instance from the in-memory map after the await and merges only capability fields. *(Round 14, `c5d635b7`)*
+- **Multimodal-disables-thinking rule was stale**: `adjust_capabilities_for_model` disabled thinking whenever a model was detected as multimodal — correct for 2024-era llava-class models but wrong for gpt-4o, qwen3.5-vl, gemini-2.0-flash-thinking, claude-opus-4 (all support both vision and thinking). Dropped the rule; `PATCH /capabilities` override remains as escape hatch. *(Round 14, `c5d635b7`)*
+- **Stream drain after WS drop**: OpenAI/Ollama response handlers kept consuming the upstream HTTP body after the mpsc receiver was dropped (client closed chat, agent timeout, manual stop), burning output tokens and holding connection-pool slots. Added `tx.is_closed()` short-circuit at the top of each chunk loop. *(Round 14, `c5d635b7`)*
+
+#### Sessions / timeseries
+- **WS disconnect leaked LLM stream**: previously only persisted history, leaving the in-flight LLM stream running (burning tokens up to global timeout) and leaking the `cancel_senders` entry. Now calls `cancel_session` on disconnect, which both signals the stream and removes the entry. *(Round 13, `89756550`)*
+- **`query_aggregated` panic on `bucket_size_secs=0`**: integer divide-by-zero aborted the process. Returns `Error::InvalidInput` instead. *(Round 13, `89756550`)*
+
+#### Storage
+- **ExtensionStore `.expect()` panics on concurrent uninstall** (`update_error_status`, `update_health_status`): used `.expect()` on a `table.get()` result that was only checked in a prior read txn. Concurrent uninstall between read and write would panic the process. Replaced with proper `None` handling inside the write txn. *(Round 14, `c5d635b7`)*
+
+#### Data-push
+- **Retry backoff wasn't interruptible by stop signal** (`scheduler.rs`): `deliver_with_retry` and `flush_batch` slept inside a plain `tokio::time::sleep`, so `PushScheduler::stop` blocked for the full backoff sum when a downstream destination was unreachable. New `sleep_or_cancel` races sleep against a cloned watch receiver. *(Round 12, `47d71fea`)*
+- **`cleanup_logs` never invoked**: data-push.redb grew without bound in high-frequency push scenarios. New background task (15s startup delay, 24h cycle) calls `cleanup_logs(30)`. *(Round 3, `e179b0df`)*
+
+#### Rules engine
+- **`cleanup_history(30)` ran only once at startup**: long-running servers accumulated unbounded trigger history in `rule_history.redb` between restarts. New 24h-cycle background task with 20s startup delay. *(Round 12, `38293aba`)*
+
+#### Memory
+- **USER.md / KNOWLEDGE.md concurrent-write corruption** (`crates/neomind-agent/src/memory/...`): multiple call sites (background system-context task, agent-summary task, agent memory tool, user-initiated edits, section replacement) concurrently read-modify-wrote shared files with no serialization — one writer could clobber another. Added a `tokio::sync::Mutex` per shared file, held across each op (microseconds for typical memory sizes). *(Round 12, `12d2f69b`)*
+
+#### Tauri desktop
+- **Hide-to-tray with no tray**: when `create_tray_menu` failed (Linux WMs without StatusNotifierApplet, e.g. bare i3/sway), the close handler still called `prevent_close() + window.hide()` — no tray icon and no Dock to click left the user with an invisible but running app. Now gates hide-to-tray on tray creation success; falls through to normal close (macOS Dock reopen, Linux exit) otherwise. *(Round 12, `a4a86042`)*
+
+### CLI / API Quality
+
+- **CLI `create` handlers lost entity_id in response envelope** (`crates/neomind-cli-ops/src/{agent_cmd,rule,dashboard,llm,extension,transform}.rs`): read top-level `id` field, but API wraps entities in `{"data": {"id": ...}}` — chained CLI workflows (`neomind agent create ... && neomind agent status <id>`) always saw "unknown". Now extracts from `data.data`. *(Round 15, `1f27e6e2`)*
+- **Windows `kill_process_by_pid`** (`crates/neomind-agent/src/toolkit/shell.rs`): called `TerminateProcess(pid, ...)` directly — `TerminateProcess` requires a real process handle, not a PID. Now opens a handle with `PROCESS_TERMINATE` first, terminates, and `CloseHandle`s. *(Round 15, `1f27e6e2`)*
+- **`message_channels` invalid `min_severity` silently disabled filter**: `PUT /channels/:name/filter` accepted any string and coerced unrecognized values to `None`, silently turning a restricted channel into accept-all. Now returns 400 with the valid value list. *(Round 15, `1f27e6e2`)*
+- **Ollama error response polluted Tauri terminal**: used `println!` which bypasses tracing. Switched to `tracing::warn!`. *(Round 14, `c5d635b7`)*
+
+### JWT / Auth UX
+- **JWT expiry boundary** (`validate_token`): `exp < now` strict less-than rejected tokens right at the boundary on clock-skewed clients. Now allows ±30s tolerance (industry-standard for JWT libraries). *(Round 3, `e179b0df`)*
+
+### Internal Hygiene
+- `clippy(mdl_format)`: replace 3.14 test value with 2.71 (deny-by-default `approx_constant` lint)
+- `clippy(validator)`: escape zero-width space literal as `\u{200B}` (`invisible_characters` lint)
+- `clippy(conversation_integration)`: drop always-true `u64 >= 0` assertion
+- Deprecate `HeartbeatConfig::is_stale` (dead; tempts callers to bypass per-device `effective_offline_timeout`)
+- `allow(deprecated)` on system_memory tests that intentionally exercise the legacy MarkdownMemoryStore API for backwards-compat coverage
+- *(Round 0, `8c158111`)*
+
+### Deferred (acknowledged, not fixed in this release)
+
+Items identified in audit rounds 14–16 but deferred to avoid scope creep or because they require schema/lock-structure changes. Safe to ship without; tracked for follow-up.
+
+- **JWT revocation**: `sessions` HashMap is write-only; logout and user-delete don't invalidate existing tokens until natural 7-day expiry. *(Round 16, A4)*
+- **API key `permissions` field** is defined and tested but never enforced by any middleware. Read-only keys currently grant full access. *(Round 16, A5)*
+- **Setup `initialize` TOCTOU**: `list_users()` and `register()` span an await with the lock released; concurrent racing setup is possible on first boot. *(Round 16, A6)*
+- **Extension install archive-bomb**: compressed 100 MB upload can expand to ~100 GB; no cumulative uncompressed-size check. *(Round 16, A7)*
+- **Telemetry compress mode**: 90-day window with 50-metric concurrent queries can pull ~388M points into RAM. *(Round 16, A8)*
+- **Messages dedup TOCTOU** (read-check-write across two lock scopes) under concurrent rule firing. *(Round 16, M3)*
+- **Channel filter disk read per send**: `get_filter` opens a redb read txn for every channel on every message — no in-memory cache. *(Round 16, M7)*
+- **No retry / dead-letter on channel send failure**: webhook blip = permanent alert loss. *(Round 16, M8)*
+- **MQTT data-push eventloop**: only polled inside `send()` with a 5s timeout; connection death during idle >60s isn't detected until next send. *(Round 16, P2)*
+- **`extract_by_path` returns `Some(Null)` for missing keys**: template-driven extraction pollutes telemetry with null data points. *(Round 16, D2)*
+- **Webhook device timestamp not validated**: clients can send `timestamp: 0` or far-future values. *(Round 16, D4)*
+- **MQTT `#` wildcard mishandled**: treated as single-level match; `sensors/#` never matches `sensors/temp/room1`. *(Round 16, D5)*
+- **`process_message` swallows parse errors as `0`**: malformed payloads become silent zero telemetry. *(Round 16, D7)*
+- **Rule `{value}` placeholder only handles numeric**: string-triggered rules show literal `{value}` in alert text. *(Round 16, R1)*
+- **Storage TOCTOU pattern**: 5 `AgentStore::update_*` methods, plus DeviceRegistry/InstanceStore equivalents, follow read-modify-write across two transactions. Needs a coordinated refactor with a write-txn-internal merge helper. *(Rounds 14)*
+
 ## [0.8.18] - 2026-06-17
 
 ### MQTT — Internal Broker Subscription Regression Fix

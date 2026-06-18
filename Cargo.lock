@@ -3132,7 +3132,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-agent"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3172,7 +3172,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-api"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3230,7 +3230,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-cli"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3256,7 +3256,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-cli-ops"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3277,7 +3277,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-core"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3305,7 +3305,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-data-push"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3326,7 +3326,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-devices"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3357,7 +3357,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-extension-runner"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3401,7 +3401,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-messages"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3426,7 +3426,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-rules"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3450,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-smoke-extension"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "async-trait",
  "neomind-extension-sdk",
@@ -3461,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-storage"
-version = "0.8.18"
+version = "0.8.19"
 dependencies = [
  "anyhow",
  "bincode",
