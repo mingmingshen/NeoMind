@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Overview
 
-Multi-round security & reliability audit (rounds 3–16). 20 commits across 6 audit domains: agent executor, rules engine, LLM backends, storage, CLI ops, API auth, devices, messages, data-push, extensions. Several critical security fixes (zip-slip paths, public admin-register, broken channel-disable), plus numerous crash-avoidance and concurrency hardening fixes. No breaking API changes; all fixes are drop-in.
+Multi-round security & reliability audit (rounds 3–19). 24 commits across 6 audit domains: agent executor, rules engine, LLM backends, storage, CLI ops, API auth, devices, messages, data-push, extensions. Several critical security fixes (zip-slip paths, public admin-register, broken channel-disable, WebSocket auth bypass), plus numerous crash-avoidance and concurrency hardening fixes. No breaking API changes; all fixes are drop-in.
 
 ### Security
 
@@ -104,6 +104,23 @@ Multi-round security & reliability audit (rounds 3–16). 20 commits across 6 au
 - Deprecate `HeartbeatConfig::is_stale` (dead; tempts callers to bypass per-device `effective_offline_timeout`)
 - `allow(deprecated)` on system_memory tests that intentionally exercise the legacy MarkdownMemoryStore API for backwards-compat coverage
 - *(Round 0, `8c158111`)*
+
+### Rounds 17–19 (follow-up audit passes)
+
+- **EventBus receiver lag** (`crates/neomind-core/src/eventbus.rs`): `recv()` returned `None` on `Lagged` when the queue had already drained, silently dropping subscribers. Now loops to the next event. *(Round 17, `b1db83bd`)*
+- **REST chat path missed memory snapshot** (`session.rs::process_message`): only the WS path injected `MemorySnapshot`, so REST `/api/sessions/:id/chat` ran without persisted user/knowledge context. *(Round 17)*
+- **Thinking-model token waste on analytical calls** (`summarization.rs`): summarization LLM call ran with the agent's thinking flag still set. Now saves/restores `thinking_enabled` around the call. *(Round 17)*
+- **Tool-result detection inverted** (`streaming/context.rs`): condition `tool_call_id.is_some() && role == "assistant"` was always false (tool results have `role == "tool"`); context compaction mis-classified tool messages. *(Round 17)*
+- **Shell tool dedup false-positive** (`tool_loop.rs`): all shell calls shared signature `"shell|"` (used `action`, not `command`), so the loop-dedup guard treated every shell invocation as a duplicate. Signature now includes the command. *(Round 17)*
+- **Memory tool session-id race** (`memory_tool.rs` / `sessions.rs`): handler-level writes to a global `memory_session_handle` before processing caused cross-session memory contamination under concurrency. Session id is now set on the agent's tool registry at the start of each `process` call. *(Round 17)*
+- **`MemorySnapshot::load` panicked on current_thread runtime** (`snapshot.rs`): used `block_in_place`, which panics on single-threaded runtimes. Replaced with sync file reads via new `MarkdownMemoryStore::read_file_sync`. *(Round 17)*
+- **Frontend double `/api/api/` prefix** (`ChatContainer.tsx`, `LLMBackendConfigDialog.tsx`): `fetchAPI("/api/skills")` doubled the prefix since `getApiBase()` already includes `/api`. *(Round 17)*
+- **Path traversal in extension handlers** (`extensions.rs`): `serve_extension_asset_handler` and `uninstall_extension_handler` accepted raw `:id` path params; `%2F`-encoded `..%2F..%2F` bypassed axum routing. New `validate_extension_id` (alnum + `-`/`_` only) mirrors the existing `is_safe_skill_id` / `validate_component_id` pattern. *(Round 18, `b9eb8c6b`)*
+- **Windows orphan cleanup killed all runners** (`isolated/manager.rs`): `taskkill /F /IM <exe>` matched every runner process system-wide. Replaced with PowerShell CIM enumeration + per-process parent-PID liveness check, killing only true orphans (PPID dead). *(Round 18)*
+- **WebSocket event-stream auth bypass** (`handlers/events.rs`): the auth `while let Some(msg)` loop had no guard on natural exit — a client that half-closed or sent only Binary/Ping frames fell through into the event-sending loop unauthenticated. Now tracks an explicit success flag and closes the socket if the loop exits without auth. *(Round 19, `f54a8c47`)*
+- **`PushScheduler::stop` held write lock across await** (`data-push/scheduler.rs`): serialised all target operations; a slow stop (retry backoff) blocked concurrent start/stop/update. Now removes under the lock, drops the guard, then awaits (mirrors `stop_all`). *(Round 19)*
+- **Exponential backoff overflow** (`data-push/scheduler.rs`): `backoff *= 2` could overflow `u64` on pathological retry configs. Switched to `saturating_mul`. *(Round 19)*
+- **JWT signature non-constant-time compare** (`auth_users.rs`): used `String::ne`; now reuses `crate::auth::constant_time_eq_str` (made `pub(crate)`) to avoid timing side-channel on signature bytes. *(Round 19)*
 
 ### Deferred (acknowledged, not fixed in this release)
 
