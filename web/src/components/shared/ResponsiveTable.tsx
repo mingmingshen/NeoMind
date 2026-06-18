@@ -221,7 +221,12 @@ export function ResponsiveTable({
                           column.className
                         )}
                       >
-                        <div className="flex items-center min-h-[36px]">
+                        <div className={cn(
+                          "flex items-center min-h-[36px]",
+                          column.align === 'center' && 'justify-center',
+                          column.align === 'right' && 'justify-end',
+                          (!column.align || column.align === 'left') && 'justify-start',
+                        )}>
                           {renderCell(column.key, rowData)}
                         </div>
                       </td>
