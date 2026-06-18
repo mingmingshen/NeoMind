@@ -902,7 +902,11 @@ impl LlmRuntime for OllamaRuntime {
                     let status = response.status();
                     if !status.is_success() {
                         let body = response.text().await.unwrap_or_default();
-                        println!("[ollama.rs] Ollama error response: {}", body);
+                        tracing::warn!(
+                            status = status.as_u16(),
+                            body = %body,
+                            "Ollama error response"
+                        );
                         let _ = tx
                             .send(Err(LlmError::Api {
                                 status: status.as_u16(),
@@ -933,6 +937,15 @@ impl LlmRuntime for OllamaRuntime {
                     let mut terminate_early_reason: Option<String> = None; // Track reason for early termination
 
                     while let Some(chunk_result) = byte_stream.next().await {
+                        // If consumer dropped the receiver, stop consuming the
+                        // upstream Ollama body — otherwise we keep the local
+                        // model running (wasting GPU/CPU) until it finishes.
+                        if tx.is_closed() {
+                            tracing::debug!(
+                                "Stream consumer dropped, aborting upstream Ollama consumption"
+                            );
+                            return;
+                        }
                         // Check for early termination flag
                         if terminate_early {
                             tracing::warn!(

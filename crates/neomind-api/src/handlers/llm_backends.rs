@@ -1497,14 +1497,18 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
     }
 
     // === Thinking detection ===
-    // Models that support extended thinking (deepseek-r1, qwen thinking models)
-    capabilities.supports_thinking = (name_lower.starts_with("qwen3")
+    // Models that support extended thinking (deepseek-r1, qwen thinking models).
+    // NOTE: do NOT couple this to `supports_multimodal` — modern multimodal
+    // models (gpt-4o, qwen3.5-vl, gemini-2.0-flash-thinking, claude-opus-4)
+    // support both vision and thinking. The old "vision blocks thinking" rule
+    // was correct for 2024-era llava-class models but is now stale; users can
+    // always override via PATCH /capabilities.
+    capabilities.supports_thinking = name_lower.starts_with("qwen3")
         || name_lower.starts_with("qwen2.5")
         || name_lower.contains("deepseek-r1")
         || name_lower.contains("thinking")
         || name_lower.contains("o1")
-        || name_lower.contains("o3"))
-        && !capabilities.supports_multimodal; // Vision models typically don't support thinking
+        || name_lower.contains("o3");
 
     // === Tool support ===
     // Very small models (< 1B params) typically don't support tool calling

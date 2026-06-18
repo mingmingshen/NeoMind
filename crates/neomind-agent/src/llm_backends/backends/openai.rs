@@ -1024,6 +1024,18 @@ impl CloudRuntime {
                     > = std::collections::HashMap::new();
 
                     while let Some(chunk_result) = stream.next().await {
+                        // If the consumer dropped the receiver (chat UI closed,
+                        // agent execution cancelled/timed out), stop draining the
+                        // upstream HTTP body. Without this check we'd keep pulling
+                        // chunks from the provider — burning output tokens and
+                        // holding a connection-pool slot — until the model itself
+                        // finishes or the upstream connection times out.
+                        if tx.is_closed() {
+                            tracing::debug!(
+                                "Stream consumer dropped, aborting upstream consumption"
+                            );
+                            return;
+                        }
                         match chunk_result {
                             Ok(chunk) => {
                                 buffer.extend_from_slice(&chunk);
@@ -1262,6 +1274,18 @@ impl CloudRuntime {
                     > = std::collections::HashMap::new();
 
                     while let Some(chunk_result) = stream.next().await {
+                        // If the consumer dropped the receiver (chat UI closed,
+                        // agent execution cancelled/timed out), stop draining the
+                        // upstream HTTP body. Without this check we'd keep pulling
+                        // chunks from the provider — burning output tokens and
+                        // holding a connection-pool slot — until the model itself
+                        // finishes or the upstream connection times out.
+                        if tx.is_closed() {
+                            tracing::debug!(
+                                "Stream consumer dropped, aborting upstream consumption"
+                            );
+                            return;
+                        }
                         match chunk_result {
                             Ok(chunk) => {
                                 buffer.extend_from_slice(&chunk);

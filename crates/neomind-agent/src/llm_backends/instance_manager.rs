@@ -1023,7 +1023,7 @@ impl LlmBackendInstanceManager {
             .collect();
 
         let mut updated = 0usize;
-        for mut inst in snapshots {
+        for inst in snapshots {
             // Skip user-overridden instances.
             if inst.capabilities.multimodal_user_override.is_some() {
                 continue;
@@ -1037,32 +1037,51 @@ impl LlmBackendInstanceManager {
                 _ => continue, // Cloud/llama.cpp handled elsewhere or static
             };
 
-            if inst.capabilities.supports_multimodal != new_multimodal {
-                tracing::info!(
-                    backend_id = %inst.id,
-                    backend_type = ?inst.backend_type,
-                    model = %inst.model,
-                    old = inst.capabilities.supports_multimodal,
-                    new = new_multimodal,
-                    source = "runtime_api",
-                    "Refreshed multimodal capability from runtime API"
-                );
-                inst.capabilities.supports_multimodal = new_multimodal;
-                inst.capabilities.multimodal_source = Some("runtime_api".to_string());
-                inst.updated_at = chrono::Utc::now().timestamp();
-
-                // Persist back to storage.
-                if let Err(e) = self.storage.save_instance(&inst) {
-                    tracing::warn!(
-                        backend_id = %inst.id,
-                        error = %e,
-                        "Failed to persist refreshed capability"
-                    );
-                }
-                // Update in-memory map.
-                self.instances.insert(inst.id.clone(), inst);
-                updated += 1;
+            if inst.capabilities.supports_multimodal == new_multimodal {
+                continue;
             }
+
+            // Re-fetch the current instance from the in-memory map. The
+            // `query_ollama_multimodal` call above awaited network I/O, during
+            // which the user may have PUT-edited any field on this backend
+            // (name, endpoint, model, api_key, ...). Writing back the stale
+            // `inst` snapshot would silently revert those edits. Merge ONLY
+            // the refreshed capability fields onto the latest snapshot.
+            let Some(mut current) = self.instances.get(&inst.id).map(|item| item.value().clone())
+            else {
+                // Instance was removed while we were querying Ollama.
+                continue;
+            };
+
+            // Skip if user just set an override while we were waiting.
+            if current.capabilities.multimodal_user_override.is_some() {
+                continue;
+            }
+
+            tracing::info!(
+                backend_id = %current.id,
+                backend_type = ?current.backend_type,
+                model = %current.model,
+                old = current.capabilities.supports_multimodal,
+                new = new_multimodal,
+                source = "runtime_api",
+                "Refreshed multimodal capability from runtime API"
+            );
+            current.capabilities.supports_multimodal = new_multimodal;
+            current.capabilities.multimodal_source = Some("runtime_api".to_string());
+            current.updated_at = chrono::Utc::now().timestamp();
+
+            // Persist back to storage.
+            if let Err(e) = self.storage.save_instance(&current) {
+                tracing::warn!(
+                    backend_id = %current.id,
+                    error = %e,
+                    "Failed to persist refreshed capability"
+                );
+            }
+            // Update in-memory map.
+            self.instances.insert(current.id.clone(), current);
+            updated += 1;
         }
 
         if updated > 0 {

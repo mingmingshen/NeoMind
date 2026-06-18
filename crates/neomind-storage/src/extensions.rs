@@ -350,20 +350,31 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            let mut record: ExtensionRecord = serde_json::from_slice(
-                table
-                    .get(id)?
-                    .expect("extension record should exist (checked above)")
-                    .value(),
-            )
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-            record.last_error = Some(error.to_string());
-            record.last_error_at = Some(Utc::now().timestamp());
-            record.health_status = "error".to_string();
-            record.touch();
-            let value =
-                serde_json::to_vec(&record).map_err(|e| Error::Serialization(e.to_string()))?;
-            table.insert(id, value.as_slice())?;
+            // Re-check existence inside the write txn: the extension may have
+            // been uninstalled between the read txn above and this write txn.
+            // Previously this used `.expect()` which would panic the process
+            // under a concurrent uninstall. Read bytes into an owned Vec so
+            // the AccessGuard is released before the mutable insert below.
+            let new_value: Option<Vec<u8>> = match table.get(id)? {
+                Some(guard) => {
+                    let bytes = guard.value().to_vec();
+                    drop(guard);
+                    let mut record: ExtensionRecord = serde_json::from_slice(&bytes)
+                        .map_err(|e| Error::Serialization(e.to_string()))?;
+                    record.last_error = Some(error.to_string());
+                    record.last_error_at = Some(Utc::now().timestamp());
+                    record.health_status = "error".to_string();
+                    record.touch();
+                    Some(
+                        serde_json::to_vec(&record)
+                            .map_err(|e| Error::Serialization(e.to_string()))?,
+                    )
+                }
+                None => None,
+            };
+            if let Some(value) = new_value {
+                table.insert(id, value.as_slice())?;
+            }
         }
         write_txn.commit()?;
         Ok(())
@@ -382,23 +393,29 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            let mut record: ExtensionRecord = serde_json::from_slice(
-                table
-                    .get(id)?
-                    .expect("extension record should exist (checked above)")
-                    .value(),
-            )
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-            record.health_status = status.to_string();
-            if status == "ok" {
-                // Clear error if status is ok
-                record.last_error = None;
-                record.last_error_at = None;
+            // Re-check inside write txn (concurrent uninstall safety).
+            let new_value: Option<Vec<u8>> = match table.get(id)? {
+                Some(guard) => {
+                    let bytes = guard.value().to_vec();
+                    drop(guard);
+                    let mut record: ExtensionRecord = serde_json::from_slice(&bytes)
+                        .map_err(|e| Error::Serialization(e.to_string()))?;
+                    record.health_status = status.to_string();
+                    if status == "ok" {
+                        record.last_error = None;
+                        record.last_error_at = None;
+                    }
+                    record.touch();
+                    Some(
+                        serde_json::to_vec(&record)
+                            .map_err(|e| Error::Serialization(e.to_string()))?,
+                    )
+                }
+                None => None,
+            };
+            if let Some(value) = new_value {
+                table.insert(id, value.as_slice())?;
             }
-            record.touch();
-            let value =
-                serde_json::to_vec(&record).map_err(|e| Error::Serialization(e.to_string()))?;
-            table.insert(id, value.as_slice())?;
         }
         write_txn.commit()?;
         Ok(())
