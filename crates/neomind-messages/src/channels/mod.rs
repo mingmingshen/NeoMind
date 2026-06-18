@@ -489,20 +489,54 @@ impl ChannelRegistry {
             state.enabled_states.insert(name.to_string(), enabled);
         }
 
-        // Update persistence (locks already released)
+        // Persist the enabled-state change.
+        // IMPORTANT: we must preserve the existing filter — reading the
+        // current stored config first and only overwriting the `enabled`
+        // field. Earlier this constructed a fresh `StoredChannelConfig`
+        // with `filter: ChannelFilter::default()`, which silently wiped
+        // any user-configured filter every time the operator toggled the
+        // channel's enabled flag. Since `get_filter` reads from disk on
+        // every send, the loss was immediate and silent.
         if let (Some(config), Some(channel)) = persist_data {
+            let existing_filter = self.get_filter(name).await;
             let stored = StoredChannelConfig {
                 name: name.to_string(),
                 channel_type: channel.channel_type().to_string(),
                 config,
                 enabled,
-                filter: ChannelFilter::default(),
+                filter: existing_filter,
             };
             self.save_channel(&stored).await?;
         }
 
         tracing::info!("Channel '{}' enabled state set to: {}", name, enabled);
         Ok(())
+    }
+
+    /// Effective enabled state for delivery routing.
+    ///
+    /// This consults the registry's `enabled_states` override FIRST (set by
+    /// `set_enabled` / `PUT /channels/:name/enabled`), falling back to the
+    /// channel object's own `is_enabled()` only when no override exists.
+    ///
+    /// `MessageManager::create_message` MUST route through this method
+    /// instead of `channel.is_enabled()`. The channel struct's internal
+    /// `enabled` field is set once at factory create time and is never
+    /// mutated by `set_enabled`, so consulting it directly bypasses the
+    /// operator's disable override — the UI would show "disabled" while
+    /// alerts continued to fire.
+    pub async fn is_enabled_effective(&self, name: &str) -> bool {
+        let state = self.state.read().await;
+        if let Some(enabled) = state.enabled_states.get(name) {
+            return *enabled;
+        }
+        // No override registered: fall back to channel's own field.
+        // This only happens for channels that were never toggled after
+        // server start (e.g. registered without going through set_enabled).
+        match state.channels.get(name) {
+            Some(channel) => channel.is_enabled(),
+            None => false,
+        }
     }
 
     /// Test a channel by sending a test message.

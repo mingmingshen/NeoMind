@@ -105,14 +105,21 @@ impl MessageChannel for TelegramChannel {
             return Err(Error::ChannelDisabled(self.name.clone()));
         }
 
-        let text = self.format_message(message);
+        let original = self.format_message(message);
 
-        // Telegram message limit is 4096 characters
-        let text = if text.len() > 4096 {
-            &text[..4090.min(text.len())]
+        // Telegram message limit is 4096 characters (Unicode codepoints).
+        // Truncate on a character boundary — the previous byte-index slice
+        // (`&text[..4090]`) panicked whenever a multi-byte character
+        // (Chinese, emoji) straddled the cut, taking down the entire
+        // delivery loop for all subsequent channels.
+        let text_owned: String = if original.chars().count() > 4095 {
+            let mut truncated: String = original.chars().take(4094).collect();
+            truncated.push('…');
+            truncated
         } else {
-            &text
+            original
         };
+        let text: &str = &text_owned;
 
         let body = serde_json::json!({
             "chat_id": self.chat_id,

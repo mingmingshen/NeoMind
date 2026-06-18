@@ -26,16 +26,20 @@ pub async fn login_handler(
 }
 
 /// Register handler - create a new user account.
-/// Note: In production, you may want to require admin approval.
+///
+/// SECURITY: Self-service registration ALWAYS creates a `UserRole::User`
+/// account, regardless of any `role` field supplied in the request body.
+/// Promoting to admin must go through the admin-only `create_user_handler`.
+/// The `role` field on `RegisterRequest` is accepted (for backwards-
+/// compatibility with older clients) but silently ignored.
 pub async fn register_handler(
     State(state): State<ServerState>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AuthError> {
-    let role = req.role.unwrap_or(UserRole::User);
     let (user, token) = state
         .auth
         .user_state
-        .register(&req.username, &req.password, role)
+        .register(&req.username, &req.password, UserRole::User)
         .await?;
     let response = serde_json::json!({
         "token": token,

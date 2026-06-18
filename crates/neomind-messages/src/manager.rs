@@ -330,7 +330,11 @@ impl MessageManager {
 
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await {
-                if channel.is_enabled() {
+                // Use the registry's effective enabled state — this honors
+                // the `set_enabled` override (`PUT /channels/:name/enabled`).
+                // Calling `channel.is_enabled()` directly would bypass the
+                // override and keep delivering to "disabled" channels.
+                if channels.is_enabled_effective(channel_name).await {
                     // Apply filter before sending
                     let filter = channels.get_filter(channel_name).await;
                     if !filter.matches(&message) {

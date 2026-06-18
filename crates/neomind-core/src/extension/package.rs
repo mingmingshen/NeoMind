@@ -643,8 +643,12 @@ impl ExtensionPackage {
                 ))
             })?;
 
-        // Extract binary and preserve directory structure
-        let binary_file = ext_dir.join(&binary_rel_path);
+        // Extract binary and preserve directory structure.
+        // Route through safe_join_within to reject `..` / absolute paths
+        // coming from the manifest — this is the central zip-slip defense
+        // (the async install path uses `file_name()` to flatten; this path
+        // preserves subdirs for shared libraries, so we must guard instead).
+        let binary_file = Self::safe_join_within(&ext_dir, &binary_rel_path)?;
         Self::extract_file_sync(&mut archive, &binary_rel_path, &binary_file)?;
 
         // Extract all sibling files in the same directory as the binary
@@ -667,7 +671,10 @@ impl ExtensionPackage {
                         && !name[name.len() - 1..].starts_with('/')
                         && name.matches('/').count() == binary_rel_path.matches('/').count()
                     {
-                        let dest = dest_dir.join(name.trim_start_matches(&dir_prefix));
+                        let dest = Self::safe_join_within(
+                            &dest_dir,
+                            name.trim_start_matches(&dir_prefix),
+                        )?;
                         if let Some(parent) = dest.parent() {
                             let _ = std::fs::create_dir_all(parent);
                         }

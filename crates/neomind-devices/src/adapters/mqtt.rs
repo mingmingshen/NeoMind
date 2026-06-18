@@ -1172,6 +1172,7 @@ impl MqttAdapter {
         device_id: &str,
         command: &str,
         params: &HashMap<String, Value>,
+        custom_topic: Option<String>,
     ) -> Result<(), AdapterError> {
         let clients = self.mqtt_clients.read().await;
 
@@ -1181,14 +1182,22 @@ impl MqttAdapter {
             ));
         }
 
-        // Build topic: device/{device_type}/{device_id}/downlink
-        // Or use default: {device_id}/command/{command}
-        let device_type = self.device_types.read().await.get(device_id).cloned();
-
-        let topic = if let Some(dt) = device_type {
-            format!("device/{}/{}/downlink", dt, device_id)
+        // Topic resolution priority:
+        //   1. Device-configured `command_topic` (passed in via the trait
+        //      method's `topic` parameter by DeviceService::send_command).
+        //      This is required for devices that don't follow the default
+        //      `device/{type}/{id}/downlink` convention.
+        //   2. Default when a device_type is known.
+        //   3. Bare fallback.
+        let topic = if let Some(t) = custom_topic.filter(|t| !t.is_empty()) {
+            t
         } else {
-            format!("{}/command/{}", device_id, command)
+            let device_type = self.device_types.read().await.get(device_id).cloned();
+            if let Some(dt) = device_type {
+                format!("device/{}/{}/downlink", dt, device_id)
+            } else {
+                format!("{}/command/{}", device_id, command)
+            }
         };
 
         // Build payload
@@ -1335,12 +1344,12 @@ impl DeviceAdapter for MqttAdapter {
         device_id: &str,
         command_name: &str,
         payload: String,
-        _topic: Option<String>,
+        topic: Option<String>,
     ) -> AdapterResult<()> {
         // Parse payload as JSON params
         let params: HashMap<String, Value> = serde_json::from_str(&payload).unwrap_or_default();
 
-        self.send_command_mqtt(device_id, command_name, &params)
+        self.send_command_mqtt(device_id, command_name, &params, topic)
             .await
     }
 

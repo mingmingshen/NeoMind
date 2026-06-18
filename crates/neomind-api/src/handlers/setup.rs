@@ -233,9 +233,26 @@ pub async fn complete_setup_handler(
 ///
 /// Allows configuring the LLM backend during the setup wizard.
 pub async fn save_llm_config_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Json(req): Json<LlmConfigRequest>,
 ) -> Result<Json<serde_json::Value>, ErrorResponse> {
+    // SECURITY: This route is on `public_routes`, so it is reachable
+    // without authentication. Gate it by the same "first-time setup only"
+    // invariant that `initialize_admin_handler` uses — once any user
+    // exists, anonymous callers must not be able to overwrite the LLM
+    // backend config (which would let them redirect agent traffic to an
+    // attacker-controlled endpoint or exfiltrate API keys).
+    let users = state.auth.user_state.list_users().await;
+    if !users.is_empty() {
+        return Err(ErrorResponse {
+            status: StatusCode::FORBIDDEN,
+            code: "SETUP_ALREADY_COMPLETED".to_string(),
+            message: "LLM config can only be set via the setup endpoint before the first user is created. Use PUT /api/config/llm instead.".to_string(),
+            request_id: None,
+            hint: None,
+        });
+    }
+
     // Validate provider
     let valid_providers = ["ollama", "openai", "anthropic", "google", "xai", "llamacpp"];
     if !valid_providers.contains(&req.provider.as_str()) {
