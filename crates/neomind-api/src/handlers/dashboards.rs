@@ -954,8 +954,13 @@ pub async fn share_proxy_handler(
     let is_read_only = !share.permissions.allow_interactive;
     let path_str = path.as_ref();
 
-    // 3. Block sensitive paths (auth, config, admin, CRUD)
-    if is_blocked_proxy_path(path_str) {
+    // 3. Enforce an ALLOWLIST of paths reachable through the share proxy.
+    //    Previously this was a blocklist, which silently allowed anonymous
+    //    share-token holders to read any device / telemetry / agent /
+    //    extension data — far beyond what the shared dashboard needs. The
+    //    semantics of a share link are "read the data this dashboard needs",
+    //    not "read the entire platform".
+    if !is_share_proxy_path_allowed(path_str) {
         return ErrorResponse::new(
             "FORBIDDEN",
             "This path is not accessible via share proxy",
@@ -1037,29 +1042,38 @@ pub async fn share_proxy_handler(
     }
 }
 
-/// Paths that are never allowed through the share proxy
-fn is_blocked_proxy_path(path: &str) -> bool {
-    let blocked_prefixes = [
-        "auth/",          // Login, register, keys
-        "setup/",         // System initialization
-        "config/",        // Import/export config
-        "users/",         // User management
-        "dashboards/",    // Dashboard CRUD
-        "brokers/",       // MQTT broker management
-        "memory/",        // System memory management
-        "mqtt/subscribe", // MQTT subscriptions
-        "mqtt/unsubscribe",
-        "sessions",          // Chat sessions
-        "skills/",           // Skills CRUD
-        "automations/",      // Automations CRUD
-        "rules/",            // Rules CRUD
-        "messages/channels", // Channel CRUD (read is fine)
-        "instances/",        // Remote instance management
-        "llm-backends/",     // LLM backend config
-        "llm/",              // LLM generate
-        "share/",            // Prevent recursive proxy
+/// Paths reachable through the share proxy. This is an ALLOWLIST — anything
+/// not explicitly listed is rejected by default.
+///
+/// A share link grants "read the data this dashboard needs" semantics. It
+/// is NOT a general-purpose read-only account. Previously this used a
+/// blocklist that silently allowed anonymous token holders to read every
+/// device, telemetry series, agent execution, and extension output on the
+/// platform.
+///
+/// Allowed categories:
+/// - Telemetry queries (history + aggregates)
+/// - Device list / detail / metrics (dashboard device widgets)
+/// - Extension metric outputs (live data widgets)
+/// - Agent execution history (status widgets)
+/// - Data source values
+/// - Messages (alerts shown on dashboard)
+fn is_share_proxy_path_allowed(path: &str) -> bool {
+    const ALLOWED_PREFIXES: &[&str] = &[
+        "telemetry",
+        "telemetry-stats",
+        "devices",
+        "extensions/", // only metric/outputs subpaths below are useful, but list access is harmless
+        "agents/",     // execution history + detail; full CRUD blocked by method check in step 4
+        "data-sources",
+        "messages", // alerts shown on dashboard (list + detail); channel mutation blocked by method
     ];
-    blocked_prefixes.iter().any(|p| path.starts_with(p))
+    // First path segment (no query string).
+    let first_segment = path.split('/').next().unwrap_or("");
+    // Bare `messages` and `devices` (no trailing slash) also need to match.
+    ALLOWED_PREFIXES
+        .iter()
+        .any(|p| path.starts_with(*p) || first_segment == *p)
 }
 
 /// Check if a path matches a pattern where `:id` matches any single segment.

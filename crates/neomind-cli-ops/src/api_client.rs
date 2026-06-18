@@ -307,6 +307,19 @@ impl ApiClient {
     }
 }
 
+/// Extract the inner `data` payload from a standard API response envelope.
+///
+/// All NeoMind API endpoints return `{"success": bool, "data": <payload>}`.
+/// Callers that need to read fields from the payload (e.g. a newly-created
+/// entity's `id`) MUST go through this helper — indexing the envelope
+/// directly returns Null, silently masking the real value.
+///
+/// Falls back to the original value if the envelope shape is unexpected
+/// (e.g. legacy endpoints that return the payload without wrapping).
+pub fn extract_inner_data(resp: serde_json::Value) -> serde_json::Value {
+    resp.get("data").cloned().unwrap_or(resp)
+}
+
 /// Extract error message from API response body.
 fn extract_error_message(body: &serde_json::Value) -> String {
     body.get("error")

@@ -94,7 +94,12 @@ pub async fn install_extension_file(client: &ApiClient, file_path: &str) -> Resu
         "filename": filename,
     });
     let data = client.post("/extensions/upload/file", &body).await?;
-    let ext_id = data["id"].as_str().unwrap_or("unknown").to_string();
+    let ext_id = data
+        .get("data")
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     let meta = BuildMeta {
         r#type: "extension".to_string(),
@@ -125,7 +130,12 @@ pub async fn install_extension_market(
     }
 
     let data = client.post("/extensions/market/install", &body).await?;
-    let ext_id = data["id"].as_str().unwrap_or(extension_id).to_string();
+    let ext_id = data
+        .get("data")
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(extension_id)
+        .to_string();
 
     let meta = BuildMeta {
         r#type: "extension".to_string(),

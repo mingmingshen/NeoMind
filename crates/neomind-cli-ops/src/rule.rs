@@ -67,7 +67,7 @@ pub async fn create_rule(
         .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
 
     let data = client.post("/rules", &body).await?;
-    let rule = &data["rule"];
+    let rule = data.get("data").and_then(|d| d.get("rule")).unwrap_or(&data);
     let rule_id = rule["id"].as_str().unwrap_or("unknown").to_string();
     let rule_name = rule["name"].as_str().unwrap_or("(unnamed)").to_string();
 

@@ -354,16 +354,34 @@ fn kill_process_by_pid(pid: Option<u32>) {
 #[cfg(windows)]
 fn kill_process_by_pid(pid: Option<u32>) {
     if let Some(pid) = pid {
-        // Use Windows API to terminate the process.
-        // On Windows, TerminateProcess is the most reliable way to kill a process.
+        // TerminateProcess expects a HANDLE, not a PID. We must OpenProcess
+        // first, terminate, then CloseHandle. The previous code cast the PID
+        // directly to a HANDLE, which is always invalid — the call silently
+        // failed and timed-out subprocesses kept running.
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+        };
+
         unsafe {
-            if windows_sys::Win32::System::Threading::TerminateProcess(pid as *mut _, 1) == 0 {
+            let handle: HANDLE = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if handle.is_null() {
+                tracing::warn!(
+                    "OpenProcess failed for pid {}: {}",
+                    pid,
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+            let terminated = TerminateProcess(handle, 1) != 0;
+            if !terminated {
                 tracing::warn!(
                     "Failed to terminate process {}: {}",
                     pid,
                     std::io::Error::last_os_error()
                 );
             }
+            CloseHandle(handle);
         }
     }
 }

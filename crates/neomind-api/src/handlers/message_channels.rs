@@ -586,12 +586,23 @@ pub async fn update_channel_filter_handler(
         )));
     }
 
-    // Build ChannelFilter
-    let min_severity = req
-        .min_severity
-        .as_ref()
-        .map(|sev| neomind_messages::MessageSeverity::from_string(sev))
-        .unwrap_or_default();
+    // Build ChannelFilter. If the user explicitly passes a min_severity
+    // string, validate it — silently coercing an unrecognized value to None
+    // would disable severity filtering without any error, surprising
+    // operators who think they set a threshold.
+    let min_severity = match req.min_severity.as_ref() {
+        None => None,
+        Some(sev) => {
+            let parsed = neomind_messages::MessageSeverity::from_string(sev);
+            if parsed.is_none() {
+                return Err(ErrorResponse::bad_request(format!(
+                    "Invalid min_severity '{}'. Valid values: info, warning, error, critical",
+                    sev
+                )));
+            }
+            parsed
+        }
+    };
     let filter = ChannelFilter {
         source_types: req.source_types,
         categories: req.categories,

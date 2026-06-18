@@ -168,7 +168,12 @@ pub async fn create_agent(
     }
 
     let data = client.post("/agents", &body).await?;
-    let agent_id = data["id"].as_str().unwrap_or("unknown").to_string();
+    let agent_id = data
+        .get("data")
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     let meta = BuildMeta {
         r#type: "agent".to_string(),

@@ -3,13 +3,9 @@
 use anyhow::Result;
 use serde_json::json;
 
+use crate::api_client::extract_inner_data;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
-
-/// Extract the inner `data` field from an API response.
-fn extract_inner_data(resp: serde_json::Value) -> serde_json::Value {
-    resp.get("data").cloned().unwrap_or(resp)
-}
 
 /// List push targets with compact summary.
 ///

@@ -98,7 +98,12 @@ pub async fn create_dashboard(
     }
 
     let data = client.post("/dashboards", &body).await?;
-    let dashboard_id = data["id"].as_str().unwrap_or("unknown").to_string();
+    let dashboard_id = data
+        .get("data")
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     let meta = BuildMeta {
         r#type: "dashboard".to_string(),

@@ -94,8 +94,12 @@ pub async fn create_transform(
         "definition": definition,
     });
     let data = client.post("/automations", &body).await?;
-    let transform_id = data["automation"]["metadata"]["id"]
-        .as_str()
+    let transform_id = data
+        .get("data")
+        .and_then(|d| d.get("automation"))
+        .and_then(|a| a.get("metadata"))
+        .and_then(|m| m.get("id"))
+        .and_then(|v| v.as_str())
         .unwrap_or("unknown");
     let meta = BuildMeta {
         r#type: "transform".to_string(),
