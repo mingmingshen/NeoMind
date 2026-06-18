@@ -199,30 +199,97 @@ impl IsolatedExtensionManager {
         {
             use std::process::Command as StdCommand;
 
-            // Use pkill to kill all matching processes.
-            // `-f` matches against the full command line so we catch
-            // `/path/to/neomind-extension-runner --extension-path ...`
-            let output = StdCommand::new("pkill").arg("-f").arg(runner_name).output();
-
-            match output {
-                Ok(o) if o.status.success() => {
-                    tracing::info!(
-                        "Cleaned up orphaned extension runner processes from previous session"
-                    );
-                    // Give processes time to fully exit and release dylib handles
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-                Ok(_) => {
-                    // pkill returns exit code 1 when no processes matched — that's fine
-                    tracing::debug!("No orphaned extension runner processes found");
-                }
+            // Locate candidate runner processes via `pgrep -f`.
+            let pgrep_output = StdCommand::new("pgrep")
+                .arg("-f")
+                .arg(runner_name)
+                .output();
+            let candidate_pids: Vec<u32> = match pgrep_output {
+                Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .filter_map(|line| line.trim().parse::<u32>().ok())
+                    .collect(),
+                // pgrep exits 1 when nothing matched — not an error.
+                Ok(_) => Vec::new(),
                 Err(e) => {
-                    // pkill not available (unlikely on macOS/Linux, but handle gracefully)
                     tracing::debug!(
                         error = %e,
-                        "pkill not available, skipping orphan cleanup"
+                        "pgrep not available, skipping orphan cleanup"
                     );
+                    return;
                 }
+            };
+
+            if candidate_pids.is_empty() {
+                tracing::debug!("No orphaned extension runner processes found");
+                return;
+            }
+
+            let current_pid = std::process::id();
+
+            // Edge case: when NeoMind itself runs as PID 1 (container init
+            // systems, sidecar images), every live runner we spawn is also
+            // reparented to PID 1, so the "PPID == 1 means orphan" heuristic
+            // no longer distinguishes our own runners from real orphans. In
+            // that deployment the cleanup would murder our own freshly-loaded
+            // extensions, so skip and let the caller manage cleanup some other
+            // way (e.g. ephemeral container restart).
+            if current_pid == 1 {
+                tracing::debug!(
+                    candidate_count = candidate_pids.len(),
+                    "Running as PID 1; cannot distinguish orphaned runners from live ones, skipping cleanup"
+                );
+                return;
+            }
+
+            // Kill only true orphans: processes whose parent is init (PID 1).
+            // When a process's parent dies, the kernel reparents it to init,
+            // so PPID == 1 is the canonical orphan signature. Live runners of
+            // *any* NeoMind instance on this host have their spawning NeoMind
+            // process as the parent (not init), so they are untouched — this
+            // fixes the previous `pkill -f neomind-extension-runner` behavior
+            // that killed every runner system-wide and broke multi-instance
+            // deployments (production + staging on the same host,
+            // MultiInstanceManager children, etc.).
+            let mut killed = 0usize;
+            for &pid in &candidate_pids {
+                if pid == current_pid {
+                    continue;
+                }
+                let ppid_output = StdCommand::new("ps")
+                    .args(["-o", "ppid=", "-p", &pid.to_string()])
+                    .output();
+                let ppid = match ppid_output {
+                    Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                        .trim()
+                        .parse::<u32>()
+                        .ok(),
+                    // Process may have exited between pgrep and ps — ignore.
+                    _ => None,
+                };
+                if ppid == Some(1) {
+                    let _ = StdCommand::new("kill")
+                        .arg(pid.to_string())
+                        .output();
+                    killed += 1;
+                }
+                // Some(other_pid): not an orphan — owned by a live parent
+                // (another NeoMind instance, an interactive shell, etc.).
+                // Leave alone.
+            }
+
+            if killed > 0 {
+                tracing::info!(
+                    killed,
+                    "Cleaned up orphaned extension runner processes (PPID == 1)"
+                );
+                // Give processes time to fully exit and release dylib handles.
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            } else {
+                tracing::debug!(
+                    candidates = candidate_pids.len(),
+                    "No orphaned (PPID == 1) extension runner processes needed cleanup"
+                );
             }
         }
 
@@ -230,7 +297,10 @@ impl IsolatedExtensionManager {
         {
             use std::process::Command as StdCommand;
 
-            // On Windows, use `taskkill /F /IM` to kill by image name
+            // On Windows, use `taskkill /F /IM` to kill by image name.
+            // Multi-instance filtering is not implemented here because Win32
+            // process genealogy is less accessible without extra crates; the
+            // common deployment is single-instance per host.
             let output = StdCommand::new("taskkill")
                 .args(["/F", "/IM", runner_name])
                 .output();
@@ -631,10 +701,31 @@ impl IsolatedExtensionManager {
                 .await;
         }
 
-        // Create runtime state
+        // Create runtime state.
+        //
+        // CRASH-LOOP TRACKING PRESERVATION: when the death monitor restarts an
+        // extension it calls `load(&path)` again, which previously built a
+        // fresh `ExtensionRuntimeState` and OVERWROTE the info_cache entry —
+        // zeroing `restart_count` and `last_restart_at`. As a result
+        // `max_restart_attempts` (default 3) could never accumulate past 1
+        // and crash-looping extensions restarted forever instead of being
+        // disabled. Preserve the existing restart counters when we are
+        // reloading the SAME extension at the SAME path (initial install
+        // has no prior entry and correctly starts at 0).
+        let preserved = self.info_cache.read().get(&id).and_then(|prev| {
+            if prev.path == path {
+                Some((prev.runtime.restart_count, prev.runtime.last_restart_at))
+            } else {
+                None
+            }
+        });
         let mut runtime = crate::extension::system::ExtensionRuntimeState::isolated();
         runtime.is_running = loaded.is_alive();
         runtime.loaded_at = Some(chrono::Utc::now().timestamp());
+        if let Some((restart_count, last_restart_at)) = preserved {
+            runtime.restart_count = restart_count;
+            runtime.last_restart_at = last_restart_at;
+        }
 
         // Store info
         self.info_cache.write().insert(
