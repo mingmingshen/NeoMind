@@ -261,7 +261,7 @@ async fn test_e2e_device_registration_and_command() {
     );
 
     // 11. Clean up
-    service.unregister_device("sensor_001").unwrap();
+    service.unregister_device("sensor_001").await.unwrap();
     service.unregister_template("test_sensor").await.unwrap();
     assert_eq!(service.list_devices().len(), 0);
     assert!(service.get_template("test_sensor").is_none());

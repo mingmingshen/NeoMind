@@ -651,6 +651,7 @@ pub async fn delete_device_handler(
         .devices
         .service
         .unregister_device(&device_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete device: {}", e)))?;
     ok(json!({
         "device_id": device_id,

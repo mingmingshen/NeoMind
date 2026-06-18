@@ -390,6 +390,7 @@ impl DeviceCapabilityProvider {
 
         device_service
             .unregister_device(device_id)
+            .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
         Ok(json!({

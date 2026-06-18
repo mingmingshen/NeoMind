@@ -1205,7 +1205,42 @@ impl DeviceService {
     }
 
     /// Unregister a device configuration
-    pub fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
+    ///
+    /// Iterates every adapter and asks it to drop any subscriptions / state
+    /// it holds for this device BEFORE removing the registry entry. Without
+    /// this step the MQTT adapter keeps the device's topic subscriptions on
+    /// the broker as zombies after deletion — messages keep arriving and
+    /// getting discarded until the broker connection drops or the server
+    /// restarts. `DeviceUnregistered` has no subscribers, so relying on the
+    /// event bus for cleanup never worked.
+    ///
+    /// Adapter failures are logged but do not abort the unregister: the
+    /// registry removal is the source of truth for "device is gone", and a
+    /// single misbehaving adapter shouldn't lock the device into the registry.
+    pub async fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
+        // Phase 1: ask each adapter to drop subscriptions for this device.
+        let adapter_names: Vec<String> = {
+            let adapters = self.adapters.read().await;
+            adapters.keys().cloned().collect()
+        };
+        for name in adapter_names {
+            let adapter = {
+                let adapters = self.adapters.read().await;
+                adapters.get(&name).cloned()
+            };
+            if let Some(adapter) = adapter {
+                if let Err(e) = adapter.unsubscribe_device(device_id).await {
+                    tracing::warn!(
+                        device_id = %device_id,
+                        adapter = %name,
+                        error = %e,
+                        "Adapter failed to unsubscribe device during unregister (continuing)"
+                    );
+                }
+            }
+        }
+
+        // Phase 2: remove from registry.
         self.registry.unregister_device(device_id)?;
 
         // Publish event for UI refresh
