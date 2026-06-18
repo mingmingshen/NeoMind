@@ -27,6 +27,24 @@ use neomind_core::datasource::DataSourceId;
 use neomind_core::extension::{MetricDataType, ParameterDefinition};
 use neomind_storage::{ExtensionRecord, ExtensionStore};
 
+/// Validate an extension ID to prevent path traversal in filesystem operations.
+/// Extension IDs are kebab-case identifiers (e.g. "weather-forecast-v2").
+/// Rejects empty, too-long, or characters outside [a-zA-Z0-9-_].
+fn validate_extension_id(id: &str) -> Result<(), ErrorResponse> {
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(ErrorResponse::bad_request(format!(
+            "Invalid extension ID: '{}'",
+            id
+        )));
+    }
+    Ok(())
+}
+
 /// Extension DTO for API responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtensionDto {
@@ -3413,7 +3431,8 @@ pub async fn serve_extension_asset_handler(
     use axum::body::Body;
     use axum::http::{header, StatusCode};
 
-    // Prevent directory traversal
+    // Prevent directory traversal via id or asset_path
+    validate_extension_id(&id)?;
     if asset_path.contains("..") {
         return Err(ErrorResponse::bad_request("Invalid asset path"));
     }
@@ -3686,6 +3705,9 @@ pub async fn uninstall_extension_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
+    // Prevent path traversal via id (used in remove_dir_all below)
+    validate_extension_id(&id)?;
+
     let runtime = &state.extensions.runtime;
 
     // Check if extension exists

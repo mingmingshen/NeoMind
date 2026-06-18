@@ -297,30 +297,94 @@ impl IsolatedExtensionManager {
         {
             use std::process::Command as StdCommand;
 
-            // On Windows, use `taskkill /F /IM` to kill by image name.
-            // Multi-instance filtering is not implemented here because Win32
-            // process genealogy is less accessible without extra crates; the
-            // common deployment is single-instance per host.
-            let output = StdCommand::new("taskkill")
-                .args(["/F", "/IM", runner_name])
+            // Enumerate all runner processes with their parent PIDs via
+            // PowerShell CIM. Windows does NOT reparent orphans to PID 1
+            // like Unix; instead the dead parent PID stays in the process
+            // table. We kill only processes whose parent no longer exists.
+            let ps_output = StdCommand::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!(
+                        "Get-CimInstance Win32_Process -Filter \"name='{}'\" | ForEach-Object {{ \"{{}},{{}}\" -f $_.ProcessId,$_.ParentProcessId }}",
+                        runner_name
+                    ),
+                ])
                 .output();
 
-            match output {
+            let candidates: Vec<(u32, u32)> = match ps_output {
                 Ok(o) if o.status.success() => {
-                    tracing::info!(
-                        "Cleaned up orphaned extension runner processes from previous session"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .filter_map(|line| {
+                            let parts: Vec<&str> = line.trim().split(',').collect();
+                            if parts.len() == 2 {
+                                let pid = parts[0].parse::<u32>().ok()?;
+                                let ppid = parts[1].parse::<u32>().ok()?;
+                                Some((pid, ppid))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
                 }
-                Ok(_) => {
-                    tracing::debug!("No orphaned extension runner processes found");
-                }
-                Err(e) => {
+                _ => {
                     tracing::debug!(
-                        error = %e,
-                        "taskkill not available, skipping orphan cleanup"
+                        "PowerShell not available for orphan detection, skipping cleanup"
                     );
+                    return;
                 }
+            };
+
+            if candidates.is_empty() {
+                tracing::debug!("No orphaned extension runner processes found");
+                return;
+            }
+
+            let current_pid = std::process::id();
+
+            // Kill only true orphans: processes whose parent PID no longer
+            // exists. Live runners of ANY NeoMind instance on this host have
+            // a live parent, so they are untouched. This prevents the old
+            // `taskkill /F /IM` behavior that killed every runner system-wide
+            // and broke multi-instance deployments.
+            let mut killed = 0usize;
+            for &(pid, ppid) in &candidates {
+                if pid == current_pid || ppid == current_pid {
+                    // Our own process or a runner we spawned — skip
+                    continue;
+                }
+                // Check if parent is still alive
+                let parent_alive = StdCommand::new("tasklist")
+                    .args(["/FI", &format!("PID eq {}", ppid), "/NH"])
+                    .output();
+                let is_orphan = match parent_alive {
+                    Ok(o) => {
+                        let out = String::from_utf8_lossy(&o.stdout);
+                        // If tasklist reports "No tasks running" → parent dead → orphan
+                        !out.contains(&ppid.to_string())
+                    }
+                    Err(_) => false, // Can't determine — leave alone
+                };
+                if is_orphan {
+                    let _ = StdCommand::new("taskkill")
+                        .args(["/F", "/PID", &pid.to_string()])
+                        .output();
+                    killed += 1;
+                }
+            }
+
+            if killed > 0 {
+                tracing::info!(
+                    killed,
+                    "Cleaned up orphaned extension runner processes (parent dead)"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            } else {
+                tracing::debug!(
+                    candidates = candidates.len(),
+                    "No orphaned extension runner processes needed cleanup"
+                );
             }
         }
     }
