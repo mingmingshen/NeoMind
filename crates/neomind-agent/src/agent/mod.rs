@@ -1402,6 +1402,10 @@ impl Agent {
         // === NORMAL PATH: Acquire lock for complex processing ===
         let _lock = self.process_lock.lock().await;
 
+        // Set session ID on memory tool to avoid cross-session contamination
+        // (must happen under process_lock so concurrent calls to THIS session serialize)
+        self.tools.set_memory_session_id(self.session_id.clone()).await;
+
         let start = std::time::Instant::now();
 
         // === SMART FOLLOWUP INTERCEPTION (Context-Aware) ===
@@ -2872,6 +2876,9 @@ END"#
         // Add user message to history
         let user_msg = AgentMessage::user(user_message);
         self.internal_state.write().await.push_message(user_msg);
+
+        // Set session ID on memory tool to avoid cross-session contamination
+        self.tools.set_memory_session_id(self.session_id.clone()).await;
 
         // Check if LLM is configured
         if !self.llm_interface.is_ready().await {

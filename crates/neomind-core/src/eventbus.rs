@@ -156,15 +156,21 @@ impl EventBusReceiver {
     ///
     /// Returns `None` if the event bus is closed.
     pub async fn recv(&mut self) -> Option<(NeoMindEvent, EventMetadata)> {
-        match self.rx.recv().await {
-            Ok(event) => Some(event),
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                tracing::debug!("EventBusReceiver lagged, skipped {} events", n);
-                // Yield to prevent busy-loop when channel stays full
-                tokio::task::yield_now().await;
-                self.rx.try_recv().ok()
+        loop {
+            match self.rx.recv().await {
+                Ok(event) => return Some(event),
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::debug!("EventBusReceiver lagged, skipped {} events", n);
+                    // Drain any immediately available event; if buffer is empty,
+                    // loop back to recv().await instead of returning None —
+                    // returning None terminates the caller's while-let loop permanently.
+                    if let Some(event) = self.rx.try_recv().ok() {
+                        return Some(event);
+                    }
+                    tokio::task::yield_now().await;
+                }
+                Err(broadcast::error::RecvError::Closed) => return None,
             }
-            Err(broadcast::error::RecvError::Closed) => None,
         }
     }
 

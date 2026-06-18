@@ -747,6 +747,10 @@ pub(crate) fn detect_duplicate_round(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 let mut sig = format!("{}|{}", tc.name, action);
+                // Include shell command so different commands don't look identical
+                if let Some(cmd) = tc.arguments.get("command").and_then(|v| v.as_str()) {
+                    sig.push_str(&format!("|cmd:{}", cmd));
+                }
                 for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"] {
                     if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
                         sig.push_str(&format!("|{}", val));

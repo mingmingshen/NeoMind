@@ -642,12 +642,6 @@ pub async fn chat_handler(
     // QWEN3 with thinking enabled can take 60-90 seconds for complex queries
     // due to the model's repetitive thinking generation, especially with longer context
 
-    // Set session ID on memory tool for session-scoped operations
-    {
-        let mut handle = state.agents.memory_session_handle.write().await;
-        *handle = Some(id.clone());
-    }
-
     let response = match timeout(
         Duration::from_secs(120),
         state
@@ -1039,10 +1033,7 @@ async fn handle_ws_socket(
                                         let task_state = state.clone();
 
                                         // Set session ID on memory tool for session-scoped operations
-                                        {
-                                            let mut handle = task_state.agents.memory_session_handle.write().await;
-                                            *handle = Some(task_session_id.clone());
-                                        }
+                                        // (now handled inside Agent::process to avoid cross-session races)
 
                                         // Apply pinned skills for multimodal messages
                                         let selected_skills = chat_req.selected_skills.clone();
@@ -1122,10 +1113,7 @@ async fn handle_ws_socket(
                                             chat_req.message.clone()
                                         };
                                         // Set session ID on memory tool for session-scoped operations
-                                        {
-                                            let mut handle = state.agents.memory_session_handle.write().await;
-                                            *handle = Some(session_id.clone());
-                                        }
+                                        // (now handled inside Agent::process to avoid cross-session races)
                                         match state.agents.session_manager.process_message_events_with_backend_and_skills(&session_id, &final_message, backend_id, &selected_skills).await {
                                             Ok(stream) => {
                                                 // Clone the channel sender and session ID for the spawned task

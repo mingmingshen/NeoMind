@@ -115,9 +115,11 @@ pub async fn trigger_summarization(
         conv_text
     );
 
-    // Disable thinking for this call to save tokens
+    // Disable thinking for this call to save tokens, then restore the prior setting
+    let prev_thinking = llm_interface.get_thinking_enabled().await;
     llm_interface.set_thinking_enabled(false).await;
     let summary_result = llm_interface.chat(&summary_prompt).await;
+    llm_interface.restore_thinking_enabled(prev_thinking).await;
     let summary = match summary_result {
         Ok(response) => response.text,
         Err(e) => {

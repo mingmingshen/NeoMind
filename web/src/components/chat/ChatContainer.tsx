@@ -422,7 +422,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
 
   // Fetch available skills once
   useEffect(() => {
-    fetchAPI<{ skills: SkillSummary[] }>("/api/skills")
+    fetchAPI<{ skills: SkillSummary[] }>("/skills")
       .then(data => setAvailableSkills(data.skills || []))
       .catch(() => setAvailableSkills([]))
   }, [])

@@ -90,6 +90,14 @@ impl MemoryTool {
         self.knowledge_files.read().clone()
     }
 
+    /// Set the session ID for session-scoped memory operations (chat path).
+    /// Called by the Agent at the start of each process cycle to ensure the
+    /// correct session ID is active, avoiding the global-handle race where
+    /// a concurrent session could overwrite the ID between handler-set and tool-read.
+    pub async fn set_session_id(&self, id: String) {
+        *self.session_id.write().await = Some(id);
+    }
+
     /// Swap in a fresh per-execution agent_id handle.
     /// Returns the new handle for the executor to use.
     /// This is concurrency-safe: each execution creates its own Arc.

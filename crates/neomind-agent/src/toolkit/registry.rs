@@ -202,6 +202,22 @@ impl ToolRegistry {
         let tool = self.tools.get("memory")?;
         tool.swap_agent_context(agent_id, knowledge_files)
     }
+
+    /// Set the session ID on the MemoryTool for the current chat session.
+    /// Called by the Agent at the start of each process cycle to avoid
+    /// the global-handle race (where a concurrent session overwrites the ID
+    /// between handler-set and tool-read).
+    pub async fn set_memory_session_id(&self, session_id: String) {
+        if let Some(tool_arc) = self.tools.get("memory") {
+            if let Some(mem_tool) = tool_arc
+                .as_ref()
+                .as_any()
+                .downcast_ref::<super::memory_tool::MemoryTool>()
+            {
+                mem_tool.set_session_id(session_id).await;
+            }
+        }
+    }
 }
 
 impl Default for ToolRegistry {

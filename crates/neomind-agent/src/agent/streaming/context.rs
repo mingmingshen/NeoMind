@@ -173,8 +173,9 @@ fn compact_tool_results_stream_with_config(
             continue;
         }
 
-        // Check if this is a tool response
-        if msg.tool_call_id.is_some() && msg.role == "assistant" {
+        // Check if this is a tool response (role="tool", tool_call_name set)
+        // NOTE: tool_call_id is never set in this codebase — use role + tool_call_name
+        if msg.role == "tool" {
             tool_result_count += 1;
 
             if tool_result_count <= config.keep_recent_tool_results {

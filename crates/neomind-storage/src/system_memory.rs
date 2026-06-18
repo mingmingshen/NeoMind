@@ -573,6 +573,18 @@ impl MarkdownMemoryStore {
             .map_err(|e| Error::Storage(format!("Failed to read {}.md: {}", target, e)))
     }
 
+    /// Read a persistent file synchronously. Returns empty string if not found.
+    /// Used by MemorySnapshot::load which runs from sync context and cannot
+    /// use block_in_place on single-threaded (current_thread) tokio runtimes.
+    pub fn read_file_sync(&self, target: &str) -> String {
+        let path = match target {
+            "user" => self.base_path.join("USER.md"),
+            "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            _ => return String::new(),
+        };
+        std::fs::read_to_string(&path).unwrap_or_default()
+    }
+
     /// Replace a section within KNOWLEDGE.md by heading name.
     ///
     /// Finds "## {heading}" and replaces content until next "## " heading.

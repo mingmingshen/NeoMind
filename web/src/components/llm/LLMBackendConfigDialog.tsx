@@ -99,7 +99,7 @@ export function LLMBackendConfigDialog({
 
         onRefresh?.()
       } else {
-        await fetchAPI(`/api/llm-backends/${backend?.id}`, {
+        await fetchAPI(`/llm-backends/${backend?.id}`, {
           method: 'PUT',
           body: JSON.stringify({ name, config }),
         })

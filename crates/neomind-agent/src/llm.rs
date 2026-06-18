@@ -334,6 +334,12 @@ impl LlmInterface {
         *self.thinking_enabled.read().await
     }
 
+    /// Restore the thinking mode to a previously-saved state (including None).
+    /// Used in save/restore patterns (e.g. summarization temporarily disables thinking).
+    pub async fn restore_thinking_enabled(&self, enabled: Option<bool>) {
+        *self.thinking_enabled.write().await = enabled;
+    }
+
     /// Take the last prompt token count from the most recent stream response.
     /// Returns the value and resets it to None.
     pub async fn take_last_prompt_tokens(&self) -> Option<u32> {

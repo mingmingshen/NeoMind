@@ -964,6 +964,20 @@ impl SessionManager {
     ) -> Result<super::agent::AgentResponse> {
         tracing::debug!(session_id = %session_id, message = %message, "SessionManager::process_message");
         let agent = self.get_session(session_id).await?;
+
+        // Load memory snapshot if enabled and not yet loaded (parity with process_message_events)
+        if self.is_memory_enabled(session_id).await && !agent.has_memory_snapshot() {
+            let memory_store = neomind_storage::MarkdownMemoryStore::new("data/memory");
+            let snapshot = crate::memory::MemorySnapshot::load(&memory_store);
+            if !snapshot.is_empty() {
+                tracing::info!(
+                    session_id = %session_id,
+                    "Loaded memory snapshot for session (REST path)"
+                );
+                agent.set_memory_snapshot(snapshot);
+            }
+        }
+
         let response = agent.process(message).await?;
 
         // Update message history

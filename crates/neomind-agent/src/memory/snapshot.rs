@@ -31,17 +31,10 @@ impl MemorySnapshot {
     /// Only hard-loads USER.md and KNOWLEDGE.md.
     /// Agent summaries and custom files are available on-demand via the memory tool.
     pub fn load(store: &MarkdownMemoryStore) -> Self {
-        let handle = tokio::runtime::Handle::try_current()
-            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
-            .unwrap();
-
-        // Read persistent files only
-        let user = tokio::task::block_in_place(|| handle.block_on(store.read_file("user")))
-            .unwrap_or_default();
-
-        let knowledge =
-            tokio::task::block_in_place(|| handle.block_on(store.read_file("knowledge")))
-                .unwrap_or_default();
+        // Read persistent files using sync I/O (safe on any runtime flavor;
+        // block_in_place panics on current_thread/single-threaded runtimes)
+        let user = store.read_file_sync("user");
+        let knowledge = store.read_file_sync("knowledge");
 
         let combined = format!("## User\n{user}\n\n## Knowledge\n{knowledge}");
 
