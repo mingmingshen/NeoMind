@@ -1275,7 +1275,7 @@ impl IsolatedExtension {
         .await?;
 
         // Wait for the response with timeout
-        let response = self
+        let response = match self
             .in_flight
             .wait_with_timeout(
                 request_id,
@@ -1283,12 +1283,35 @@ impl IsolatedExtension {
                 Duration::from_secs(self.config.command_timeout_secs),
             )
             .await
-            .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
-                super::in_flight::InFlightError::ChannelClosed => {
-                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+        {
+            Ok(r) => r,
+            Err(super::in_flight::InFlightError::Timeout(ms)) => {
+                // The extension process is stuck (infinite loop, deadlock,
+                // unreachable network call). Previously we only cancelled the
+                // in-flight tracker and returned Timeout, leaving the process
+                // alive as a zombie that would fail every subsequent command
+                // with the same timeout while the death monitor sat idle
+                // (stdout pipe never closed). Kill the process now so the
+                // receiver thread observes EOF, fires the death notification,
+                // and the manager restarts the extension cleanly.
+                tracing::warn!(
+                    extension_id = %self.extension_id,
+                    command,
+                    timeout_ms = ms,
+                    "Command timed out, killing stuck extension process for restart"
+                );
+                let mut process_guard = self.process.lock().await;
+                if process_guard.is_some() {
+                    self.kill_internal(&mut process_guard).await;
                 }
-            })?;
+                return Err(IsolatedExtensionError::Timeout(ms));
+            }
+            Err(super::in_flight::InFlightError::ChannelClosed) => {
+                return Err(IsolatedExtensionError::IpcError(
+                    "Response channel closed".to_string(),
+                ));
+            }
+        };
 
         match response {
             IpcResponse::Success { data, .. } => Ok(data),
