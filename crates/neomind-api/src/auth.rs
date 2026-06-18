@@ -684,7 +684,7 @@ pub async fn hybrid_auth_middleware(
 /// comparing secrets. Returns false immediately if lengths differ (this
 /// leaks length info, which is acceptable for random secrets where length
 /// is fixed and known).
-fn constant_time_eq_str(a: &str, b: &str) -> bool {
+pub(crate) fn constant_time_eq_str(a: &str, b: &str) -> bool {
     let (a_bytes, b_bytes) = (a.as_bytes(), b.as_bytes());
     if a_bytes.len() != b_bytes.len() {
         return false;

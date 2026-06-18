@@ -90,8 +90,14 @@ impl PushScheduler {
 
     /// Stop a running target.
     pub async fn stop(&self, target_id: &str) {
-        let mut handles = self.handles.write().await;
-        if let Some(h) = handles.remove(target_id) {
+        // Remove under the lock, then drop the guard before awaiting the
+        // task join. Otherwise a slow stop (e.g. retry backoff) would hold
+        // the write lock and serialize all other target operations.
+        let h = {
+            let mut handles = self.handles.write().await;
+            handles.remove(target_id)
+        };
+        if let Some(h) = h {
             h.stop().await;
         }
     }
@@ -431,7 +437,7 @@ async fn deliver_with_retry(
                         );
                         return Err(anyhow::anyhow!("Cancelled during retry backoff: {}", e));
                     }
-                    backoff *= 2;
+                    backoff = backoff.saturating_mul(2);
                 } else {
                     log.status = DeliveryStatus::Failed;
                     log.completed_at = Some(chrono::Utc::now().timestamp());
@@ -581,7 +587,7 @@ async fn flush_batch(
                         buffer.clear();
                         return;
                     }
-                    backoff *= 2;
+                    backoff = backoff.saturating_mul(2);
                 } else {
                     log.status = DeliveryStatus::Failed;
                     log.completed_at = Some(chrono::Utc::now().timestamp());

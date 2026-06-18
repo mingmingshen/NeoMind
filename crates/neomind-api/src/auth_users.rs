@@ -409,7 +409,7 @@ impl AuthUserState {
         mac.update(data.as_bytes());
 
         let expected_sig = BASE64_URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
-        if parts[2] != expected_sig {
+        if !crate::auth::constant_time_eq_str(parts[2], &expected_sig) {
             return Err(AuthError::InvalidToken("Invalid signature".into()));
         }
 

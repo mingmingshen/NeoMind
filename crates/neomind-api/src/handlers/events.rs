@@ -536,12 +536,16 @@ pub async fn event_websocket_handler(
             .as_ref()
             .is_some_and(|key| auth_api_key_state.validate_key(key));
 
-        if pre_authenticated {
+        let authenticated = if pre_authenticated {
             let _ = socket.send(Message::Text(
                 serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
             )).await;
+            true
         } else {
-            // Wait for Auth message (JWT token)
+            // Wait for Auth message (JWT token). Track success explicitly so that
+            // a natural loop exit (client half-closed / only sent Binary frames)
+            // cannot fall through into the event-sending loop unauthenticated.
+            let mut success = false;
             while let Some(msg) = socket.recv().await {
                 match msg {
                     Ok(Message::Text(text)) => {
@@ -555,6 +559,7 @@ pub async fn event_websocket_handler(
                                             let _ = socket.send(Message::Text(
                                                 serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
                                             )).await;
+                                            success = true;
                                             break;
                                         }
                                         Err(e) => {
@@ -574,6 +579,7 @@ pub async fn event_websocket_handler(
                                         let _ = socket.send(Message::Text(
                                             serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
                                         )).await;
+                                        success = true;
                                         break;
                                     } else {
                                         tracing::warn!("Invalid API key, rejecting WebSocket connection");
@@ -602,6 +608,16 @@ pub async fn event_websocket_handler(
                     _ => {}
                 }
             }
+            success
+        };
+
+        // Guard: never enter the event-sending loop without successful auth.
+        // Covers the case where the while loop exited naturally (recv returned
+        // None because the client half-closed or only sent non-Text frames).
+        if !authenticated {
+            tracing::warn!("WebSocket event stream closed before authentication completed");
+            let _ = socket.close().await;
+            return;
         }
 
         // Send events to the authenticated WebSocket client
