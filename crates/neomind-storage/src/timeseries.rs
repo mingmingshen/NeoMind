@@ -1395,6 +1395,15 @@ impl TimeSeriesStore {
         end: i64,
         bucket_size_secs: i64,
     ) -> Result<Vec<TimeSeriesBucket>, Error> {
+        // Guard against divide-by-zero panic. Integer division by zero aborts
+        // the process; bubble up as a user-facing error instead.
+        if bucket_size_secs <= 0 {
+            return Err(Error::InvalidInput(format!(
+                "bucket_size_secs must be positive (got {})",
+                bucket_size_secs
+            )));
+        }
+
         let result = self
             .query_range(source_id, metric, start, end, None)
             .await?;

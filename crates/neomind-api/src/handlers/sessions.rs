@@ -1258,6 +1258,22 @@ async fn handle_ws_socket(
     // Cleanup: persist session history AFTER loop ends (when connection closes)
     let session_id_opt = current_session_id.read().await.clone();
     if let Some(session_id) = session_id_opt.as_ref() {
+        // Cancel any in-flight LLM stream for this session.
+        // Without this, a client disconnect leaves the stream running in its
+        // spawned task (burning tokens) and the cancel_senders entry leaks
+        // because the wrapped cleanup_stream never reaches its end-of-loop remove.
+        let cancelled = state
+            .agents
+            .session_manager
+            .cancel_session(session_id)
+            .await;
+        if cancelled {
+            tracing::info!(
+                category = "session",
+                session_id = %session_id,
+                "Cancelled in-flight LLM stream on WebSocket disconnect"
+            );
+        }
         if let Err(e) = state
             .agents
             .session_manager
