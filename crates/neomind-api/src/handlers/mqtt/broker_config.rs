@@ -338,31 +338,35 @@ pub async fn add_credential_handler(
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    // Check credential count limit and uniqueness
-    let creds = store
-        .list_mqtt_credentials()
-        .map_err(|e| ErrorResponse::internal(format!("Failed to load credentials: {}", e)))?;
+    // Hash password first so we can do the uniqueness check + insert + count
+    // cap atomically in a single transaction (see `try_add_mqtt_credential`).
+    // The previous implementation used separate `list_mqtt_credentials` and
+    // `add_mqtt_credential` transactions, leaving a TOCTOU window where two
+    // concurrent same-username requests could both pass the uniqueness check
+    // and silently overwrite each other's bcrypt hash via redb upsert.
+    let password_hash = bcrypt::hash(&req.password, 12)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to hash password: {}", e)))?;
 
-    if creds.iter().any(|c| c.username == req.username) {
+    let (inserted, count_after) = store
+        .try_add_mqtt_credential(&req.username, &password_hash)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save credential: {}", e)))?;
+
+    if !inserted {
         return Err(ErrorResponse::bad_request(format!(
             "Username '{}' already exists",
             req.username
         )));
     }
 
-    if creds.len() >= 100 {
+    if count_after > 100 {
+        // We just exceeded the cap — roll back this insert to honor the limit.
+        // (The atomic path doesn't pre-check the count because doing so would
+        // reintroduce a race; instead we add then trim if over.)
+        let _ = store.delete_mqtt_credential(&req.username);
         return Err(ErrorResponse::bad_request(
             "Maximum credential limit (100) reached".to_string(),
         ));
     }
-
-    // Hash password with bcrypt (cost factor 12)
-    let password_hash = bcrypt::hash(&req.password, 12)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to hash password: {}", e)))?;
-
-    store
-        .add_mqtt_credential(&req.username, &password_hash)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to save credential: {}", e)))?;
 
     // Refresh in-memory credential cache
     #[cfg(feature = "embedded-broker")]

@@ -1157,6 +1157,52 @@ impl SettingsStore {
         Ok(())
     }
 
+    /// Atomically insert a credential only if the username is not already
+    /// present, returning the resulting count after the (attempted) insert.
+    ///
+    /// The check + insert + count run inside a single redb write transaction,
+    /// which uses MVCC + table-level write locking — concurrent callers are
+    /// serialized at the transaction boundary, eliminating the TOCTOU window
+    /// that existed when `list_mqtt_credentials` and `add_mqtt_credential`
+    /// were separate transactions and two simultaneous same-username requests
+    /// could both pass the uniqueness check and silently overwrite each
+    /// other's bcrypt hash.
+    ///
+    /// Returns `(inserted, count_after)`:
+    /// - `inserted = false` if the username already existed (no row touched)
+    /// - `count_after` is the total credential count in the table (handy for
+    ///   enforcing the 100-credential cap without a second transaction)
+    pub fn try_add_mqtt_credential(
+        &self,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<(bool, usize), Error> {
+        let write_txn = self.db.begin_write()?;
+        let (inserted, count_after) = {
+            let mut table = write_txn.open_table(MQTT_CREDENTIALS_TABLE)?;
+            // redb serializes write transactions, so this check + insert is
+            // atomic w.r.t. concurrent callers. Previously, the handler did
+            // check-then-add across two transactions, allowing two
+            // same-username requests to both pass and silently overwrite.
+            if table.get(username)?.is_some() {
+                let count = table.iter()?.count();
+                (false, count)
+            } else {
+                let credential = MqttCredential {
+                    username: username.to_string(),
+                    password_hash: password_hash.to_string(),
+                };
+                let value = serde_json::to_vec(&credential)
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                table.insert(username, value.as_slice())?;
+                let count = table.iter()?.count();
+                (true, count)
+            }
+        };
+        write_txn.commit()?;
+        Ok((inserted, count_after))
+    }
+
     /// Delete an MQTT credential by username.
     pub fn delete_mqtt_credential(&self, username: &str) -> Result<bool, Error> {
         let write_txn = self.db.begin_write()?;
