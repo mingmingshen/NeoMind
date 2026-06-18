@@ -2195,12 +2195,41 @@ impl ServerState {
                             }
                         }
 
-                        // Event-driven rule evaluation: notify engine of data change
+                        // Event-driven rule evaluation: notify engine of data change.
+                        // Mirror the prefix-stripping logic used for value_provider
+                        // above: rules authored against the stripped field name
+                        // (e.g. "temperature") must still trigger when the device
+                        // publishes with a common prefix (e.g. "values.temperature"),
+                        // otherwise the subscription index never matches.
                         let data_source = neomind_core::datasource::DataSourceId::device(
                             &device_id,
                             &metric,
                         );
-                        rule_engine_for_update.on_data_update(&data_source, rv).await;
+                        rule_engine_for_update
+                            .on_data_update(&data_source, rv.clone())
+                            .await;
+
+                        let common_prefixes = [
+                            "values.",
+                            "value.",
+                            "data.",
+                            "telemetry.",
+                            "metrics.",
+                            "state.",
+                        ];
+                        for prefix in &common_prefixes {
+                            if let Some(stripped_metric) = metric.strip_prefix(prefix) {
+                                let stripped_source =
+                                    neomind_core::datasource::DataSourceId::device(
+                                        &device_id,
+                                        stripped_metric,
+                                    );
+                                rule_engine_for_update
+                                    .on_data_update(&stripped_source, rv.clone())
+                                    .await;
+                                break;
+                            }
+                        }
                     }
                 }
             }

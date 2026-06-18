@@ -13,7 +13,16 @@ impl AgentExecutor {
         execution_id: &str,
         success: bool,
     ) -> AgentResult<AgentMemory> {
-        let mut memory = agent.memory.clone();
+        // Reload the latest memory from the store rather than reusing the
+        // in-memory snapshot on `agent`. The snapshot was taken when the agent
+        // was loaded and may be stale if a concurrent path (e.g. event-trigger
+        // retry's failure branch) wrote a journal entry in the meantime. Using
+        // the stale snapshot here would overwrite that entry, silently erasing
+        // failure patterns the agent is supposed to learn from (gotcha #10).
+        let mut memory = match self.store.get_agent(&agent.id).await {
+            Ok(Some(data)) => data.memory,
+            _ => agent.memory.clone(),
+        };
 
         let outcome = truncate_to(conclusion, 300);
         let action_taken = decisions

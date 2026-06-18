@@ -1137,6 +1137,29 @@ impl AgentExecutor {
                 summary: "Skipped: event data extraction failed".to_string(),
                 success_rate: 0.0,
             };
+
+            // Write a `success: false` journal entry so this skip is visible
+            // to future executions and to monitoring. Without this, the
+            // failure mode is invisible: outer Ok branch only updates stats
+            // (counted as success), and no journal entry is created — the
+            // agent can never "learn" that its bound event source is broken.
+            if let Err(mem_err) = self
+                .update_memory(
+                    &agent,
+                    &[],
+                    "Event skipped: no usable data collected from event trigger",
+                    &execution_id,
+                    false,
+                )
+                .await
+            {
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    error = %mem_err,
+                    "Failed to write skip journal entry for empty event data"
+                );
+            }
+
             return Ok((decision_process, exec_result));
         }
 
