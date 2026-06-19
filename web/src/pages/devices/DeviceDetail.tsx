@@ -25,6 +25,7 @@ import { DeviceStatusBadge } from "@/components/shared/DeviceStatusBadge"
 import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
+import { getServerOrigin } from "@/lib/api"
 import type { Device, DeviceType, CommandDefinition, ParameterDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
 import { isBase64Image, getImageDataUrl } from "./utils"
 import { cn } from "@/lib/utils"
@@ -583,7 +584,7 @@ export function DeviceDetail({
                   </div>
                 )}
                 {device.adapter_type === 'webhook' && (() => {
-                  const webhookUrl = `${window.location.origin}/api/devices/${device.device_id}/webhook`
+                  const webhookUrl = `${getServerOrigin()}/api/devices/${device.device_id}/webhook`
                   const token = (device.config?.webhook_token || device.connection_config?.webhook_token) as string | undefined
                   return (
                     <>

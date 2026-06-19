@@ -232,7 +232,8 @@
     "credentialsNeeded": "Username and password required",
     "tlsWithCa": "Enabled — download CA cert for device",
     "tlsNoCa": "Enabled",
-    "tlsEnabled": "Tls Enabled"
+    "tlsEnabled": "TLS Enabled",
+    "passwordHidden": "Password hidden (security reason)"
   },
   "edit": {
     "title": "Edit Device",

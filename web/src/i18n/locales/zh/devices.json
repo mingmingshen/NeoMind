@@ -232,7 +232,8 @@
     "credentialsNeeded": "需要用户名和密码",
     "tlsWithCa": "已启用 — 下载 CA 证书用于设备端",
     "tlsNoCa": "已启用",
-    "tlsEnabled": "已启用 TLS"
+    "tlsEnabled": "已启用 TLS",
+    "passwordHidden": "密码已隐藏（安全原因）"
   },
   "edit": {
     "title": "编辑设备",

@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { notifySuccess, notifyError } from "@/lib/notify"
+import { getServerOrigin } from "@/lib/api"
 import type { OnboardingStatus } from "@/hooks/useOnboarding"
 
 interface OnboardingDialogProps {
@@ -282,15 +283,9 @@ function LlmCliHelper() {
 }
 
 // ── Device CLI quick-start helper ──
-// POSTing telemetry to the webhook endpoint auto-discovers unregistered devices
+// POSTing telemetry to the webhook endpoint auto-disovers unregistered devices
 // (webhook.rs:343 emits DeviceDiscovered for unknown device IDs). This gives a
 // pure-curl closed loop: publish → draft created → approve → device registered.
-
-const DEVICE_CURL_COMMAND = [
-  "curl -X POST http://localhost:9375/api/devices/demo-001/webhook \\",
-  '  -H "Content-Type: application/json" \\',
-  `  -d '{"data": {"temperature": 25.5, "humidity": 60}}'`,
-].join("\n")
 
 // After the webhook creates a draft, these commands view and approve it.
 const DEVICE_FOLLOWUP_COMMANDS = [
@@ -301,6 +296,13 @@ const DEVICE_FOLLOWUP_COMMANDS = [
 function DeviceQuickStart() {
   const { t } = useTranslation("common")
   const [expanded, setExpanded] = useState(true)
+
+  // Build curl command dynamically using current server origin
+  const DEVICE_CURL_COMMAND = useMemo(() => [
+    `curl -X POST ${getServerOrigin()}/api/devices/demo-001/webhook \\`,
+    '  -H "Content-Type: application/json" \\',
+    `  -d '{"data": {"temperature": 25.5, "humidity": 60}}'`,
+  ].join("\n"), [])
 
   const handleCopy = async () => {
     try {

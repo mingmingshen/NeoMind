@@ -327,10 +327,8 @@ export function UnifiedDeviceConnectionsTab() {
   }
 
   const getWebhookUrl = () => {
-    if (mqttStatus?.server_ip) {
-      const port = new URL(getServerOrigin()).port || '9375'
-      return `http://${mqttStatus.server_ip}:${port}/api/devices/{device_id}/webhook`
-    }
+    // Always use getServerOrigin() for consistent URL that works through nginx reverse proxy
+    // Don't use server_ip:port as it may not be accessible from external networks
     return `${getServerOrigin()}/api/devices/{device_id}/webhook`
   }
 

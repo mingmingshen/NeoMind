@@ -312,8 +312,9 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
   const brokerRunning = mqttStatus?.connected ?? false
   const serverIp = mqttStatus?.server_ip || getServerOrigin().replace(/^https?:\/\//, '')
   const brokerPort = mqttStatus?.listen_port ?? 1883
-  const apiPort = new URL(getServerOrigin()).port || '9375'
-  const webhookBaseUrl = `http://${serverIp}:${apiPort}/api/devices/`
+  // Use getServerOrigin() for webhook URL to work through nginx reverse proxy
+  // Don't use serverIp:apiPort as it may not be accessible from external networks
+  const webhookBaseUrl = `${getServerOrigin()}/api/devices/{device_id}/webhook`
   const enabledBrokers = brokers.filter(b => b.enabled)
   const hasAnyBroker = brokerRunning || enabledBrokers.length > 0
 
@@ -513,7 +514,7 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
                   <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                     <div className="space-y-1">
                       <span className="text-xs text-muted-foreground">{t('devices:auto.brokerAddress')}</span>
-                      <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                      <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5 break-all">
                         {broker.broker}
                       </code>
                     </div>
@@ -532,7 +533,19 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
                         <code className="flex-1 text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
                           {broker.username} / ••••••••
                         </code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 h-7 w-7"
+                          onClick={() => {
+                            broker.username && navigator.clipboard.writeText(broker.username)
+                            toast({ title: t('common:copied') })
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
+                      <span className="text-xs text-muted-foreground">{t('devices:auto.passwordHidden')}</span>
                     </div>
                   )}
                   {/* Subscribe topics */}
@@ -576,11 +589,11 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground">{t('devices:auto.webhookEndpoint')}</span>
               <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-2 break-all">
-                {webhookBaseUrl}{'{device_id}'}
+                {webhookBaseUrl}
               </code>
             </div>
-            <p className="text-xs text-muted-foreground">
-              POST JSON to <code className="font-mono">{webhookBaseUrl}{'{your_device_id}'}</code>
+            <p className="xs text-muted-foreground">
+              POST JSON to the webhook URL above, replacing <code className="font-mono">{'{device_id}'}</code> with your actual device ID
             </p>
           </div>
         )}
@@ -1052,9 +1065,7 @@ function ManualAddForm({
                 {t('devices:add.webhookUrlDescription')}
               </p>
               <code className="text-xs break-all block font-mono">
-                {serverIp
-                  ? `http://${serverIp}:${new URL(getServerOrigin()).port || '9375'}/api/devices/${deviceId}/webhook`
-                  : `${getServerOrigin()}/api/devices/${deviceId}/webhook`}
+                {`${getServerOrigin()}/api/devices/${deviceId}/webhook`}
               </code>
             </div>
             <FormField label={t('devices:add.webhookToken')}>
