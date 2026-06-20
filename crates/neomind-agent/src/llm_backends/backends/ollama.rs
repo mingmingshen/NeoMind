@@ -431,11 +431,17 @@ fn extract_image_from_url(url: &str) -> Option<String> {
 
     // Check if it's an HTTP/HTTPS URL
     if url.starts_with("http://") || url.starts_with("https://") {
-        // For async fetching, we'd need to do this in an async context
-        // For now, return None and log a warning
-        tracing::warn!(
-            "Fetching images from HTTP URLs is not yet supported: {}",
-            url
+        // Ollama's native /api/chat only accepts raw base64 arrays, not URLs.
+        // This is usually reached when conversation history contains an
+        // ImageUrl part (e.g. from an older session or a cross-backend switch).
+        // The frontend always sends data: URLs, so this path is rare in
+        // production — but when it hits, the image is silently lost, which is
+        // a correctness hazard. Log at ERROR level with a recovery hint.
+        tracing::error!(
+            url_preview = %url.chars().take(120).collect::<String>(),
+            "[multimodal] HTTP image URL dropped: Ollama only supports data:image/...;base64,... \
+             URLs. Recovery: re-upload the image as a file, or switch to a cloud VLM backend \
+             (OpenAI/Claude/Gemini) which accepts HTTP image URLs natively."
         );
         return None;
     }

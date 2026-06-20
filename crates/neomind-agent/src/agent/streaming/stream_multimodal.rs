@@ -95,10 +95,12 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     // Check if images are present (before moving images)
     let has_images = !images.is_empty();
 
-    // Extract base64 data for caching before images are consumed
+    // Extract base64 data for caching before images are consumed.
+    // Use the shared parse_image_data helper instead of fragile split(',')
+    // so non-standard data URL formats are handled consistently.
     let image_base64_list: Vec<String> = images
         .iter()
-        .filter_map(|data_url| data_url.split(',').nth(1).map(|s| s.to_string()))
+        .filter_map(|data_url| crate::image_utils::parse_image_data(data_url).map(|p| p.base64.to_string()))
         .collect();
 
     // Store user message in history with images

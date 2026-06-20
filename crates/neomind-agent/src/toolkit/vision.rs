@@ -41,6 +41,12 @@ pub struct VisionConfig {
     pub max_tokens: u32,
     /// Timeout for HTTP image fetch in seconds (default 10).
     pub capture_timeout_secs: u64,
+    /// Maximum image dimension (width/height) in pixels for VLM dispatch (default 1280).
+    /// Images fetched via HTTP or read from disk are downscaled to fit within this
+    /// box before base64 encoding. VLMs internally downsample to ~448-672px, so
+    /// 1280 preserves full perceivable detail while cutting bandwidth 3-5x on
+    /// cloud backends. Set to 0 to disable resizing (send original).
+    pub max_image_dim: u32,
 }
 
 impl Default for VisionConfig {
@@ -50,6 +56,7 @@ impl Default for VisionConfig {
             vlm_backend_id: None,
             max_tokens: 1024,
             capture_timeout_secs: 10,
+            max_image_dim: 1280,
         }
     }
 }
@@ -209,8 +216,7 @@ impl VisionTool {
             let mime = detect_mime_from_bytes(&bytes)
                 .unwrap_or("image/jpeg")
                 .to_string();
-            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
-            return Ok((b64, mime));
+            return Ok(self.process_image_bytes(bytes, &mime).await);
         }
 
         // 3. Block non-http URL schemes with a clear error
@@ -259,8 +265,7 @@ impl VisionTool {
             let mime = detect_mime_from_bytes(&bytes)
                 .unwrap_or("image/jpeg")
                 .to_string();
-            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
-            return Ok((b64, mime));
+            return Ok(self.process_image_bytes(bytes, &mime).await);
         }
 
         // 6. Fallback: treat as raw base64
@@ -436,6 +441,35 @@ impl VisionTool {
         Ok(bytes.to_vec())
     }
 
+    /// Process raw image bytes: optionally resize to `max_image_dim`, then
+    /// base64-encode. The decode/resize/encode pipeline is CPU-intensive
+    /// (Lanczos3 on multi-MB images can take 100-500ms), so it runs on
+    /// `spawn_blocking` to avoid starving the tokio runtime.
+    ///
+    /// Fail-open: resize errors fall back to the original bytes. The only
+    /// hard error path is `spawn_blocking` itself failing (JoinError), which
+    /// is astronomically rare (would require a panic inside the image crate).
+    async fn process_image_bytes(&self, bytes: Vec<u8>, detected_mime: &str) -> (String, String) {
+        let max_dim = self.config.max_image_dim;
+        let mime_owned = detected_mime.to_string();
+        match tokio::task::spawn_blocking(move || {
+            let (final_bytes, mime) = resize_image_if_needed(bytes, &mime_owned, max_dim);
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &final_bytes);
+            (b64, mime)
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::error!(error = %e, "spawn_blocking panicked during image processing; image lost");
+                // Bytes were moved into the closure and are unrecoverable on panic.
+                // Return an explicit empty result so the caller surfaces a VLM error
+                // rather than silently sending corrupt data.
+                (String::new(), detected_mime.to_string())
+            }
+        }
+    }
+
     /// Run VLM analysis on the resolved image.
     async fn analyze(&self, data: &str, mime: &str, prompt: &str) -> Result<String> {
         let runtime = self.resolve_vlm_runtime().await?;
@@ -564,6 +598,53 @@ fn validate_url(url: &reqwest::Url) -> Result<()> {
     Ok(())
 }
 
+/// Resize image bytes if either dimension exceeds `max_dim`.
+///
+/// - If `max_dim == 0` or the image is already within bounds, returns the
+///   original bytes with the detected MIME unchanged.
+/// - Otherwise resizes with Lanczos3 and re-encodes as JPEG (mime → `image/jpeg`).
+/// - **Fail-open**: any decode/encode error logs a warning and returns the
+///   original bytes so the VLM still receives the image. This covers
+///   formats the `image` crate can't decode (e.g. TIFF/BMP/HEIC when the
+///   feature isn't enabled) without blocking the analysis.
+fn resize_image_if_needed(bytes: Vec<u8>, detected_mime: &str, max_dim: u32) -> (Vec<u8>, String) {
+    if max_dim == 0 || bytes.is_empty() {
+        return (bytes, detected_mime.to_string());
+    }
+    let img = match image::load_from_memory(&bytes) {
+        Ok(img) => img,
+        Err(e) => {
+            tracing::debug!(
+                error = %e, mime = %detected_mime, bytes = bytes.len(),
+                "Image decode failed for resize; sending original bytes"
+            );
+            return (bytes, detected_mime.to_string());
+        }
+    };
+    let (w, h) = (img.width(), img.height());
+    if w <= max_dim && h <= max_dim {
+        return (bytes, detected_mime.to_string());
+    }
+    let resized = img.resize(max_dim, max_dim, image::imageops::FilterType::Lanczos3);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    match resized.write_to(&mut buf, image::ImageFormat::Jpeg) {
+        Ok(()) => {
+            let new_bytes = buf.into_inner();
+            tracing::info!(
+                orig_w = w, orig_h = h,
+                new_w = resized.width(), new_h = resized.height(),
+                orig_bytes = bytes.len(), new_bytes = new_bytes.len(),
+                "Resized image for VLM dispatch"
+            );
+            (new_bytes, "image/jpeg".to_string())
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "JPEG re-encode failed after resize; sending original bytes");
+            (bytes, detected_mime.to_string())
+        }
+    }
+}
+
 /// Detect MIME type from image file magic bytes.
 fn detect_mime_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() < 4 {
@@ -629,9 +710,9 @@ fn looks_like_raw_base64(s: &str) -> bool {
         return true;
     }
     // Long pure-base64 strings without magic — still likely image data,
-    // but require a reasonable minimum to avoid false positives on short
-    // strings like "/" or "/abc" which would be valid-looking paths.
-    s.len() >= 256
+    // but require a reasonable minimum to avoid false positives on hash-like
+    // or token-like strings (e.g. JWT fragments, 256-char base64 tokens).
+    s.len() >= 1024
 }
 
 /// Infer MIME type from the leading bytes of a base64-encoded image.
@@ -874,9 +955,16 @@ mod tests {
 
     #[test]
     fn test_looks_like_raw_base64_accepts_long_pure() {
-        // 256+ chars of pure base64 alphabet without magic — still likely image
-        let long: String = "ABCD".repeat(80); // 320 chars
+        // 1024+ chars of pure base64 alphabet without magic — still likely image
+        let long: String = "ABCD".repeat(300); // 1200 chars
         assert!(looks_like_raw_base64(&long));
+    }
+
+    #[test]
+    fn test_looks_like_raw_base64_rejects_medium_token_like() {
+        // 320 chars without magic — could be a JWT/hash fragment, reject
+        let medium: String = "ABCD".repeat(80); // 320 chars
+        assert!(!looks_like_raw_base64(&medium));
     }
 
     #[test]
@@ -923,5 +1011,53 @@ mod tests {
     #[test]
     fn test_infer_mime_unknown_returns_none() {
         assert_eq!(infer_mime_from_base64_prefix("randomStuff"), None);
+    }
+
+    // --- resize_image_if_needed tests ---
+
+    /// Helper: create a solid-color PNG of the given dimensions.
+    fn make_test_png(w: u32, h: u32) -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(w, h, image::Rgb([200, 50, 50]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .expect("write test PNG");
+        buf.into_inner()
+    }
+
+    #[test]
+    fn test_resize_skips_when_within_limit() {
+        let bytes = make_test_png(800, 600);
+        let (out, mime) = resize_image_if_needed(bytes.clone(), "image/png", 1280);
+        assert_eq!(mime, "image/png", "no resize → original mime preserved");
+        assert_eq!(out, bytes, "no resize → bytes unchanged");
+    }
+
+    #[test]
+    fn test_resize_downscales_large_image() {
+        let bytes = make_test_png(3000, 2000);
+        let orig_len = bytes.len();
+        let (out, mime) = resize_image_if_needed(bytes, "image/png", 1280);
+        assert_eq!(mime, "image/jpeg", "resized → re-encoded as JPEG");
+        let img = image::load_from_memory(&out).expect("decoded resized output");
+        assert!(img.width() <= 1280 && img.height() <= 1280, "dims within 1280 box");
+        assert!(out.len() < orig_len, "resized output smaller than original");
+    }
+
+    #[test]
+    fn test_resize_disabled_when_max_dim_zero() {
+        let bytes = make_test_png(3000, 2000);
+        let (out, mime) = resize_image_if_needed(bytes.clone(), "image/png", 0);
+        assert_eq!(out, bytes, "max_dim=0 → no resize");
+        assert_eq!(mime, "image/png");
+    }
+
+    #[test]
+    fn test_resize_fail_open_on_undecodable() {
+        // Garbage bytes that aren't a valid image → fail-open, return original
+        let bytes = b"not-an-image-at-all!!".to_vec();
+        let (out, mime) = resize_image_if_needed(bytes.clone(), "image/jpeg", 1280);
+        assert_eq!(out, bytes, "decode failure → original bytes returned");
+        assert_eq!(mime, "image/jpeg");
     }
 }

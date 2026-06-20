@@ -45,6 +45,9 @@ base64 = { workspace = true }
 # Cron scheduling libraries
 cron = "0.12"
 
+# Image processing (resize before VLM dispatch — saves bandwidth on cloud backends)
+image = { workspace = true }
+
 # Memory system dependencies (merged from neomind-memory)
 reqwest = { workspace = true }
 lru = { workspace = true }

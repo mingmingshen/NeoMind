@@ -3145,6 +3145,7 @@ dependencies = [
  "dashmap 6.2.1",
  "futures",
  "glob",
+ "image",
  "libc",
  "lru",
  "neomind-cli-ops",
