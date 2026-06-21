@@ -13,7 +13,6 @@ import {
   Terminal,
   Database,
   RefreshCw,
-  ChevronRight,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
@@ -136,21 +135,10 @@ export function ExtensionCard({
 
         {/* Author */}
         {extension.author && (
-          <p className={cn(textNano, "text-muted-foreground mb-3")}>
+          <p className={cn(textNano, "text-muted-foreground mt-auto pt-2")}>
             {t('card.byAuthor', { author: extension.author })}
           </p>
         )}
-
-        {/* Footer hint — click card to open details */}
-        <div className="flex items-center justify-between pt-2 border-t border-border mt-auto">
-          <span className={cn(textNano, hasError ? "text-error" : hasWarning ? "text-warning" : "text-muted-foreground")}>
-            {displayState}
-          </span>
-          <span className={cn(textNano, "text-muted-foreground inline-flex items-center gap-1 group-hover:text-primary transition-colors")}>
-            {t('card.viewDetails', { defaultValue: 'View details' })}
-            <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
-          </span>
-        </div>
       </CardContent>
     </Card>
   )
