@@ -32,6 +32,7 @@ import {
   FullScreenDialogFooter,
 } from "@/components/automation/dialog"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { useIsMobile } from "@/hooks/useMobile"
 import { useTranslation } from "react-i18next"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
@@ -104,6 +105,7 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle, SkillsPanelProps>(funct
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
   const { t } = useTranslation("agents")
+  const isMobile = useIsMobile()
 
   // Data state
   const [skills, setSkills] = useState<SkillSummary[]>([])
@@ -131,29 +133,42 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle, SkillsPanelProps>(funct
     setLoading(true)
     try {
       const res = await api.listSkills(currentPage, pageSize)
-      setSkills(res.skills)
+      if (isMobile && currentPage > 1) {
+        // Mobile infinite scroll: append new items (dedupe by id) so the user
+        // can scroll back up to see previous pages — same pattern as
+        // messages.tsx and data-explorer.tsx.
+        setSkills((prev) => {
+          const existingIds = new Set(prev.map((s) => s.id))
+          const unique = res.skills.filter((s) => !existingIds.has(s.id))
+          return [...prev, ...unique]
+        })
+      } else {
+        setSkills(res.skills)
+      }
       setTotal(res.total)
     } catch (e) {
       handleError(e, { operation: "Load skills", showToast: false })
     } finally {
       setLoading(false)
     }
-  }, [handleError, currentPage, pageSize])
+  }, [handleError, currentPage, pageSize, isMobile])
 
   useEffect(() => {
     loadSkills()
   }, [loadSkills])
 
   // Page change handler: immediately set loading so skeleton shows without waiting for useEffect.
-  // Reset scroll to top so the user starts at the beginning of the new page's content
-  // instead of being stuck at the old scroll position (which was near the bottom where the
-  // pagination button was clicked).
+  // Desktop pagination replaces data → scroll to top so the user starts at the top of the new
+  // page instead of being stuck at the old scroll position (near the bottom where the pagination
+  // button was clicked). Mobile uses infinite scroll that appends — never reset scroll there.
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page)
     setLoading(true)
-    const scrollContainer = document.querySelector('[data-page-scroll-container]')
-    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [])
+    if (!isMobile) {
+      const scrollContainer = document.querySelector('[data-page-scroll-container]')
+      if (scrollContainer) scrollContainer.scrollTo({ top: 0 })
+    }
+  }, [isMobile])
 
   // Notify parent of pagination state changes
   useEffect(() => {
