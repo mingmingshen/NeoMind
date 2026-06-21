@@ -269,7 +269,7 @@ export function AgentDetailPanel({
               <div className="space-y-4 pr-2">
                 {/* Stats Grid - Top section */}
                 <DetailSection title="" icon={null}>
-                  <div className={cn("gap-2", isMobile ? "grid grid-cols-2" : "grid grid-cols-4")}>
+                  <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-4")}>
                     <StatItem
                       icon={<Activity className="h-4 w-4" />}
                       label={t('agents:detail.executions')}

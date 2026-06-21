@@ -94,7 +94,7 @@ export function getValueCardSchema(config: any, ctx: SchemaContext, u: Updaters)
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.prefix')}</Label>
                       <Input
@@ -311,7 +311,7 @@ export function getProgressBarSchema(config: any, ctx: SchemaContext, u: Updater
                         label={t('visualDashboard.selectIcon')}
                       />
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                         <ColorPicker
                           value={config.iconColor || ''}
                           onChange={(color) => updateConfig('iconColor')(color || undefined)}
@@ -368,7 +368,7 @@ export function getProgressBarSchema(config: any, ctx: SchemaContext, u: Updater
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.warningThreshold')}</Label>
                       <Input

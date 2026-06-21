@@ -211,9 +211,9 @@ function WebhookTokenDisplay({ token }: { token?: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 min-w-0">
       <KeyRound className="h-3 w-3 text-muted-foreground shrink-0" />
-      <code className="text-xs font-mono flex-1 truncate bg-muted px-1.5 py-0.5 rounded">
+      <code className="text-xs font-mono flex-1 min-w-0 truncate bg-muted px-1.5 py-0.5 rounded">
         {token.slice(0, 8)}{'•'.repeat(8)}{token.slice(-4)}
       </code>
       <Button

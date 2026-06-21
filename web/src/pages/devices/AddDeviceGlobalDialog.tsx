@@ -173,7 +173,7 @@ export function AddDeviceGlobalDialog({
             <div className={cn("max-w-2xl mx-auto py-6", isMobile ? "px-3" : "px-5 md:px-8")}>
               {/* Mobile tab bar - grid layout for equal width */}
               {isMobile && (
-                <div className="grid grid-cols-3 gap-2 mb-5">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 mb-5">
                   {TABS.map((tab) => {
                     const Icon = tab.icon
                     const isActive = activeTab === tab.value
@@ -809,7 +809,7 @@ function ManualAddForm({
         description={t('devices:add.connectionSettingsDesc')}
       >
         {/* Adapter type — visual cards */}
-        <div className={cn("gap-2", isMobile ? "grid grid-cols-2" : "grid grid-cols-2")}>
+        <div className={cn("gap-2", isMobile ? "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
           {ADAPTER_TYPES.map(({ value, icon: AdapterIcon, color, bg }) => {
             const isActive = adapterType === value
             return (

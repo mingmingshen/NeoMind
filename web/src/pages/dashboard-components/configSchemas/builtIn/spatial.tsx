@@ -56,7 +56,7 @@ export function getMapDisplaySchema(config: any, ctx: SchemaContext, u: Updaters
               render: () => (
                 <div className="space-y-3">
                   <div className="flex items-end gap-2">
-                    <div className="grid grid-cols-2 gap-3 flex-1">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 flex-1">
                       <Field>
                         <Label>{t('visualDashboard.latitude')}</Label>
                         <Input
@@ -91,7 +91,7 @@ export function getMapDisplaySchema(config: any, ctx: SchemaContext, u: Updaters
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.zoomLevel')}</Label>
                       <Input
@@ -149,7 +149,7 @@ export function getMapDisplaySchema(config: any, ctx: SchemaContext, u: Updaters
                     />
                   </Field>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.showControlBar')}</Label>
                       <Select
@@ -182,7 +182,7 @@ export function getMapDisplaySchema(config: any, ctx: SchemaContext, u: Updaters
                     </Field>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.interactive')}</Label>
                       <Select
@@ -627,7 +627,7 @@ export function getCustomLayerSchema(config: any, ctx: SchemaContext, u: Updater
                     </Field>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.showControlBar')}</Label>
                       <Select

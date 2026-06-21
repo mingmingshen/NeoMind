@@ -171,7 +171,7 @@ export function LEDStateRulesConfig({
                 {/* Header */}
                 <div
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors",
+                    "flex items-center gap-2 min-w-0 px-3 py-2 cursor-pointer transition-colors",
                     !isCollapsed && "bg-muted-30"
                   )}
                   onClick={() => toggleCollapse(stableKey)}
@@ -181,7 +181,7 @@ export function LEDStateRulesConfig({
 
                   {/* Condition type badge */}
                   <span className={cn(
-                    "text-xs font-medium px-1.5 py-0.5 rounded",
+                    "text-xs font-medium px-1.5 py-0.5 rounded shrink-0",
                     conditionType === 'threshold' && "bg-info-light text-info",
                     conditionType === 'pattern' && "bg-accent-purple-light text-accent-purple",
                     conditionType === 'values' && "bg-warning-light text-warning",
@@ -194,7 +194,7 @@ export function LEDStateRulesConfig({
                   </span>
 
                   {/* Condition summary */}
-                  <span className="text-xs text-muted-foreground flex-1 truncate">
+                  <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
                     {conditionType === 'threshold' && (
                       <>
                         {rule.threshold?.operator} {rule.threshold?.value}

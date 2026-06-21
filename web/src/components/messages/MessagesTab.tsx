@@ -159,7 +159,7 @@ export function MessagesTab({
     <div className="space-y-4">
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:grid-cols-4 gap-4">
           {statsCards.map((card, i) => (
             <Card key={i}>
               <CardContent className="p-4">

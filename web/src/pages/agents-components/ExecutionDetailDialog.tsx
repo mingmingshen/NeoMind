@@ -354,7 +354,7 @@ export function ExecutionDetailDialog({
 
                           {isExpanded && dataPairs.length > 0 && (
                             <div className="p-2 border-t bg-background">
-                              <div className={cn("grid grid-cols-2 gap-x-3 gap-y-1", textNano)}>
+                              <div className={cn("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-1", textNano)}>
                                 {dataPairs.slice(0, 10).map((pair, pairIdx) => (
                                   <div key={pairIdx} className="flex items-baseline gap-1 min-w-0">
                                     <span className="text-muted-foreground shrink-0">{pair.key}:</span>

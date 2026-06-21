@@ -98,7 +98,7 @@ export function DataMappingConfig({
       </div>
 
       {/* Unit */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
         <div className="space-y-2">
           <Label className="text-xs">{t('formatConfig.unit')}</Label>
           <Input

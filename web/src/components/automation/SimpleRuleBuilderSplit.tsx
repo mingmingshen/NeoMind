@@ -803,7 +803,7 @@ function ConditionCanvas({
           </div>
 
           {!condition && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:grid-cols-5 gap-3">
               <ConditionTypeButton
                 label={tBuilder('simpleCondition')}
                 icon={<Lightbulb className="h-5 w-5" />}
@@ -916,7 +916,7 @@ function ConditionCanvas({
           <div className="space-y-4">
             <div>
               <Label className="text-xs text-muted-foreground">{tBuilder('cronTemplate') || 'Cron Template'}</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-4 gap-2 mt-2">
                 {CRON_TEMPLATES.slice(0, 8).map(template => (
                   <button
                     key={template.id}

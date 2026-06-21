@@ -485,11 +485,11 @@ function VariablesRail({
                       {ext.commands.map((cmd) => (
                         <div key={cmd.command} className="ml-4 space-y-1">
                           {cmd.fields.map((field) => (
-                            <div key={field.field} className="flex items-center gap-2 py-0.5">
+                            <div key={field.field} className="flex items-center gap-2 min-w-0 py-0.5">
                               <Checkbox
                                 id={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
                                 checked={isSourceSelected(ext.extension_id, field.field)}
-                                className="h-4 w-4"
+                                className="h-4 w-4 shrink-0"
                                 onCheckedChange={() => toggleSource(
                                   ext.extension_id,
                                   ext.extension_name,
@@ -501,7 +501,7 @@ function VariablesRail({
                               />
                               <label
                                 htmlFor={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
-                                className="text-xs text-muted-foreground cursor-pointer flex-1 truncate"
+                                className="text-xs text-muted-foreground cursor-pointer flex-1 min-w-0 truncate"
                                 title={field.display_name}
                               >
                                 {field.field}

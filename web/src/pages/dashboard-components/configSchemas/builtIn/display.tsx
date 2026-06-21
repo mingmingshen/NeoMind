@@ -175,7 +175,7 @@ export function getImageHistorySchema(config: any, ctx: SchemaContext, u: Update
                       { value: 'scale-down', label: t('visualDashboard.fitScaleDown') },
                     ]}
                   />
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.maxImages')}</Label>
                       <Input
@@ -550,7 +550,7 @@ export function getVideoDisplaySchema(config: any, ctx: SchemaContext, u: Update
                     ]}
                   />
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.autoPlay')}</Label>
                       <Select
@@ -583,7 +583,7 @@ export function getVideoDisplaySchema(config: any, ctx: SchemaContext, u: Update
                     </Field>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                     <Field>
                       <Label>{t('visualDashboard.showControls')}</Label>
                       <Select

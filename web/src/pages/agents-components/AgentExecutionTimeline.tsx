@@ -334,7 +334,7 @@ export function AgentExecutionTimeline({
                                       title={t('agents:memory.inputData', 'Input Data')}
                                     >
                                       {imgs.length > 0 && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
+                                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-3 gap-2 mb-2">
                                           {imgs.map((img, idx) => (
                                             <InputDataImage key={idx} source={img.source} image={img.image} />
                                           ))}

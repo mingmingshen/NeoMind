@@ -261,7 +261,7 @@ export function MessageChannelsTab({
     <div className="space-y-4">
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -358,16 +358,16 @@ export function MessageChannelsTab({
                   {/* Test result */}
                   {testResult && (
                     <div
-                      className={`flex items-center gap-2 text-sm p-2 rounded ${
+                      className={`flex items-center gap-2 min-w-0 text-sm p-2 rounded ${
                         testResult.success ? 'bg-success-light text-success' : 'bg-error-light text-error'
                       }`}
                     >
                       {testResult.success ? (
-                        <Check className="h-4 w-4" />
+                        <Check className="h-4 w-4 shrink-0" />
                       ) : (
-                        <X className="h-4 w-4" />
+                        <X className="h-4 w-4 shrink-0" />
                       )}
-                      <span className="flex-1 truncate">{testResult.message || (testResult.success ? 'OK' : 'Failed')}</span>
+                      <span className="flex-1 min-w-0 truncate">{testResult.message || (testResult.success ? 'OK' : 'Failed')}</span>
                     </div>
                   )}
 

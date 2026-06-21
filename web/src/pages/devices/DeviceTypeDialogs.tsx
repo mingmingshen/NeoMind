@@ -1245,7 +1245,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="space-y-6 max-w-3xl mx-auto">
           {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 sm:gap-4 mb-4 sm:mb-6">
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
               <div className="text-xl sm:text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
               <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Metrics</div>
@@ -2281,7 +2281,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
     >
           <div className="space-y-6">
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-4 gap-2 sm:gap-4">
               <Card className="p-3 sm:p-4">
                 <div className="flex items-center gap-2 sm:gap-3">
                   <div className="p-2 rounded-lg bg-success-light dark:bg-success-light">

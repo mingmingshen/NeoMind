@@ -560,7 +560,7 @@ export function DeviceDetail({
                 <Info className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-semibold">{t('devices:detailPage.deviceInfo')}</h2>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:grid-cols-4 gap-3 sm:gap-4">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">{t('devices:detailPage.connectionMethod')}</p>
                   <Badge variant="secondary" className="text-xs">{device.adapter_type || 'mqtt'}</Badge>
