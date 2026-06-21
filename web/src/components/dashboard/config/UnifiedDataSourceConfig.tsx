@@ -1392,32 +1392,65 @@ export function UnifiedDataSourceConfig({
       )}
 
       {/* Category tabs */}
-      <div className="flex border-b overflow-x-auto shrink-0 scrollbar-none [-webkit-overflow-scrolling:touch]">
-        {availableCategories.map(cat => {
-          const Icon = cat.icon
-          const isActive = selectedCategory === cat.id
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => {
-                setSelectedCategory(cat.id)
-                setSelectedDeviceId(null)
-                setSelectedExtensionId(null)
-              }}
-              className={cn(
-                'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0',
-                isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted-50'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {cat.name}
-            </button>
-          )
-        })}
-      </div>
+      {isMobile ? (
+        <div className="shrink-0 px-3 pt-3 pb-2">
+          <div className="grid grid-cols-4 gap-1.5">
+            {availableCategories.map(cat => {
+              const Icon = cat.icon
+              const isActive = selectedCategory === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(cat.id)
+                    setSelectedDeviceId(null)
+                    setSelectedExtensionId(null)
+                  }}
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-1 py-1.5 min-w-0 rounded-lg transition-colors',
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted-30 text-muted-foreground'
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="text-[11px] font-medium leading-none truncate w-full text-center">
+                    {cat.name}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="flex border-b overflow-x-auto shrink-0 scrollbar-none [-webkit-overflow-scrolling:touch]">
+          {availableCategories.map(cat => {
+            const Icon = cat.icon
+            const isActive = selectedCategory === cat.id
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(cat.id)
+                  setSelectedDeviceId(null)
+                  setSelectedExtensionId(null)
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0',
+                  isActive
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted-50'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {cat.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Content area */}
       {usesDeviceSplitLayout ? (
