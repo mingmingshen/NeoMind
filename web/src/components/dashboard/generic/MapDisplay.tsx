@@ -377,7 +377,7 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
           </div>
           {_isImg && (
             <button
-              className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-overlay-medium text-white/70 hover:text-white hover:bg-overlay-medium"
+              className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-overlay-medium text-white/70 hover:text-white hover:bg-overlay-heavy"
               onClick={(e) => { e.stopPropagation(); onClick() }}
             >
               <X className="h-2 w-2" />

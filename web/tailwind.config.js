@@ -22,6 +22,7 @@ export default {
           foreground: "var(--primary-foreground)",
           hover: "var(--primary-hover)",
           light: "var(--primary-bg)",
+          lightHover: "var(--primary-bg-hover)",
         },
         secondary: {
           DEFAULT: "var(--secondary)",

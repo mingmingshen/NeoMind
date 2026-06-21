@@ -478,7 +478,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }
                       <button
                         type="button"
                         onClick={() => setCertMode('auto')}
-                        className="flex flex-col items-start gap-1.5 p-4 rounded-lg border text-left transition-colors hover:border-primary hover:bg-primary-light"
+                        className="flex flex-col items-start gap-1.5 p-4 rounded-lg border text-left transition-colors hover:border-primary hover:bg-primary-lightHover"
                       >
                         <Zap className="h-5 w-5 text-accent-orange" />
                         <span className="text-sm font-medium">{t('broker.autoGenerate')}</span>
@@ -489,7 +489,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }
                       <button
                         type="button"
                         onClick={() => setCertMode('manual')}
-                        className="flex flex-col items-start gap-1.5 p-4 rounded-lg border text-left transition-colors hover:border-primary hover:bg-primary-light"
+                        className="flex flex-col items-start gap-1.5 p-4 rounded-lg border text-left transition-colors hover:border-primary hover:bg-primary-lightHover"
                       >
                         <FileText className="h-5 w-5 text-muted-foreground" />
                         <span className="text-sm font-medium">{t('broker.manualUpload')}</span>

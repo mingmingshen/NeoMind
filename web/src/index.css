@@ -276,6 +276,7 @@ html {
 
     /* Tint backgrounds for primary & destructive (mirror semantic *-bg pattern) */
     --primary-bg: oklch(0.18 0.02 270 / 8%);
+    --primary-bg-hover: oklch(0.18 0.02 270 / 16%);
     --destructive-bg: oklch(0.577 0.245 27 / 8%);
 
     /* Overlay (semi-transparent black masks) */
@@ -386,6 +387,7 @@ html {
 
     /* Tint backgrounds (dark: white-based for visibility on dark bg) */
     --primary-bg: oklch(0.96 0.003 270 / 12%);
+    --primary-bg-hover: oklch(0.96 0.003 270 / 20%);
     --destructive-bg: oklch(0.577 0.245 27 / 12%);
 
     /* Overlay (dark theme: slightly heavier masks) */

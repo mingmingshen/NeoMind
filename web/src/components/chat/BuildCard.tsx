@@ -110,7 +110,7 @@ function BuildActionButtons({ meta, success }: BuildActionButtonsProps) {
           }}
           className={cn(
             "inline-flex items-center gap-1 px-2 py-1 rounded-md",
-            "bg-primary-light text-primary hover:bg-primary-light transition-colors",
+            "bg-primary-light text-primary hover:bg-primary-lightHover transition-colors",
             textMini
           )}
         >
