@@ -522,7 +522,7 @@ export function DeviceDetail({
         {/* Header */}
         <div className={cn("flex items-center justify-between shrink-0 gap-2", isMobile ? "px-3 py-3" : "px-6 py-5")}>
           <div className="flex items-center gap-3 min-w-0 flex-1">
-            <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full shrink-0">
+            <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full shrink-0 hidden md:inline-flex">
               <ChevronLeft className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
