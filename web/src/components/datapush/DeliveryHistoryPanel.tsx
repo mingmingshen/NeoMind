@@ -139,6 +139,7 @@ export function DeliveryHistoryPanel({ targetId, open, onOpenChange }: DeliveryH
                   pageSize={PAGE_SIZE}
                   currentPage={page}
                   onPageChange={loadPage}
+                  hideOnMobile={false}
                 />
               </div>
             )}

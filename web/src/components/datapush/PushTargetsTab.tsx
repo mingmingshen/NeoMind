@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useStore } from '@/store'
 import { useTranslation } from 'react-i18next'
+import { useIsMobile } from '@/hooks/useMobile'
 import { ResponsiveTable, type TableColumn, EmptyState, Pagination } from '@/components/shared'
 import { Send, Play, Square, FlaskConical, FileText, Pencil, Trash2, Loader2, Globe, Radio } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +22,7 @@ const PAGE_SIZE = 10
 
 export function PushTargetsTab() {
   const { t } = useTranslation()
+  const isMobile = useIsMobile()
   const {
     pushTargets,
     pushTargetsLoading,
@@ -206,7 +208,11 @@ export function PushTargetsTab() {
     if (page > maxPage) setPage(maxPage)
   }, [pushTargets.length])
 
-  const paginatedTargets = pushTargets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Mobile infinite scroll: cumulative slice (0 to current page) so previous items stay
+  // visible as the user scrolls. Desktop: current-page slice only. Matches automation.tsx.
+  const paginatedTargets = isMobile
+    ? pushTargets.slice(0, page * PAGE_SIZE)
+    : pushTargets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="space-y-4">

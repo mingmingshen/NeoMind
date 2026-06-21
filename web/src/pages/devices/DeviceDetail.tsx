@@ -793,6 +793,7 @@ export function DeviceDetail({
                     pageSize={PAGE_SIZE}
                     currentPage={currentPage}
                     onPageChange={handlePageChange}
+                    hideOnMobile={false}
                   />
                 </div>
               )}
