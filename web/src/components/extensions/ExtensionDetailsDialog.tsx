@@ -1002,22 +1002,22 @@ export function ExtensionDetailsDialog({
     </div>
   )
 
-  // Mobile tabs renderer
+  // Mobile tabs renderer — wraps to 2 rows on narrow screens, no scroll, no divider
   const mobileTabs = (
-    <div className="shrink-0 px-3 pt-3 pb-2 border-b border-border">
-      <div className="flex gap-1 p-1 bg-muted-30 rounded-xl overflow-x-auto">
+    <div className="shrink-0 px-3 pt-3 pb-2.5">
+      <div className="flex flex-wrap gap-1.5">
         {sections.map((s) => (
           <button
             key={s.id}
             onClick={() => handleSectionChange(s.id)}
             className={cn(
-              "shrink-0 flex items-center gap-1.5 h-9 px-3 text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+              "flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg transition-colors",
               activeSection === s.id
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted-30 text-muted-foreground"
             )}
           >
-            <s.icon className="h-4 w-4" />
+            <s.icon className="h-3.5 w-3.5 shrink-0" />
             <span>{s.label}</span>
           </button>
         ))}
