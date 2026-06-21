@@ -183,7 +183,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
     if (ble.scanning) {
       return (
         <div className="min-h-[480px] flex flex-col items-center justify-center gap-6 px-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
           </div>
           <div className="text-center space-y-2">
@@ -213,7 +213,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
                   onClick={() => handleSelectDevice(dev)}
                   className="w-full flex items-center gap-3 rounded-xl border bg-card p-3 hover:bg-muted-30 transition-colors text-left"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-primary-light flex items-center justify-center shrink-0">
                     <Bluetooth className="w-5 h-5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -247,7 +247,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
     // Idle: show scan button
     return (
       <div className="min-h-[480px] flex flex-col items-center justify-center gap-6 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center">
           <Bluetooth className="w-8 h-8 text-primary" />
         </div>
         <div className="text-center">
@@ -290,7 +290,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
   if (phase === 'connecting' || (ble.connecting && phase !== 'provisioning')) {
     return (
       <div className="min-h-[480px] flex flex-col items-center justify-center gap-6 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
         </div>
         <div className="text-center space-y-2">

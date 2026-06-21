@@ -44,9 +44,9 @@ export const indicatorColors = {
     base: statusColors.success,
     text: 'text-success',
     bg: 'bg-success-light',
-    border: 'border-success/20',
-    ring: 'ring-success/20',
-    shadow: 'shadow-success/20',
+    border: 'border-success-light',
+    ring: 'ring-success-light',
+    shadow: 'shadow-success-light',
   },
 
   // Warning state - warm amber
@@ -54,9 +54,9 @@ export const indicatorColors = {
     base: statusColors.warning,
     text: 'text-warning',
     bg: 'bg-warning-light',
-    border: 'border-warning/20',
-    ring: 'ring-warning/20',
-    shadow: 'shadow-warning/20',
+    border: 'border-warning-light',
+    ring: 'ring-warning-light',
+    shadow: 'shadow-warning-light',
   },
 
   // Error state - clear red
@@ -64,9 +64,9 @@ export const indicatorColors = {
     base: statusColors.error,
     text: 'text-error',
     bg: 'bg-error-light',
-    border: 'border-error/20',
-    ring: 'ring-error/20',
-    shadow: 'shadow-error/20',
+    border: 'border-error-light',
+    ring: 'ring-error-light',
+    shadow: 'shadow-error-light',
   },
 
   // Info state - calm blue
@@ -74,9 +74,9 @@ export const indicatorColors = {
     base: statusColors.info,
     text: 'text-info',
     bg: 'bg-info-light',
-    border: 'border-info/20',
-    ring: 'ring-info/20',
-    shadow: 'shadow-info/20',
+    border: 'border-info-light',
+    ring: 'ring-info-light',
+    shadow: 'shadow-info-light',
   },
 
   // Neutral/Off state - subtle gray
@@ -95,8 +95,8 @@ export const indicatorColors = {
     text: 'text-primary',
     bg: 'bg-muted',
     border: 'border-border',
-    ring: 'ring-primary/20',
-    shadow: 'shadow-primary/20',
+    ring: 'ring-primary',
+    shadow: 'shadow-primary',
   },
 } as const
 

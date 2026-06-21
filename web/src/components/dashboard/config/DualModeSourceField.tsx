@@ -164,7 +164,7 @@ export function DualModeSourceField({
         <span className={cn(
           'text-xs px-2 py-0.5 rounded-full',
           isBound
-            ? 'bg-primary/10 text-primary'
+            ? 'bg-primary-light text-primary'
             : 'bg-muted text-muted-foreground'
         )}>
           {isBound ? t('dualMode.bound') : t('dualMode.manual')}

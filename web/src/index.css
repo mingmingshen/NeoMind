@@ -274,6 +274,15 @@ html {
     --color-info: oklch(0.52 0.15 250);
     --color-info-bg: oklch(0.52 0.15 250 / 8%);
 
+    /* Tint backgrounds for primary & destructive (mirror semantic *-bg pattern) */
+    --primary-bg: oklch(0.18 0.02 270 / 8%);
+    --destructive-bg: oklch(0.577 0.245 27 / 8%);
+
+    /* Overlay (semi-transparent black masks) */
+    --overlay-light: oklch(0 0 0 / 30%);
+    --overlay-medium: oklch(0 0 0 / 50%);
+    --overlay-heavy: oklch(0 0 0 / 80%);
+
     /* Accent category colors (light) - harmonious OKLCH palette */
     --accent-purple: oklch(0.52 0.18 300);
     --accent-purple-bg: oklch(0.52 0.18 300 / 8%);
@@ -374,6 +383,15 @@ html {
     --color-error-bg: oklch(0.577 0.245 27 / 10%);
     --color-info: oklch(0.65 0.15 250);
     --color-info-bg: oklch(0.65 0.15 250 / 10%);
+
+    /* Tint backgrounds (dark: white-based for visibility on dark bg) */
+    --primary-bg: oklch(0.96 0.003 270 / 12%);
+    --destructive-bg: oklch(0.577 0.245 27 / 12%);
+
+    /* Overlay (dark theme: slightly heavier masks) */
+    --overlay-light: oklch(0 0 0 / 40%);
+    --overlay-medium: oklch(0 0 0 / 60%);
+    --overlay-heavy: oklch(0 0 0 / 85%);
 
     /* Accent category colors (dark) - brighter for dark bg */
     --accent-purple: oklch(0.72 0.16 300);

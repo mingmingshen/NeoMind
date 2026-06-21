@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { IconButton } from "@/components/ui/button"
 import { ResponsiveTable, StatusBadge, EmptyState } from "@/components/shared"
 import { DeviceStatusBadge } from "@/components/shared/DeviceStatusBadge"
 import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil } from "lucide-react"
@@ -77,7 +78,7 @@ export function DeviceList({
       {addDeviceDialog}
 
       {isMobile ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {paginatedDevices.map((device) => {
             const AdapterIcon = getAdapterIcon(device.adapter_type)
             return (
@@ -103,9 +104,9 @@ export function DeviceList({
                     <DeviceStatusBadge device={device} />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <button className="p-1 rounded-md hover:bg-muted">
-                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                        </button>
+                        <IconButton>
+                          <MoreVertical className="h-4 w-4" />
+                        </IconButton>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onViewDetails(device) }}>

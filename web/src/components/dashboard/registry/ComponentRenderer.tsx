@@ -154,9 +154,9 @@ interface ComponentErrorFallbackProps {
 
 function ComponentErrorFallback({ className }: ComponentErrorFallbackProps) {
   return (
-    <Card className={cn('border-destructive/40', className)}>
+    <Card className={cn('border-destructive-light', className)}>
       <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center">
-        <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center mb-2">
+        <div className="w-8 h-8 rounded-full bg-destructive-light flex items-center justify-center mb-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-destructive">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
             <line x1="12" y1="9" x2="12" y2="13" />

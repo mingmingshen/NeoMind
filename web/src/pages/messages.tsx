@@ -17,7 +17,7 @@ import type { StandardError } from '@/lib/errors'
 
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, IconButton } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -724,7 +724,7 @@ export default function MessagesPage() {
                       className={cn(
                         "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all",
                         selectedCategories.has(cat)
-                          ? "bg-primary/10 text-primary border-primary/30"
+                          ? "bg-primary-light text-primary border-primary"
                           : "border-border text-muted-foreground hover:bg-muted-50 hover:text-foreground"
                       )}
                     >
@@ -900,9 +900,9 @@ export default function MessagesPage() {
                           </Badge>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <button className="p-1 rounded-md hover:bg-muted">
-                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                              </button>
+                              <IconButton>
+                                <MoreVertical className="h-4 w-4" />
+                              </IconButton>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-40">
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSelectedMessage(message) }}>
@@ -1203,9 +1203,9 @@ export default function MessagesPage() {
                           </Badge>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <button className="p-1 rounded-md hover:bg-muted">
-                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                              </button>
+                              <IconButton>
+                                <MoreVertical className="h-4 w-4" />
+                              </IconButton>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-40">
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChannel(channel.name) }}>

@@ -315,7 +315,7 @@ export function UnifiedFormDialog({
       {/* Backdrop */}
       {open && (
         <div
-          className={cn("fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200", overlayZIndex)}
+          className={cn("fixed inset-0 bg-overlay-heavy backdrop-blur-sm animate-in fade-in duration-200", overlayZIndex)}
           onClick={() => !isDisabled && handleClose()}
         />
       )}

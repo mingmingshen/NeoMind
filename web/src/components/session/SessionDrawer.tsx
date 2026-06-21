@@ -214,7 +214,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 animate-in fade-in duration-200"
+          className="fixed inset-0 bg-overlay-medium z-40 animate-in fade-in duration-200"
           onClick={onClose}
         />
       )}

@@ -323,7 +323,7 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
         disabled={!canSend}
         className={cn(
           "h-[44px] w-[44px] rounded-2xl flex-shrink-0",
-          "bg-info hover:bg-info/90 text-primary-foreground",
+          "bg-info hover:opacity-90 text-primary-foreground",
           "transition-all duration-200",
           "disabled:opacity-50 disabled:cursor-not-allowed",
           isStreaming && "relative overflow-hidden"
@@ -331,7 +331,7 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
       >
         {isStreaming ? (
           <>
-            <span className="absolute inset-0 bg-info/20 animate-ping" />
+            <span className="absolute inset-0 bg-info-light animate-ping" />
             <Send className="h-5 w-5 relative" />
           </>
         ) : (

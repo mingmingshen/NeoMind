@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { IconButton } from "@/components/ui/button"
 import { ResponsiveTable, EmptyState } from "@/components/shared"
 import { Edit, Trash2, Code, Globe, Cpu, HardDrive, Download, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -187,9 +188,9 @@ export function TransformsList({
                   />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                      <button className="p-1 rounded-md hover:bg-muted">
-                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                      </button>
+                      <IconButton>
+                        <MoreVertical className="h-4 w-4" />
+                      </IconButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(transform) }}>

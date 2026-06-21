@@ -343,7 +343,7 @@ export function ExecutionDetailDialog({
                           </div>
 
                           {hasImage && (
-                            <div className="p-2 bg-black/5">
+                            <div className="p-2 bg-overlay-light">
                               <img
                                 src={imageData!.src}
                                 alt={`${data.source} - ${t('agents:execution.inputImage', { defaultValue: 'Input Image' })}`}

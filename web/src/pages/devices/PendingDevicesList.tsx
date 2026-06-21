@@ -683,12 +683,12 @@ export function PendingDevicesList({
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-muted-foreground">{t('devices:pending.metrics')} ({selectedDraftForApproval.generated_type.metrics.length})</span>
                     {!isEditingMetrics ? (
-                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setIsEditingMetrics(true)}>
+                      <Button variant="ghost" size="xs" onClick={() => setIsEditingMetrics(true)}>
                         {t('common:edit')}
                       </Button>
                     ) : (
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
+                        <Button variant="ghost" size="xs" onClick={() => {
                           setIsEditingMetrics(false)
                           // Reset to original values
                           if (selectedDraftForApproval.generated_type) {
@@ -703,7 +703,7 @@ export function PendingDevicesList({
                         }}>
                           {t('common:cancel')}
                         </Button>
-                        <Button variant="default" size="sm" className="h-7 text-xs" onClick={() => setIsEditingMetrics(false)}>
+                        <Button variant="default" size="xs" onClick={() => setIsEditingMetrics(false)}>
                           {t('common:save')}
                         </Button>
                       </div>

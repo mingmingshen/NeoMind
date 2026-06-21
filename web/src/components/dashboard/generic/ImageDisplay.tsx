@@ -284,7 +284,7 @@ export const ImageDisplay = memo(function ImageDisplay({
           />
 
           {title && showTitle && (
-            <div className="absolute top-2 left-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+            <div className="absolute top-2 left-2 flex items-center gap-2 bg-overlay-medium text-white text-xs px-2 py-1 rounded">
               <ImageIcon className="h-4 w-4 text-white/90 shrink-0" />
               <span className="font-medium text-xs truncate max-w-[150px] text-white drop-shadow-md">{title}</span>
             </div>

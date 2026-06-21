@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ResponsiveTable, EmptyState, LoadingState } from "@/components/shared"
-import { Button } from "@/components/ui/button"
+import { Button, IconButton } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -463,9 +463,9 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <button className="p-1 rounded-md hover:bg-muted" aria-label={t("systemMemory.actions", "Actions")}>
-                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                        </button>
+                        <IconButton aria-label={t("systemMemory.actions", "Actions")}>
+                          <MoreVertical className="h-4 w-4" />
+                        </IconButton>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewEdit(row.isCustom ? row.name : row.id, row.isCustom) }}>

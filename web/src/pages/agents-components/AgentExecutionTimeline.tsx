@@ -984,13 +984,13 @@ function InputDataImage({ source, image }: { source: string; image: string }) {
         <div className="absolute bottom-0 left-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <span className="text-xs text-white/90 truncate block">{source}</span>
         </div>
-        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded p-0.5">
+        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-overlay-medium rounded p-0.5">
           <Maximize2 className="h-3.5 w-3.5 text-white" />
         </div>
       </div>
       {fullscreen && (
         <div
-          className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center"
+          className="fixed inset-0 z-[200] bg-overlay-heavy flex items-center justify-center"
           onClick={() => setFullscreen(false)}
         >
           <img src={image} alt={source} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />

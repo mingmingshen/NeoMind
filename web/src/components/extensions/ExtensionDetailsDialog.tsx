@@ -933,11 +933,11 @@ export function ExtensionDetailsDialog({
             }
           </span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadLogs} disabled={logsLoading}>
+            <Button variant="outline" size="xs" onClick={loadLogs} disabled={logsLoading}>
               <RefreshCw className="h-3 w-3 mr-1" />
               {t("extensions:logs.refresh", { defaultValue: "Refresh" })}
             </Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleClearLogs} disabled={logsLoading || logs.length === 0}>
+            <Button variant="outline" size="xs" onClick={handleClearLogs} disabled={logsLoading || logs.length === 0}>
               <Trash2 className="h-3 w-3 mr-1" />
               {t("extensions:logs.clear", { defaultValue: "Clear" })}
             </Button>

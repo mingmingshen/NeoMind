@@ -56,7 +56,7 @@ function StepDot({
         status === 'pending' && 'bg-muted text-muted-foreground border border-border',
         status === 'active' && [
           'bg-primary text-primary-foreground border border-primary',
-          size === 'large' ? 'ring-4 ring-primary/20' : 'ring-2 ring-primary/20',
+          size === 'large' ? 'ring-4 ring-primary' : 'ring-2 ring-primary',
         ],
         status === 'completed' && 'bg-muted text-primary border border-border'
       )}

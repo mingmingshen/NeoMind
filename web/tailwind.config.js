@@ -21,6 +21,7 @@ export default {
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
           hover: "var(--primary-hover)",
+          light: "var(--primary-bg)",
         },
         secondary: {
           DEFAULT: "var(--secondary)",
@@ -31,6 +32,7 @@ export default {
           DEFAULT: "var(--destructive)",
           foreground: "var(--destructive-foreground)",
           hover: "var(--destructive-hover)",
+          light: "var(--destructive-bg)",
         },
         muted: {
           DEFAULT: "var(--muted)",
@@ -98,6 +100,12 @@ export default {
         "glass-heavy": "var(--glass-heavy)",
         "surface-glass": "var(--surface-glass)",
         "glass-border": "var(--glass-border)",
+        // Overlay (semi-transparent black masks for modals, loading screens, etc.)
+        overlay: {
+          light: "var(--overlay-light)",
+          medium: "var(--overlay-medium)",
+          heavy: "var(--overlay-heavy)",
+        },
         // Semi-transparent background
         "bg-50": "var(--bg-50)",
         "bg-70": "var(--bg-70)",

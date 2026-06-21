@@ -81,7 +81,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         {/* Greeting */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-2.5 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-primary-light flex items-center justify-center">
               <MessageSquare className="h-5 w-5 text-primary" />
             </div>
           </div>

@@ -54,7 +54,7 @@ export function BindingDataSourceSelector({
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium">{title}</Label>
         {isBound && (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary-light text-primary">
             <Database className="h-3 w-3" />
             {t('bindingSelector.boundCount', { count: normalizedSources.length })}
           </span>
@@ -62,7 +62,7 @@ export function BindingDataSourceSelector({
       </div>
 
       {isBound ? (
-        <Button variant="outline" onClick={openPicker} className="w-full h-9">
+        <Button variant="outline" size="sm" onClick={openPicker} className="w-full">
           {t('bindingSelector.changeSource')}
         </Button>
       ) : (

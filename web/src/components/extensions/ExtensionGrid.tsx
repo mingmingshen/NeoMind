@@ -320,7 +320,7 @@ export function ExtensionGrid({
             )
           })}
           {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 text-xs">
+            <Button variant="ghost" size="xs" onClick={clearFilters}>
               <X className="h-3 w-3 mr-1" />
               {t("clearFilters", { ns: "common" })}
             </Button>

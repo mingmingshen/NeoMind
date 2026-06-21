@@ -266,14 +266,14 @@ export function LoginPage() {
                     isCurrent ? 'border-primary' : 'border-border hover:border-primary'
                   }`}
                 >
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${isCurrent ? 'bg-primary/10' : 'bg-muted'}`}>
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${isCurrent ? 'bg-primary-light' : 'bg-muted'}`}>
                     {inst.is_local ? <Globe className="h-5 w-5 text-primary" /> : <Server className={`h-5 w-5 ${isCurrent ? 'text-primary' : 'text-accent-cyan'}`} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate flex items-center gap-2">
                       {inst.is_local ? t('instances:localBackend') : inst.name}
                       {isCurrent && (
-                        <span className={`inline-flex items-center gap-0.5 ${textNano} font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary`}>
+                        <span className={`inline-flex items-center gap-0.5 ${textNano} font-medium px-1.5 py-0.5 rounded-full bg-primary-light text-primary`}>
                           <Check className="h-3 w-3" />
                           {t('instances:current')}
                         </span>

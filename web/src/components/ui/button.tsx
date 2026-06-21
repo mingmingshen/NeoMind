@@ -24,6 +24,10 @@ const buttonVariants = cva(
         sm: "h-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
         icon: "h-10 w-10",
+        // Extra-small: inline mini buttons (28px) — list rows, text-adjacent actions
+        xs: "h-7 rounded-md px-2 text-xs",
+        // Small icon button (32×32) — inside lists / cards
+        "icon-sm": "h-8 w-8",
       },
     },
     defaultVariants: {
@@ -55,3 +59,35 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = "Button"
 
 export { Button, buttonVariants }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IconButton — convenience wrapper for icon-only buttons.
+//
+// Use this instead of bare <button class="p-1 rounded-md hover:bg-muted">.
+// Defaults: ghost variant, muted-foreground text, hover -> foreground + muted bg.
+// Sizes: "sm" (h-8 w-8, 32px) for inline/list, "md" (h-10 w-10, 40px) for
+// standalone primary icon actions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface IconButtonProps
+  extends Omit<ButtonProps, "size"> {
+  size?: "sm" | "md"
+}
+
+const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
+  ({ className, size = "sm", variant = "ghost", ...props }, ref) => (
+    <Button
+      ref={ref}
+      variant={variant}
+      size={size === "sm" ? "icon-sm" : "icon"}
+      className={cn(
+        "shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted",
+        className,
+      )}
+      {...props}
+    />
+  ),
+)
+IconButton.displayName = "IconButton"
+
+export { IconButton }

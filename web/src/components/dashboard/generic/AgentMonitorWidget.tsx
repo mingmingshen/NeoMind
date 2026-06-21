@@ -423,7 +423,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                             <div className="absolute bottom-0 left-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                               <span className={cn(textMicro, "text-white/90 truncate block")}>{img.source}</span>
                             </div>
-                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded p-0.5">
+                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-overlay-medium rounded p-0.5">
                               <Maximize2 className="h-4 w-4 text-white" />
                             </div>
                           </div>

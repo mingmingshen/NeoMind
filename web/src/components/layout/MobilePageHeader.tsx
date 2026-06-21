@@ -54,7 +54,7 @@ export function MobilePageHeader({
       )}
     >
       {/* Left slot: hamburger + leftExtra (e.g. back chevron) */}
-      <div className="flex min-w-0 items-center gap-0.5 justify-self-start">
+      <div className="flex min-w-0 items-center gap-1 justify-self-start">
         {!hideMenu && (
           <Button
             variant="ghost"
@@ -74,7 +74,7 @@ export function MobilePageHeader({
         {title}
       </span>
       {/* Right slot: actions */}
-      <div className="flex min-w-0 items-center gap-0.5 justify-self-end">
+      <div className="flex min-w-0 items-center gap-1 justify-self-end">
         {actions}
       </div>
     </div>

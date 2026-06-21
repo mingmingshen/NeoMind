@@ -61,7 +61,7 @@ export function ExtensionCard({
               <Code2 className="h-4 w-4" />
               {/* Status indicator dot */}
               <div className={cn(
-                "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background",
+                "absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background",
                 hasError ? "bg-error" : hasWarning ? "bg-warning" : isFailed ? "bg-muted-foreground" : "bg-success"
               )} />
             </div>
@@ -88,7 +88,7 @@ export function ExtensionCard({
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>

@@ -142,7 +142,7 @@ export default function SystemPage() {
     {
       id: "automation",
       icon: Workflow,
-      iconTone: "bg-primary/10 text-primary",
+      iconTone: "bg-primary-light text-primary",
       titleKey: "nav.automation",
       descKey: "system.cards.automation",
       onClick: () => navigate("/automation"),
@@ -184,7 +184,7 @@ export default function SystemPage() {
     {
       id: "theme",
       icon: Palette,
-      iconTone: "bg-primary/10 text-primary",
+      iconTone: "bg-primary-light text-primary",
       titleKey: "theme.title",
       descKey: "system.cards.theme",
     },
@@ -230,7 +230,7 @@ export default function SystemPage() {
     {
       id: "onboarding",
       icon: Rocket,
-      iconTone: "bg-primary/10 text-primary",
+      iconTone: "bg-primary-light text-primary",
       titleKey: "onboarding.title",
       descKey: "system.cards.onboarding",
       onClick: () => setOnboardingOpen(true),

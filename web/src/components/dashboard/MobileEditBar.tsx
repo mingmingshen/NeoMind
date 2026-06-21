@@ -181,7 +181,7 @@ export const MobileEditBar = memo(function MobileEditBar({
       {/* Backdrop */}
       <div
         className={cn(
-          'fixed inset-0 bg-black/20 backdrop-blur-sm z-40',
+          'fixed inset-0 bg-overlay-light backdrop-blur-sm z-40',
           'transition-opacity duration-200',
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
@@ -282,7 +282,7 @@ export const CompactMobileEditBar = memo(function CompactMobileEditBar({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+        className="fixed inset-0 bg-overlay-light backdrop-blur-sm z-40"
         onClick={onClose}
       />
 

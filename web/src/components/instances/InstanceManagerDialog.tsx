@@ -222,7 +222,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
           <FullScreenDialogMain className="max-w-2xl mx-auto p-6">
             {/* Remote instance hint banner */}
             {isRemote && (
-              <div className="flex items-start gap-3 rounded-lg border border-info/30 bg-info/5 p-3 mb-4">
+              <div className="flex items-start gap-3 rounded-lg border border-info-light bg-info-light p-3 mb-4">
                 <Info className="h-4 w-4 text-info mt-0.5 shrink-0" />
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {t('remoteHint')}
@@ -244,15 +244,15 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                     className={cn(
                       'relative rounded-xl border p-4 transition-all',
                       isCurrent
-                        ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
-                        : 'border-border hover:border-primary/40 hover:bg-muted-30 cursor-pointer',
+                        ? 'border-primary ring-2 ring-primary bg-primary-light'
+                        : 'border-border hover:border-primary hover:bg-muted-30 cursor-pointer',
                     )}
                   >
                     <div className="flex items-center gap-4">
                       {/* Icon */}
                       <div className={cn(
                         'w-11 h-11 rounded-xl flex items-center justify-center shrink-0',
-                        isCurrent ? 'bg-primary/10' : 'bg-muted',
+                        isCurrent ? 'bg-primary-light' : 'bg-muted',
                       )}>
                         {isLocal ? (
                           <Server className={cn('h-5 w-5', isCurrent ? 'text-primary' : 'text-muted-foreground')} />
@@ -345,7 +345,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
               {!isRemote && (
               <button
                 onClick={openAddForm}
-                className="w-full rounded-xl border-2 border-dashed border-border p-4 text-sm text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors cursor-pointer"
+                className="w-full rounded-xl border-2 border-dashed border-border p-4 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer"
               >
                 <Plus className="h-5 w-5 mx-auto mb-1" />
                 {t('add')}

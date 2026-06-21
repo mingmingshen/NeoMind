@@ -581,7 +581,7 @@ function LayerItemComponent({
                       }}
                     />
                     {(item.deviceName || item.deviceId) && (
-                      <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[10px] text-white bg-black/50 truncate">
+                      <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[10px] text-white bg-overlay-medium truncate">
                         {item.deviceName || item.deviceId}
                       </span>
                     )}
@@ -621,7 +621,7 @@ function LayerItemComponent({
                 </div>
                 <Button
                   size="sm"
-                  className="w-full mt-2 bg-info hover:bg-info/90 text-primary-foreground"
+                  className="w-full mt-2 bg-info hover:opacity-90 text-primary-foreground"
                   onClick={async (e) => {
                     e.stopPropagation()
                     if (onExecuteCommand && item.deviceId && item.command) {
@@ -653,7 +653,7 @@ function LayerItemComponent({
           </div>
           {_isImg && (
             <button
-              className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60"
+              className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-overlay-medium text-white/70 hover:text-white hover:bg-overlay-medium"
               onClick={() => setShowDetails(false)}
             >
               <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1338,7 +1338,7 @@ export function CustomLayer({
 
         {/* Zoom indicator */}
         {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-          <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/50 text-white rounded text-xs z-50">
+          <div className="absolute bottom-2 right-2 px-2 py-1 bg-overlay-medium text-white rounded text-xs z-50">
             {Math.round(zoom * 100)}% | {Math.round(pan.x)}, {Math.round(pan.y)}
           </div>
         )}
@@ -1451,7 +1451,7 @@ export function CustomLayer({
 
           {/* Zoom indicator */}
           {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-            <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/50 text-white rounded text-xs z-50">
+            <div className="absolute bottom-2 right-2 px-2 py-1 bg-overlay-medium text-white rounded text-xs z-50">
               {Math.round(zoom * 100)}% | {Math.round(pan.x)}, {Math.round(pan.y)}
             </div>
           )}
@@ -1467,11 +1467,11 @@ export function CustomLayer({
       {fullscreenOverlay}
       {fullscreenImage && createPortal(
         <div
-          className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center"
+          className="fixed inset-0 z-[200] bg-overlay-heavy backdrop-blur-sm flex items-center justify-center"
           onClick={() => setFullscreenImage(null)}
         >
           <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-            <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/50 text-white">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-overlay-medium text-white">
               {fullscreenImage.deviceName && <span className="text-sm font-medium">{fullscreenImage.deviceName}</span>}
               {fullscreenImage.metricName && <span className="text-xs text-white/70 font-mono">{fullscreenImage.metricName}</span>}
             </div>

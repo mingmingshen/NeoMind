@@ -293,7 +293,7 @@ export function AboutTab() {
   return (
     <div className="space-y-6">
       {/* Hero — Brand wordmark + build tag */}
-      <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm p-8 md:p-10">
+      <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm p-6 md:p-10">
         {/* Grid background */}
         <div
           className="absolute inset-0 opacity-[0.04] pointer-events-none"

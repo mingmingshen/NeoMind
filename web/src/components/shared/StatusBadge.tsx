@@ -76,10 +76,10 @@ export function AlertBadge({ level, className }: AlertBadgeProps) {
   const { t } = useTranslation('common')
 
   const config = {
-    critical: { label: t('alertLevels.critical'), className: 'bg-error/10 text-error border-error/20' },
-    warning: { label: t('alertLevels.warning'), className: 'bg-warning/10 text-warning border-warning/20' },
-    info: { label: t('alertLevels.info'), className: 'bg-info/10 text-info border-info/20' },
-    emergency: { label: t('alertLevels.emergency'), className: 'bg-error/10 text-error border-error/20' },
+    critical: { label: t('alertLevels.critical'), className: 'bg-error-light text-error border-error-light' },
+    warning: { label: t('alertLevels.warning'), className: 'bg-warning-light text-warning border-warning-light' },
+    info: { label: t('alertLevels.info'), className: 'bg-info-light text-info border-info-light' },
+    emergency: { label: t('alertLevels.emergency'), className: 'bg-error-light text-error border-error-light' },
   }
 
   const { label, className: levelClass } = config[level]

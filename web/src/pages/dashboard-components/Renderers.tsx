@@ -319,13 +319,13 @@ const ComponentWrapper = memo(function ComponentWrapper({
       <div className="h-full w-full flex flex-col">{children}</div>
       {shouldShowActions && (
         <div className="absolute top-2 right-2 z-10 flex gap-1">
-          <Button variant="secondary" size="icon" className="h-9 w-9 bg-bg-90 backdrop-blur" onClick={handleConfigClick}>
+          <Button variant="secondary" size="icon" className="bg-bg-90 backdrop-blur" onClick={handleConfigClick}>
             <Settings2 className="h-4 w-4" />
           </Button>
-          <Button variant="secondary" size="icon" className="h-9 w-9 bg-bg-90 backdrop-blur" onClick={handleDuplicateClick}>
+          <Button variant="secondary" size="icon" className="bg-bg-90 backdrop-blur" onClick={handleDuplicateClick}>
             <Copy className="h-4 w-4" />
           </Button>
-          <Button variant="secondary" size="icon" className="h-9 w-9 bg-bg-90 backdrop-blur hover:bg-destructive hover:text-destructive-foreground transition-colors"
+          <Button variant="secondary" size="icon" className="bg-bg-90 backdrop-blur hover:bg-destructive hover:text-destructive-foreground transition-colors"
             onClick={() => { confirm({ title: t('componentWrapper.remove'), description: t('componentWrapper.removeConfirm'), confirmText: t('componentWrapper.remove'), variant: 'destructive' }).then(ok => { if (ok) onRemove(component.id) }) }}>
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -339,13 +339,13 @@ const ComponentWrapper = memo(function ComponentWrapper({
           )}
           {isSelected && (
             <div className="absolute bottom-2 right-2 z-20 flex gap-1">
-              <Button variant="secondary" size="sm" className="h-8 text-xs" onClick={handleConfigClick}>
+              <Button variant="secondary" size="xs" onClick={handleConfigClick}>
                 <Settings2 className="h-3 w-3 mr-1" />{t('componentWrapper.config')}
               </Button>
-              <Button variant="secondary" size="sm" className="h-8 text-xs" onClick={handleDuplicateClick}>
+              <Button variant="secondary" size="xs" onClick={handleDuplicateClick}>
                 <Copy className="h-3 w-3 mr-1" />{t('componentWrapper.copy')}
               </Button>
-              <Button variant="secondary" size="sm" className="h-8 text-xs hover:bg-destructive hover:text-destructive-foreground"
+              <Button variant="secondary" size="xs" className="hover:bg-destructive hover:text-destructive-foreground"
                 onClick={() => { confirm({ title: t('componentWrapper.remove'), description: t('componentWrapper.removeConfirm'), confirmText: t('componentWrapper.remove'), variant: 'destructive' }).then(ok => { if (ok) onRemove(component.id) }) }}>
                 <Trash2 className="h-3 w-3 mr-1" />{t('componentWrapper.remove')}
               </Button>

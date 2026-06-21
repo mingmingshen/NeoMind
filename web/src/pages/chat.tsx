@@ -925,7 +925,7 @@ export function ChatPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0"
+                className="shrink-0"
                 onClick={() => setSidebarOpen(true)}
                 aria-label={t('common:session.history')}
               >
@@ -938,7 +938,7 @@ export function ChatPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0"
+                className="shrink-0"
                 onClick={async () => {
                   const id = await createSession()
                   if (id) navigate(`/chat/${id}`)

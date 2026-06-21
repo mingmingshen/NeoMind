@@ -3,7 +3,7 @@
  */
 
 import { useTranslation } from "react-i18next"
-import { Button } from "@/components/ui/button"
+import { Button, IconButton } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useConfirm } from "@/components/ui/use-confirm"
 import {
@@ -135,13 +135,12 @@ export function AgentCard({
         {/* More menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
+            <IconButton
               onClick={(e) => e.stopPropagation()}
-              className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted transition-colors"
               aria-label={t('agents:card.moreOptions')}
             >
-              <MoreVertical className="h-4 w-4 text-muted-foreground" />
-            </button>
+              <MoreVertical className="h-4 w-4" />
+            </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(agent); }}>

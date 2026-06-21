@@ -63,7 +63,7 @@ export function FullScreenDialog({
       className={cn(
         "fixed inset-0 flex flex-col",
         // Glassmorphism background - lower opacity to show content behind
-        "bg-black/20 dark:bg-black/40",
+        "bg-overlay-light",
         "backdrop-blur-sm",
         !open && "hidden"
       )}

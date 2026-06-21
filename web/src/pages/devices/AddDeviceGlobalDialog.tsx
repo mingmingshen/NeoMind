@@ -141,7 +141,7 @@ export function AddDeviceGlobalDialog({
                   className={cn(
                     'flex items-center gap-2.5 px-3 py-3 rounded-lg text-sm font-medium transition-all text-left',
                     isActive
-                      ? 'bg-card shadow-sm border border-primary/20 text-primary'
+                      ? 'bg-card shadow-sm border border-primary-light text-primary'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted-30 border border-transparent'
                   )}
                 >

@@ -390,7 +390,7 @@ export const ImageHistory = memo(function ImageHistory({
 
         {/* Title + index overlay */}
         <div className={cn(
-          "absolute left-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10",
+          "absolute left-2 flex items-center gap-2 bg-overlay-medium text-white text-xs px-2 py-1 rounded z-10",
           (title && showTitle) || canNavigate ? "top-2" : "hidden",
         )}>
           {title && showTitle && (
@@ -407,14 +407,14 @@ export const ImageHistory = memo(function ImageHistory({
 
         {/* Timestamp overlay */}
         {currentImage?.timestamp && (
-          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10">
+          <div className="absolute top-2 right-2 bg-overlay-medium text-white text-xs px-2 py-1 rounded z-10">
             {formatTimestamp(currentImage.timestamp)}
           </div>
         )}
 
         {/* Label overlay */}
         {currentImage?.label && (
-          <div className="absolute top-9 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded max-w-[150px] truncate z-10">
+          <div className="absolute top-9 left-2 bg-overlay-medium text-white text-xs px-2 py-1 rounded max-w-[150px] truncate z-10">
             {currentImage.label}
           </div>
         )}

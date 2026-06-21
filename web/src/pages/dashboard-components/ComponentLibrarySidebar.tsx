@@ -189,7 +189,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                               <button
                                 type="button"
                                 onClick={() => onAddComponent(item.id)}
-                                className={`w-full h-[72px] flex items-center gap-3 py-2 px-3 rounded-xl border bg-background hover:shadow-sm hover:border-primary/30 hover:text-accent-foreground transition-all duration-200 cursor-pointer active:scale-[0.98] text-left ${isHighlighted ? 'border-primary/50 shadow-sm ring-2 ring-primary/20 animate-[fadeHighlight_2s_ease-out_forwards]' : 'border-border'}`}
+                                className={`w-full h-[72px] flex items-center gap-3 py-2 px-3 rounded-xl border bg-background hover:shadow-sm hover:border-primary hover:text-accent-foreground transition-all duration-200 cursor-pointer active:scale-[0.98] text-left ${isHighlighted ? 'border-primary shadow-sm ring-2 ring-primary animate-[fadeHighlight_2s_ease-out_forwards]' : 'border-border'}`}
                               >
                                 <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${category.categoryColor}`}>
                                   <Icon className="h-4.5 w-4.5 shrink-0" />

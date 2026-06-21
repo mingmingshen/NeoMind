@@ -812,7 +812,7 @@ export function DeviceDetail({
             {previewImageSrc && (
               <button
                 onClick={() => downloadImage(previewImageSrc)}
-                className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70 transition-colors"
+                className="rounded-full bg-overlay-medium p-2 text-white hover:bg-overlay-heavy transition-colors"
                 title={t('devices:detailPage.downloadImage')}
               >
                 <Download className="h-5 w-5" />
@@ -820,7 +820,7 @@ export function DeviceDetail({
             )}
             <button
               onClick={() => setImagePreviewOpen(false)}
-              className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70 transition-colors"
+              className="rounded-full bg-overlay-medium p-2 text-white hover:bg-overlay-heavy transition-colors"
             >
               <X className="h-5 w-5" />
             </button>

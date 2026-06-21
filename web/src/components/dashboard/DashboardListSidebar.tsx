@@ -361,7 +361,7 @@ export function DashboardListSidebar({
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[55] transition-opacity lg:hidden"
+          className="fixed inset-0 bg-overlay-light backdrop-blur-sm z-[55] transition-opacity lg:hidden"
           style={{ top: 'var(--topnav-height, 56px)' }}
           onClick={() => onOpenChange?.(false)}
         />

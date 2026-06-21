@@ -760,7 +760,7 @@ export function PushTargetDialog() {
                     )}
                   </div>
                   {selectedSources.size > 0 && (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={clearAll}>
+                    <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={clearAll}>
                       {t('common:dataPush.deselectAllFields')}
                     </Button>
                   )}
@@ -849,7 +849,7 @@ export function PushTargetDialog() {
                                         onClick={(e) => { e.stopPropagation(); toggleGroup(sourceKey) }}
                                         className={cn(
                                           'flex items-center gap-2 px-3 py-2 text-left hover:bg-muted-30/50 transition-colors flex-1 min-w-0',
-                                          someSelected && !allSelected && 'bg-primary/5'
+                                          someSelected && !allSelected && 'bg-primary-light'
                                         )}
                                       >
                                         <Checkbox checked={allSelected} />
@@ -881,7 +881,7 @@ export function PushTargetDialog() {
                                             onClick={() => toggleSource(src.id)}
                                             className={cn(
                                               'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-muted-30/50 transition-colors',
-                                              selectedSources.has(src.id) && 'bg-primary/5'
+                                              selectedSources.has(src.id) && 'bg-primary-light'
                                             )}
                                           >
                                             <Checkbox checked={selectedSources.has(src.id)} />

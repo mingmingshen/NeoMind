@@ -110,7 +110,7 @@ function BuildActionButtons({ meta, success }: BuildActionButtonsProps) {
           }}
           className={cn(
             "inline-flex items-center gap-1 px-2 py-1 rounded-md",
-            "bg-primary/10 text-primary hover:bg-primary/20 transition-colors",
+            "bg-primary-light text-primary hover:bg-primary-light transition-colors",
             textMini
           )}
         >
@@ -169,7 +169,7 @@ export function BuildCard({ response }: BuildCardProps) {
   return (
     <div className={cn(
       "rounded-lg border overflow-hidden",
-      success ? "border-success/20 bg-success-light/20" : "border-error/20 bg-error-light/20"
+      success ? "border-success-light bg-success-light" : "border-error-light bg-error-light"
     )}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2">

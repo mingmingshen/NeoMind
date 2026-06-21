@@ -211,7 +211,7 @@ export function ShareManagerDialog({
             {/* Add Share — dashed card matching InstanceManager pattern */}
             <button
               onClick={() => setCreateOpen(true)}
-              className="w-full rounded-xl border-2 border-dashed border-border p-4 text-sm text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors cursor-pointer"
+              className="w-full rounded-xl border-2 border-dashed border-border p-4 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer"
             >
               <Plus className="h-5 w-5 mx-auto mb-1" />
               {t('visualDashboard.share.createLink')}

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { textBody, textMini } from "@/design-system/tokens/typography"
 import type { ToolCall } from "@/types"
 import { BuildCard, parseBuildResponse } from "@/components/chat/BuildCard"
+import { IconButton } from "@/components/ui/button"
 
 // ─── Helpers ───
 
@@ -293,9 +294,9 @@ function ToolCallItem({
         )}
         <div className="flex-1" />
         {hasDetails && (
-          <button onClick={() => setIsExpanded(!isExpanded)} className="p-0.5 rounded hover:bg-muted-30 text-muted-foreground/50">
+          <IconButton onClick={() => setIsExpanded(!isExpanded)} className="text-muted-foreground/50 hover:bg-muted-30" size="sm">
             <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-180")} />
-          </button>
+          </IconButton>
         )}
       </div>
       {isExpanded && hasDetails && (

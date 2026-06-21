@@ -99,6 +99,10 @@ import {
   FullScreenDialogMain,
 } from '@/components/automation/dialog'
 
+// Shared className for inline link-styled buttons (not IconButton — these are
+// text links rendered as <button> for accessibility).
+const inlineLinkBtn = 'text-xs text-primary hover:underline'
+
 interface AgentEditorFullScreenProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -2912,12 +2916,12 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                 ))}
               </div>
               {!showAllMetrics && selectedMetricCount < allMetricCount && (
-                <button type="button" onClick={() => setShowAllMetrics(true)} className="text-xs text-primary hover:underline">
+                <button type="button" onClick={() => setShowAllMetrics(true)} className={inlineLinkBtn}>
                   Show All ({allMetricCount})
                 </button>
               )}
               {showAllMetrics && selectedMetricCount < allMetricCount && (
-                <button type="button" onClick={() => setShowAllMetrics(false)} className="text-xs text-primary hover:underline">
+                <button type="button" onClick={() => setShowAllMetrics(false)} className={inlineLinkBtn}>
                   Show Selected Only
                 </button>
               )}
@@ -2976,12 +2980,12 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                 ))}
               </div>
               {!showAllCommands && selectedCommandCount < allCommandCount && (
-                <button type="button" onClick={() => setShowAllCommands(true)} className="text-xs text-primary hover:underline">
+                <button type="button" onClick={() => setShowAllCommands(true)} className={inlineLinkBtn}>
                   Show All ({allCommandCount})
                 </button>
               )}
               {showAllCommands && selectedCommandCount < allCommandCount && (
-                <button type="button" onClick={() => setShowAllCommands(false)} className="text-xs text-primary hover:underline">
+                <button type="button" onClick={() => setShowAllCommands(false)} className={inlineLinkBtn}>
                   Show Selected Only
                 </button>
               )}

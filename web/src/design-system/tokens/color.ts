@@ -112,22 +112,22 @@ export const colorScaleClasses = {
   green: {
     text: 'text-success',
     bg: 'bg-success-light',
-    border: 'border-success/20',
+    border: 'border-success-light',
   },
   yellow: {
     text: 'text-warning',
     bg: 'bg-warning-light',
-    border: 'border-warning/20',
+    border: 'border-warning-light',
   },
   red: {
     text: 'text-error',
     bg: 'bg-error-light',
-    border: 'border-error/20',
+    border: 'border-error-light',
   },
   blue: {
     text: 'text-info',
     bg: 'bg-info-light',
-    border: 'border-info/20',
+    border: 'border-info-light',
   },
   gray: {
     text: 'text-muted-foreground',

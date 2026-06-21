@@ -87,6 +87,113 @@ CSS variables defined as plain `oklch()` values do NOT support Tailwind's `/` op
 | `--card-hover-bg` | Card hover background |
 | `--glass-border-hover` | Glass border hover state |
 
+### Semantic Color Tints (bg/border overlays)
+
+For tinted backgrounds (subtle color washes) and matching borders, use the `*-light` token alias. These tokens bake the correct alpha in at the CSS-variable level, so Tailwind's `/opacity` modifier is never needed (and silently fails on CSS-var colors — see "Opacity Limitation" above).
+
+| Token | Tailwind class | Use for |
+|-------|----------------|---------|
+| `--primary-bg` | `bg-primary-light` / `border-primary` | Primary accent wash; primary-tinted borders use full color |
+| `--destructive-bg` | `bg-destructive-light` / `border-destructive-light` | Destructive error wash + border |
+| `--color-success-bg` | `bg-success-light` / `border-success-light` | Success wash + border |
+| `--color-warning-bg` | `bg-warning-light` / `border-warning-light` | Warning wash + border |
+| `--color-error-bg` | `bg-error-light` / `border-error-light` | Error wash + border |
+| `--color-info-bg` | `bg-info-light` / `border-info-light` | Info wash + border |
+
+**Hard rule**: Never write `bg-{token}/N` for any CSS-variable color. Use the `*-light` alias instead.
+
+### Overlay Tokens (semi-transparent masks)
+
+For modal backdrops, loading overlays, image-label backgrounds — anywhere a darkening mask is needed:
+
+| Token | Tailwind class | Light mode | Dark mode |
+|-------|----------------|------------|-----------|
+| `--overlay-light` | `bg-overlay-light` | `oklch(0 0 0 / 30%)` | `oklch(0 0 0 / 40%)` |
+| `--overlay-medium` | `bg-overlay-medium` | `oklch(0 0 0 / 50%)` | `oklch(0 0 0 / 60%)` |
+| `--overlay-heavy` | `bg-overlay-heavy` | `oklch(0 0 0 / 80%)` | `oklch(0 0 0 / 85%)` |
+
+Mapping from legacy `bg-black/N`:
+
+- `/5` `/10` `/20` `/30` → `bg-overlay-light`
+- `/40` `/50` `/60` → `bg-overlay-medium`
+- `/70` `/80` → `bg-overlay-heavy`
+
+**Exception**: `bg-white/X` and `bg-black/X dark:bg-white/Y` glass-effect pairs are allowed to remain as-is (decorative glass highlights, not semantic masks).
+
+---
+
+### Spacing Scale
+
+Use Tailwind's `gap-*` / `space-*` utilities. Defaults:
+
+| Class | Px | Use case |
+|-------|----|----------|
+| `gap-1` | 4 | Tight grouping: icon ↔ label inside a button |
+| `gap-2` | 8 | **Default** for inline rows, button groups |
+| `gap-3` | 12 | Inside cards, form-field clusters |
+| `gap-4` | 16 | Between sections in a panel |
+| `gap-6` | 24 | Page-level section separation |
+
+### Radius Scale
+
+| Class | Use case |
+|-------|----------|
+| `rounded-sm` | Tags, badges |
+| `rounded-md` | Inputs, small buttons (`size="sm"` / `"xs"`) |
+| `rounded-lg` | Cards, dialogs (**preferred default for surfaces**) |
+| `rounded-xl` | EmptyState containers, large icon containers |
+| `rounded-2xl` | Only PageHeader gradient containers |
+| `rounded-full` | Only avatars, status dots, purely circular controls |
+
+**Hard rule**: EmptyState and its variants all use `rounded-xl`. Do not mix `rounded-2xl` / `rounded-full` across variants of the same component.
+
+---
+
+### Button Size Scale
+
+`Button` (`@/components/ui/button`) ships six size variants. **Never override height with `className="h-7/h-8/h-9"`** — pick the right size variant instead.
+
+| `size=` | Dimensions | Use case |
+|---------|------------|----------|
+| `xs` | h-7 (28px) | List-row inline mini buttons, text-adjacent actions |
+| `sm` | h-9 (36px) | Toolbars, dialog footers, secondary actions |
+| `default` | h-10 (40px) | Form submit, primary CTA (**default**) |
+| `lg` | h-11 (44px) | Hero CTA, login |
+| `icon-sm` | 32×32 | Icon-only button inside lists/cards (use `<IconButton size="sm">`) |
+| `icon` | 40×40 | Standalone primary icon action (use `<IconButton size="md">`) |
+
+### Icon Buttons
+
+**Always use `<IconButton>`** (re-exported from `@/components/ui/button`). It wraps `Button` with sensible defaults: `variant="ghost"`, `text-muted-foreground`, hover `text-foreground bg-muted`.
+
+```tsx
+import { IconButton } from "@/components/ui/button"
+
+<IconButton size="sm" aria-label="More">     {/* 32×32, default */}
+  <MoreVertical className="h-4 w-4" />
+</IconButton>
+
+<IconButton size="md" aria-label="Settings"> {/* 40×40, standalone */}
+  <Settings className="h-5 w-5" />
+</IconButton>
+```
+
+**Forbidden**:
+
+```tsx
+// ❌ Raw <button> with ad-hoc styling
+<button className="p-1 rounded-md hover:bg-muted">
+  <MoreVertical className="h-4 w-4 text-muted-foreground" />
+</button>
+
+// ❌ Button + custom height override
+<Button variant="ghost" size="icon" className="h-8 w-8">
+  <X className="h-4 w-4" />
+</Button>
+```
+
+**Exception**: text links rendered as `<button>` for a11y (e.g. "Show all", inline text-button) stay as bare `<button className={inlineLinkBtn}>`. Use the shared `inlineLinkBtn` constant (`'text-xs text-primary hover:underline'`) so the style is reusable.
+
 ---
 
 ## 2. Typography
