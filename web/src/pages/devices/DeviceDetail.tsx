@@ -520,14 +520,14 @@ export function DeviceDetail({
     <>
       <div className="flex flex-col flex-1 h-full overflow-hidden bg-gradient-to-b from-background to-muted">
         {/* Header */}
-        <div className={cn("flex items-center justify-between shrink-0", isMobile ? "px-3 py-3" : "px-6 py-5")}>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full">
+        <div className={cn("flex items-center justify-between shrink-0 gap-2", isMobile ? "px-3 py-3" : "px-6 py-5")}>
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full shrink-0">
               <ChevronLeft className="h-5 w-5" />
             </Button>
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <div className={cn(
-                "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center",
+                "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0",
                 device.status === 'online'
                   ? "bg-gradient-to-br from-success-light to-accent-emerald-light"
                   : "bg-gradient-to-br from-muted to-muted"
