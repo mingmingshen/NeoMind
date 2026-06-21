@@ -1002,23 +1002,25 @@ export function ExtensionDetailsDialog({
     </div>
   )
 
-  // Mobile tabs renderer — wraps to 2 rows on narrow screens, no scroll, no divider
+  // Mobile tabs renderer — 5-column grid, single row, no scroll, no divider
   const mobileTabs = (
-    <div className="shrink-0 px-3 pt-3 pb-2.5">
-      <div className="flex flex-wrap gap-1.5">
+    <div className="shrink-0 px-2 pt-3 pb-2">
+      <div className="grid grid-cols-5 gap-1">
         {sections.map((s) => (
           <button
             key={s.id}
             onClick={() => handleSectionChange(s.id)}
             className={cn(
-              "flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg transition-colors",
+              "flex flex-col items-center justify-center gap-1 py-1.5 min-w-0 rounded-lg transition-colors",
               activeSection === s.id
                 ? "bg-primary text-primary-foreground"
                 : "bg-muted-30 text-muted-foreground"
             )}
           >
-            <s.icon className="h-3.5 w-3.5 shrink-0" />
-            <span>{s.label}</span>
+            <s.icon className="h-4 w-4 shrink-0" />
+            <span className="text-[11px] font-medium leading-none truncate w-full text-center">
+              {s.label}
+            </span>
           </button>
         ))}
       </div>
