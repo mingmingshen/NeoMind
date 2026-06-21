@@ -514,7 +514,7 @@ export function DataExplorerPage() {
                       )}
                     </div>
                     <Select value={historyRange} onValueChange={setHistoryRange}>
-                      <SelectTrigger className="w-[110px] h-8 text-xs">
+                      <SelectTrigger className="w-[140px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
