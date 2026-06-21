@@ -132,11 +132,13 @@ export function Pagination({
 
   return (
     <div className={cn('flex items-center justify-between gap-4', className)}>
-      <div className="text-sm text-muted-foreground">
+      {/* Count text hidden on mobile — manual pagination (e.g. inside dialogs)
+          has limited horizontal space, keep only prev/next + page numbers. */}
+      <div className="text-sm text-muted-foreground hidden md:block">
         {t('pagination.total', { total, currentPage, totalPages })}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 ml-auto">
         <Button
           variant="outline"
           size="icon"
