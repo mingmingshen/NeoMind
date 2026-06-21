@@ -144,10 +144,15 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle, SkillsPanelProps>(funct
     loadSkills()
   }, [loadSkills])
 
-  // Page change handler: immediately set loading so skeleton shows without waiting for useEffect
+  // Page change handler: immediately set loading so skeleton shows without waiting for useEffect.
+  // Reset scroll to top so the user starts at the beginning of the new page's content
+  // instead of being stuck at the old scroll position (which was near the bottom where the
+  // pagination button was clicked).
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page)
     setLoading(true)
+    const scrollContainer = document.querySelector('[data-page-scroll-container]')
+    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
 
   // Notify parent of pagination state changes
