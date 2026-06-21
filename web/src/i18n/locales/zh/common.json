@@ -320,7 +320,8 @@
     "data": "数据",
     "messages": "消息",
     "extensions": "扩展",
-    "settings": "设置"
+    "settings": "设置",
+    "system": "系统"
   },
   "add": "添加",
   "edit": "编辑",
@@ -577,6 +578,7 @@
     "unknown": "未知"
   },
   "theme": {
+    "title": "外观主题",
     "light": "浅色",
     "dark": "深色",
     "system": "跟随系统"
@@ -744,6 +746,7 @@
   "days": "天",
   "week": "周",
   "onboarding": {
+    "title": "新手引导",
     "dismiss": "跳过引导",
     "completed": "已完成",
     "nav": {
@@ -815,11 +818,40 @@
     "help": "帮助",
     "role": "角色"
   },
+  "actions": {
+    "more": "更多"
+  },
   "systemHealth": {
     "title": "系统状态",
     "backendConnected": "后端已连接",
     "backendDisconnected": "后端未连接",
     "devicesOnline": "{{online}}/{{total}} 设备在线",
     "unreadAlerts": "{{count}} 条未读告警"
+  },
+  "system": {
+    "pageTitle": "系统",
+    "menu": "菜单",
+    "sectionPrimary": "主要",
+    "sectionBusiness": "业务",
+    "sectionSystem": "系统",
+    "sectionAbout": "关于",
+    "language": "语言",
+    "instanceManager": "实例管理",
+    "about": "帮助 / 关于",
+    "version": "v{{version}}",
+    "back": "返回",
+    "cards": {
+      "automation": "Transform 与数据推送",
+      "data": "遥测数据查询",
+      "messages": "通知中心",
+      "extensions": "应用市场与已安装",
+      "theme": "深色 / 浅色 / 跟随系统",
+      "language": "中文 / English",
+      "instance": "多实例切换",
+      "settings": "LLM / 连接 / 偏好",
+      "health": "后端、设备、告警",
+      "onboarding": "初始引导",
+      "about": "版本与文档"
+    }
   }
 }

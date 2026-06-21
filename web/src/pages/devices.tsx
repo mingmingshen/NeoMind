@@ -11,7 +11,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { fetchCache } from "@/lib/utils/async"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
-import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination } from "@/components/shared"
+import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, type TabAction } from "@/components/shared"
 import { Upload, Download, Settings, Server, Layers, FileEdit, Cloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
@@ -706,6 +706,58 @@ export function DevicesPage() {
     }
   }
 
+  // Per-tab actions split into primary (visible buttons) and secondary
+  // (collapsed into "More" overflow). Only the "+ Add" action stays
+  // top-level on each tab; Import/Export/From Cloud are demoted to
+  // secondary because they're low-frequency bulk operations.
+  const tabActions = useMemo<{ primary: TabAction[]; secondary: TabAction[] }>(() => {
+    if (activeTab === 'devices') {
+      return {
+        primary: [{ label: t('devices:addDevice'), onClick: () => setAddDeviceDialogOpen(true) }],
+        secondary: [],
+      }
+    }
+    if (activeTab === 'types') {
+      return {
+        primary: [{ label: t('devices:addDeviceType'), onClick: () => setAddDeviceTypeOpen(true) }],
+        secondary: [
+          {
+            label: t('common:import'),
+            icon: <Upload className="h-4 w-4" />,
+            onClick: handleDeviceTypeImportClick,
+            disabled: importingDeviceType,
+          },
+          {
+            label: t('devices:cloud.fromCloud'),
+            icon: <Cloud className="h-4 w-4" />,
+            onClick: () => setCloudImportOpen(true),
+          },
+          {
+            label: t('common:export') + ' All',
+            icon: <Download className="h-4 w-4" />,
+            onClick: handleDeviceTypeExportAll,
+            disabled: deviceTypes.length === 0,
+          },
+        ],
+      }
+    }
+    if (activeTab === 'drafts') {
+      return {
+        primary: [
+          {
+            label: t('devices:pending.config'),
+            icon: <Settings className="h-4 w-4" />,
+            variant: 'outline',
+            onClick: openOnboardConfigDialog,
+          },
+        ],
+        secondary: [],
+      }
+    }
+    return { primary: [], secondary: [] }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, t, deviceTypes.length, importingDeviceType])
+
   return (
     <>
       <PageLayout
@@ -724,52 +776,8 @@ export function DevicesPage() {
               ]}
               activeTab={activeTab}
               onTabChange={(v) => handleTabChange(v as DeviceTabValue)}
-              actions={
-                activeTab === 'devices'
-                  ? [
-                      {
-                        label: t('devices:addDevice'),
-                        onClick: () => setAddDeviceDialogOpen(true),
-                      },
-                    ]
-                  : activeTab === 'types'
-                  ? [
-                      {
-                        label: t('common:import'),
-                        icon: <Upload className="h-4 w-4" />,
-                        variant: 'outline',
-                        onClick: handleDeviceTypeImportClick,
-                        disabled: importingDeviceType,
-                      },
-                      {
-                        label: t('devices:cloud.fromCloud'),
-                        icon: <Cloud className="h-4 w-4" />,
-                        variant: 'outline',
-                        onClick: () => setCloudImportOpen(true),
-                      },
-                      {
-                        label: t('common:export') + ' All',
-                        icon: <Download className="h-4 w-4" />,
-                        variant: 'outline',
-                        onClick: handleDeviceTypeExportAll,
-                        disabled: deviceTypes.length === 0,
-                      },
-                      {
-                        label: t('devices:addDeviceType'),
-                        onClick: () => setAddDeviceTypeOpen(true),
-                      },
-                    ]
-                  : activeTab === 'drafts'
-                  ? [
-                      {
-                        label: t('devices:pending.config'),
-                        icon: <Settings className="h-4 w-4" />,
-                        variant: 'outline',
-                        onClick: openOnboardConfigDialog,
-                      },
-                    ]
-                  : []
-              }
+              actions={tabActions.primary}
+              secondaryActions={tabActions.secondary}
             />
           ) : undefined
         }

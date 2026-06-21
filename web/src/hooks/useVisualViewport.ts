@@ -105,7 +105,19 @@ function updateAppHeight() {
   const appHeight = window.innerHeight
   document.documentElement.style.setProperty('--app-height', `${appHeight}px`)
 
-  // Update topnav height based on actual nav element
+  // Mobile layout: no global TopNav. Each page renders its own MobilePageHeader
+  // (with hamburger + page title + actions) as the first child of its content.
+  // The header carries its own safe-top padding, so the main element's top
+  // padding collapses to 0.
+  const isMobileViewport = window.innerWidth < 768
+  if (isMobileViewport) {
+    document.documentElement.style.setProperty('--topnav-height', '0px')
+    document.documentElement.style.setProperty('--bottom-nav-height', '0px')
+    return
+  }
+
+  // Desktop: measure the actual nav element.
+  document.documentElement.style.setProperty('--bottom-nav-height', '0px')
   const topNavEl = document.querySelector('nav')
   if (topNavEl) {
     topNavHeight = topNavEl.getBoundingClientRect().height

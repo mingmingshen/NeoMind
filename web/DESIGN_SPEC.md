@@ -883,9 +883,44 @@ Hook: `useSafeAreaInsets()` returns `{ top, right, bottom, left }` pixel values.
 
 CSS variables:
 ```css
+/* Desktop */
 --topnav-height: calc(4rem + env(safe-area-inset-top, 0px));
+--bottom-nav-height: 0px;
+/* Mobile (set dynamically by useVisualViewport) */
+--topnav-height: calc(0px + env(safe-area-inset-top, 0px));
+--bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
 --chat-content-padding-top: calc(6.5rem + env(safe-area-inset-top, 0px));
 ```
+
+### Mobile Layout: Hamburger Menu + Per-Page Header
+
+Mobile-only navigation restructure (desktop unchanged).
+
+**No global brand bar on mobile.** `<TopNav />` is wrapped in
+`{!isMobile && <TopNav />}` at the App shell. `--topnav-height` is `0px` on
+mobile; each page owns its top area.
+
+**Per-page header** (`MobilePageHeader`, `@/components/layout/MobilePageHeader`):
+48px sticky bar (`h-12` + `safe-top`) with layout `[☰ drawer] [leftExtra?] [title + subtitle?] [actions?]`.
+The hamburger (☰) always appears on the left and opens the nav drawer via
+the `useMobileNav` store (`@/store/mobileNav`). Each page customizes title /
+subtitle / actions.
+
+- `PageLayout` renders `<MobilePageHeader title subtitle actions />` automatically
+  on mobile — pages that use `PageLayout` get it for free.
+- Pages NOT using `PageLayout` (chat, VisualDashboard, SystemPage) render
+  `<MobilePageHeader />` explicitly as the first child of their content.
+
+**Hamburger drawer** (`MobileNav`, `@/components/layout/MobileNav`): left
+slide-in `Sheet` rendered once at the App shell. Contains brand header
+(logo + name + version + user row), grouped nav items (Primary: Chat /
+Agent / 设备 / 仪表板; System: 自动化 / 数据 / 消息 / 扩展 / 设置), and a
+logout entry. Messages entry shows unread-alerts badge.
+
+**`--bottom-nav-height`** is `0px` on mobile (no bottom nav in the hamburger
+approach). `--topnav-height` is `0px`; page headers carry their own `safe-top`.
+
+**Desktop is fully unchanged.**
 
 ### Touch Targets
 

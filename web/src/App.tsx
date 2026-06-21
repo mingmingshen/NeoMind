@@ -4,7 +4,9 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { TopNav } from "@/components/layout/TopNav"
+import { MobileNav } from "@/components/layout/MobileNav"
 import { NavigationProgress } from "@/components/layout/NavigationProgress"
+import { useIsMobile } from "@/hooks/useMobile"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager, getApiBase, isTauriEnv, setApiBase, getApiKey } from "@/lib/api"
@@ -33,6 +35,7 @@ const AgentsPage = lazy(() => import('@/pages/agents').then(m => ({ default: m.A
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })))
 const MessagesPage = lazy(() => import('@/pages/messages').then(m => ({ default: m.default })))
 const ExtensionsPage = lazy(() => import('@/pages/extensions').then(m => ({ default: m.ExtensionsPage })))
+const SystemPage = lazy(() => import('@/pages/SystemPage'))
 const SharedDashboardPage = lazy(() => import('@/pages/share/SharedDashboard'))
 const NotFound = lazy(() => import('@/pages/NotFound'))
 // Suppress only the specific Radix UI Portal cleanup error during fast page transitions
@@ -201,6 +204,7 @@ function PageLoading() {
 }
 
 function App() {
+  const isMobile = useIsMobile()
   const extensionComponents = useExtensionComponents({ autoSync: true, syncInterval: 60000 })
   const extensionSyncRef = useRef(extensionComponents.sync)
   
@@ -426,7 +430,8 @@ function App() {
               <ProtectedRoute>
                 <div className="flex flex-col" style={{height: 'var(--app-height, 100vh)'}}>
                   <div className="aurora-bg" />
-                  <TopNav />
+                  {!isMobile && <TopNav />}
+                  <MobileNav />
                   <main className="relative z-10 flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>
                     <div className="w-full h-full overflow-hidden" id="main-scroll-container">
                     <ErrorBoundary>
@@ -459,6 +464,8 @@ function App() {
                       {/* Extensions */}
                       <Route path="/extensions" element={<ExtensionsPage />} />
                       <Route path="/plugins" element={<Navigate to="/extensions" replace />} />
+                      {/* System container page (mobile primary nav target) */}
+                      <Route path="/system" element={<SystemPage />} />
                       {/* Catch all - 404 page */}
                       <Route path="*" element={<NotFound />} />
                     </Routes>
@@ -468,7 +475,7 @@ function App() {
                   </main>
                   <Toaster />
                   <Confirmer />
-                  <GlobalChatFab />
+                  {!isMobile && <GlobalChatFab />}
                 </div>
               </ProtectedRoute>
             }

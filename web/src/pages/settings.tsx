@@ -4,8 +4,7 @@ import { useSearchParams } from "react-router-dom"
 import { useStore } from "@/store"
 import { useIsMobile } from "@/hooks/useMobile"
 import { PageLayout } from "@/components/layout/PageLayout"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { PageTabsContent, PageTabsBottomNav } from "@/components/shared"
 import { AboutTab } from "./settings/AboutTab"
 import { PreferencesTab } from "./settings/PreferencesTab"
 import { UnifiedLLMBackendsTab } from "@/components/llm/UnifiedLLMBackendsTab"
@@ -15,9 +14,6 @@ import {
   SettingsSection as SettingsSectionType,
   getSettingsSections,
 } from "./settings/SettingsNav"
-import { SettingsSectionList } from "./settings/SettingsSectionList"
-
-type MobileView = "list" | "section"
 
 export function SettingsPage() {
   const { t } = useTranslation(["common", "settings", "extensions"])
@@ -30,19 +26,11 @@ export function SettingsPage() {
     return sectionFromUrl && validSections.includes(sectionFromUrl) ? sectionFromUrl : "preferences"
   })
 
-  // Mobile drill-down state
-  const [mobileView, setMobileView] = useState<MobileView>(() => {
-    return sectionFromUrl && validSections.includes(sectionFromUrl) ? "section" : "list"
-  })
-
   // Sync active section when the URL ?tab= param changes while already mounted
   // (e.g. clicking "Preferences" in the user menu while on /settings?tab=llm)
   useEffect(() => {
     if (sectionFromUrl && validSections.includes(sectionFromUrl) && sectionFromUrl !== activeSection) {
       setActiveSection(sectionFromUrl)
-      if (isMobile) {
-        setMobileView("section")
-      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectionFromUrl])
@@ -58,87 +46,79 @@ export function SettingsPage() {
   const handleSectionChange = (section: SettingsSectionType) => {
     setActiveSection(section)
     setSearchParams({ tab: section }, { replace: true })
-    if (isMobile) {
-      setMobileView("section")
-    }
   }
 
-  const handleMobileBack = () => {
-    setMobileView("list")
-    setSearchParams({}, { replace: true })
-  }
+  // Shared tab descriptors — desktop sidebar uses sections directly, mobile
+  // bottom nav uses the same set with shorter labels (mobileLabelKey not
+  // needed here because section labels are already short: "LLM", "About"…).
+  const mobileTabs = sections.map((s) => ({
+    value: s.value,
+    label: s.label,
+    icon: s.icon,
+  }))
 
-  // Render the active section content
-  const renderSection = () => {
-    switch (activeSection) {
-      case "llm":
-        return (
-          <UnifiedLLMBackendsTab
-            onCreateBackend={createBackend}
-            onUpdateBackend={updateBackend}
-            onDeleteBackend={deleteBackend}
-            onTestBackend={testBackend}
-          />
-        )
-      case "connections":
-        return <UnifiedDeviceConnectionsTab />
-      case "preferences":
-        return <PreferencesTab />
-      case "about":
-        return <AboutTab />
-    }
-  }
+  const llmEl = (
+    <UnifiedLLMBackendsTab
+      onCreateBackend={createBackend}
+      onUpdateBackend={updateBackend}
+      onDeleteBackend={deleteBackend}
+      onTestBackend={testBackend}
+    />
+  )
+  const connectionsEl = <UnifiedDeviceConnectionsTab />
+  const preferencesEl = <PreferencesTab />
+  const aboutEl = <AboutTab />
 
-  // Mobile drill-down view
-  const mobileSectionLabel = sections.find((s) => s.value === activeSection)?.label
-
-  if (isMobile) {
-    return (
-      <PageLayout title={t("settings:title")} borderedHeader={false}>
-        {mobileView === "list" ? (
+  return (
+    <>
+      <PageLayout
+        title={t("settings:title")}
+        subtitle={!isMobile ? t("settings:description") : undefined}
+        borderedHeader={false}
+        hasBottomNav={isMobile}
+      >
+        {isMobile ? (
+          // Mobile: tabbed layout. Section switching happens via the bottom
+          // nav (PageTabsBottomNav below). Each section's content is wrapped
+          // in PageTabsContent so only the active one mounts.
+          // NOTE: no extra top padding here — PageLayout's scroll container
+          // already adds pt-2 on mobile, and the sticky drill-down headers
+          // (LLM/MQTT/Webhook) use a ::before pseudo-element to cover exactly
+          // that 8px gap. Adding pt-2 here would re-expose the gap.
           <div>
-            <h2 className="text-lg font-semibold mb-4">{t("settings:title")}</h2>
-            <SettingsSectionList sections={sections} onSectionSelect={handleSectionChange} />
+            <PageTabsContent value="llm" activeTab={activeSection}>{llmEl}</PageTabsContent>
+            <PageTabsContent value="connections" activeTab={activeSection}>{connectionsEl}</PageTabsContent>
+            <PageTabsContent value="preferences" activeTab={activeSection}>{preferencesEl}</PageTabsContent>
+            <PageTabsContent value="about" activeTab={activeSection}>{aboutEl}</PageTabsContent>
           </div>
         ) : (
-          <div className="flex flex-col h-full overflow-hidden">
-            {/* Mobile section header with back button — fixed */}
-            <div className="flex items-center gap-2 mb-4 shrink-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleMobileBack}
-                aria-label={t("common:back")}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <h2 className="text-base font-medium">{mobileSectionLabel}</h2>
-            </div>
-            {/* Content area — scrolls independently */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {renderSection()}
+          // Desktop: sidebar + content (unchanged)
+          <div className="flex gap-6 h-full overflow-hidden">
+            <SettingsNav
+              sections={sections}
+              activeSection={activeSection}
+              onSectionChange={handleSectionChange}
+            />
+            <div className="flex-1 min-w-0 overflow-y-auto pr-1">
+              {activeSection === "llm" && llmEl}
+              {activeSection === "connections" && connectionsEl}
+              {activeSection === "preferences" && preferencesEl}
+              {activeSection === "about" && aboutEl}
             </div>
           </div>
         )}
-        {/* Bottom spacer for safe area on mobile */}
-        <div style={{ height: "calc(2rem + env(safe-area-inset-bottom, 0px))" }} />
       </PageLayout>
-    )
-  }
 
-  // Desktop: sidebar + content
-  return (
-    <PageLayout title={t("settings:title")} subtitle={t("settings:description")} borderedHeader={false}>
-      <div className="flex gap-6 h-full overflow-hidden">
-        <SettingsNav
-          sections={sections}
-          activeSection={activeSection}
-          onSectionChange={handleSectionChange}
+      {/* Mobile: Bottom navigation bar — fixed at screen bottom, lets users
+          switch between LLM / Connections / Preferences / About without
+          drilling back through a list. Desktop is unchanged. */}
+      {isMobile && (
+        <PageTabsBottomNav
+          tabs={mobileTabs}
+          activeTab={activeSection}
+          onTabChange={(v) => handleSectionChange(v as SettingsSectionType)}
         />
-        <div className="flex-1 min-w-0 overflow-y-auto pr-1">
-          {renderSection()}
-        </div>
-      </div>
-    </PageLayout>
+      )}
+    </>
   )
 }

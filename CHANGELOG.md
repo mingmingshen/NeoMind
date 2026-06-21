@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.20] - 2026-06-21
+
+### Overview
+
+Mobile layout redesign for settings & drill-down views. Multiple fixes targeting visual fragmentation between sticky headers and scroll containers, card overflow on narrow screens, and consolidation of redundant navigation entries in the mobile drawer.
+
+### Mobile UI
+
+#### Sticky header background gaps
+- **PageLayout scroll container** (`web/src/components/layout/PageLayout.tsx`): added `bg-background overscroll-none` so the iOS rubber-band bounce never exposes a transparent strip above the first child.
+- **Sticky drill-down headers** (LLM / MQTT / Webhook): replaced the broken `-mt-2 pt-2` hack (which fails when the element is "stuck" — negative margin-top shifts the border-box DOWN, re-exposing the gap) with a `before:` pseudo-element that paints an 8px `bg-background` strip above the header. Works in both natural-flow and stuck states.
+- **Desktop PageHeader strip**: added `bg-background` to the title wrapper and `headerContent` (tabs/buttons) wrapper so the title → tabs → scroll-container transition is visually seamless.
+
+#### Card overflow on narrow screens
+- **Multi-instance grids** (LLM backends, MQTT brokers, webhook adapters): changed `grid gap-4 md:grid-cols-2` to `grid-cols-[minmax(0,1fr)] md:grid-cols-2`. Grid items have implicit `min-width: auto`, so long broker URLs / instance names pushed cards wider than the viewport. `minmax(0,1fr)` allows the column to shrink, letting `truncate` + `min-w-0` work.
+- **CardTitle truncate chain**: added `min-w-0` to the outer flex-1 wrapper, the title row, and the CardTitle itself in both UnifiedLLMBackendsTab and UnifiedDeviceConnectionsTab.
+
+#### Redundant spacing
+- **Settings page** (`web/src/pages/settings.tsx`): removed the mobile `<div className="pt-2">` wrapper around tab content. PageLayout's scroll container already adds `pt-2` on mobile; the double padding created a 16px gap that the sticky header's 8px `::before` couldn't cover.
+
+#### Mobile drawer consolidation
+- **MobileNav** (`web/src/components/layout/MobileNav.tsx`): removed Instance and About rows. Instance manager moved to Settings → About tab; About was already accessible from Settings. Theme/Language quick toggles retained. Drawer now focuses on navigation only.
+
+#### Top-bar button consistency
+- **chat.tsx** and **PageTabs.tsx**: unified all top-bar action button icons to `h-5 w-5` (20×20px). Previously chat.tsx used inline `style={{ width: 18, height: 18 }}` and MobileTabActionsCompact used raw icon sizes, creating visual inconsistency with the hamburger's `h-5 w-5`.
+
 ## [0.8.19] - 2026-06-18
 
 ### Overview

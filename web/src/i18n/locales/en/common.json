@@ -320,7 +320,8 @@
     "data": "Data",
     "messages": "Messages",
     "extensions": "Extensions",
-    "settings": "Settings"
+    "settings": "Settings",
+    "system": "System"
   },
   "add": "Add",
   "edit": "Edit",
@@ -581,6 +582,7 @@
     "unknown": "Unknown"
   },
   "theme": {
+    "title": "Appearance",
     "light": "Light",
     "dark": "Dark",
     "system": "System"
@@ -744,6 +746,7 @@
   "passwordNeedsLetter": "Password Needs Letter",
   "passwordNeedsNumber": "Password Needs Number",
   "onboarding": {
+    "title": "Setup Guide",
     "dismiss": "Skip Setup Guide",
     "completed": "Done",
     "nav": {
@@ -815,11 +818,40 @@
     "help": "Help",
     "role": "Role"
   },
+  "actions": {
+    "more": "More"
+  },
   "systemHealth": {
     "title": "System Status",
     "backendConnected": "Backend Connected",
     "backendDisconnected": "Backend Disconnected",
     "devicesOnline": "{{online}}/{{total}} Devices Online",
     "unreadAlerts": "{{count}} Unread Alerts"
+  },
+  "system": {
+    "pageTitle": "System",
+    "menu": "Menu",
+    "sectionPrimary": "Primary",
+    "sectionBusiness": "Business",
+    "sectionSystem": "System",
+    "sectionAbout": "About",
+    "language": "Language",
+    "instanceManager": "Instances",
+    "about": "Help / About",
+    "version": "v{{version}}",
+    "back": "Back",
+    "cards": {
+      "automation": "Transforms and data push",
+      "data": "Telemetry data explorer",
+      "messages": "Notification center",
+      "extensions": "Marketplace and installed",
+      "theme": "Dark / Light / System",
+      "language": "Chinese / English",
+      "instance": "Multi-instance switching",
+      "settings": "LLM / connections / preferences",
+      "health": "Backend, devices, alerts",
+      "onboarding": "Initial setup walkthrough",
+      "about": "Version and documentation"
+    }
   }
 }

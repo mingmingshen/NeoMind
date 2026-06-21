@@ -22,7 +22,8 @@ import {
 import { api, isTauriEnv } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useUpdateCheck } from "@/hooks/useUpdateCheck"
-import { useAppStore } from "@/store"
+import { useAppStore, useStore } from "@/store"
+import { InstanceManagerDialog } from "@/components/instances/InstanceManagerDialog"
 
 interface GpuInfo {
   name: string
@@ -208,6 +209,16 @@ export function AboutTab() {
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [instanceManagerOpen, setInstanceManagerOpen] = useState(false)
+  const instances = useStore((s) => s.instances)
+  const currentInstanceId = useStore((s) => s.currentInstanceId)
+  const isConnected = useStore((s) => s.wsConnected)
+  const currentInstance = instances.find((i) => i.id === currentInstanceId)
+  const instanceOnline =
+    isConnected &&
+    (!currentInstance || currentInstance.is_local
+      ? currentInstance?.last_status === "online" || !currentInstance
+      : true)
 
   const handleUpToDate = useCallback(() => {
     showSuccess(t("settings:alreadyUpToDate"))
@@ -324,6 +335,47 @@ export function AboutTab() {
           </div>
         </div>
       </div>
+
+      {/* Instance manager entry — moved here from the mobile drawer so the
+          drawer stays focused on navigation. Desktop also exposes this via
+          TopNav's InstanceSelector, but having it in Settings gives a single
+          canonical home on mobile. */}
+      <Card>
+        <CardContent className="flex items-center justify-between gap-3 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
+                instanceOnline
+                  ? "bg-success-light text-success"
+                  : "bg-error-light text-error"
+              }`}
+            >
+              <Server className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">
+                {currentInstance?.name || t("instances:local", "Local")}
+              </div>
+              <div
+                className={`text-xs ${
+                  instanceOnline ? "text-success" : "text-error"
+                }`}
+              >
+                {instanceOnline
+                  ? t("instances:status.online", "Online")
+                  : t("instances:status.offline", "Offline")}
+              </div>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setInstanceManagerOpen(true)}
+          >
+            {t("instances:manage", "Manage")}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* System Information Card */}
       <Card>
@@ -518,6 +570,11 @@ export function AboutTab() {
       <div className="text-center text-xs text-muted-foreground">
         © 2025–2026 CamThink · NeoMind
       </div>
+
+      <InstanceManagerDialog
+        open={instanceManagerOpen}
+        onOpenChange={setInstanceManagerOpen}
+      />
     </div>
   )
 }

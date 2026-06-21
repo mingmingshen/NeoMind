@@ -116,7 +116,10 @@ export function DashboardToolbar(props: DashboardToolbarProps) {
 
   return (
     <header className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border bg-background z-10">
-      {layoutMode === 'tabs' ? (
+      {/* Mobile: always show the dropdown switcher regardless of layoutMode.
+          Sidebar-mode's "open the list drawer" pattern has no trigger on
+          touch devices, so we route through DashboardTabBar's mobile UI. */}
+      {layoutMode === 'tabs' || isMobile ? (
         <DashboardTabBar
           dashboards={sortedDashboards}
           currentDashboardId={currentDashboardId}

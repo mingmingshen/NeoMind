@@ -22,6 +22,7 @@ import { fetchCache } from '@/lib/utils/async'
 import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
 import { useIsMobile } from '@/hooks/useMobile'
+import { MobilePageHeader } from '@/components/layout/MobilePageHeader'
 import {
   LayoutDashboard,
   Plus,
@@ -964,6 +965,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       {/* Main content area */}
       <div className={cn("flex-1 flex flex-col overflow-hidden", isFullscreen && "hidden")}>
+        {/* Mobile per-page header: hamburger (opens nav drawer) + generic
+            page title. The specific dashboard name + switcher lives in
+            DashboardToolbar below to avoid duplication. */}
+        {isMobile && (
+          <MobilePageHeader title={t('common:nav.visual-dashboard')} />
+        )}
         <DashboardToolbar
           sortedDashboards={sortedDashboards}
           currentDashboardId={currentDashboardId}

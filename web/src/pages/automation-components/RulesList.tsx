@@ -14,13 +14,14 @@ import {
   FullScreenDialogMain,
 } from "@/components/automation/dialog"
 import { ResponsiveTable, EmptyState } from "@/components/shared"
-import { Edit, Play, Trash2, Bell, Sparkles, Zap, MoreVertical, Timer, History, CheckCircle2, XCircle, Clock } from "lucide-react"
+import { Edit, Play, Trash2, Bell, Sparkles, Zap, MoreVertical, Timer, History, CheckCircle2, XCircle, Clock, Download } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction, RuleExecutionResult } from "@/types"
 import { cn } from "@/lib/utils"
 import { textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useIsMobile } from "@/hooks/useMobile"
+import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
 
 interface RulesListProps {
@@ -272,9 +273,37 @@ export function RulesList({
 }: RulesListProps) {
   const { t } = useTranslation(['common', 'automation'])
   const isMobile = useIsMobile()
+  const { toast } = useToast()
   const [internalPage, setInternalPage] = useState(1)
   const [historyRule, setHistoryRule] = useState<Rule | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+
+  // Export a single rule as JSON. Strips frontend-only bookkeeping fields so
+  // the file matches the backend Rule schema and can be re-imported cleanly.
+  const handleExportRule = async (rule: Rule) => {
+    try {
+      const { _source, ...rest } = rule as Rule & { _source?: unknown }
+      void _source
+      const data = JSON.stringify(rest, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const safeName = (rule.name || rule.id)
+        .replace(/[^a-zA-Z0-9-_]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 64) || rule.id
+      link.download = `rule-${safeName}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast({ title: t('common:success'), description: `Exported ${rule.name}` })
+    } catch {
+      toast({ title: t('common:failed'), description: 'Failed to export rule', variant: 'destructive' })
+    }
+  }
 
   // Use props if provided, otherwise use internal state (backward compatibility)
   const page = propsPage ?? internalPage
@@ -288,6 +317,13 @@ export function RulesList({
   const content = (
     isMobile ? (
       <div className="space-y-2">
+        {paginatedRules.length === 0 ? (
+          <EmptyState
+            icon={<Sparkles className="h-12 w-12" />}
+            title={t('automation:emptyRules.title', 'No rules')}
+            description={t('automation:emptyRules.description', 'Create your first rule to automate actions based on conditions')}
+          />
+        ) : null}
         {paginatedRules.map((rule) => {
           const actions = rule.actions && rule.actions.length > 0
             ? rule.actions
@@ -337,6 +373,10 @@ export function RulesList({
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onExecute(rule) }}>
                         <Play className="h-4 w-4 mr-2" />
                         {t('automation:execute')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportRule(rule) }}>
+                        <Download className="h-4 w-4 mr-2" />
+                        {t('common:export')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setHistoryRule(rule); setShowHistory(true) }}>
                         <History className="h-4 w-4 mr-2" />
@@ -554,6 +594,14 @@ export function RulesList({
           onClick: (rowData) => {
             const rule = rowData as unknown as Rule
             onExecute(rule)
+          },
+        },
+        {
+          label: t('common:export'),
+          icon: <Download className="h-4 w-4" />,
+          onClick: (rowData) => {
+            const rule = rowData as unknown as Rule
+            handleExportRule(rule)
           },
         },
         {

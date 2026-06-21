@@ -16,8 +16,10 @@ import {
   X,
   PanelLeft,
   MoreVertical,
+  ChevronDown,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useIsMobile } from '@/hooks/useMobile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
@@ -31,6 +33,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -59,13 +62,16 @@ export function DashboardTabBar({
   className,
 }: DashboardTabBarProps) {
   const { t } = useTranslation('dashboardComponents')
+  const isMobile = useIsMobile()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [showCreateInput, setShowCreateInput] = useState(false)
   const [newDashboardName, setNewDashboardName] = useState('')
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
   const editInputRef = useRef<HTMLInputElement>(null)
   const createInputRef = useRef<HTMLInputElement>(null)
+  const mobileCreateInputRef = useRef<HTMLInputElement>(null)
   const tabsViewportRef = useRef<HTMLDivElement>(null)
 
   // Focus create input when shown
@@ -73,7 +79,10 @@ export function DashboardTabBar({
     if (showCreateInput && createInputRef.current) {
       createInputRef.current.focus()
     }
-  }, [showCreateInput])
+    if (showCreateInput && isMobile && mobileCreateInputRef.current) {
+      mobileCreateInputRef.current.focus()
+    }
+  }, [showCreateInput, isMobile])
 
   // Focus + select edit input when editing starts
   useEffect(() => {
@@ -144,6 +153,143 @@ export function DashboardTabBar({
     setEditingId(null)
     setEditingName('')
   }, [])
+
+  // Mobile: dropdown switcher. Tap the trigger to pick a dashboard, with
+  // rename / delete / create surfaced as menu items — the desktop tab bar's
+  // hover-reveal "more" trigger and double-click rename don't work on touch.
+  if (isMobile) {
+    const current = dashboards.find((d) => d.id === currentDashboardId)
+
+    // Rename input replaces the trigger while editing
+    if (editingId && current && editingId === current.id) {
+      return (
+        <div className={cn('flex items-center flex-1 min-w-0 gap-1', className)}>
+          <Input
+            ref={editInputRef}
+            value={editingName}
+            onChange={(e) => setEditingName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename(current.id)
+              if (e.key === 'Escape') cancelRename()
+            }}
+            placeholder={t('tabBar.namePlaceholder')}
+            className="h-8 flex-1 min-w-0 rounded-md text-sm"
+          />
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+            onClick={() => commitRename(current.id)}
+            aria-label={t('common.confirm')}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+            onClick={cancelRename}
+            aria-label={t('common.cancel')}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )
+    }
+
+    // Inline create input
+    if (showCreateInput) {
+      return (
+        <div className={cn('flex items-center flex-1 min-w-0 gap-1', className)}>
+          <Input
+            ref={mobileCreateInputRef}
+            value={newDashboardName}
+            onChange={(e) => setNewDashboardName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitCreate()
+              if (e.key === 'Escape') cancelCreate()
+            }}
+            placeholder={t('tabBar.namePlaceholder')}
+            className="h-8 flex-1 min-w-0 rounded-md text-sm"
+            autoFocus
+          />
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+            onClick={commitCreate}
+            aria-label={t('common.confirm')}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+            onClick={cancelCreate}
+            aria-label={t('common.cancel')}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div className={cn('flex items-center flex-1 min-w-0 gap-1', className)}>
+        <DropdownMenu open={switcherOpen} onOpenChange={setSwitcherOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="h-8 flex-1 min-w-0 justify-between gap-1 px-2 rounded-md text-sm font-medium"
+            >
+              <span className="truncate">
+                {current?.name || t('tabBar.namePlaceholder')}
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[14rem] max-w-[20rem] z-[200]">
+            {dashboards.map((d) => {
+              const active = d.id === currentDashboardId
+              return (
+                <DropdownMenuItem
+                  key={d.id}
+                  onClick={() => onSwitch(d.id)}
+                  className="gap-2 justify-between"
+                >
+                  <span className="truncate">{d.name}</span>
+                  {active && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                </DropdownMenuItem>
+              )
+            })}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setShowCreateInput(true)}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              {t('tabBar.newDashboard')}
+            </DropdownMenuItem>
+            {current && (
+              <>
+                <DropdownMenuItem
+                  onClick={handleRenameCurrent}
+                  className="gap-2"
+                >
+                  <Pencil className="h-4 w-4" />
+                  {t('tabBar.rename')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleDeleteCurrent}
+                  className="gap-2 text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('tabBar.delete')}
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    )
+  }
 
   return (
     <div className={cn('flex items-center flex-1 min-w-0 gap-2', className)}>

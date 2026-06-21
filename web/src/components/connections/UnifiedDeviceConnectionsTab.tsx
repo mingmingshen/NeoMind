@@ -557,8 +557,10 @@ export function UnifiedDeviceConnectionsTab() {
 
       return (
         <>
-          {/* Header with back button — sticky */}
-          <div className="sticky top-0 z-10 -mx-1 px-1 pb-2 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
+          {/* Header with back button — sticky. ::before pseudo-element fills
+              the scroll container's pt-2 top padding on mobile so scrolled
+              instances don't bleed through. (-mt-2 doesn't work with sticky.) */}
+          <div className="sticky top-0 z-10 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 pb-2 bg-background flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4 before:content-[''] before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-background md:before:hidden">
             <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
               <ArrowLeft className="h-4 w-4" />
               {t('plugins:llm.back')}
@@ -726,8 +728,10 @@ export function UnifiedDeviceConnectionsTab() {
 
     return (
       <>
-        {/* Header with back button — sticky */}
-        <div className="sticky top-0 z-10 -mx-1 px-1 pb-2 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
+        {/* Header with back button — sticky. ::before pseudo-element fills
+            the scroll container's pt-2 top padding on mobile so scrolled
+            instances don't bleed through. (-mt-2 doesn't work with sticky.) */}
+        <div className="sticky top-0 z-10 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 pb-2 bg-background flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4 before:content-[''] before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-background md:before:hidden">
           <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
             <ArrowLeft className="h-4 w-4" />
             {t('plugins:llm.back')}
@@ -768,7 +772,7 @@ export function UnifiedDeviceConnectionsTab() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 grid-cols-[minmax(0,1fr)] md:grid-cols-2">
             {pluginInstances.map((instance) => {
               const testResult = testResults[instance.id]
               const isMqtt = instance.plugin_type === 'mqtt'
@@ -785,8 +789,8 @@ export function UnifiedDeviceConnectionsTab() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <CardTitle className="text-base truncate">{instance.name}</CardTitle>
+                        <div className="flex items-center gap-2 mb-1 min-w-0">
+                          <CardTitle className="text-base truncate min-w-0">{instance.name}</CardTitle>
                           {isBuiltin && (
                             <Badge variant="outline" className="text-xs shrink-0">{t('devices:onboarding.builtin')}</Badge>
                           )}

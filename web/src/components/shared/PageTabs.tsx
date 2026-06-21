@@ -1,8 +1,38 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useIsMobile } from '@/hooks/useMobile'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  MoreHorizontal,
+  Plus,
+  Upload,
+  Download,
+  RefreshCw,
+  Pencil,
+  Trash2,
+  Settings,
+  Filter,
+  Search,
+  Cloud,
+  Share2,
+  Play,
+  Pause,
+  Save,
+  Check,
+  X,
+  Copy,
+  ExternalLink,
+  type LucideIcon,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { textMini } from "@/design-system/tokens/typography"
+import { useMobileHeaderActionsRegistrar } from '@/components/layout/MobileHeaderActionsContext'
 
 export interface TabAction {
   label: string
@@ -47,7 +77,14 @@ export interface PageTabsBarProps {
   tabs: TabConfig[]
   activeTab: string
   onTabChange: (value: string) => void
+  /** Primary actions, rendered as visible buttons (desktop) / icon+overflow (mobile). */
   actions?: TabAction[]
+  /**
+   * Secondary actions, collapsed into a `…` overflow menu on BOTH desktop
+   * and mobile. Use for low-frequency page-level operations (Import, Export
+   * all, etc.) so they don't compete with the primary "+ Add" action.
+   */
+  secondaryActions?: TabAction[]
   actionsExtra?: ReactNode
   tabsClassName?: string
   maxWidth?: 'md' | 'lg' | 'xl' | '2xl' | 'full'
@@ -58,6 +95,7 @@ export function PageTabsBar({
   activeTab,
   onTabChange,
   actions = [],
+  secondaryActions = [],
   actionsExtra,
   tabsClassName,
   maxWidth = 'full',
@@ -72,31 +110,16 @@ export function PageTabsBar({
     full: 'max-w-full',
   }
 
-  // On mobile, only show actions bar (tabs are in bottom nav)
+  // On mobile, lift all actions into the MobilePageHeader via context.
+  // secondaryActions are appended so MobileTabActionsCompact naturally
+  // tucks them into the MoreHorizontal overflow alongside any extra
+  // primary actions.
   if (isMobile) {
-    // Hide if no actions to show
-    if (actions.length === 0 && !actionsExtra) return null
-
     return (
-      <div className="px-4 py-2">
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          {actions.map((action) => (
-            <Button
-              key={action.label}
-              variant={action.variant || 'default'}
-              size="sm"
-              onClick={action.onClick}
-              disabled={action.disabled || action.loading}
-            >
-              {action.icon ? (
-                <span className="mr-1 shrink-0 flex items-center justify-center h-3.5 w-3.5">{action.icon}</span>
-              ) : null}
-              <span className="whitespace-nowrap">{action.label}</span>
-            </Button>
-          ))}
-          {actionsExtra}
-        </div>
-      </div>
+      <MobilePageTabsActionsLift
+        actions={[...actions, ...secondaryActions]}
+        actionsExtra={actionsExtra}
+      />
     )
   }
 
@@ -132,7 +155,7 @@ export function PageTabsBar({
             })}
           </div>
 
-          {(actions.length > 0 || actionsExtra) && (
+          {(actions.length > 0 || secondaryActions.length > 0 || actionsExtra) && (
             <div className="flex shrink-0 flex-wrap gap-2">
               {actions.map((action) => (
                 <Button
@@ -150,6 +173,9 @@ export function PageTabsBar({
                   <span className="whitespace-nowrap">{action.label}</span>
                 </Button>
               ))}
+              {secondaryActions.length > 0 && (
+                <TabActionsOverflow actions={secondaryActions} trigger="more" />
+              )}
               {actionsExtra}
             </div>
           )}
@@ -515,5 +541,214 @@ export function PageTabsGrid({
 
       {children}
     </div>
+  )
+}
+
+/**
+ * MobilePageTabsActionsLift - renders nothing on its own. Instead, it
+ * registers the tab actions into two host slots via MobileHeaderActionsContext:
+ *
+ *   - primary actions (Add/Refresh/…) → MobilePageHeader's actions slot
+ *     (compact icon button + overflow dropdown).
+ *   - actionsExtra (search input / filter popover / wide controls) → the
+ *     sticky content toolbar rendered by PageLayout above the scroll area.
+ *     These controls don't fit in an icon-only header slot, so they stay
+ *     with the content.
+ *
+ * Used internally by PageTabsBar's mobile branch.
+ */
+function MobilePageTabsActionsLift({
+  actions,
+  actionsExtra,
+}: {
+  actions: TabAction[]
+  actionsExtra?: ReactNode
+}) {
+  const ctx = useMobileHeaderActionsRegistrar()
+
+  // Header slot — primary actions only.
+  useEffect(() => {
+    if (!ctx) return
+    if (actions.length === 0) return
+    const node = <MobileTabActionsCompact actions={actions} />
+    return ctx.register('header', 'PageTabsBar', node)
+  }, [ctx, actions])
+
+  // Content slot — actionsExtra (search/filter/complex controls).
+  useEffect(() => {
+    if (!ctx) return
+    if (!actionsExtra) return
+    return ctx.register('content', 'PageTabsBarExtra', actionsExtra)
+  }, [ctx, actionsExtra])
+
+  return null
+}
+
+/**
+ * Derive a likely icon from an action's label when the caller didn't provide
+ * one. Matches common action verbs/nouns in English and Chinese so most page
+ * actions get a recognizable icon on the mobile header without each page
+ * having to pass an explicit `icon` prop.
+ *
+ * Returns null when no keyword matches — caller then falls back to a compact
+ * text button.
+ */
+function deriveActionIcon(label: string): LucideIcon | null {
+  const lower = label.toLowerCase()
+  // Order matters: more specific keywords first.
+  if (/(create|new|\badd\b|新增|新建|添加|创建)/.test(lower)) return Plus
+  if (/(import|upload|导入|上传)/.test(lower)) return Upload
+  if (/(export|download|导出|下载)/.test(lower)) return Download
+  if (/(refresh|reload|刷新)/.test(lower)) return RefreshCw
+  if (/(rename|edit|重命名|编辑|修改)/.test(lower)) return Pencil
+  if (/(delete|remove|删除|移除)/.test(lower)) return Trash2
+  if (/(config|setting|配置|设置)/.test(lower)) return Settings
+  if (/(filter|筛选|过滤)/.test(lower)) return Filter
+  if (/(search|查找|搜索)/.test(lower)) return Search
+  if (/(cloud|云端|云)/.test(lower)) return Cloud
+  if (/(share|分享|共享)/.test(lower)) return Share2
+  if (/(save|保存)/.test(lower)) return Save
+  if (/(copy|复制|duplicate)/.test(lower)) return Copy
+  if (/(run|start|execute|运行|启动|执行)/.test(lower)) return Play
+  if (/(pause|stop|暂停|停止)/.test(lower)) return Pause
+  if (/(open|external|打开|外部)/.test(lower)) return ExternalLink
+  if (/(done|confirm|complete|完成|确定)/.test(lower)) return Check
+  if (/(cancel|close|取消|关闭)/.test(lower)) return X
+  return null
+}
+
+/**
+ * Resolve the effective icon for a tab action: explicit prop wins, otherwise
+ * derive from the label.
+ */
+function resolveActionIcon(action: TabAction): ReactNode | null {
+  if (action.icon) return action.icon
+  const Derived = deriveActionIcon(action.label)
+  if (!Derived) return null
+  return <Derived className="h-5 w-5" />
+}
+
+/**
+ * Shared overflow dropdown for TabAction lists. Renders a single trigger
+ * button (icon-only "MoreHorizontal" on mobile, outline "More" button with
+ * label on desktop) that opens a DropdownMenu with all actions.
+ *
+ * Used by:
+ *   - MobileTabActionsCompact for actions[1..] (mobile header overflow)
+ *   - PageTabsBar desktop rendering for `secondaryActions` (Import/Export/etc)
+ *
+ * Variant coloring + icon derivation are applied so the same TabAction looks
+ * consistent across the two surfaces.
+ */
+function TabActionsOverflow({
+  actions,
+  trigger,
+}: {
+  actions: TabAction[]
+  /** "icon" = square icon button (mobile header); "more" = outline button with label (desktop) */
+  trigger: 'icon' | 'more'
+}) {
+  const { t } = useTranslation('common')
+  if (actions.length === 0) return null
+  const moreText = t('actions.more')
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {trigger === 'icon' ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            aria-label={moreText}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" className="gap-1.5">
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="whitespace-nowrap">{moreText}</span>
+          </Button>
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[12rem] z-[200]">
+        {actions.map((action) => {
+          const icon = resolveActionIcon(action)
+          const isDestructive = action.variant === 'destructive'
+          return (
+            <DropdownMenuItem
+              key={action.label}
+              onClick={action.onClick}
+              disabled={action.disabled || action.loading}
+              className={cn(
+                'gap-2',
+                isDestructive && 'text-destructive focus:text-destructive'
+              )}
+            >
+              {icon && (
+                <span
+                  className={cn(
+                    'flex h-4 w-4 shrink-0 items-center justify-center',
+                    isDestructive && 'text-destructive'
+                  )}
+                >
+                  {icon}
+                </span>
+              )}
+              <span className="whitespace-nowrap">{action.label}</span>
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/**
+ * MobileTabActionsCompact - compact rendering for the MobilePageHeader's
+ * actions slot. The first action is an icon button (h-9 w-9, matching the
+ * hamburger tap target); the rest collapse into a MoreHorizontal dropdown.
+ *
+ * Note: `actionsExtra` (search/filter/wide controls) is NOT handled here —
+ * those are routed to the sticky content toolbar via the "content" slot of
+ * MobileHeaderActionsContext. The header slot is for icon-button actions only.
+ *
+ * Icon rules (in priority order):
+ *   1. action.icon present        → use it (icon-only button)
+ *   2. label keyword match        → derived icon (icon-only button)
+ *   3. nothing matches            → small ghost text button with label
+ */
+function MobileTabActionsCompact({
+  actions,
+}: {
+  actions: TabAction[]
+}) {
+  if (actions.length === 0) return null
+
+  const primary = actions[0]
+  const overflowActions = actions.length > 1 ? actions.slice(1) : []
+  const primaryIcon = primary ? resolveActionIcon(primary) : null
+
+  return (
+    <>
+      {primary && (
+        <Button
+          variant={primary.variant || 'ghost'}
+          size={primaryIcon ? 'icon' : 'sm'}
+          onClick={primary.onClick}
+          disabled={primary.disabled || primary.loading}
+          className={primaryIcon ? 'h-9 w-9 shrink-0' : 'h-9 shrink-0 px-2 text-xs'}
+          aria-label={primary.label}
+          title={primary.label}
+        >
+          {primaryIcon ? (
+            <span className="flex h-5 w-5 items-center justify-center [&>svg]:h-5 [&>svg]:w-5">{primaryIcon}</span>
+          ) : (
+            <span className="whitespace-nowrap">{primary.label}</span>
+          )}
+        </Button>
+      )}
+
+      <TabActionsOverflow actions={overflowActions} trigger="icon" />
+    </>
   )
 }

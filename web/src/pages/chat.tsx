@@ -5,7 +5,7 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { generateId } from "@/lib/id"
-import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ import { SessionSidebar } from "@/components/session/SessionSidebar"
 import { WelcomeArea } from "@/components/chat/WelcomeArea"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
+import { MobilePageHeader } from "@/components/layout/MobilePageHeader"
 import { ToolProcessBlock, isThinkingDuplicate } from "@/components/chat/ToolCallVisualization"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ws, type ConnectionState } from "@/lib/websocket"
@@ -909,19 +910,46 @@ export function ChatPage() {
         />
       )}
 
-      {/* Mobile Floating Action Button - only show when has sessions or in chat mode */}
-      {!isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="fixed left-4 z-30 h-12 w-12 rounded-full bg-foreground backdrop-blur-sm text-background shadow-lg hover:bg-foreground transition-all active:scale-95 flex items-center justify-center"
-          style={{top: 'calc(var(--topnav-height, 4rem) + 0.5rem)'}}
-        >
-          <MessageSquare className="h-5 w-5" />
-        </button>
-      )}
+      {/* (Legacy mobile FAB removed — session toggle now lives in MobilePageHeader) */}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Mobile per-page header: hamburger (nav drawer) + sessions toggle + new session */}
+        <MobilePageHeader
+          title={(() => {
+            const s = sessions.find((x) => x.sessionId === urlSessionId)
+            return s?.title || t('chat:input.newChat')
+          })()}
+          leftExtra={
+            !isDesktop && (sessions.length > 0 || !isWelcomeMode) ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={() => setSidebarOpen(true)}
+                aria-label={t('common:session.history')}
+              >
+                <MessageSquare className="h-5 w-5" />
+              </Button>
+            ) : undefined
+          }
+          actions={
+            !isDesktop ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={async () => {
+                  const id = await createSession()
+                  if (id) navigate(`/chat/${id}`)
+                }}
+                aria-label={t('chat:input.newChat')}
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            ) : undefined
+          }
+        />
         {/* Chat Content Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {isWelcomeMode && !sessionsLoaded ? (

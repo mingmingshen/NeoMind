@@ -557,6 +557,38 @@ export function AutomationPage() {
     },
   ]
 
+  // Secondary actions: bulk Import/Export demoted from a top-level dropdown
+  // (was actionsExtra) into the page-level "More" overflow. Per-item export
+  // already lives in each row's ⋯ menu in RulesList / TransformsList.
+  const secondaryActions =
+    activeTab === 'rules'
+      ? [
+          {
+            label: tAuto('export'),
+            icon: <Download className="h-4 w-4" />,
+            onClick: handleExportRules,
+          },
+          {
+            label: tAuto('import'),
+            icon: <Upload className="h-4 w-4" />,
+            onClick: handleImportRules,
+          },
+        ]
+      : activeTab === 'transforms'
+      ? [
+          {
+            label: tAuto('export'),
+            icon: <Download className="h-4 w-4" />,
+            onClick: handleExportTransforms,
+          },
+          {
+            label: tAuto('import'),
+            icon: <Upload className="h-4 w-4" />,
+            onClick: handleImportTransforms,
+          },
+        ]
+      : []
+
   return (
     <>
       <PageLayout
@@ -570,47 +602,7 @@ export function AutomationPage() {
             activeTab={activeTab}
             onTabChange={(v) => handleTabChange(v as AutomationTab)}
             actions={actions}
-            actionsExtra={
-              activeTab === 'rules' ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1">
-                      <Download className="h-4 w-4" />
-                      {tAuto('importExport')}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleExportRules}>
-                      <Download className="h-4 w-4 mr-2" />
-                      {tAuto('export')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleImportRules}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      {tAuto('import')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : activeTab === 'transforms' ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1">
-                      <Download className="h-4 w-4" />
-                      {tAuto('importExport')}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleExportTransforms}>
-                      <Download className="h-4 w-4 mr-2" />
-                      {tAuto('export')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleImportTransforms}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      {tAuto('import')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null
-            }
+            secondaryActions={secondaryActions}
           />
         }
         footer={

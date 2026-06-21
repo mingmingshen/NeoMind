@@ -38,6 +38,13 @@ body,
   .safe-top {
     padding-top: env(safe-area-inset-top, 0px);
   }
+  /* Mobile nav drawer: hide the built-in SheetContent close (X) button —
+     we render our own inside the header for proper safe-area handling
+     and visual consistency with SessionSidebar. */
+  .mobile-nav-sheet > button[data-radix-collection-item],
+  .mobile-nav-sheet > button[type="button"] {
+    display: none !important;
+  }
   /* Safe top with minimal fallback for chat components */
   .pt-safe {
     padding-top: env(safe-area-inset-top, 12px);
@@ -450,8 +457,8 @@ html {
     z-index: 0;
     pointer-events: none;
     background:
-      radial-gradient(ellipse 800px 500px at 10% 5%, oklch(0.647 0.289 71 / 12%) 0%, transparent 70%),
-      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.55 0.15 280 / 8%) 0%, transparent 70%),
+      radial-gradient(ellipse 800px 500px at 10% 5%, oklch(0.55 0.15 280 / 10%) 0%, transparent 70%),
+      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.55 0.18 300 / 7%) 0%, transparent 70%),
       radial-gradient(ellipse 1000px 400px at 50% 40%, oklch(0.60 0.08 250 / 5%) 0%, transparent 70%);
     background-size: 150% 150%;
     animation: aurora-shift 25s ease-in-out infinite alternate;
@@ -459,7 +466,7 @@ html {
 
   .dark .aurora-bg {
     background:
-      radial-gradient(ellipse 800px 500px at 15% 10%, oklch(0.647 0.289 71 / 18%) 0%, transparent 70%),
+      radial-gradient(ellipse 800px 500px at 15% 10%, oklch(0.55 0.18 280 / 14%) 0%, transparent 70%),
       radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.62 0.20 300 / 12%) 0%, transparent 70%),
       radial-gradient(ellipse 1000px 400px at 50% 50%, oklch(0.55 0.10 250 / 8%) 0%, transparent 70%);
     background-size: 150% 150%;
