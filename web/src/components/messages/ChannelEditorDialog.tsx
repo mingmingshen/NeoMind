@@ -659,10 +659,10 @@ export function ChannelEditorDialog({
         </FullScreenDialogSidebar>
 
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Mobile: horizontal scroll tab bar */}
+          {/* Mobile: 4-col grid (7 channels wrap to 4+3), single-row on wider phones */}
           {isMobile && (
-            <div className="shrink-0 border-b border-border overflow-x-auto">
-              <div className="flex gap-1 px-2 py-2">
+            <div className="shrink-0 px-3 pt-3 pb-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {CHANNEL_TYPES.map((ct) => {
                   const Icon = ct.icon
                   const isActive = channelType === ct.value
@@ -677,15 +677,17 @@ export function ChannelEditorDialog({
                       }}
                       disabled={!!editingChannel}
                       className={cn(
-                        "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all",
+                        "flex flex-col items-center justify-center gap-1 py-1.5 min-w-0 rounded-lg transition-colors",
                         isActive
-                          ? "bg-primary text-primary-foreground font-medium"
-                          : "bg-muted-50 text-muted-foreground hover:text-foreground",
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted-30 text-muted-foreground",
                         !!editingChannel && "cursor-not-allowed opacity-60"
                       )}
                     >
-                      <Icon className="h-3.5 w-3.5" />
-                      {t(ct.labelKey)}
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="text-[11px] font-medium leading-none truncate w-full text-center">
+                        {t(ct.labelKey)}
+                      </span>
                     </button>
                   )
                 })}

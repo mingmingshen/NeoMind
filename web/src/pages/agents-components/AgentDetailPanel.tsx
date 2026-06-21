@@ -241,22 +241,55 @@ export function AgentDetailPanel({
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DetailTab)} className="flex flex-col flex-1 min-h-0">
         <div className={cn("pt-3", isMobile ? "px-2" : "px-4")}>
-          <TabsList className={cn("bg-muted-50 h-9", isMobile ? "w-full overflow-x-auto" : "w-full justify-start")}>
-            <TabsTrigger value="overview" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
-              <Eye className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
-              {t('agents:detail.overview')}
+          <TabsList className={cn(
+            "bg-muted-30 p-1",
+            isMobile
+              ? "grid grid-cols-4 gap-1 h-auto w-full"
+              : "h-9 w-full justify-start"
+          )}>
+            <TabsTrigger
+              value="overview"
+              className={cn(
+                isMobile
+                  ? "flex flex-col items-center justify-center gap-1 py-1.5 px-1 min-w-0 rounded-lg text-[11px] leading-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+                  : "h-7 text-sm"
+              )}
+            >
+              <Eye className={cn(isMobile ? "h-4 w-4" : "h-4 w-4 mr-1")} />
+              <span className={cn(isMobile && "truncate w-full text-center")}>{t('agents:detail.overview')}</span>
             </TabsTrigger>
-            <TabsTrigger value="history" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
-              <Clock className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
-              {t('agents:detail.history')}
+            <TabsTrigger
+              value="history"
+              className={cn(
+                isMobile
+                  ? "flex flex-col items-center justify-center gap-1 py-1.5 px-1 min-w-0 rounded-lg text-[11px] leading-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+                  : "h-7 text-sm"
+              )}
+            >
+              <Clock className={cn(isMobile ? "h-4 w-4" : "h-4 w-4 mr-1")} />
+              <span className={cn(isMobile && "truncate w-full text-center")}>{t('agents:detail.history')}</span>
             </TabsTrigger>
-            <TabsTrigger value="memory" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
-              <Brain className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
-              {t('agents:detail.memory')}
+            <TabsTrigger
+              value="memory"
+              className={cn(
+                isMobile
+                  ? "flex flex-col items-center justify-center gap-1 py-1.5 px-1 min-w-0 rounded-lg text-[11px] leading-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+                  : "h-7 text-sm"
+              )}
+            >
+              <Brain className={cn(isMobile ? "h-4 w-4" : "h-4 w-4 mr-1")} />
+              <span className={cn(isMobile && "truncate w-full text-center")}>{t('agents:detail.memory')}</span>
             </TabsTrigger>
-            <TabsTrigger value="messages" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
-              <MessageSquare className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
-              {t('agents:detail.messages')}
+            <TabsTrigger
+              value="messages"
+              className={cn(
+                isMobile
+                  ? "flex flex-col items-center justify-center gap-1 py-1.5 px-1 min-w-0 rounded-lg text-[11px] leading-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+                  : "h-7 text-sm"
+              )}
+            >
+              <MessageSquare className={cn(isMobile ? "h-4 w-4" : "h-4 w-4 mr-1")} />
+              <span className={cn(isMobile && "truncate w-full text-center")}>{t('agents:detail.messages')}</span>
             </TabsTrigger>
           </TabsList>
         </div>
