@@ -12,7 +12,7 @@ import { fetchCache } from "@/lib/utils/async"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, type TabAction } from "@/components/shared"
-import { Upload, Download, Settings, Server, Layers, FileEdit, Cloud } from "lucide-react"
+import { Upload, Download, Settings, Server, Layers, FileEdit, Cloud, ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Switch } from "@/components/ui/switch"
@@ -766,6 +766,30 @@ export function DevicesPage() {
         noPadding={!!deviceDetailView}
         hideFooterOnMobile
         hasBottomNav
+        mobileHeader={
+          deviceDetailView
+            ? {
+                // Show the device name as the MobilePageHeader title instead of
+                // an empty header. Lift the back chevron into the header's
+                // leftExtra and hide the hamburger — the in-page header still
+                // has its own back button for redundancy, but the top-of-screen
+                // header is the primary touch target.
+                titleOverride: deviceDetails?.name || t('devices:detailTitle', 'Device detail'),
+                hideMenu: true,
+                leftExtra: (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={handleCloseDeviceDetail}
+                    aria-label={t('common:back', 'Back')}
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                ),
+              }
+            : undefined
+        }
         headerContent={
           !deviceDetailView ? (
             <PageTabsBar
