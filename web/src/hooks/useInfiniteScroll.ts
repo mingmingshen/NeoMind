@@ -172,6 +172,12 @@ export function useScrollLoad({
 }
 
 /**
+ * @deprecated 使用 `useInfiniteScroll` 替代。scroll-event 监听器在内部滚动容器场景下不可靠，
+ * 请用 IntersectionObserver + sentinel 模式（参见 `Pagination` 的 `MobileInfiniteSentinel`）。
+ *
+ * 历史问题：当列表渲染在 `PageLayout` 的 `[data-page-scroll-container]` 内部时，
+ * `window` 本身并不滚动，scroll 事件永不触发，无限滚动静默失效。
+ *
  * Hook that monitors window/document scroll for infinite scroll
  * Useful when the scroll container is not directly accessible
  */
@@ -182,6 +188,7 @@ export interface UseWindowScrollLoadOptions extends Omit<UseInfiniteScrollOption
   containerSelector?: string
 }
 
+/** @deprecated 见 {@link UseWindowScrollLoadOptions} */
 export function useWindowScrollLoad({
   offset = 150,
   isLoading = false,

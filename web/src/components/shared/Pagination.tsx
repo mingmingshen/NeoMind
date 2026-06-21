@@ -10,7 +10,9 @@ import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/useMobile'
-import { useWindowScrollLoad } from '@/hooks/useInfiniteScroll'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 
 export interface PaginationProps {
   total: number
@@ -21,6 +23,83 @@ export interface PaginationProps {
   pageSizeOptions?: number[]
   onPageSizeChange?: (size: number) => void
   className?: string
+}
+
+/**
+ * Mobile infinite scroll sentinel rendered via React Portal into the page
+ * scroll container's inner content wrapper.
+ *
+ * Uses IntersectionObserver with `root: null` (viewport) so it works regardless
+ * of which element actually scrolls (window vs. internal overflow container).
+ * The sentinel is portaled into the scroll container's first child so it
+ * appears at the bottom of the list, not trapped inside a hidden footer.
+ */
+function MobileInfiniteSentinel({
+  isLoading,
+  hasMore,
+  onLoadMore,
+  containerSelector,
+  total,
+  t,
+}: {
+  isLoading: boolean
+  hasMore: boolean
+  onLoadMore: () => void
+  containerSelector: string
+  total: number
+  t: (k: string, opts?: Record<string, unknown>) => string
+}) {
+  const [mountNode, setMountNode] = useState<HTMLElement | null>(null)
+
+  // Locate the scroll container's inner content wrapper.
+  // PageLayout renders: [data-page-scroll-container] > div.mx-auto (inner).
+  // Retry for ~30 frames (~500ms) to handle conditional rendering timing.
+  useEffect(() => {
+    let raf = 0
+    let n = 0
+    const find = () => {
+      const container = document.querySelector(containerSelector) as HTMLElement | null
+      const inner = (container?.firstElementChild as HTMLElement | null) ?? null
+      if (inner) {
+        setMountNode(inner)
+        return true
+      }
+      return false
+    }
+    if (find()) return
+    const tick = () => {
+      if (find() || ++n > 30) return
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [containerSelector])
+
+  const { loadMoreRef, showLoadingIndicator } = useInfiniteScroll({
+    isLoading,
+    hasMore,
+    onLoadMore,
+    enabled: !!mountNode, // only observe once portal target is ready
+    root: null, // viewport — independent of which element scrolls
+    threshold: 250,
+  })
+
+  if (!mountNode) return null
+
+  return createPortal(
+    <div className="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+      {showLoadingIndicator && hasMore && (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>{t('pagination.loading')}</span>
+        </>
+      )}
+      {!hasMore && total > 0 && <span>{t('pagination.noMore')}</span>}
+      {/* 1px sentinel — IntersectionObserver target */}
+      <div ref={loadMoreRef} aria-hidden className="h-px w-full" />
+    </div>,
+    mountNode,
+  )
 }
 
 /**
@@ -56,40 +135,26 @@ export function Pagination({
 
   const hasMore = currentPage < totalPages
 
-  // Always call hook (Hooks rule violation if conditional)
-  // Only enable when on mobile with multiple pages
+  // Mobile: render sentinel via portal; standard Pagination UI is hidden.
+  // The sentinel lives inside the scroll container so IntersectionObserver
+  // fires regardless of which element actually scrolls.
   const useMobileInfiniteScroll = isMobile && hideOnMobile && totalPages > 1
-  const { showLoadingIndicator } = useWindowScrollLoad({
-    isLoading,
-    hasMore,
-    onLoadMore: onLoadMore || (() => hasMore && onPageChange(currentPage + 1)),
-    enabled: useMobileInfiniteScroll,
-    containerSelector: '[data-page-scroll-container]',
-    offset: 250,
-  })
 
-  // Early return for no pagination needed (only on desktop)
-  if (!useMobileInfiniteScroll && totalPages <= 1) return null
-
-  // Mobile: Show infinite scroll trigger
   if (useMobileInfiniteScroll) {
     return (
-      <div className={cn('flex items-center justify-center py-2', className)}>
-        {showLoadingIndicator && hasMore && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>{t('pagination.loading')}</span>
-          </div>
-        )}
-
-        {!hasMore && total > 0 && (
-          <div className="text-sm text-muted-foreground">
-            {t('pagination.noMore')}
-          </div>
-        )}
-      </div>
+      <MobileInfiniteSentinel
+        isLoading={isLoading}
+        hasMore={hasMore}
+        onLoadMore={onLoadMore || (() => hasMore && onPageChange(currentPage + 1))}
+        containerSelector="[data-page-scroll-container]"
+        total={total}
+        t={t}
+      />
     )
   }
+
+  // Early return for no pagination needed (desktop single page)
+  if (totalPages <= 1) return null
 
   // Desktop: Show standard pagination
   // Generate page numbers to show

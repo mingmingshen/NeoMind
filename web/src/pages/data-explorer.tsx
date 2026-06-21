@@ -23,7 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Clock, Copy, ChevronDown, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { isBase64Image, getImageDataUrl } from '@/pages/devices/utils'
@@ -505,14 +504,17 @@ export function DataExplorerPage() {
                 </div>
 
                 {/* Tier 2: History (main body) */}
-                <div className="rounded-xl border">
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <div className="flex items-center gap-2 font-medium">
+                <div className="rounded-xl border overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b bg-muted-30">
+                    <div className="flex items-center gap-2 text-sm font-medium">
                       <History className="h-4 w-4" />
                       {t('data:history', 'History')}
+                      {historyData.length > 0 && (
+                        <Badge variant="secondary" className={cn(textNano, "ml-1")}>{historyData.length}</Badge>
+                      )}
                     </div>
                     <Select value={historyRange} onValueChange={setHistoryRange}>
-                      <SelectTrigger className="w-[120px] h-8 text-xs">
+                      <SelectTrigger className="w-[110px] h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -529,36 +531,60 @@ export function DataExplorerPage() {
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       <span className="text-xs">{t('common:loading', 'Loading...')}</span>
                     </div>
-                  ) : historyData.length > 0 ? (
-                    <ScrollArea className="h-[400px]">
-                      <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-background">
-                          <tr className="border-b">
-                            <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2 w-[180px] whitespace-nowrap">{t('data:timestamp', 'Timestamp')}</th>
-                            <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2">{t('data:value', 'Value')}</th>
-                            <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2 w-20">{t('data:quality', 'Quality')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {historyData.map((point, i) => (
-                            <tr key={i} className="border-b last:border-0 hover:bg-muted-30">
-                              <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">{formatTimestamp(point.timestamp)}</td>
-                              <td className="px-4 py-2 text-xs max-w-[300px]">
-                                {typeof point.value === 'string' && isBase64Image(point.value) ? (
-                                  <img src={getImageDataUrl(point.value) ?? undefined} alt="metric" className="h-10 w-10 object-cover rounded" />
-                                ) : (
-                                  <span className="font-mono block truncate">{formatHistoryValue(point.value)}</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2 text-xs text-muted-foreground">
-                                {point.quality !== null ? (point.quality * 100).toFixed(0) + '%' : '-'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </ScrollArea>
-                  ) : (
+                  ) : historyData.length > 0 ? (() => {
+                    // Hide the Quality column when no row has a non-null value — it's
+                    // usually empty in practice and wastes horizontal space.
+                    const hasQuality = historyData.some(p => p.quality !== null)
+                    const columns: TableColumn[] = [
+                      { key: 'timestamp', label: t('data:timestamp', 'Timestamp'), width: '180px' },
+                      { key: 'value', label: t('data:value', 'Value') },
+                      ...(hasQuality ? [{ key: 'quality', label: t('data:quality', 'Quality'), width: '80px', align: 'right' as const }] : []),
+                    ]
+                    return (
+                      <ResponsiveTable
+                        columns={columns}
+                        data={historyData as unknown as Record<string, unknown>[]}
+                        rowKey={(row) => String((row as { timestamp: number }).timestamp)}
+                        renderCell={(columnKey, rowData) => {
+                          const point = rowData as { timestamp: number; value: unknown; quality: number | null }
+                          switch (columnKey) {
+                            case 'timestamp':
+                              return (
+                                <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                  {formatTimestamp(point.timestamp)}
+                                </span>
+                              )
+                            case 'value':
+                              if (typeof point.value === 'string' && isBase64Image(point.value)) {
+                                return (
+                                  <img
+                                    src={getImageDataUrl(point.value) ?? undefined}
+                                    alt="metric"
+                                    className="h-10 w-10 object-cover rounded shrink-0"
+                                  />
+                                )
+                              }
+                              return (
+                                <span
+                                  className="font-mono text-xs truncate min-w-0"
+                                  title={formatHistoryValue(point.value)}
+                                >
+                                  {formatHistoryValue(point.value)}
+                                </span>
+                              )
+                            case 'quality':
+                              return (
+                                <span className="font-mono text-xs text-muted-foreground text-right">
+                                  {point.quality !== null ? (point.quality * 100).toFixed(0) + '%' : '—'}
+                                </span>
+                              )
+                            default:
+                              return null
+                          }
+                        }}
+                      />
+                    )
+                  })() : (
                     <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                       <History className="h-8 w-8 mb-2 opacity-30" />
                       <p className="text-xs">{t('data:noHistory', 'No historical data available for this period')}</p>
