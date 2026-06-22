@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Device offline alert rule**: New virtual metric `device:<id>:__last_seen_age_secs`
+  enables rules that fire when a device has had no telemetry for a configured duration.
+  A 60s background task (`DeviceStatusEmitter`) refreshes the metric for every device
+  currently referenced by a rule subscription. Validator enforces ≥1h cooldown for
+  virtual-metric rules to prevent alert spam. The rule UI adds a "设备离线告警 /
+  Device offline alert" template (default 12h, Critical severity) for one-click setup,
+  plus a "System metrics / 系统指标" group in the rule-builder metric dropdown exposing
+  `__last_seen_age_secs`. See `docs/superpowers/specs/2026-06-22-device-offline-rule-design.md`.
+
 ## [0.8.20] - 2026-06-22
 
 ### Overview
