@@ -4,8 +4,8 @@
 //! model. This is **one-way** — the preview is never parsed back.
 
 use crate::models::{
-    CompiledRule, ExecuteTarget, LogicalOperator, NotifySeverity,
-    RuleAction, RuleCondition, RuleTrigger,
+    CompiledRule, ExecuteTarget, LogicalOperator, NotifySeverity, RuleAction, RuleCondition,
+    RuleTrigger,
 };
 
 /// Generate a human-readable preview string for a rule.

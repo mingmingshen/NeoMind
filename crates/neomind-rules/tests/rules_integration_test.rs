@@ -33,7 +33,7 @@ fn make_comparison_rule(
         source: DataSourceId::device(device_id, metric),
         operator,
         threshold,
-            threshold_value: None,
+        threshold_value: None,
     });
     rule.trigger = RuleTrigger::from_condition(&rule.condition);
     rule.actions = vec![RuleAction::Notify {
@@ -53,7 +53,13 @@ async fn test_rule_engine_add_rule() {
     let provider = Arc::new(InMemoryValueProvider::new());
     let engine = RuleEngine::new(provider);
 
-    let rule = make_comparison_rule("Test Rule", "sensor", "temperature", ComparisonOperator::GreaterThan, 25.0);
+    let rule = make_comparison_rule(
+        "Test Rule",
+        "sensor",
+        "temperature",
+        ComparisonOperator::GreaterThan,
+        25.0,
+    );
     let result = engine.add_rule(rule).await;
     assert!(result.is_ok());
 }
@@ -82,7 +88,13 @@ async fn test_rule_engine_remove_rule() {
     let provider = Arc::new(InMemoryValueProvider::new());
     let engine = RuleEngine::new(provider);
 
-    let rule = make_comparison_rule("Removable", "sensor", "x", ComparisonOperator::GreaterThan, 0.0);
+    let rule = make_comparison_rule(
+        "Removable",
+        "sensor",
+        "x",
+        ComparisonOperator::GreaterThan,
+        0.0,
+    );
     let rule_id = rule.id.clone();
     engine.add_rule(rule).await.unwrap();
 
@@ -97,7 +109,13 @@ async fn test_rule_engine_enable_disable() {
     let provider = Arc::new(InMemoryValueProvider::new());
     let engine = RuleEngine::new(provider);
 
-    let rule = make_comparison_rule("Toggle", "sensor", "temp", ComparisonOperator::GreaterThan, 50.0);
+    let rule = make_comparison_rule(
+        "Toggle",
+        "sensor",
+        "temp",
+        ComparisonOperator::GreaterThan,
+        50.0,
+    );
     let rule_id = rule.id.clone();
     engine.add_rule(rule).await.unwrap();
 
@@ -127,8 +145,14 @@ fn test_in_memory_value_provider_set_and_get() {
     let source_hum = DataSourceId::device("device1", "humidity");
     let source_missing = DataSourceId::device("nonexistent", "metric");
 
-    assert_eq!(provider.get_by_source(&source_temp), Some(RuleValue::Number(25.5)));
-    assert_eq!(provider.get_by_source(&source_hum), Some(RuleValue::Number(60.0)));
+    assert_eq!(
+        provider.get_by_source(&source_temp),
+        Some(RuleValue::Number(25.5))
+    );
+    assert_eq!(
+        provider.get_by_source(&source_hum),
+        Some(RuleValue::Number(60.0))
+    );
     assert_eq!(provider.get_by_source(&source_missing), None);
 }
 
@@ -138,10 +162,16 @@ fn test_value_provider_update_overwrites() {
 
     provider.set_value("device:sensor:counter", 1.0);
     let source = DataSourceId::device("sensor", "counter");
-    assert_eq!(provider.get_by_source(&source), Some(RuleValue::Number(1.0)));
+    assert_eq!(
+        provider.get_by_source(&source),
+        Some(RuleValue::Number(1.0))
+    );
 
     provider.set_value("device:sensor:counter", 2.0);
-    assert_eq!(provider.get_by_source(&source), Some(RuleValue::Number(2.0)));
+    assert_eq!(
+        provider.get_by_source(&source),
+        Some(RuleValue::Number(2.0))
+    );
 }
 
 // ============================================================================
@@ -216,13 +246,13 @@ fn test_logical_and_condition() {
                 source: DataSourceId::device("sensor", "temperature"),
                 operator: ComparisonOperator::GreaterThan,
                 threshold: 30.0,
-            threshold_value: None,
+                threshold_value: None,
             },
             RuleCondition::Comparison {
                 source: DataSourceId::device("sensor", "humidity"),
                 operator: ComparisonOperator::LessThan,
                 threshold: 50.0,
-            threshold_value: None,
+                threshold_value: None,
             },
         ],
     };
@@ -243,13 +273,13 @@ fn test_logical_or_condition() {
                 source: DataSourceId::device("sensor", "temperature"),
                 operator: ComparisonOperator::GreaterThan,
                 threshold: 40.0,
-            threshold_value: None,
+                threshold_value: None,
             },
             RuleCondition::Comparison {
                 source: DataSourceId::device("sensor", "humidity"),
                 operator: ComparisonOperator::GreaterThan,
                 threshold: 90.0,
-            threshold_value: None,
+                threshold_value: None,
             },
         ],
     };
@@ -291,13 +321,13 @@ fn test_nested_conditions() {
                         source: DataSourceId::device("sensor", "temp"),
                         operator: ComparisonOperator::GreaterThan,
                         threshold: 30.0,
-                    threshold_value: None,
+                        threshold_value: None,
                     },
                     RuleCondition::Comparison {
                         source: DataSourceId::device("sensor", "temp"),
                         operator: ComparisonOperator::LessThan,
                         threshold: 10.0,
-                    threshold_value: None,
+                        threshold_value: None,
                     },
                 ],
             },
@@ -305,7 +335,7 @@ fn test_nested_conditions() {
                 source: DataSourceId::device("sensor", "humidity"),
                 operator: ComparisonOperator::GreaterThan,
                 threshold: 50.0,
-            threshold_value: None,
+                threshold_value: None,
             },
         ],
     };
@@ -322,7 +352,7 @@ fn test_condition_extract_sources_comparison() {
         source: DataSourceId::device("sensor1", "temperature"),
         operator: ComparisonOperator::GreaterThan,
         threshold: 30.0,
-    threshold_value: None,
+        threshold_value: None,
     };
     let sources = cond.extract_sources();
     assert_eq!(sources.len(), 1);
@@ -338,13 +368,13 @@ fn test_condition_extract_sources_logical() {
                 source: DataSourceId::device("sensor1", "temp"),
                 operator: ComparisonOperator::GreaterThan,
                 threshold: 30.0,
-            threshold_value: None,
+                threshold_value: None,
             },
             RuleCondition::Comparison {
                 source: DataSourceId::device("sensor2", "humidity"),
                 operator: ComparisonOperator::LessThan,
                 threshold: 50.0,
-            threshold_value: None,
+                threshold_value: None,
             },
         ],
     };
@@ -382,7 +412,10 @@ async fn test_on_data_update_triggers_rule() {
 
     // Trigger the rule via data update
     engine
-        .on_data_update(&DataSourceId::device("sensor", "temperature"), RuleValue::Number(35.0))
+        .on_data_update(
+            &DataSourceId::device("sensor", "temperature"),
+            RuleValue::Number(35.0),
+        )
         .await;
 
     let r = engine.get_rule(&rule_id).await.unwrap();
@@ -409,7 +442,10 @@ async fn test_on_data_update_below_threshold_no_trigger() {
 
     provider.set_value("device:sensor:temperature", 25.0);
     engine
-        .on_data_update(&DataSourceId::device("sensor", "temperature"), RuleValue::Number(25.0))
+        .on_data_update(
+            &DataSourceId::device("sensor", "temperature"),
+            RuleValue::Number(25.0),
+        )
         .await;
 
     let r = engine.get_rule(&rule_id).await.unwrap();
@@ -442,12 +478,18 @@ async fn test_cooldown_prevents_retrigger() {
     // First trigger
     provider.set_value("device:sensor:temperature", 75.0);
     engine
-        .on_data_update(&DataSourceId::device("sensor", "temperature"), RuleValue::Number(75.0))
+        .on_data_update(
+            &DataSourceId::device("sensor", "temperature"),
+            RuleValue::Number(75.0),
+        )
         .await;
 
     // Second trigger (within cooldown — should be suppressed)
     engine
-        .on_data_update(&DataSourceId::device("sensor", "temperature"), RuleValue::Number(80.0))
+        .on_data_update(
+            &DataSourceId::device("sensor", "temperature"),
+            RuleValue::Number(80.0),
+        )
         .await;
 
     let r = engine.get_rule(&rule_id).await.unwrap();
@@ -612,11 +654,23 @@ async fn test_subscription_index_selective() {
     let engine = RuleEngine::new(provider.clone());
 
     // Rule 1: watches sensor1
-    let rule1 = make_comparison_rule("Rule 1", "sensor1", "temp", ComparisonOperator::GreaterThan, 50.0);
+    let rule1 = make_comparison_rule(
+        "Rule 1",
+        "sensor1",
+        "temp",
+        ComparisonOperator::GreaterThan,
+        50.0,
+    );
     let rule1_id = rule1.id.clone();
 
     // Rule 2: watches sensor2
-    let rule2 = make_comparison_rule("Rule 2", "sensor2", "temp", ComparisonOperator::GreaterThan, 50.0);
+    let rule2 = make_comparison_rule(
+        "Rule 2",
+        "sensor2",
+        "temp",
+        ComparisonOperator::GreaterThan,
+        50.0,
+    );
     let rule2_id = rule2.id.clone();
 
     engine.add_rule(rule1).await.unwrap();
@@ -625,7 +679,10 @@ async fn test_subscription_index_selective() {
     // Update sensor1 — only rule1 should trigger
     provider.set_value("device:sensor1:temp", 75.0);
     engine
-        .on_data_update(&DataSourceId::device("sensor1", "temp"), RuleValue::Number(75.0))
+        .on_data_update(
+            &DataSourceId::device("sensor1", "temp"),
+            RuleValue::Number(75.0),
+        )
         .await;
 
     let r1 = engine.get_rule(&rule1_id).await.unwrap();
@@ -643,7 +700,13 @@ async fn test_disabled_rule_does_not_trigger() {
     let provider = Arc::new(InMemoryValueProvider::new());
     let engine = RuleEngine::new(provider.clone());
 
-    let rule = make_comparison_rule("Disabled", "sensor", "temp", ComparisonOperator::GreaterThan, 50.0);
+    let rule = make_comparison_rule(
+        "Disabled",
+        "sensor",
+        "temp",
+        ComparisonOperator::GreaterThan,
+        50.0,
+    );
     let rule_id = rule.id.clone();
     engine.add_rule(rule).await.unwrap();
 
@@ -651,7 +714,10 @@ async fn test_disabled_rule_does_not_trigger() {
 
     provider.set_value("device:sensor:temp", 75.0);
     engine
-        .on_data_update(&DataSourceId::device("sensor", "temp"), RuleValue::Number(75.0))
+        .on_data_update(
+            &DataSourceId::device("sensor", "temp"),
+            RuleValue::Number(75.0),
+        )
         .await;
 
     let r = engine.get_rule(&rule_id).await.unwrap();

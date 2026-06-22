@@ -44,13 +44,15 @@ pub mod validator;
 pub use engine::{AgentTriggerCallback, InMemoryValueProvider, RuleEngine};
 pub use error::RuleError;
 pub use models::{
-    CompiledRule, ComparisonOperator, ExecuteTarget, LogicalOperator, NotifySeverity,
-    RuleAction, RuleCondition, RuleExecutionResult, RuleId, RuleState, RuleTrigger, RuleValue,
-    ValueProvider,
+    ComparisonOperator, CompiledRule, ExecuteTarget, LogicalOperator, NotifySeverity, RuleAction,
+    RuleCondition, RuleExecutionResult, RuleId, RuleState, RuleTrigger, RuleValue, ValueProvider,
 };
 pub use preview::to_dsl_preview;
 pub use unified_provider::UnifiedValueProvider;
-pub use validator::{AlertChannelInfo, CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo, RuleValidator, ValidationContext};
+pub use validator::{
+    AlertChannelInfo, CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo,
+    RuleValidator, ValidationContext,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
