@@ -7,6 +7,10 @@ use crate::models::{ComparisonOperator, ExecuteTarget, RuleAction, RuleCondition
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Virtual metrics emitted by the rule engine itself (not by devices).
+/// These bypass the strict device-metric-existence check in [`validate_simple_condition`].
+pub const VIRTUAL_METRICS: &[&str] = &["__last_seen_age_secs"];
+
 /// Result type for validation operations.
 pub type ValidationResult<T> = Result<T, ValidationError>;
 
@@ -242,13 +246,20 @@ impl RuleValidator {
         threshold: &f64,
         context: &ValidationContext,
     ) -> ValidationResult<Vec<ValidationIssue>> {
+        if VIRTUAL_METRICS.contains(&metric) {
+            return Self::validate_virtual_metric_condition(
+                device_id, metric, operator, threshold, context,
+            );
+        }
+
         let mut issues = Vec::new();
 
-        let device = context
-            .get_device(device_id)
-            .ok_or_else(|| ValidationError::DeviceNotFound {
-                device_id: device_id.to_string(),
-            })?;
+        let device =
+            context
+                .get_device(device_id)
+                .ok_or_else(|| ValidationError::DeviceNotFound {
+                    device_id: device_id.to_string(),
+                })?;
 
         let metric_info = device
             .metrics
@@ -264,10 +275,7 @@ impl RuleValidator {
             if *threshold < min {
                 issues.push(ValidationIssue {
                     code: "THRESHOLD_BELOW_MIN".to_string(),
-                    message: format!(
-                        "Threshold {} is below metric minimum {}",
-                        threshold, min
-                    ),
+                    message: format!("Threshold {} is below metric minimum {}", threshold, min),
                     field: Some("condition.comparison.threshold".to_string()),
                     severity: ValidationSeverity::Warning,
                 });
@@ -277,10 +285,7 @@ impl RuleValidator {
             if *threshold > max {
                 issues.push(ValidationIssue {
                     code: "THRESHOLD_ABOVE_MAX".to_string(),
-                    message: format!(
-                        "Threshold {} is above metric maximum {}",
-                        threshold, max
-                    ),
+                    message: format!("Threshold {} is above metric maximum {}", threshold, max),
                     field: Some("condition.comparison.threshold".to_string()),
                     severity: ValidationSeverity::Warning,
                 });
@@ -288,6 +293,53 @@ impl RuleValidator {
         }
 
         let _ = operator; // Operator is always valid
+        Ok(issues)
+    }
+
+    /// Validate a condition that references a virtual metric (e.g. `__last_seen_age_secs`).
+    ///
+    /// Virtual metrics bypass the strict device-metric-existence check because they
+    /// are emitted by the rule engine itself, not by the device. The device must
+    /// still exist (otherwise [`ValidationError::DeviceNotFound`] is returned).
+    ///
+    /// Operators other than `>` / `>=` (and the equality forms `==` / `!=`) are
+    /// semantically meaningless for a monotonically-increasing age counter, so a
+    /// [`ValidationIssue`] with code `VIRTUAL_METRIC_BAD_OPERATOR` is emitted as a
+    /// warning. The rule remains valid — the user may have a legitimate reason.
+    fn validate_virtual_metric_condition(
+        device_id: &str,
+        _metric: &str,
+        operator: &ComparisonOperator,
+        _threshold: &f64,
+        context: &ValidationContext,
+    ) -> ValidationResult<Vec<ValidationIssue>> {
+        if context.get_device(device_id).is_none() {
+            return Err(ValidationError::DeviceNotFound {
+                device_id: device_id.to_string(),
+            });
+        }
+
+        let mut issues = Vec::new();
+        let bad_op = matches!(
+            operator,
+            ComparisonOperator::LessThan
+                | ComparisonOperator::LessEqual
+                | ComparisonOperator::Contains
+                | ComparisonOperator::StartsWith
+                | ComparisonOperator::EndsWith
+                | ComparisonOperator::Regex
+        );
+        if bad_op {
+            issues.push(ValidationIssue {
+                code: "VIRTUAL_METRIC_BAD_OPERATOR".to_string(),
+                message: format!(
+                    "Operator '{}' is not meaningful for virtual metric (use > or >=)",
+                    operator.symbol()
+                ),
+                field: Some("condition.comparison.operator".to_string()),
+                severity: ValidationSeverity::Warning,
+            });
+        }
         Ok(issues)
     }
 
@@ -314,55 +366,50 @@ impl RuleValidator {
                 target_type,
                 command,
                 params,
-            } => {
-                match target_type {
-                    ExecuteTarget::Device => {
-                        let device = context.get_device(target).ok_or_else(|| {
-                            ValidationError::DeviceNotFound {
-                                device_id: target.clone(),
-                            }
+            } => match target_type {
+                ExecuteTarget::Device => {
+                    let device = context.get_device(target).ok_or_else(|| {
+                        ValidationError::DeviceNotFound {
+                            device_id: target.clone(),
+                        }
+                    })?;
+
+                    let cmd_info = device
+                        .commands
+                        .iter()
+                        .find(|c| c.name == *command)
+                        .ok_or_else(|| ValidationError::CommandNotSupported {
+                            device_id: target.clone(),
+                            command: command.clone(),
                         })?;
 
-                        let cmd_info = device
-                            .commands
-                            .iter()
-                            .find(|c| c.name == *command)
-                            .ok_or_else(|| ValidationError::CommandNotSupported {
-                                device_id: target.clone(),
-                                command: command.clone(),
-                            })?;
-
-                        if let Some(obj) = params.as_object() {
-                            for param in &cmd_info.parameters {
-                                if param.required && !obj.contains_key(&param.name) {
-                                    issues.push(ValidationIssue {
-                                        code: "MISSING_PARAMETER".to_string(),
-                                        message: format!(
-                                            "Missing required parameter: {}",
-                                            param.name
-                                        ),
-                                        field: Some(format!(
-                                            "actions.{}.params.{}",
-                                            command, param.name
-                                        )),
-                                        severity: ValidationSeverity::Error,
-                                    });
-                                }
+                    if let Some(obj) = params.as_object() {
+                        for param in &cmd_info.parameters {
+                            if param.required && !obj.contains_key(&param.name) {
+                                issues.push(ValidationIssue {
+                                    code: "MISSING_PARAMETER".to_string(),
+                                    message: format!("Missing required parameter: {}", param.name),
+                                    field: Some(format!(
+                                        "actions.{}.params.{}",
+                                        command, param.name
+                                    )),
+                                    severity: ValidationSeverity::Error,
+                                });
                             }
-                        }
-                    }
-                    ExecuteTarget::Extension => {
-                        if target.is_empty() {
-                            issues.push(ValidationIssue {
-                                code: "EMPTY_EXTENSION_ID".to_string(),
-                                message: "Extension target ID cannot be empty".to_string(),
-                                field: Some("actions.execute.target".to_string()),
-                                severity: ValidationSeverity::Error,
-                            });
                         }
                     }
                 }
-            }
+                ExecuteTarget::Extension => {
+                    if target.is_empty() {
+                        issues.push(ValidationIssue {
+                            code: "EMPTY_EXTENSION_ID".to_string(),
+                            message: "Extension target ID cannot be empty".to_string(),
+                            field: Some("actions.execute.target".to_string()),
+                            severity: ValidationSeverity::Error,
+                        });
+                    }
+                }
+            },
             RuleAction::TriggerAgent { agent_id, .. } => {
                 if agent_id.is_empty() {
                     issues.push(ValidationIssue {
@@ -452,7 +499,7 @@ mod tests {
             source: DataSourceId::device("nonexistent", "temperature"),
             operator: ComparisonOperator::GreaterThan,
             threshold: 50.0,
-        threshold_value: None,
+            threshold_value: None,
         };
         let result = RuleValidator::validate_condition(&condition, &context);
         assert!(result.is_err());
@@ -480,7 +527,7 @@ mod tests {
             source: DataSourceId::device("sensor1", "temperature"),
             operator: ComparisonOperator::GreaterThan,
             threshold: 50.0,
-        threshold_value: None,
+            threshold_value: None,
         };
         let result = RuleValidator::validate_condition(&condition, &context);
         assert!(result.is_ok());
@@ -508,7 +555,7 @@ mod tests {
             source: DataSourceId::device("sensor1", "temperature"),
             operator: ComparisonOperator::GreaterThan,
             threshold: 150.0,
-        threshold_value: None,
+            threshold_value: None,
         };
         let issues = RuleValidator::validate_condition(&condition, &context).unwrap();
         assert!(!issues.is_empty()); // Warning about threshold above max
@@ -554,5 +601,98 @@ mod tests {
         };
         let issues = RuleValidator::validate_action(&action, &context).unwrap();
         assert!(!issues.is_empty());
+    }
+
+    // ----- Virtual-metric allowlist tests (Task 1) ---------------------------
+
+    /// Helper: build a context with one real device that exposes a single
+    /// `temperature` metric (no virtual metrics are registered on the device).
+    fn make_ctx_with_temp_device() -> ValidationContext {
+        let mut context = ValidationContext::new();
+        context.add_device(DeviceInfo {
+            id: "sensor1".to_string(),
+            name: "Sensor 1".to_string(),
+            device_type: "temperature".to_string(),
+            metrics: vec![MetricInfo {
+                name: "temperature".to_string(),
+                data_type: MetricDataType::Number,
+                unit: Some("C".to_string()),
+                min_value: Some(-40.0),
+                max_value: Some(125.0),
+            }],
+            commands: vec![],
+            online: true,
+        });
+        context
+    }
+
+    /// 1. Virtual metric `__last_seen_age_secs` bypasses the metric-existence
+    ///    check; `GreaterThan` is a valid operator → Ok with no warnings.
+    #[test]
+    fn test_virtual_metric_bypasses_metric_check() {
+        let context = make_ctx_with_temp_device();
+        let condition = RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "__last_seen_age_secs"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 3600.0,
+            threshold_value: None,
+        };
+        let issues = RuleValidator::validate_condition(&condition, &context)
+            .expect("virtual metric should bypass metric-existence check");
+        assert!(
+            issues.is_empty(),
+            "expected no warnings for GreaterThan, got: {:?}",
+            issues
+        );
+    }
+
+    /// 2. Regular unknown metric on a real device still fails with
+    ///    METRIC_NOT_SUPPORTED.
+    #[test]
+    fn test_unknown_metric_still_rejected() {
+        let context = make_ctx_with_temp_device();
+        let condition = RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "nonexistent_metric"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 10.0,
+            threshold_value: None,
+        };
+        let err = RuleValidator::validate_condition(&condition, &context)
+            .expect_err("unknown metric must be rejected");
+        assert_eq!(err.code(), "METRIC_NOT_SUPPORTED");
+    }
+
+    /// 3. Virtual metric on unknown device still fails with DEVICE_NOT_FOUND
+    ///    — device existence is enforced even for virtual metrics.
+    #[test]
+    fn test_virtual_metric_unknown_device_rejected() {
+        let context = ValidationContext::new();
+        let condition = RuleCondition::Comparison {
+            source: DataSourceId::device("ghost-device", "__last_seen_age_secs"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 3600.0,
+            threshold_value: None,
+        };
+        let err = RuleValidator::validate_condition(&condition, &context)
+            .expect_err("unknown device must be rejected even for virtual metrics");
+        assert_eq!(err.code(), "DEVICE_NOT_FOUND");
+    }
+
+    /// 4. Virtual metric with a bad operator (LessThan) emits
+    ///    VIRTUAL_METRIC_BAD_OPERATOR warning, rule still valid (Ok).
+    #[test]
+    fn test_virtual_metric_bad_operator_warns() {
+        let context = make_ctx_with_temp_device();
+        let condition = RuleCondition::Comparison {
+            source: DataSourceId::device("sensor1", "__last_seen_age_secs"),
+            operator: ComparisonOperator::LessThan,
+            threshold: 60.0,
+            threshold_value: None,
+        };
+        let issues = RuleValidator::validate_condition(&condition, &context)
+            .expect("bad-operator case must stay valid (warning only)");
+        assert_eq!(issues.len(), 1, "expected exactly one warning");
+        assert_eq!(issues[0].code, "VIRTUAL_METRIC_BAD_OPERATOR");
+        assert!(matches!(issues[0].severity, ValidationSeverity::Warning));
     }
 }
