@@ -57,12 +57,12 @@ NeoMind is an **edge-deployed AI platform** that brings intelligence to IoT. It 
 
 **Key idea**: Talk to your devices in natural language. The AI understands your intent, queries device states, creates automation rules, and takes action autonomously.
 
-> 📚 **Full documentation is on the [NeoMind Wiki](https://wiki.camthink.ai/en/docs/neomind/product-overview/what-is-neomind).** This README is a quick overview — visit the wiki for complete guides:
+> 📚 **Full documentation is on the [NeoMind Wiki](https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind).** This README is a quick overview — visit the wiki for complete guides:
 >
-> - [What is NeoMind?](https://wiki.camthink.ai/en/docs/neomind/product-overview/what-is-neomind) — product overview and concepts
-> - [Five-Minute Quick Start](https://wiki.camthink.ai/en/docs/neomind/quick-start/five-minute-guide) — get running fast
-> - [Install & Setup](https://wiki.camthink.ai/en/docs/neomind/user-guide/install-setup) — deployment, desktop app, server, Docker
-> - [Developer Guide](https://wiki.camthink.ai/en/docs/neomind/developer-guide/overview) — API, extensions, integrations
+> - [What is NeoMind?](https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind) — product overview and concepts
+> - [Five-Minute Quick Start](https://wiki.camthink.ai/docs/neomind/quick-start/five-minute-guide) — get running fast
+> - [Install & Setup](https://wiki.camthink.ai/docs/neomind/user-guide/install-setup) — deployment, desktop app, server, Docker
+> - [Developer Guide](https://wiki.camthink.ai/docs/neomind/developer-guide/overview) — API, extensions, integrations
 
 ### Why NeoMind?
 
@@ -153,13 +153,13 @@ NE301 (Edge AI Camera) and NE101 (Sensing Camera). See [NeoMind-DeviceTypes](htt
 
 We welcome community contributions to grow the NeoMind ecosystem:
 
-- **[Build an Extension](https://github.com/camthink-ai/NeoMind-Extensions)** — Create extensions for new data sources, AI models, or integrations. Follow the [Extension Development Guide](https://wiki.camthink.ai/en/docs/neomind/developer-guide/overview) to get started, then submit a PR to the marketplace.
+- **[Build an Extension](https://github.com/camthink-ai/NeoMind-Extensions)** — Create extensions for new data sources, AI models, or integrations. Follow the [Extension Development Guide](https://wiki.camthink.ai/docs/neomind/developer-guide/overview) to get started, then submit a PR to the marketplace.
 - **[Add a Device Type](https://github.com/camthink-ai/NeoMind-DeviceTypes)** — Define metrics and commands for your IoT hardware so others can use it out of the box. Just add a JSON file.
 - **[Create a Dashboard Widget](https://github.com/camthink-ai/NeoMind-Dashboard-Components)** — Build reusable React dashboard components (charts, gauges, maps, etc.) and share them with the community.
 
 ## Quick Start
 
-> For the full walkthrough see the [Five-Minute Guide](https://wiki.camthink.ai/en/docs/neomind/quick-start/five-minute-guide) and [Install & Setup](https://wiki.camthink.ai/en/docs/neomind/user-guide/install-setup) on the wiki.
+> For the full walkthrough see the [Five-Minute Guide](https://wiki.camthink.ai/docs/neomind/quick-start/five-minute-guide) and [Install & Setup](https://wiki.camthink.ai/docs/neomind/user-guide/install-setup) on the wiki.
 
 ### Desktop App (Recommended)
 
@@ -421,7 +421,7 @@ neomind api-key create                # Create API key
 
 ## Extension Development
 
-Build extensions using the Rust SDK with process isolation. See the [Developer Guide](https://wiki.camthink.ai/en/docs/neomind/developer-guide/overview) and [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions) for full examples.
+Build extensions using the Rust SDK with process isolation. See the [Developer Guide](https://wiki.camthink.ai/docs/neomind/developer-guide/overview) and [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions) for full examples.
 
 <details>
 <summary>Quick example</summary>
@@ -461,14 +461,14 @@ neomind_export!(MyExtension);
 
 ## Documentation
 
-All user, install, and developer documentation lives on the **[NeoMind Wiki](https://wiki.camthink.ai/en/docs/neomind/product-overview/what-is-neomind)**:
+All user, install, and developer documentation lives on the **[NeoMind Wiki](https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind)**:
 
 | Wiki Section | Covers |
 |--------------|--------|
-| [Product Overview](https://wiki.camthink.ai/en/docs/neomind/product-overview/what-is-neomind) | What NeoMind is, core concepts, architecture |
-| [Quick Start](https://wiki.camthink.ai/en/docs/neomind/quick-start/five-minute-guide) | Five-minute guide to your first running instance |
-| [Install & Setup](https://wiki.camthink.ai/en/docs/neomind/user-guide/install-setup) | Desktop app, server, Docker, configuration |
-| [Developer Guide](https://wiki.camthink.ai/en/docs/neomind/developer-guide/overview) | REST/WebSocket API, extensions, integrations |
+| [Product Overview](https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind) | What NeoMind is, core concepts, architecture |
+| [Quick Start](https://wiki.camthink.ai/docs/neomind/quick-start/five-minute-guide) | Five-minute guide to your first running instance |
+| [Install & Setup](https://wiki.camthink.ai/docs/neomind/user-guide/install-setup) | Desktop app, server, Docker, configuration |
+| [Developer Guide](https://wiki.camthink.ai/docs/neomind/developer-guide/overview) | REST/WebSocket API, extensions, integrations |
 
 Repo-local references (kept here for contributors):
 
