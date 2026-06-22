@@ -183,16 +183,12 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/frontend-components/:id/bundle",
             get(frontend_components::get_bundle_handler),
         )
-        // Webhook API (public endpoints for device data push - external devices cannot carry JWT)
-        .route("/api/devices/:id/webhook", post(devices::webhook_handler))
-        .route(
-            "/api/devices/webhook",
-            post(devices::webhook_generic_handler),
-        )
-        .route(
-            "/api/devices/:id/webhook-url",
-            get(devices::get_webhook_url_handler),
-        )
+        // Webhook POST endpoints — moved to a rate-limited block below (out of
+        // public_routes). Reason: these accept untrusted payloads from arbitrary
+        // devices (JWT isn't viable for MCUs), so they MUST sit behind
+        // `rate_limit_middleware` to prevent flooding. Per-device tokens, adapter
+        // API keys, and IP allowlists are enforced inside the handler/adapter.
+        // The read-only `webhook-url` GET lives in protected_routes (admin lookup).
         // Onboarding API (public - system setup status)
         .route(
             "/api/onboarding/status",
@@ -242,6 +238,23 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             rate_limit_middleware,
         ));
 
+    // Webhook POST routes — devices can't carry JWT, so these stay unauthenticated
+    // at the middleware level, but MUST sit behind `rate_limit_middleware` to
+    // prevent flooding. Stronger controls (per-device token, adapter API key, IP
+    // allowlist, per-IP discovery throttle) are enforced inside the handler.
+    // Auth model: when user auth is disabled (closed LAN edge deployments), this
+    // rate limit is the only top-level defense — tune `RateLimiter` accordingly.
+    let webhook_routes = Router::new()
+        .route("/api/devices/:id/webhook", post(devices::webhook_handler))
+        .route(
+            "/api/devices/webhook",
+            post(devices::webhook_generic_handler),
+        )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::server::middleware::webhook_rate_limit_middleware,
+        ));
+
     // Protected routes (require API key or JWT via Authorization header)
     // SECURITY: Sensitive data and all write operations require authentication.
     let protected_routes = Router::new()
@@ -256,6 +269,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(data::list_all_data_sources_handler),
         )
         .route("/api/stats/system", get(stats::get_system_stats_handler))
+        // Webhook URL lookup — admin/UI helper, not for devices. Moved here from
+        // public_routes to stop leaking device existence (404 vs 200) and the
+        // configured NEOMIND_SERVER_URL to unauthenticated callers.
+        .route(
+            "/api/devices/:id/webhook-url",
+            get(devices::get_webhook_url_handler),
+        )
         // === LLM Backends (moved from public - expose config/keys) ===
         .route(
             "/api/llm-backends",
@@ -1095,7 +1115,9 @@ pub fn create_router_with_state(state: ServerState) -> Router {
                 .allow_headers(tower_http::cors::Any),
         );
 
-    let router = public_routes.merge(websocket_routes); // WebSocket routes with custom auth
+    let router = public_routes
+        .merge(websocket_routes) // WebSocket routes with custom auth
+        .merge(webhook_routes); // Device webhook POSTs (rate-limited, no auth)
 
     #[cfg(debug_assertions)]
     let router = router.merge(debug_routes);

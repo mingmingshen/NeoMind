@@ -55,7 +55,13 @@ use tracing::{info, warn};
 pub struct WebhookAdapterConfig {
     /// Adapter name
     pub name: String,
-    /// API key for authentication (optional)
+    /// API key for authentication (optional).
+    ///
+    /// When set, inbound webhooks MUST carry it in the `X-API-Key` header.
+    /// Distinct from per-device `webhook_token` (which uses `Authorization: Bearer`
+    /// or `?token=`): the adapter key is a global pre-shared secret for the whole
+    /// adapter, useful when the platform is exposed to the internet without per-device
+    /// provisioning. On closed LAN deployments leave this `None`.
     pub api_key: Option<String>,
     /// Allowed IP addresses (whitelist)
     pub allowed_ips: Vec<String>,
@@ -65,6 +71,20 @@ pub struct WebhookAdapterConfig {
     pub rate_limit_per_minute: Option<u32>,
     /// Storage directory for persistence
     pub storage_dir: Option<String>,
+    /// Maximum discovery events per minute per source IP (default: 30).
+    ///
+    /// Caps how many `DeviceDiscovered` events an unregistered-device webhook
+    /// can emit per minute from a single source IP. Prevents amplification when
+    /// attackers rotate `device_id`s to bypass per-device rate limiting. When the
+    /// cap is hit, subsequent unknown-device posts still have their metrics
+    /// processed (so data isn't lost) but no discovery event fires — the
+    /// auto-onboard manager is spared from LLM-driven analysis floods.
+    #[serde(default = "default_discovery_rate")]
+    pub discovery_rate_per_minute: u32,
+}
+
+fn default_discovery_rate() -> u32 {
+    30
 }
 
 impl WebhookAdapterConfig {
@@ -77,6 +97,7 @@ impl WebhookAdapterConfig {
             blocked_ips: Vec::new(),
             rate_limit_per_minute: None,
             storage_dir: None,
+            discovery_rate_per_minute: default_discovery_rate(),
         }
     }
 
@@ -142,8 +163,12 @@ pub struct WebhookAdapter {
     devices: Arc<RwLock<Vec<String>>>,
     /// Telemetry storage
     telemetry_storage: Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
-    /// Request counter for rate limiting
+    /// Request counter for rate limiting (per device_id)
     request_count: Arc<RwLock<HashMap<String, (u32, std::time::Instant)>>>,
+    /// Discovery emission counter (per source IP) — caps DeviceDiscovered events
+    /// to prevent event-bus / auto-onboard amplification when attackers rotate
+    /// device_ids. See `discovery_rate_per_minute` in config.
+    discovery_count: Arc<RwLock<HashMap<String, (u32, std::time::Instant)>>>,
     /// Unified data extractor
     extractor: Arc<UnifiedExtractor>,
 }
@@ -170,6 +195,7 @@ impl WebhookAdapter {
             devices: Arc::new(RwLock::new(Vec::new())),
             telemetry_storage: Arc::new(RwLock::new(None)),
             request_count: Arc::new(RwLock::new(HashMap::new())),
+            discovery_count: Arc::new(RwLock::new(HashMap::new())),
             extractor,
         }
     }
@@ -261,16 +287,28 @@ impl WebhookAdapter {
 
     /// Process a webhook payload and emit events.
     ///
-    /// `provided_token`: Optional webhook token from Authorization header or query param.
-    ///   If the device has a `webhook_token` in its connection_config.extra, it must match.
+    /// `provided_token`: Optional per-device webhook token from `Authorization: Bearer`
+    ///   header or `?token=` query param. If the device has `webhook_token` configured
+    ///   in its `connection_config.extra`, this must match.
+    ///
+    /// `provided_api_key`: Optional adapter-level API key from `X-API-Key` header.
+    ///   Only checked when `self.config.api_key` is configured. Use this for
+    ///   internet-exposed deployments where per-device tokens aren't pre-provisioned.
+    ///
+    /// `remote_ip`: Client IP from `ConnectInfo<SocketAddr>`. Required for the IP
+    ///   allowlist/blocklist to take effect, and used as the discovery-event
+    ///   throttle key.
     pub async fn process_webhook(
         &self,
         device_id: String,
         payload: WebhookPayload,
         provided_token: Option<&str>,
+        provided_api_key: Option<&str>,
+        remote_ip: Option<&IpAddr>,
     ) -> AdapterResult<usize> {
-        // Validate request (API key, IP blacklist/whitelist)
-        self.validate_request(&device_id, None, None)?;
+        // Validate request (adapter API key, IP blacklist/whitelist).
+        // All three params now flow through from the handler.
+        self.validate_request(&device_id, provided_api_key, remote_ip)?;
 
         // Get device from shared registry (for token verification and type info)
         let registry = self.device_registry.read().await;
@@ -338,42 +376,71 @@ impl WebhookAdapter {
             }
         }
 
-        // For unknown/unregistered devices, emit DeviceDiscovered on EVERY call
-        // so the auto-onboard manager can collect multiple samples for analysis
+        // For unknown/unregistered devices, emit DeviceDiscovered subject to a
+        // per-IP rate cap. Without this cap, an attacker rotating `device_id`s
+        // can bypass per-device rate limiting and flood the auto-onboard manager
+        // (which may call an LLM per discovery). Metrics are still processed below
+        // even when the discovery event is throttled — data isn't lost.
         if !is_registered {
-            let sample = payload.data.clone();
-            let discovered = DiscoveredDeviceInfo {
-                device_id: device_id.clone(),
-                device_type: "unknown".to_string(),
-                name: None,
-                endpoint: Some(format!("webhook:{}", self.name)),
-                capabilities: vec![],
-                timestamp,
-                metadata: serde_json::json!({
-                    "source": "webhook",
-                    "adapter_id": self.name,
-                }),
+            let ip_key = remote_ip
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let limit = self.config.discovery_rate_per_minute.max(1);
+            let should_emit = {
+                let mut counts = self.discovery_count.write().await;
+                let now = std::time::Instant::now();
+                // Drop entries older than 1 minute (fixed-window cleanup).
+                counts.retain(|_, (_, ts)| now.duration_since(*ts).as_secs() < 60);
+                let (count, _) = counts.entry(ip_key).or_insert((0, now));
+                if *count >= limit {
+                    false
+                } else {
+                    *count += 1;
+                    true
+                }
             };
 
-            let _ = self
-                .event_tx
-                .send(DeviceEvent::Discovery { device: discovered });
-
-            if let Some(bus) = &self.event_bus {
-                use neomind_core::NeoMindEvent;
-
-                bus.publish(NeoMindEvent::DeviceDiscovered {
+            if should_emit {
+                let sample = payload.data.clone();
+                let discovered = DiscoveredDeviceInfo {
                     device_id: device_id.clone(),
-                    source: "webhook".to_string(),
-                    adapter_id: Some(self.name.clone()),
-                    metadata: serde_json::json!({
-                        "endpoint": format!("webhook:{}", self.name),
-                    }),
-                    sample,
-                    is_binary: false,
+                    device_type: "unknown".to_string(),
+                    name: None,
+                    endpoint: Some(format!("webhook:{}", self.name)),
+                    capabilities: vec![],
                     timestamp,
-                })
-                .await;
+                    metadata: serde_json::json!({
+                        "source": "webhook",
+                        "adapter_id": self.name,
+                    }),
+                };
+
+                let _ = self
+                    .event_tx
+                    .send(DeviceEvent::Discovery { device: discovered });
+
+                if let Some(bus) = &self.event_bus {
+                    use neomind_core::NeoMindEvent;
+
+                    bus.publish(NeoMindEvent::DeviceDiscovered {
+                        device_id: device_id.clone(),
+                        source: "webhook".to_string(),
+                        adapter_id: Some(self.name.clone()),
+                        metadata: serde_json::json!({
+                            "endpoint": format!("webhook:{}", self.name),
+                        }),
+                        sample,
+                        is_binary: false,
+                        timestamp,
+                    })
+                    .await;
+                }
+            } else {
+                warn!(
+                    adapter = %self.name,
+                    device_id = %device_id,
+                    "Discovery event throttled for unknown device; metrics still recorded"
+                );
             }
         }
 
@@ -608,6 +675,7 @@ impl Clone for WebhookAdapter {
             devices: Arc::clone(&self.devices),
             telemetry_storage: Arc::clone(&self.telemetry_storage),
             request_count: Arc::clone(&self.request_count),
+            discovery_count: Arc::clone(&self.discovery_count),
             extractor: Arc::clone(&self.extractor),
         }
     }

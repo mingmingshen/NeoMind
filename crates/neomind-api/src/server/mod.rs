@@ -491,10 +491,18 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // Services phase
     startup.phase_services();
 
-    // Run with graceful shutdown
-    axum::serve(listener, app)
-        .with_graceful_shutdown(crate::shutdown::shutdown_signal())
-        .await?;
+    // Run with graceful shutdown.
+    // `into_make_service_with_connect_info` populates `ConnectInfo<SocketAddr>` for
+    // all handlers — required by webhook IP allow/block lists, rate-limit client_id
+    // extraction, and per-IP discovery throttling. Without this, Optional
+    // `ConnectInfo` extractors silently receive `None` and every IP-based security
+    // control degrades to no-op.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(crate::shutdown::shutdown_signal())
+    .await?;
 
     // Clean up resources after server shuts down
     crate::shutdown::cleanup_resources(&state_for_cleanup).await;

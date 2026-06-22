@@ -4,16 +4,20 @@
 //! This is useful for devices that actively push data.
 //!
 //! All processing is delegated to `WebhookAdapter` which handles:
-//! - Per-device token verification
-//! - Data extraction via UnifiedExtractor
+//! - Per-device token verification (`Authorization: Bearer` or `?token=`)
+//! - Optional adapter-level API key (`X-API-Key` header)
+//! - Optional IP allowlist/blocklist
+//! - Per-device rate limiting
+//! - Per-IP discovery-event throttling (prevents auto-onboard amplification)
 //! - Auto-discovery for unknown devices
-//! - Rate limiting, IP filtering, API key validation
+//! - Data extraction via UnifiedExtractor
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::HeaderMap,
     Json,
 };
+use std::net::SocketAddr;
 use tracing::info;
 
 use crate::handlers::{
@@ -39,6 +43,19 @@ fn extract_token(
         .or_else(|| params.get("token").cloned())
 }
 
+/// Extract adapter-level API key from the `X-API-Key` header (case-insensitive).
+///
+/// Distinct from `extract_token` — that reads the per-device `Authorization: Bearer`
+/// secret. The adapter-level key is a global pre-shared secret for the whole
+/// adapter, useful when the platform is exposed without per-device provisioning.
+fn extract_api_key(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// Get the internal webhook adapter, downcast from DeviceAdapter.
 async fn get_webhook_adapter(
     state: &ServerState,
@@ -62,21 +79,32 @@ async fn get_webhook_adapter(
 /// Endpoint: `POST /api/devices/:id/webhook`
 ///
 /// Devices POST JSON data which is processed by the WebhookAdapter.
-/// Supports optional authentication via `Authorization: Bearer <token>` or `?token=xxx`.
+/// Auth options (checked by the adapter, all optional individually):
+/// - `Authorization: Bearer <token>` or `?token=xxx` — per-device webhook token
+/// - `X-API-Key: <key>` — adapter-level pre-shared key (only enforced if configured)
 pub async fn webhook_handler(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
     headers: HeaderMap,
     Query(params): Query<std::collections::HashMap<String, String>>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     Json(mut payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
     let adapter = get_webhook_adapter(&state).await?;
     let token = extract_token(&headers, &params);
+    let api_key = extract_api_key(&headers);
+    let remote_ip = connect_info.map(|ci| ci.0.ip());
 
     payload.device_id = Some(device_id.clone());
 
     let metrics_count = adapter
-        .process_webhook(device_id.clone(), payload, token.as_deref())
+        .process_webhook(
+            device_id.clone(),
+            payload,
+            token.as_deref(),
+            api_key.as_deref(),
+            remote_ip.as_ref(),
+        )
         .await
         .map_err(|e| {
             tracing::warn!(device_id = %device_id, error = %e, "Webhook processing failed");
@@ -109,10 +137,15 @@ pub async fn webhook_handler(
 /// Endpoint: `POST /api/devices/webhook`
 ///
 /// The device_id must be provided in the request body.
+/// NOTE: The body-supplied `device_id` is attacker-controllable. Deployments that
+/// need strong device identity should configure either per-device `webhook_token`s
+/// or an adapter-level `X-API-Key`. On closed LAN deployments, leave both unset —
+/// the route's rate limit plus per-IP discovery throttle is the only defense.
 pub async fn webhook_generic_handler(
     State(state): State<ServerState>,
     headers: HeaderMap,
     Query(params): Query<std::collections::HashMap<String, String>>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     Json(mut payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
     let device_id = payload
@@ -122,11 +155,19 @@ pub async fn webhook_generic_handler(
 
     let adapter = get_webhook_adapter(&state).await?;
     let token = extract_token(&headers, &params);
+    let api_key = extract_api_key(&headers);
+    let remote_ip = connect_info.map(|ci| ci.0.ip());
 
     payload.device_id = Some(device_id.clone());
 
     let metrics_count = adapter
-        .process_webhook(device_id.clone(), payload, token.as_deref())
+        .process_webhook(
+            device_id.clone(),
+            payload,
+            token.as_deref(),
+            api_key.as_deref(),
+            remote_ip.as_ref(),
+        )
         .await
         .map_err(|e| {
             tracing::warn!(device_id = %device_id, error = %e, "Webhook processing failed");
@@ -156,7 +197,10 @@ pub async fn webhook_generic_handler(
 
 /// Get webhook URL for a device.
 ///
-/// Returns the URL that devices should POST to.
+/// Returns the URL that devices should POST to. Lives behind the hybrid auth
+/// middleware (moved out of `public_routes`) — it's an admin/UI lookup, not
+/// something devices call, and the previous public placement leaked device
+/// existence (404 vs 200) plus the server's configured `NEOMIND_SERVER_URL`.
 pub async fn get_webhook_url_handler(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
