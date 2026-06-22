@@ -204,6 +204,7 @@ pub async fn webhook_generic_handler(
 pub async fn get_webhook_url_handler(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
+    headers: HeaderMap,
 ) -> HandlerResult<serde_json::Value> {
     // Verify device exists
     if state.devices.service.get_device(&device_id).is_none() {
@@ -213,10 +214,9 @@ pub async fn get_webhook_url_handler(
         )));
     }
 
-    let server_url =
-        std::env::var("NEOMIND_SERVER_URL").unwrap_or_else(|_| "http://localhost:9375".to_string());
+    let (server_url, url_source) = crate::handlers::common::resolve_server_url(Some(&headers));
 
-    ok(serde_json::json!({
+    let mut payload = serde_json::json!({
         "device_id": device_id,
         "webhook_url": format!("{}/api/devices/{}/webhook", server_url, device_id),
         "alternative_url": format!("{}/api/devices/webhook", server_url),
@@ -229,6 +229,16 @@ pub async fn get_webhook_url_handler(
                 "temperature": 23.5,
                 "humidity": 65
             }
-        }
-    }))
+        },
+        "url_source": url_source.as_str(),
+    });
+
+    if url_source == crate::handlers::common::ServerUrlSource::Fallback {
+        payload["hint"] = serde_json::json!(
+            "Set NEOMIND_SERVER_URL env var (or run behind a proxy that sends \
+             X-Forwarded-Proto + Host) — the returned URL is a placeholder."
+        );
+    }
+
+    ok(payload)
 }

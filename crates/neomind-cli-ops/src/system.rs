@@ -92,13 +92,33 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
         .and_then(|d| d.get("ssid"))
         .and_then(|v| v.as_str());
 
-    // Build the info response
+    // Build the info response.
+    //
+    // URL source attribution: the CLI is an HTTP client to the API, so it can't
+    // see reverse-proxy headers (`X-Forwarded-Proto`, `Host`) — those were
+    // consumed by the server. It only knows its own `NEOMIND_API_BASE` (or the
+    // localhost default). Surface the source so users know whether to trust the
+    // URL: `env` = operator set NEOMIND_API_BASE explicitly; `fallback` = the
+    // CLI fell through to `http://localhost:9375/api`, almost certainly wrong
+    // for remote clients.
     let api_base = client.base_url();
     let server_base = api_base.trim_end_matches("/api");
     let webhook_url = format!("{}/api/devices/{{device_id}}/webhook", server_base);
     let api_url = api_base.to_string();
+    let (url_source, url_hint) =
+        if std::env::var("NEOMIND_API_BASE").map(|s| !s.trim().is_empty()).unwrap_or(false) {
+            ("env", None)
+        } else {
+            ("fallback", Some(
+                "URL is a localhost placeholder. For HTTPS deployments, set NEOMIND_API_BASE \
+                 (CLI) and NEOMIND_SERVER_URL (server) env vars to the public URL, e.g. \
+                 `https://your.domain/api`. The HTTP API endpoint /api/devices/:id/webhook-url \
+                 additionally respects X-Forwarded-Proto + Host headers when behind a proxy."
+                    .to_string(),
+            ))
+        };
 
-    let info = json!({
+    let mut info = json!({
         "mqtt": {
             "broker_address": format!("{}:{}", server_ip, mqtt_port),
             "broker_url": broker_url,
@@ -116,6 +136,7 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
             "server_ip": server_ip,
             "wifi_ssid": wifi_ssid,
             "api_url": api_url,
+            "url_source": url_source,
         },
         "device_connection": {
             "mqtt": {
@@ -136,9 +157,14 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
                     "quality": 1.0,
                     "data": {"temperature": 23.5, "humidity": 65}
                 },
+                "url_source": url_source,
             },
         },
     });
+
+    if let Some(hint) = url_hint {
+        info["url_hint"] = json!(hint);
+    }
 
     Ok(CliResponse::success(info, "System info retrieved"))
 }

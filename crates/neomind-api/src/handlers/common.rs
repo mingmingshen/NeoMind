@@ -297,6 +297,89 @@ pub fn ok_with_meta<T: serde::Serialize>(data: T, meta: PaginationMeta) -> Handl
     Ok(Json(ApiResponse::paginated(data, meta)))
 }
 
+/// Source attribution for [`resolve_server_url`]. Useful for surfacing to the
+/// client whether the returned URL should be trusted as the public address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerUrlSource {
+    /// `NEOMIND_SERVER_URL` env var — explicit operator configuration, always trusted.
+    Env,
+    /// `X-Forwarded-Proto` + `Host` headers — inferred from reverse proxy.
+    /// Trusted iff the server is behind a proxy that sets these headers.
+    ProxyHeader,
+    /// Hardcoded `http://localhost:9375` fallback. Almost certainly wrong for
+    /// remote clients; clients should treat as a placeholder.
+    Fallback,
+}
+
+impl ServerUrlSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ServerUrlSource::Env => "env",
+            ServerUrlSource::ProxyHeader => "proxy_header",
+            ServerUrlSource::Fallback => "fallback",
+        }
+    }
+}
+
+/// Resolve the server's externally-visible base URL.
+///
+/// Priority:
+/// 1. `NEOMIND_SERVER_URL` env var (explicit operator config — use this in prod)
+/// 2. `X-Forwarded-Proto` + `Host` request headers (reverse proxy inference)
+/// 3. `http://localhost:9375` hardcoded fallback
+///
+/// ## When to use what
+///
+/// - **HTTPS reverse-proxy deployments** (nginx TLS termination): set
+///   `NEOMIND_SERVER_URL=https://your.domain` in the env. If you forget, the
+///   ProxyHeader branch will still produce a correct URL as long as nginx
+///   forwards the standard headers.
+/// - **Closed LAN / Tauri desktop**: leave unset; the localhost fallback is
+///   correct for those clients.
+/// - **Direct internet exposure** (no proxy): MUST set the env var — without a
+///   proxy there's no `X-Forwarded-Proto`, and the fallback is wrong.
+///
+/// ## Security note on the ProxyHeader branch
+///
+/// Only trust these headers when the server is behind a proxy you control.
+/// If the server is directly internet-exposed, an attacker can spoof
+/// `X-Forwarded-Proto` to trick the server into generating `https://` URLs
+/// pointing at an attacker-controlled host. Set the env var to lock it down.
+pub fn resolve_server_url(headers: Option<&axum::http::HeaderMap>) -> (String, ServerUrlSource) {
+    // 1. Explicit env var wins everywhere.
+    if let Ok(env_url) = std::env::var("NEOMIND_SERVER_URL") {
+        let trimmed = env_url.trim_end_matches('/');
+        if !trimmed.is_empty() {
+            return (trimmed.to_string(), ServerUrlSource::Env);
+        }
+    }
+
+    // 2. Infer from reverse-proxy headers.
+    if let Some(hdrs) = headers {
+        let host = hdrs
+            .get(axum::http::header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .filter(|s| !s.is_empty());
+        let scheme = hdrs
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("http");
+        if let Some(host) = host {
+            return (
+                format!("{}://{}", scheme, host),
+                ServerUrlSource::ProxyHeader,
+            );
+        }
+    }
+
+    // 3. Hardcoded fallback.
+    (
+        "http://localhost:9375".to_string(),
+        ServerUrlSource::Fallback,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
