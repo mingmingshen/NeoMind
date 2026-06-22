@@ -3,7 +3,7 @@
 //! Provides validation functions to check that referenced resources
 //! (devices, metrics, extensions) exist and are properly configured.
 
-use crate::models::{ComparisonOperator, ExecuteTarget, RuleAction, RuleCondition};
+use crate::models::{CompiledRule, ComparisonOperator, ExecuteTarget, RuleAction, RuleCondition};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -484,6 +484,50 @@ impl RuleValidator {
             warnings,
         }
     }
+
+    /// Minimum cooldown enforced on rules that subscribe to virtual metrics.
+    ///
+    /// The virtual-metric emitter refreshes `__last_seen_age_secs` on a 60s
+    /// tick. Without a cooldown, a rule whose condition is true would fire
+    /// every minute — spamming notification channels. One hour is the floor.
+    pub const MIN_VIRTUAL_METRIC_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3600);
+
+    /// Enforce a minimum cooldown on rules that subscribe to virtual metrics.
+    ///
+    /// Virtual metrics like `__last_seen_age_secs` are refreshed by a periodic
+    /// emitter (60s tick). Without a cooldown, a rule whose condition is true
+    /// would fire every 60 seconds. This guard ensures users set a sensible
+    /// cooldown (>=1h).
+    ///
+    /// Returns `Ok(())` if the rule does not use any virtual metric, or if the
+    /// configured cooldown meets the floor. Returns `Err(message)` otherwise.
+    pub fn validate_virtual_metric_cooldown(rule: &CompiledRule) -> Result<(), String> {
+        let uses_virtual = rule
+            .condition
+            .as_ref()
+            .map(|c| {
+                c.extract_sources().iter().any(|s| {
+                    s.source_type == neomind_core::datasource::DataSourceType::Device
+                        && VIRTUAL_METRICS.contains(&s.field_path.as_str())
+                })
+            })
+            .unwrap_or(false);
+
+        if !uses_virtual {
+            return Ok(());
+        }
+
+        if rule.cooldown < Self::MIN_VIRTUAL_METRIC_COOLDOWN {
+            return Err(format!(
+                "Rules using virtual metrics ({}) must set cooldown >= {} ms (got {} ms). \
+                 Without a cooldown the rule would fire every 60 seconds.",
+                VIRTUAL_METRICS.join(", "),
+                Self::MIN_VIRTUAL_METRIC_COOLDOWN.as_millis(),
+                rule.cooldown.as_millis()
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -694,5 +738,66 @@ mod tests {
         assert_eq!(issues.len(), 1, "expected exactly one warning");
         assert_eq!(issues[0].code, "VIRTUAL_METRIC_BAD_OPERATOR");
         assert!(matches!(issues[0].severity, ValidationSeverity::Warning));
+    }
+
+    // ----- Virtual-metric cooldown tests (Task 2) ---------------------------
+
+    /// Short cooldown (30s) on a virtual-metric rule must be rejected — without
+    /// it the rule would fire every 60s emitter tick.
+    #[test]
+    fn test_validate_virtual_metric_cooldown_rejects_short() {
+        let mut rule = CompiledRule::new("test");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev-001", "__last_seen_age_secs"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 3600.0,
+            threshold_value: None,
+        });
+        rule.cooldown = std::time::Duration::from_secs(30); // too short
+        rule.finalize();
+
+        let result = RuleValidator::validate_virtual_metric_cooldown(&rule);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("cooldown"),
+            "error message must mention 'cooldown', got: {}",
+            msg
+        );
+    }
+
+    /// Exactly 1h cooldown (3600s) is the minimum allowed — accepted.
+    #[test]
+    fn test_validate_virtual_metric_cooldown_accepts_one_hour() {
+        let mut rule = CompiledRule::new("test");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev-001", "__last_seen_age_secs"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 3600.0,
+            threshold_value: None,
+        });
+        rule.cooldown = std::time::Duration::from_secs(3600);
+        rule.finalize();
+
+        let result = RuleValidator::validate_virtual_metric_cooldown(&rule);
+        assert!(result.is_ok());
+    }
+
+    /// Regular (non-virtual) metrics are not subject to the cooldown floor —
+    /// the validator must skip them entirely.
+    #[test]
+    fn test_validate_virtual_metric_cooldown_ignores_regular_metrics() {
+        let mut rule = CompiledRule::new("test");
+        rule.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev-001", "temperature"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        rule.cooldown = std::time::Duration::from_secs(0); // would be invalid for virtual
+        rule.finalize();
+
+        let result = RuleValidator::validate_virtual_metric_cooldown(&rule);
+        assert!(result.is_ok(), "regular metrics must skip cooldown check");
     }
 }
