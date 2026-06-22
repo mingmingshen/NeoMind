@@ -13,7 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Overview
 
-Mobile layout redesign for settings & drill-down views, plus a follow-up mobile UX/PWA polish pass. Covers sticky-header / scroll-container fragmentation fixes, card overflow on narrow screens, mobile drawer consolidation, pagination regressions across drill-down pages, PWA install metadata, and data-explorer history refinements. No breaking API changes; no new runtime dependencies.
+Three themes: (1) **webhook security hardening** — wiring adapter-level IP/API-key controls that were silently no-ops, rate-limiting inbound POSTs, throttling discovery events, and correctly resolving the server URL behind HTTPS proxies; (2) **mobile layout redesign** for settings & drill-down views; (3) **PWA polish** plus a long tail of mobile UX fixes (pagination, header overflow, dialogs). No breaking API changes; no new runtime dependencies.
+
+### Security — Webhook
+
+#### Dead-code controls wired to real values
+- **`validate_request` always no-op** (`crates/neomind-devices/src/adapters/webhook.rs` + `crates/neomind-api/src/handlers/devices/webhook.rs`): the handler forwarded `(None, None)` for both `X-API-Key` and remote IP, making the adapter-level API key check and IP allow/block lists dead code. Now forwards the real `X-API-Key` header and remote IP from `ConnectInfo<SocketAddr>`. *(4aab3bbc)*
+- **`ConnectInfo<SocketAddr>` silently None app-wide** (`server/mod.rs`): server bound without `into_make_service_with_connect_info`, so every `Optional<ConnectInfo>` extractor degraded to None and every IP-based control was a no-op. Now enabled globally. *(4aab3bbc)*
+- **`get_webhook_url_handler` was public** (`server/router.rs`): leaked device existence (404 vs 200) and the configured `NEOMIND_SERVER_URL` to unauthenticated callers. Moved to protected_routes. *(4aab3bbc)*
+
+#### Rate limiting & discovery throttle
+- **Webhook POST rate limit** (`server/middleware.rs` + `router.rs`): webhook routes now live in a dedicated `webhook_routes` block behind `webhook_rate_limit_middleware`. The composite `client_id` includes `device_id` from the URL path, so devices sharing an adapter API key still get independent buckets. *(4aab3bbc)*
+- **Per-IP discovery throttle** (`adapters/webhook.rs::process_webhook`): default 30/min (configurable via `discovery_rate_per_minute`). Caps `DeviceDiscovered` emissions to stop auto-onboard / LLM amplification when attackers rotate `device_id`s. Telemetry metrics still process when the cap is hit — only the event is suppressed. *(4aab3bbc)*
+
+#### Server URL resolution behind proxies
+- **Hardcoded `http://localhost:9375` behind HTTPS proxy** (`handlers/common.rs::resolve_server_url`): webhook URLs returned by `/api/devices/:id/webhook-url` and `neomind system info` were always `http://` when `NEOMIND_SERVER_URL` was unset. Behind an HTTPS reverse proxy (typical prod), devices hit a 301 from nginx and either silently dropped the POST body on redirect or failed outright. New 3-tier priority chain: `NEOMIND_SERVER_URL` env > `X-Forwarded-Proto` + `Host` headers > localhost fallback. Response now includes a `url_source` tag (`env | proxy_header | fallback`) plus a `hint` field for fallback cases. *(663e94df)*
+- **`neomind system info` CLI** (`cli-ops/src/system.rs`): surfaces `url_source` alongside `network.api_url` and `device_connection.webhook.url`, plus a top-level `url_hint` with operator guidance pointing at both `NEOMIND_API_BASE` (CLI side) and `NEOMIND_SERVER_URL` (server side). *(663e94df)*
+- **`.env.example`**: documents the priority chain and the HTTPS deployment gotcha. *(663e94df)*
+
+#### Tests
+- **3 webhook unit tests** (`tests/webhook_*.rs`): `validate_request` IP/API-key enforcement, per-IP discovery throttle (caps `DeviceDiscovered` while metrics still process), and `resolve_server_url` priority chain (env > proxy_header > fallback). *(704eb8b5)*
+
+### Mobile UI — Pagination & drill-down follow-ups
 
 ### Mobile UI — Pagination & drill-down follow-ups
 
