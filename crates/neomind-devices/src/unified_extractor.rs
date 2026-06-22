@@ -84,6 +84,19 @@ pub enum ExtractionMode {
     NoData,
 }
 
+/// System-level metric keys that bypass template matching and are always
+/// extracted when present in the payload.
+///
+/// Convention: prefix with `__` (double underscore) to clearly separate
+/// system metrics from user-defined device-type template metrics.
+///
+/// Current entries:
+/// - `__webhook_image` — image data URL captured by the webhook multipart
+///   parser. Guaranteed to be populated for any webhook multipart upload
+///   that contains at least one image/* part, regardless of the firmware's
+///   chosen part name or the device-type template's metric naming.
+pub const SYSTEM_PASS_THROUGH_KEYS: &[&str] = &["__webhook_image"];
+
 /// Unified data extractor for all device adapters.
 ///
 /// This extractor provides consistent behavior across MQTT, HTTP, Webhook,
@@ -135,6 +148,37 @@ impl UnifiedExtractor {
         let mut metrics = Vec::new();
         let mut warnings = Vec::new();
         let mut raw_stored = false;
+
+        // Step 0: System-metric pass-through.
+        //
+        // Keys prefixed with `__` are system metrics that bypass template
+        // matching — they are always extracted if present in the payload.
+        // Currently used by the webhook multipart parser to guarantee images
+        // are always recoverable regardless of device-type template naming
+        // (`__webhook_image`). Mirrors the `__last_seen_age_secs` convention
+        // used by the rule-engine's DeviceStatusEmitter.
+        for sys_key in SYSTEM_PASS_THROUGH_KEYS {
+            // Skip when the key is absent OR explicitly null. `extract_by_path`
+            // returns `Ok(Some(Value::Null))` for missing keys (legacy
+            // semantics), so we must treat Null as "not present" here —
+            // otherwise every webhook payload would synthesize a phantom
+            // `__webhook_image: null` metric.
+            if let Ok(Some(value)) = self.extract_by_path(raw_data, sys_key, 0) {
+                if value.is_null() {
+                    continue;
+                }
+                let metric_value = self.value_to_metric_value(&value);
+                debug!(
+                    "System metric '{}' extracted for device '{}': value_type={}",
+                    sys_key, device_id, metric_value.type_name()
+                );
+                metrics.push(ExtractedMetric {
+                    name: sys_key.to_string(),
+                    value: metric_value,
+                    source_path: sys_key.to_string(),
+                });
+            }
+        }
 
         // Step 1: Always store raw data if configured
         if self.config.store_raw {
@@ -740,5 +784,63 @@ mod tests {
         assert_eq!(result.mode, ExtractionMode::RawOnly);
         assert!(result.raw_stored);
         assert_eq!(result.metrics.len(), 1); // Only _raw
+    }
+
+    #[tokio::test]
+    async fn test_system_metric_pass_through_when_present() {
+        // When `__webhook_image` is in the payload, it MUST be extracted as a
+        // metric regardless of template — that's the fault-tolerant fallback
+        // contract for webhook-uploaded camera images.
+        let registry = create_test_registry();
+        let extractor = UnifiedExtractor::new(registry);
+
+        let data = json!({
+            "battery": 85,
+            "__webhook_image": "data:image/jpeg;base64,AAAA"
+        });
+
+        let result = extractor.extract("cam1", "unknown_type", &data).await;
+
+        // _raw + battery + __webhook_image (+ auto-extract may also pull
+        // __webhook_image as a regular field, which is fine — it just means
+        // the metric is doubly visible). Assert the system metric is present
+        // by name.
+        let has_webhook_image = result
+            .metrics
+            .iter()
+            .any(|m| m.name == "__webhook_image");
+        assert!(
+            has_webhook_image,
+            "expected __webhook_image system metric in results: {:?}",
+            result.metrics.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_system_metric_absent_does_not_synthesize_phantom() {
+        // Regression: when `__webhook_image` is NOT in the payload, the
+        // system-metric pass-through must NOT fire. Previously a bug in
+        // `extract_by_path` returned `Ok(Some(Value::Null))` for missing
+        // keys, which caused a phantom `__webhook_image: null` metric to be
+        // synthesized on every webhook call.
+        let registry = create_test_registry();
+        let extractor = UnifiedExtractor::new(registry);
+
+        let data = json!({
+            "battery": 85,
+            "temp": 23.5
+        });
+
+        let result = extractor.extract("cam1", "unknown_type", &data).await;
+
+        let has_phantom = result
+            .metrics
+            .iter()
+            .any(|m| m.name == "__webhook_image");
+        assert!(
+            !has_phantom,
+            "phantom __webhook_image metric synthesized when payload did not contain it: {:?}",
+            result.metrics.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
     }
 }

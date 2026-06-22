@@ -636,8 +636,14 @@ fn parse_multipart_body(
             // `image_data`, the binary part respects it). Only the first image
             // gets aliases — subsequent frames stay under their unique keys
             // (`image_2`, etc.) so multi-frame devices don't conflate them.
+            //
+            // `__webhook_image` is a SYSTEM metric (double-underscore prefix):
+            // the unified extractor passes it through regardless of the
+            // device-type template, so the image is always recoverable in the
+            // frontend even when no template metric name matches. This mirrors
+            // the `__last_seen_age_secs` system-metric convention.
             if image_count == 1 {
-                for alias in ["image_data", "frame", "snapshot"] {
+                for alias in ["__webhook_image", "image_data", "frame", "snapshot"] {
                     data_obj
                         .entry(alias.to_string())
                         .or_insert(serde_json::Value::String(data_url.clone()));
