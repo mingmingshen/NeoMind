@@ -31,6 +31,8 @@ import type { TransformAutomation, Rule, Extension, ExtensionDataSourceInfo, Tra
 // Import split-pane builder components
 import { SimpleRuleBuilderSplit } from "@/components/automation/SimpleRuleBuilderSplit"
 import { TransformBuilder as TransformBuilderSplit } from "@/components/automation/TransformBuilderSplit"
+import { RuleTemplatePicker } from "@/components/automation/dialog/RuleTemplatePicker"
+import { DeviceOfflineTemplateDialog } from "@/components/automation/dialog/DeviceOfflineTemplateDialog"
 
 // Import list components
 import { RulesList, ITEMS_PER_PAGE as RULES_ITEMS_PER_PAGE } from "./automation-components/RulesList"
@@ -81,6 +83,8 @@ export function AutomationPage() {
   // Builder states
   const [showRuleDialog, setShowRuleDialog] = useState(false)
   const [showTransformDialog, setShowTransformDialog] = useState(false)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [showOfflineDialog, setShowOfflineDialog] = useState(false)
 
   // Editing states
   const [editingRule, setEditingRule] = useState<Rule | undefined>(undefined)
@@ -564,6 +568,11 @@ export function AutomationPage() {
     activeTab === 'rules'
       ? [
           {
+            label: tAuto('emptyState.createFromTemplate'),
+            icon: <Sparkles className="h-4 w-4" />,
+            onClick: () => setShowTemplatePicker(true),
+          },
+          {
             label: tAuto('export'),
             icon: <Download className="h-4 w-4" />,
             onClick: handleExportRules,
@@ -668,6 +677,24 @@ export function AutomationPage() {
         rule={editingRule}
         onSave={handleSaveRule}
         resources={{ devices: ruleDevices, deviceTypes, extensions, extensionDataSources, transformDataSources, messageChannels, agents }}
+      />
+
+      {/* Template picker + device-offline dialog */}
+      <RuleTemplatePicker
+        open={showTemplatePicker}
+        onOpenChange={setShowTemplatePicker}
+        onSelectTemplate={(id) => {
+          setShowTemplatePicker(false)
+          if (id === 'device_offline') {
+            setShowOfflineDialog(true)
+            loadResources()
+          }
+        }}
+      />
+      <DeviceOfflineTemplateDialog
+        open={showOfflineDialog}
+        onOpenChange={setShowOfflineDialog}
+        onCreated={loadItems}
       />
 
       {/* Transform Builder Dialog */}
