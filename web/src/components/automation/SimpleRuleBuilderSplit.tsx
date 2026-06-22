@@ -307,10 +307,10 @@ const getNumericOperators = (t: (key: string) => string) => [
 const getStringOperators = (t: (key: string) => string) => [
   { value: '==', label: t('automation:operators.equal'), symbol: '=' },
   { value: '!=', label: t('automation:operators.notEqual'), symbol: '≠' },
-  { value: 'contains', label: t('automation:operators.contains'), symbol: '⊇' },
-  { value: 'starts_with', label: t('automation:operators.startsWith'), symbol: 'A*' },
-  { value: 'ends_with', label: t('automation:operators.endsWith'), symbol: '*Z' },
-  { value: 'regex', label: t('automation:operators.regex'), symbol: '.*' },
+  { value: 'contains', label: t('automation:operators.contains'), symbol: '×' },
+  { value: 'starts_with', label: t('automation:operators.startsWith'), symbol: 'A|' },
+  { value: 'ends_with', label: t('automation:operators.endsWith'), symbol: '|Z' },
+  { value: 'regex', label: t('automation:operators.regex'), symbol: '/re/' },
 ]
 
 const getBooleanOperators = (t: (key: string) => string) => [
@@ -1937,8 +1937,11 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
           {/* Metric Selector */}
           {((cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'device' && cond.device_id) || (cond.source_type === 'transform' && cond.transform_id)) && metrics.length > 0 ? (
             <Select value={cond.metric} onValueChange={(v) => {
-              updateField('metric', v)
-              if (v === '__last_seen_age_secs') updateField('operator', '>')
+              onChange({
+                ...condition,
+                metric: v,
+                operator: v === '__last_seen_age_secs' ? '>' : condition.operator,
+              })
             }}>
               <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -2058,8 +2061,11 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
           {/* Metric Selector */}
           {hasValidId && metrics.length > 0 ? (
             <Select value={cond.metric} onValueChange={(v) => {
-              updateField('metric', v)
-              if (v === '__last_seen_age_secs') updateField('operator', '>')
+              onChange({
+                ...condition,
+                metric: v,
+                operator: v === '__last_seen_age_secs' ? '>' : condition.operator,
+              })
             }}>
               <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
