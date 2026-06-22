@@ -22,7 +22,9 @@ struct TestEnv {
     data_dir: PathBuf,
     write_tool: FileWriteTool,
     edit_tool: FileEditTool,
-    fetch_tool: WebFetchTool,
+    /// Reserved for web_fetch integration tests (currently no callers —
+    /// kept wired so future tests don't need to re-plumb the constructor).
+    _fetch_tool: WebFetchTool,
 }
 
 impl TestEnv {
@@ -38,7 +40,7 @@ impl TestEnv {
         Self {
             write_tool: FileWriteTool::new(data_dir.clone()),
             edit_tool: FileEditTool::new(data_dir.clone()),
-            fetch_tool: WebFetchTool::new(), // used in web_fetch tests
+            _fetch_tool: WebFetchTool::new(),
             data_dir,
         }
     }
