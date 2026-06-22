@@ -89,8 +89,13 @@ impl UnifiedValueProvider {
         metric: &str,
         value: &str,
     ) {
-        self.update_rule_value(source_type, source_id, metric, RuleValue::Text(value.to_string()))
-            .await;
+        self.update_rule_value(
+            source_type,
+            source_id,
+            metric,
+            RuleValue::Text(value.to_string()),
+        )
+        .await;
     }
 
     /// Update a cached metric value (RuleValue) with default TTL.
@@ -257,7 +262,10 @@ mod tests {
         let provider = UnifiedValueProvider::new();
 
         // Initially no values
-        assert_eq!(provider.get_by_source(&DataSourceId::device("sensor1", "temperature")), None);
+        assert_eq!(
+            provider.get_by_source(&DataSourceId::device("sensor1", "temperature")),
+            None
+        );
 
         // Update and check
         tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -306,7 +314,11 @@ mod tests {
 
         // Extension command output is stored as "command.field" metric
         assert_eq!(
-            provider.get_by_source(&DataSourceId::extension_command("weather", "get_current_weather", "temperature_c")),
+            provider.get_by_source(&DataSourceId::extension_command(
+                "weather",
+                "get_current_weather",
+                "temperature_c"
+            )),
             Some(RuleValue::Number(28.5))
         );
     }
@@ -341,7 +353,10 @@ mod tests {
         let device_values = provider.get_device_values("sensor1").await;
         assert_eq!(device_values.len(), 2);
         assert_eq!(device_values.get("temp"), Some(&RuleValue::Number(25.0)));
-        assert_eq!(device_values.get("humidity"), Some(&RuleValue::Number(60.0)));
+        assert_eq!(
+            device_values.get("humidity"),
+            Some(&RuleValue::Number(60.0))
+        );
 
         let ext_values = provider.get_extension_values("weather").await;
         assert_eq!(ext_values.len(), 1);
@@ -373,7 +388,11 @@ mod tests {
         provider.update_from_data_source_id(&cmd_id, 28.5).await;
 
         assert_eq!(
-            provider.get_by_source(&DataSourceId::extension_command("weather", "get_current_weather", "temperature_c")),
+            provider.get_by_source(&DataSourceId::extension_command(
+                "weather",
+                "get_current_weather",
+                "temperature_c"
+            )),
             Some(RuleValue::Number(28.5))
         );
     }

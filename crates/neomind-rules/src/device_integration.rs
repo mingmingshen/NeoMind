@@ -71,7 +71,11 @@ impl DeviceActionExecutor {
                 let delay = self.retry_config.delay_for_attempt(attempt);
                 tracing::info!(
                     "Retrying command '{}' on device '{}' (attempt {}/{}) after {:?}",
-                    command, device_id, attempt + 1, max_attempts, delay
+                    command,
+                    device_id,
+                    attempt + 1,
+                    max_attempts,
+                    delay
                 );
                 tokio::time::sleep(delay).await;
             }
@@ -85,7 +89,9 @@ impl DeviceActionExecutor {
                         if attempt > 0 {
                             tracing::info!(
                                 "Command '{}' on device '{}' succeeded on attempt {}",
-                                command, device_id, attempt + 1
+                                command,
+                                device_id,
+                                attempt + 1
                             );
                         }
                         return Ok(result);
@@ -98,7 +104,10 @@ impl DeviceActionExecutor {
                         if attempt < max_attempts - 1 {
                             tracing::warn!(
                                 "Command '{}' on device '{}' failed (attempt {}): {}",
-                                command, device_id, attempt + 1, last_error
+                                command,
+                                device_id,
+                                attempt + 1,
+                                last_error
                             );
                         }
                     }
@@ -110,7 +119,10 @@ impl DeviceActionExecutor {
 
         tracing::error!(
             "Command '{}' on device '{}' failed after {} attempts: {}",
-            command, device_id, max_attempts, last_error
+            command,
+            device_id,
+            max_attempts,
+            last_error
         );
         Err(last_error)
     }
@@ -131,7 +143,10 @@ mod tests {
     #[test]
     fn test_retry_config_delay() {
         let config = RetryConfig::default();
-        assert_eq!(config.delay_for_attempt(0), std::time::Duration::from_millis(0));
+        assert_eq!(
+            config.delay_for_attempt(0),
+            std::time::Duration::from_millis(0)
+        );
         assert!(config.delay_for_attempt(1) > std::time::Duration::from_millis(0));
     }
 }

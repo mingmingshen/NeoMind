@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { getServerOrigin } from "@/lib/api"
+import { useServerUrl } from "@/lib/server-url"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import {
@@ -34,6 +34,7 @@ export function EditDeviceDialog({
   editing,
 }: EditDeviceDialogProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const serverUrl = useServerUrl()
 
   const [deviceName, setDeviceName] = useState("")
   const [adapterType, setAdapterType] = useState<string>("mqtt")
@@ -224,7 +225,7 @@ export function EditDeviceDialog({
                 {t('devices:add.webhookUrlDescription')}
               </p>
               <code className="text-xs break-all block">
-                {getServerOrigin()}/api/devices/{device?.id}/webhook
+                {serverUrl}/api/devices/{device?.id}/webhook
               </code>
             </div>
           </FormSection>

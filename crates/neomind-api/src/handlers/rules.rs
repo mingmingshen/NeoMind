@@ -439,6 +439,10 @@ pub async fn update_rule_handler(
             }
         }
 
+        // Enforce minimum cooldown for virtual-metric rules (e.g. __last_seen_age_secs).
+        // Prevents 60s-tick alert spam.
+        validate_virtual_metric_policy(&rule)?;
+
         // Update the rule in the engine
         state
             .automation
@@ -945,6 +949,10 @@ pub async fn create_rule_handler(
         }
     }
 
+    // Enforce minimum cooldown for virtual-metric rules (e.g. __last_seen_age_secs).
+    // Prevents 60s-tick alert spam.
+    validate_virtual_metric_policy(&rule)?;
+
     // Add the rule to the engine
     state
         .automation
@@ -1280,6 +1288,21 @@ fn build_validation_context(state: &ServerState) -> neomind_rules::ValidationCon
     }
 
     context
+}
+
+/// Enforce minimum cooldown for virtual-metric rules.
+///
+/// Virtual metrics like `__last_seen_age_secs` update every 60 seconds.
+/// Without a minimum cooldown, this creates alert spam.
+fn validate_virtual_metric_policy(rule: &CompiledRule) -> Result<(), ErrorResponse> {
+    if let Err(msg) = neomind_rules::RuleValidator::validate_virtual_metric_cooldown(rule) {
+        return Err(ErrorResponse::bad_request(msg).with_hint(
+            "Set 'cooldown' to at least 3600000 (1 hour in milliseconds) when using \
+             __last_seen_age_secs in the condition."
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Validate the cron expression of a Schedule-type rule.

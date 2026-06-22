@@ -14,7 +14,7 @@ import { RefreshCw, Plus, KeyRound } from "lucide-react"
 import type { DeviceType, AddDeviceRequest, ConnectionConfig } from "@/types"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { FormField } from "@/components/ui/field"
-import { getServerOrigin } from "@/lib/api"
+import { useServerUrl } from "@/lib/server-url"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 
 function generateRandomId(): string {
@@ -51,6 +51,7 @@ export function AddDeviceDialog({
   adding,
 }: AddDeviceDialogProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const serverUrl = useServerUrl()
 
   const [selectedDeviceType, setSelectedDeviceType] = useState("")
   const [deviceId, setDeviceId] = useState("")
@@ -261,7 +262,7 @@ export function AddDeviceDialog({
                   {t('devices:add.webhookUrlDescription')}
                 </p>
                 <code className="text-xs break-all block">
-                  {getServerOrigin()}/api/devices/{deviceId}/webhook
+                  {serverUrl}/api/devices/{deviceId}/webhook
                 </code>
               </div>
 

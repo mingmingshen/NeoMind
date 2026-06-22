@@ -72,8 +72,9 @@ use neomind_core::{extension::ExtensionRegistry, EventBus};
 use neomind_devices::adapter::AdapterResult;
 use neomind_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
 use neomind_rules::{
-    device_integration::DeviceActionExecutor, extension_integration::ExtensionActionExecutor,
-    store::RuleStore, RuleEngine, UnifiedValueProvider,
+    device_integration::DeviceActionExecutor, device_status_emitter::DeviceStatusEmitter,
+    extension_integration::ExtensionActionExecutor, store::RuleStore, RuleEngine,
+    UnifiedValueProvider,
 };
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::frontend_components::FrontendComponentStore;
@@ -974,6 +975,18 @@ impl ServerState {
             Some(Arc::new(engine))
         };
         tracing::info!("Transform engine initialized with extension registry");
+
+        // Spawn DeviceStatusEmitter — 60s tick that refreshes the
+        // __last_seen_age_secs virtual metric for devices referenced by rules.
+        let device_status_emitter = std::sync::Arc::new(
+            DeviceStatusEmitter::new(
+                rule_engine.clone(),
+                value_provider.clone(),
+                devices.service.clone(),
+            ),
+        );
+        let _device_status_emitter_handle = device_status_emitter.start();
+        tracing::info!("DeviceStatusEmitter spawned (60s tick for __last_seen_age_secs)");
 
         let automation = AutomationState::new(
             value_provider,

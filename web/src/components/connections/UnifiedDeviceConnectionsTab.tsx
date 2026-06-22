@@ -35,7 +35,8 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState, LoadingState } from '@/components/shared'
 import { cn } from '@/lib/utils'
-import { api, getServerOrigin } from '@/lib/api'
+import { api } from '@/lib/api'
+import { useServerUrl } from '@/lib/server-url'
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from '@/components/plugins/UniversalPluginConfigDialog'
 import { EmbeddedBrokerConfigDialog } from './EmbeddedBrokerConfigDialog'
 import type { PluginConfigSchema, AdapterType } from '@/types'
@@ -237,6 +238,7 @@ export function UnifiedDeviceConnectionsTab() {
   const { t } = useTranslation(['plugins', 'devices', 'common', 'settings'])
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
+  const serverUrl = useServerUrl()
   const [view, setView] = useState<View>('list')
   const [loading, setLoading] = useState(true)
 
@@ -327,9 +329,9 @@ export function UnifiedDeviceConnectionsTab() {
   }
 
   const getWebhookUrl = () => {
-    // Always use getServerOrigin() for consistent URL that works through nginx reverse proxy
+    // Use canonical serverUrl (LAN IP in Tauri, window.location.origin in browser)
     // Don't use server_ip:port as it may not be accessible from external networks
-    return `${getServerOrigin()}/api/devices/{device_id}/webhook`
+    return `${serverUrl}/api/devices/{device_id}/webhook`
   }
 
   const copyWebhookUrl = async () => {

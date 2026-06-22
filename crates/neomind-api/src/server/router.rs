@@ -250,6 +250,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/devices/webhook",
             post(devices::webhook_generic_handler),
         )
+        // Webhook body limit: 8MB accommodates a 1080p JPEG frame (typical
+        // 300KB-1MB) plus JSON envelope and multipart framing overhead. 4K
+        // single-frame raw uploads exceed this — devices shooting 4K should
+        // downscale first or use chunked upload (not yet implemented). The
+        // previous 16MB limit caused excessive memory amplification under
+        // concurrent uploads (~80MB peak per request, see webhook handler).
+        .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::server::middleware::webhook_rate_limit_middleware,

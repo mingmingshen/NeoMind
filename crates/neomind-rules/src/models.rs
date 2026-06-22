@@ -134,11 +134,27 @@ impl<'de> Deserialize<'de> for ComparisonOperator {
             "starts_with" | "startswith" => Ok(Self::StartsWith),
             "ends_with" | "endswith" => Ok(Self::EndsWith),
             "regex" | "matches" => Ok(Self::Regex),
-            _ => Err(serde::de::Error::unknown_variant(&s, &[
-                ">", "<", ">=", "<=", "==", "!=",
-                "greater_than", "less_than", "greater_equal", "less_equal", "equal", "not_equal",
-                "contains", "starts_with", "ends_with", "regex",
-            ])),
+            _ => Err(serde::de::Error::unknown_variant(
+                &s,
+                &[
+                    ">",
+                    "<",
+                    ">=",
+                    "<=",
+                    "==",
+                    "!=",
+                    "greater_than",
+                    "less_than",
+                    "greater_equal",
+                    "less_equal",
+                    "equal",
+                    "not_equal",
+                    "contains",
+                    "starts_with",
+                    "ends_with",
+                    "regex",
+                ],
+            )),
         }
     }
 }
@@ -166,16 +182,11 @@ impl ComparisonOperator {
             Self::Contains => left.contains(right),
             Self::StartsWith => left.starts_with(right),
             Self::EndsWith => left.ends_with(right),
-            Self::Regex => {
-                regex::Regex::new(right)
-                    .map(|r| r.is_match(left))
-                    .unwrap_or(false)
-            }
+            Self::Regex => regex::Regex::new(right)
+                .map(|r| r.is_match(left))
+                .unwrap_or(false),
             // Numeric-only operators always return false for string comparison
-            Self::GreaterThan
-            | Self::LessThan
-            | Self::GreaterEqual
-            | Self::LessEqual => false,
+            Self::GreaterThan | Self::LessThan | Self::GreaterEqual | Self::LessEqual => false,
         }
     }
 
@@ -260,9 +271,10 @@ impl RuleCondition {
         match self {
             RuleCondition::Comparison { source, .. } => vec![source.clone()],
             RuleCondition::Range { source, .. } => vec![source.clone()],
-            RuleCondition::Logical { conditions, .. } => {
-                conditions.iter().flat_map(|c| c.extract_sources()).collect()
-            }
+            RuleCondition::Logical { conditions, .. } => conditions
+                .iter()
+                .flat_map(|c| c.extract_sources())
+                .collect(),
         }
     }
 
@@ -274,28 +286,24 @@ impl RuleCondition {
                 operator,
                 threshold,
                 threshold_value,
-            } => {
-                match provider.get_by_source(source) {
-                    Some(rv) => match rv {
-                        RuleValue::Number(v) => operator.evaluate(v, *threshold),
-                        RuleValue::Text(s) => {
-                            let fallback = threshold.to_string();
-                            let t = threshold_value.as_deref().unwrap_or(&fallback);
-                            operator.evaluate_str(&s, t)
-                        }
-                    },
-                    None => false,
-                }
-            }
-            RuleCondition::Range { source, min, max } => {
-                match provider.get_by_source(source) {
-                    Some(rv) => rv
-                        .as_number()
-                        .map(|v| v >= *min && v <= *max)
-                        .unwrap_or(false),
-                    None => false,
-                }
-            }
+            } => match provider.get_by_source(source) {
+                Some(rv) => match rv {
+                    RuleValue::Number(v) => operator.evaluate(v, *threshold),
+                    RuleValue::Text(s) => {
+                        let fallback = threshold.to_string();
+                        let t = threshold_value.as_deref().unwrap_or(&fallback);
+                        operator.evaluate_str(&s, t)
+                    }
+                },
+                None => false,
+            },
+            RuleCondition::Range { source, min, max } => match provider.get_by_source(source) {
+                Some(rv) => rv
+                    .as_number()
+                    .map(|v| v >= *min && v <= *max)
+                    .unwrap_or(false),
+                None => false,
+            },
             RuleCondition::Logical {
                 operator,
                 conditions,
@@ -348,7 +356,6 @@ pub enum NotifySeverity {
     Critical,
     Emergency,
 }
-
 
 /// A rule action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,8 +423,7 @@ impl RuleTrigger {
 // ---------------------------------------------------------------------------
 
 /// Runtime state of a rule.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuleState {
     pub trigger_count: u64,
     pub last_triggered: Option<DateTime<Utc>>,
@@ -425,7 +431,6 @@ pub struct RuleState {
     /// Stored as DateTime so it survives serialization.
     pub condition_since: Option<DateTime<Utc>>,
 }
-
 
 // ---------------------------------------------------------------------------
 // Compiled rule (complete)
@@ -586,7 +591,8 @@ mod datasource_id_serde {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DataSourceId, D::Error> {
         let key = String::deserialize(d)?;
-        DataSourceId::parse(&key).ok_or_else(|| serde::de::Error::custom(format!("invalid DataSourceId: {}", key)))
+        DataSourceId::parse(&key)
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid DataSourceId: {}", key)))
     }
 }
 
@@ -768,7 +774,8 @@ mod tests {
         assert!(json.contains("\"extension:weather:humidity\""));
 
         // Deserialize: string array → Vec<DataSourceId>
-        let input = r#"{"trigger_type":"data_change","sources":["device:s1:temp","extension:ext1:field"]}"#;
+        let input =
+            r#"{"trigger_type":"data_change","sources":["device:s1:temp","extension:ext1:field"]}"#;
         let parsed: RuleTrigger = serde_json::from_str(input).unwrap();
         match parsed {
             RuleTrigger::DataChange { sources } => {

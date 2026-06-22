@@ -96,13 +96,21 @@ pub async fn readiness_handler(State(state): State<ServerState>) -> Json<Readine
 /// Get local network info (WiFi SSID, LAN IP) for BLE provisioning.
 ///
 /// `GET /api/system/network-info`
-pub async fn network_info_handler() -> HandlerResult<serde_json::Value> {
+pub async fn network_info_handler(
+    headers: axum::http::HeaderMap,
+) -> HandlerResult<serde_json::Value> {
     let ssid = get_wifi_ssid();
     let ip = super::common::get_server_host();
+    // Canonical server URL — what devices should use to reach the server.
+    // Frontend uses this for webhook URL display in Tauri desktop mode
+    // (where getServerOrigin() returns localhost, which devices can't reach).
+    let (server_url, url_source) = super::common::resolve_server_url(Some(&headers));
 
     ok(json!({
         "ssid": ssid,
         "ip": ip,
+        "server_url": server_url,
+        "server_url_source": url_source.as_str(),
     }))
 }
 

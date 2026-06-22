@@ -9,6 +9,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.21] - 2026-06-22
+
+### Overview
+
+Two themes: (1) **webhook URL resolution correctness** — closing the loop on 0.8.20's
+server-URL work with proper reverse-proxy discrimination, a canonical frontend hook,
+and memory safety for multipart payloads; (2) **device offline alert rule** — exposing
+`__last_seen_age_secs` as a virtual metric so users can build "alert if no telemetry
+for N hours" rules without touching device configs.
+
+### Security — Webhook hardening (0.8.20 follow-ups)
+
+#### Reverse-proxy header discrimination (`handlers/common.rs`)
+- **`Host` header alone no longer trusted** (`resolve_server_url`): every HTTP request
+  carries `Host`, and its value just echoes whatever the client typed in the URL. The
+  previous logic treated `Host: localhost:9375` from a browser/curl as a reverse-proxy
+  signal and returned `http://localhost:9375` as the canonical webhook URL — which
+  broke display for every device-facing surface (Tauri desktop, browser-via-SSH-tunnel).
+  New logic requires an explicit reverse-proxy indicator (`X-Forwarded-Proto` **or**
+  `X-Forwarded-Host`) before `Host` is trusted. Falls through to LAN-IP auto-detection
+  otherwise, bringing webhook URL resolution in line with MQTT broker IP display.
+  Closes the "Host spoofing leaks canonical URL" concern raised in the 0.8.20 audit
+  comment block.
+- **`X-Forwarded-Host` now honored** alongside `X-Forwarded-Proto`. Either is sufficient
+  to mark the request as reverse-proxied. `X-Forwarded-Host` takes precedence over raw
+  `Host` when both are present (nginx `proxy_set_header X-Forwarded-Host $host` pattern).
+- **Tests**: added `test_resolve_server_url_host_alone_not_trusted` and
+  `test_resolve_server_url_forwarded_host_alone_trusted` to lock in the discriminator.
+
+#### Memory amplification caps (`handlers/devices/webhook.rs`)
+- **`DefaultBodyLimit::max(8 MB)`** on webhook routes: was axum default (2 MB, broke
+  typical 1080p JPEG uploads) then 16 MB (no upper bound on memory amplification).
+  8 MB accommodates a 1080p JPEG with headroom while blocking 4K raw uploads; paired
+  with the per-value guard below, caps total memory amplification at ~40 MB per
+  concurrent request (base64 inflation + pipeline clones).
+- **Per-value string size guard** (`MAX_VALUE_STRING_SIZE = 2 MB`,
+  `enforce_max_string_size`): pathological JSON with a single 10 MB base64 string
+  would have been accepted by the body limit but still cloned ~5× through the
+  telemetry pipeline. The guard rejects oversized scalar strings before they enter
+  the EventBus. Content-Type-aware: `image/*` uploads and multipart parts bypass
+  the guard since they encode binary intentionally and are already bounded by the
+  body limit.
+- **RFC 2046 boundary validation** (`is_valid_boundary`): rejects malicious
+  boundaries that could hijack the multipart parser (tspecials, whitespace, control
+  chars, length > 70).
+- **Multipart part count cap** (`MAX_MULTIPART_PARTS = 64`): prevents memory
+  exhaustion from pathological multipart payloads with thousands of parts.
+- **Multipart parser** (hand-rolled, not `axum::extract::Multipart`): tolerates
+  CRLF/LF mix, missing part headers, missing `name=` field. Supports camera devices
+  that POST `multipart/form-data` with `metadata` (JSON) + `image` (JPEG) parts.
+- **Error response sanitized**: catch-all no longer leaks `e.to_string()` — returns
+  generic `ErrorResponse::internal("Webhook processing failed")`.
+
+#### Authentication hardening (`adapters/webhook.rs`)
+- **Constant-time comparison for `api_key` and `webhook_token`** (new helper
+  `constant_time_eq`): replaces direct `==` to close the timing-attack surface.
+  Length-mismatch early exit is preserved (industry standard; libsodium does the
+  same). Helper duplicated locally rather than imported cross-crate from
+  `neomind-api::auth::constant_time_eq_str` to avoid breaking layering.
+- **`update_device_handler.offline_timeout_secs`**: confirmed direct assignment
+  (NOT `.or(existing)`) — this is intentional so JSON `null` clears the override.
+  Audited as correct; documented in CLAUDE.md gotcha #5.
+
+### Frontend — Canonical server URL (`lib/server-url.ts`, new)
+
+- **`useServerUrl()` hook** (React 18 `useSyncExternalStore`): replaces
+  `getServerOrigin()` in 7 webhook DISPLAY call sites. Browser mode returns
+  `window.location.origin` directly when non-localhost (the URL the user typed is
+  exactly what devices should use); falls through to backend consultation only
+  when the user is accessing via `localhost`/`127.0.0.1` (SSH-tunnel case) or in
+  Tauri desktop mode. `getServerOrigin()` is preserved for fetch/WS calls where
+  `localhost:9375` is correct (frontend→backend on the same machine).
+- **`prefetchServerUrl()` warm-up** in `App.tsx`: module-level cache populated on
+  app mount, so by the time any webhook dialog opens the LAN IP is already
+  resolved — no localhost flash on first render. Cross-component subscription via
+  `useSyncExternalStore` ensures all displays update atomically when the prefetch
+  resolves.
+- **`/api/system/network-info` extended** (`handlers/basic.rs`): response now
+  includes `server_url` and `server_url_source` from `resolve_server_url(headers)`,
+  alongside the existing `ssid` and `ip` fields.
+
+### Added — Device offline alert rule
+- **New virtual metric `device:<id>:__last_seen_age_secs`**: enables rules that
+  fire when a device has had no telemetry for a configured duration. A 60s
+  background task (`DeviceStatusEmitter`) refreshes the metric for every device
+  currently referenced by a rule subscription. Validator enforces ≥1h cooldown
+  for virtual-metric rules to prevent alert spam. The rule UI adds a
+  "设备离线告警 / Device offline alert" template (default 12h, Critical severity)
+  for one-click setup, plus a "System metrics / 系统指标" group in the rule-builder
+  metric dropdown exposing `__last_seen_age_secs`.
+  See `docs/superpowers/specs/2026-06-22-device-offline-rule-design.md`.
+
+### Tests
+- 9 webhook multipart / memory-guard unit tests (all passing).
+- 2 new `resolve_server_url` tests covering the Host-only rejection and
+  X-Forwarded-Host-only acceptance paths (23 total in `handlers::common::tests`).
+- 1 `constant_time_eq` test covering equal / differing / empty / length-mismatch paths
+  (11 total in `adapters::webhook::tests`).
+- All 78 `neomind-devices` lib tests pass (webhook, registry, service, telemetry,
+  unified_extractor). Pre-existing `test_unified_extractor_dot_notation` failure
+  is unrelated and tracked separately.
+
 ## [0.8.20] - 2026-06-22
 
 ### Overview

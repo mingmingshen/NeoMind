@@ -228,7 +228,10 @@ impl RuleStore {
     }
 
     /// Load execution history for a specific rule.
-    pub fn load_history(&self, rule_id: &RuleId) -> Result<Vec<crate::models::RuleExecutionResult>> {
+    pub fn load_history(
+        &self,
+        rule_id: &RuleId,
+    ) -> Result<Vec<crate::models::RuleExecutionResult>> {
         let mut results = Vec::new();
 
         let read_txn = self.db.begin_read()?;
@@ -277,8 +280,7 @@ impl RuleStore {
 
     /// Clean up old history entries (older than the given number of days).
     pub fn cleanup_history(&self, older_than_days: u64) -> Result<usize> {
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::days(older_than_days as i64);
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(older_than_days as i64);
         let cutoff_key = format!("history:{}:", cutoff.timestamp_millis());
 
         let write_txn = self.db.begin_write()?;

@@ -853,5 +853,23 @@
       "onboarding": "Initial setup walkthrough",
       "about": "Version and documentation"
     }
+  },
+  "rules": {
+    "templates": {
+      "title": "Create rule from template",
+      "subtitle": "Pick a template to quickly configure a common rule",
+      "createFromTemplate": "From template",
+      "deviceOffline": {
+        "label": "Device offline alert",
+        "description": "Fires when a device sends no data for a configured duration",
+        "defaultName": "Device {{device}} offline alert",
+        "device": "Device",
+        "duration": "Silence duration",
+        "severity": "Severity",
+        "minutes": "minutes",
+        "hours": "hours",
+        "selectDevice": "Please select a device"
+      }
+    }
   }
 }
