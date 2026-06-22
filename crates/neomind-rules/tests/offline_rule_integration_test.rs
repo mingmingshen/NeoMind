@@ -48,6 +48,10 @@ const VIRTUAL_METRIC: &str = "__last_seen_age_secs";
 // ---------------------------------------------------------------------------
 
 /// Build a fully-populated `DeviceConfig` (the struct does NOT derive `Default`).
+///
+/// `offline_timeout_secs` is set to 60s so that test fixtures that seed an
+/// age >= 60 correctly model a device the emitter considers OFFLINE (the
+/// emitter pushes 0 while the device is still within its offline_timeout).
 fn make_device_config(device_id: &str) -> DeviceConfig {
     DeviceConfig {
         device_id: device_id.to_string(),
@@ -57,7 +61,7 @@ fn make_device_config(device_id: &str) -> DeviceConfig {
         connection_config: ConnectionConfig::default(),
         adapter_id: None,
         last_seen: 0,
-        offline_timeout_secs: None,
+        offline_timeout_secs: Some(60),
     }
 }
 
@@ -139,8 +143,9 @@ async fn test_offline_rule_fires_once_and_respects_cooldown() {
         subscribed
     );
 
-    // 4. Seed the provider with a stale age (90s) — this is the value the
-    //    emitter would have written after computing `now - last_seen`.
+    // 4. Seed the provider with a stale age (90s). The test device has
+    //    `offline_timeout_secs = 60`, so age=90 >= 60 means the emitter
+    //    considers it OFFLINE and would push the actual age value.
     provider
         .update_device_value(device_id, VIRTUAL_METRIC, 90.0)
         .await;

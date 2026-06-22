@@ -300,6 +300,14 @@ function getNextExecutionTime(cronExpression: string): Date | null {
 // Helper Functions
 // ============================================================================
 
+/** True if the condition tree references the `__last_seen_age_secs` virtual metric
+ *  anywhere. Used to surface the stricter cooldown hint in the UI. */
+function conditionUsesVirtualMetric(condition: UICondition | null): boolean {
+  if (!condition) return false
+  if (condition.metric === '__last_seen_age_secs') return true
+  return (condition.conditions || []).some(c => conditionUsesVirtualMetric(c))
+}
+
 const getNumericOperators = (t: (key: string) => string) => [
   { value: '>', label: t('automation:operators.greaterThan') },
   { value: '<', label: t('automation:operators.lessThan') },
@@ -1714,7 +1722,11 @@ export function SimpleRuleBuilderSplit({
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">{tBuilder('cooldownHint')}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {conditionUsesVirtualMetric(condition)
+                ? tBuilder('cooldownHintVirtualMetric') || 'Min 60s (emitter tick). 5+ min recommended to avoid alert fatigue.'
+                : tBuilder('cooldownHint')}
+            </p>
           </Field>
 
           {/* Enabled switch */}

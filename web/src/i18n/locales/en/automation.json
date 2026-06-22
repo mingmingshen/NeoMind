@@ -607,6 +607,7 @@
     "forDuration": "Duration",
     "cooldown": "Cooldown",
     "cooldownHint": "Minimum interval between triggers",
+    "cooldownHintVirtualMetric": "Min 60s (emitter tick). 5+ min recommended to avoid alert fatigue.",
     "disabled": "Disabled",
     "triggerDevice": "Data Change",
     "triggerSchedule": "Schedule Trigger",

@@ -605,6 +605,7 @@
     "forDuration": "持续时间",
     "cooldown": "冷却时间",
     "cooldownHint": "两次触发之间的最小间隔",
+    "cooldownHintVirtualMetric": "至少 60 秒（emitter tick）。建议 5 分钟以上，避免告警刷屏。",
     "disabled": "已禁用",
     "triggerDevice": "数据变化",
     "triggerSchedule": "定时触发",

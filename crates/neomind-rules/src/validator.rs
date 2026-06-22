@@ -488,16 +488,18 @@ impl RuleValidator {
     /// Minimum cooldown enforced on rules that subscribe to virtual metrics.
     ///
     /// The virtual-metric emitter refreshes `__last_seen_age_secs` on a 60s
-    /// tick. Without a cooldown, a rule whose condition is true would fire
-    /// every minute — spamming notification channels. One hour is the floor.
-    pub const MIN_VIRTUAL_METRIC_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3600);
+    /// tick. The cooldown floor matches the tick interval — anything shorter
+    /// would still be equivalent to "no cooldown" and let the rule fire on
+    /// every tick. Users can pick any value from 60s (testing) up to hours
+    /// (production). See SimpleRuleBuilderSplit cooldown hint for soft guidance.
+    pub const MIN_VIRTUAL_METRIC_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
 
     /// Enforce a minimum cooldown on rules that subscribe to virtual metrics.
     ///
     /// Virtual metrics like `__last_seen_age_secs` are refreshed by a periodic
     /// emitter (60s tick). Without a cooldown, a rule whose condition is true
-    /// would fire every 60 seconds. This guard ensures users set a sensible
-    /// cooldown (>=1h).
+    /// would fire every 60 seconds. This guard requires cooldown >= 60s so
+    /// that at most one firing per emitter tick is possible.
     ///
     /// Returns `Ok(())` if the rule does not use any virtual metric, or if the
     /// configured cooldown meets the floor. Returns `Err(message)` otherwise.
@@ -742,8 +744,8 @@ mod tests {
 
     // ----- Virtual-metric cooldown tests (Task 2) ---------------------------
 
-    /// Short cooldown (30s) on a virtual-metric rule must be rejected — without
-    /// it the rule would fire every 60s emitter tick.
+    /// Short cooldown (30s) on a virtual-metric rule must be rejected — shorter
+    /// than the 60s emitter tick, so the rule would still fire on every tick.
     #[test]
     fn test_validate_virtual_metric_cooldown_rejects_short() {
         let mut rule = CompiledRule::new("test");
@@ -753,7 +755,7 @@ mod tests {
             threshold: 3600.0,
             threshold_value: None,
         });
-        rule.cooldown = std::time::Duration::from_secs(30); // too short
+        rule.cooldown = std::time::Duration::from_secs(30); // below 60s floor
         rule.finalize();
 
         let result = RuleValidator::validate_virtual_metric_cooldown(&rule);
@@ -766,17 +768,18 @@ mod tests {
         );
     }
 
-    /// Exactly 1h cooldown (3600s) is the minimum allowed — accepted.
+    /// Exactly 60s cooldown matches the emitter tick interval — accepted.
+    /// This is the minimum that prevents more than one firing per tick.
     #[test]
-    fn test_validate_virtual_metric_cooldown_accepts_one_hour() {
+    fn test_validate_virtual_metric_cooldown_accepts_min() {
         let mut rule = CompiledRule::new("test");
         rule.condition = Some(RuleCondition::Comparison {
             source: DataSourceId::device("dev-001", "__last_seen_age_secs"),
             operator: ComparisonOperator::GreaterThan,
-            threshold: 3600.0,
+            threshold: 60.0,
             threshold_value: None,
         });
-        rule.cooldown = std::time::Duration::from_secs(3600);
+        rule.cooldown = std::time::Duration::from_secs(60);
         rule.finalize();
 
         let result = RuleValidator::validate_virtual_metric_cooldown(&rule);

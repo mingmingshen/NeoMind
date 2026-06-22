@@ -3,8 +3,21 @@
 //!
 //! Spawned once at server startup (see `crates/neomind-api/src/server/types.rs`).
 //! Tick interval: 60s default, configurable via `with_tick_interval`.
+//!
+//! ## Metric semantics
+//!
+//! `__last_seen_age_secs` reflects **offline duration**, not raw data staleness:
+//!
+//! - Device online (age < `effective_offline_timeout`): metric = 0
+//! - Device offline (age >= `effective_offline_timeout`): metric = actual age
+//!
+//! On reconnect the emitter pushes 0 once to clear the offline state, then
+//! subsequent ticks skip the push (value unchanged) until the device goes
+//! offline again.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -27,6 +40,11 @@ pub struct DeviceStatusEmitter {
     provider: Arc<UnifiedValueProvider>,
     device_service: Arc<DeviceService>,
     tick_interval: Duration,
+    /// Last value pushed per device. Used to skip redundant `on_data_update`
+    /// calls while a device stays online (metric pinned to 0). On reconnect
+    /// the value transitions from `age` back to 0, which triggers exactly one
+    /// clearing push.
+    last_pushed: Mutex<HashMap<String, f64>>,
 }
 
 impl DeviceStatusEmitter {
@@ -40,6 +58,7 @@ impl DeviceStatusEmitter {
             provider,
             device_service,
             tick_interval: DEFAULT_TICK_INTERVAL,
+            last_pushed: Mutex::new(HashMap::new()),
         }
     }
 
@@ -65,6 +84,12 @@ impl DeviceStatusEmitter {
     }
 
     /// One tick: refresh every subscribed device's `__last_seen_age_secs`.
+    ///
+    /// Push semantics:
+    /// - `age < offline_timeout` → push 0 (device online, clear stale offline state)
+    /// - `age >= offline_timeout` → push actual age (device offline)
+    /// - Skip the push if the value is unchanged since the last tick (avoids
+    ///   waking the rule engine every 60s for healthy devices).
     pub(crate) async fn emit_once(&self) {
         let device_ids = self
             .rule_engine
@@ -80,13 +105,31 @@ impl DeviceStatusEmitter {
                 continue;
             }
             let age = (now - last_seen).max(0) as f64;
+            let offline_timeout = self.device_service.effective_offline_timeout(&device_id) as f64;
+            // Online: metric pinned to 0. Offline: metric tracks actual age.
+            let metric_value = if age >= offline_timeout { age } else { 0.0 };
+
+            // Skip redundant pushes (value unchanged since last tick).
+            let push = {
+                let mut last = self.last_pushed.lock().expect("last_pushed poisoned");
+                if last.get(&device_id) == Some(&metric_value) {
+                    false
+                } else {
+                    last.insert(device_id.clone(), metric_value);
+                    true
+                }
+            };
+            if !push {
+                continue;
+            }
+
             self.provider
-                .update_device_value(&device_id, VIRTUAL_METRIC_NAME, age)
+                .update_device_value(&device_id, VIRTUAL_METRIC_NAME, metric_value)
                 .await;
             self.rule_engine
                 .on_data_update(
                     &DataSourceId::device(&device_id, VIRTUAL_METRIC_NAME),
-                    RuleValue::Number(age),
+                    RuleValue::Number(metric_value),
                 )
                 .await;
         }

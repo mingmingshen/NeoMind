@@ -55,7 +55,7 @@ pub use preview::to_dsl_preview;
 pub use unified_provider::UnifiedValueProvider;
 pub use validator::{
     AlertChannelInfo, CommandInfo, DeviceInfo, MetricDataType, MetricInfo, ParameterInfo,
-    RuleValidator, ValidationContext,
+    RuleValidator, ValidationContext, VIRTUAL_METRICS,
 };
 
 /// Version information

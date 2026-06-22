@@ -56,8 +56,8 @@ export const RULE_TEMPLATES: RuleTemplate<DeviceOfflineTemplateOptions>[] = [
           trigger_type: 'data_change',
           sources: [`device:${deviceId}:__last_seen_age_secs`],
         },
-        // Cooldown serialized as ms; ≥1h per validator.
-        cooldown: Math.max(seconds * 1000, 3600 * 1000),
+        // Cooldown serialized as ms; ≥60s per validator. Production guidance is 5min+.
+        cooldown: Math.max(seconds * 1000, 60 * 1000),
       }
     },
   },

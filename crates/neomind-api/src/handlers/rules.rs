@@ -686,7 +686,48 @@ pub async fn test_rule_handler(
     };
 
     // Get current value from the value provider
-    let current_value = state.automation.rule_engine.get_value_provider().get_by_source(&query_source);
+    let mut current_value = state.automation.rule_engine.get_value_provider().get_by_source(&query_source);
+
+    // Virtual-metric shortcut: when testing a rule that references a virtual
+    // metric like `__last_seen_age_secs`, the emitter may not have ticked yet
+    // (it runs on a 60s schedule) and the metric is never persisted to
+    // telemetry storage. Compute the value on-demand so users can test rules
+    // immediately after creation without waiting for the next emitter tick.
+    //
+    // Semantic mirrors the emitter: metric = 0 while the device is considered
+    // online (age < effective_offline_timeout), actual age once offline.
+    if current_value.is_none()
+        && query_source.source_type == neomind_core::datasource::DataSourceType::Device
+        && neomind_rules::VIRTUAL_METRICS.contains(&query_source.field_path.as_str())
+    {
+        if query_source.field_path == "__last_seen_age_secs" {
+            let last_seen = state.devices.service.get_device_last_seen(&query_source.source_id).await;
+            if last_seen > 0 {
+                let age = (chrono::Utc::now().timestamp() - last_seen).max(0) as f64;
+                let offline_timeout = state.devices.service.effective_offline_timeout(&query_source.source_id) as f64;
+                let metric_value = if age >= offline_timeout { age } else { 0.0 };
+                tracing::debug!(
+                    device_id = %query_source.source_id,
+                    age,
+                    offline_timeout,
+                    metric_value,
+                    "Virtual metric computed on-demand for rule test"
+                );
+                current_value = Some(neomind_rules::RuleValue::Number(metric_value));
+            } else {
+                return Err(ErrorResponse::bad_request(format!(
+                    "Cannot test rule: device '{}' has never reported data (last_seen=0), \
+                     so `__last_seen_age_secs` is undefined. Wait for the device to publish \
+                     at least one telemetry point, then retry.",
+                    query_source.source_id
+                )).with_hint(
+                    "1. Verify the device is online and publishing: neomind device get <ID>\n\
+                     2. Send a test data point: neomind device write-metric <ID> --metric <METRIC> --value <VALUE>\n\
+                     3. Then retry the rule test."
+                ));
+            }
+        }
+    }
 
     // Fallback: query historical data from time series storage.
     // Try multiple common metric prefixes in case the field path differs from storage key.
@@ -1297,8 +1338,9 @@ fn build_validation_context(state: &ServerState) -> neomind_rules::ValidationCon
 fn validate_virtual_metric_policy(rule: &CompiledRule) -> Result<(), ErrorResponse> {
     if let Err(msg) = neomind_rules::RuleValidator::validate_virtual_metric_cooldown(rule) {
         return Err(ErrorResponse::bad_request(msg).with_hint(
-            "Set 'cooldown' to at least 3600000 (1 hour in milliseconds) when using \
-             __last_seen_age_secs in the condition."
+            "Set 'cooldown' to at least 60000 ms (60 seconds) when using \
+             __last_seen_age_secs in the condition. Production deployments typically \
+             use 5 min – 1 h to avoid alert fatigue."
                 .to_string(),
         ));
     }
