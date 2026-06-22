@@ -9,13 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.20] - 2026-06-21
+## [0.8.20] - 2026-06-22
 
 ### Overview
 
-Mobile layout redesign for settings & drill-down views. Multiple fixes targeting visual fragmentation between sticky headers and scroll containers, card overflow on narrow screens, and consolidation of redundant navigation entries in the mobile drawer.
+Mobile layout redesign for settings & drill-down views, plus a follow-up mobile UX/PWA polish pass. Covers sticky-header / scroll-container fragmentation fixes, card overflow on narrow screens, mobile drawer consolidation, pagination regressions across drill-down pages, PWA install metadata, and data-explorer history refinements. No breaking API changes; no new runtime dependencies.
 
-### Mobile UI
+### Mobile UI — Pagination & drill-down follow-ups
+
+#### Pagination
+- **Skills panel mobile infinite scroll** (`web/src/pages/agents-components/SkillsPanel.tsx`): changing page on mobile now APPENDS new items (deduped by id) instead of replacing the list and scrolling back to page 1. Desktop keeps the replace + scroll-to-top behavior. Mirrors the canonical pattern already used in `messages.tsx` and `data-explorer.tsx`.
+- **PushTargetsTab cumulative slice** (`web/src/components/datapush/PushTargetsTab.tsx`): applied the automation.tsx client-side cumulative slice `(0, page * pageSize)` on mobile so previous items stay visible. Previously page 2 replaced page 1, losing context.
+- **Pagination count text hidden on mobile** (`web/src/components/shared/Pagination.tsx`): the `"共 N 条 / 第 x / y 页"` strip now uses `hidden md:block` — manual pagination inside dialogs has too little horizontal space.
+- **Manual pagination inside FullScreenDialog**: `DeviceDetail` Metric History dialog and `DeliveryHistoryPanel` now pass `hideOnMobile={false}` so explicit page buttons always render. The mobile infinite sentinel relies on the outer page scroll container, which doesn't exist inside a FullScreenDialog — without the override the dialog got stuck on page 1.
+
+#### Device detail
+- **Header overflow with long names** (`web/src/pages/devices/DeviceDetail.tsx`): added the `min-w-0 flex-1` + `shrink-0` icon chain so long device names truncate instead of forcing horizontal scroll on mobile.
+- **MobilePageHeader title override** (`web/src/pages/devices.tsx`): when a device detail view is open, the mobile header now shows the device name (falling back to "Device detail") via `mobileHeader.titleOverride`, matching the desktop breadcrumb. The duplicate inline back button is hidden on mobile (`hidden md:inline-flex`) since `leftExtra` already provides one.
+
+#### Other mobile follow-ups
+- **Grid overflow & truncate min-w-0** across 17 files (`e38c7432`): swept through all list/card layouts where flex children had implicit `min-width: auto` and pushed content past the viewport.
+- **Mobile tabs**: agent/channel/extension dialog tabs now wrap instead of horizontal-scroll; extension dialog tabs get larger tap targets; mobile category tabs in `UnifiedDataSourceConfig` switch to a grid.
+- **Unified design tokens, button scale, icon buttons** (`faaab85d`): design-token sweep to kill stray raw Tailwind palette usage that slipped through earlier audits.
+
+### PWA
+
+- **Install metadata** (`web/index.html`, `web/public/site.webmanifest`): added `theme-color` (with `prefers-color-scheme` light/dark variants), `application-name`, `apple-mobile-web-app-capable`, `mobile-web-app-capable`, `apple-mobile-web-app-title`, `format-detection`. Manifest gained `id`, `scope`, `display_override: ["window-controls-overlay", "standalone"]`, `lang`, `dir`, `categories`, and split the icons into separate `purpose: "any"` and `purpose: "maskable"` entries (some browsers reject combined-purpose icons). `background_color` switched to `#1a1a1f` to match dark mode.
+- **Status bar style** (`web/index.html`): `apple-mobile-web-app-status-bar-style` set to `default` (not `black-translucent`). `black-translucent` overlays the webview behind the status bar, which dropped the top safe-area inset and made the sticky header appear transparent on iOS. `default` keeps the status bar opaque and the webview starts below it — more reliable given NeoMind's many sticky headers.
+- **No new dependencies**: this release does NOT add `vite-plugin-pwa` or any PWA runtime package. All improvements are pure HTML/manifest meta + the existing backend-driven theme switching.
+
+### Data Explorer
+
+- **History table** (`web/src/pages/data-explorer.tsx`): replaced the raw `<table>` wrapped in a nested `<ScrollArea h-[400px]>` with `ResponsiveTable`. Quality column auto-hides when every row has null quality. Truncated values get a `title` tooltip. Added a count badge next to the "History" heading.
+- **Time-range select** (`web/src/pages/data-explorer.tsx`): normalized the dropdown from `w-[110px] h-8 text-xs` to the standard `w-[140px]` (default `h-10 text-sm`) so it stops looking visually out-of-place next to sibling controls.
+
+### Mobile UI — Sticky headers & card overflow
 
 #### Sticky header background gaps
 - **PageLayout scroll container** (`web/src/components/layout/PageLayout.tsx`): added `bg-background overscroll-none` so the iOS rubber-band bounce never exposes a transparent strip above the first child.
