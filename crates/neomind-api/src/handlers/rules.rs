@@ -439,6 +439,15 @@ pub async fn update_rule_handler(
             }
         }
 
+        // Enforce minimum cooldown for virtual-metric rules (e.g. __last_seen_age_secs).
+        // Prevents 60s-tick alert spam.
+        if let Err(msg) = neomind_rules::RuleValidator::validate_virtual_metric_cooldown(&rule) {
+            return Err(ErrorResponse::bad_request(msg).with_hint(
+                "Set 'cooldown' to at least 3600000 (1 hour in milliseconds) when using \
+                 __last_seen_age_secs in the condition.".to_string()
+            ));
+        }
+
         // Update the rule in the engine
         state
             .automation
@@ -943,6 +952,15 @@ pub async fn create_rule_handler(
                 detail
             )));
         }
+    }
+
+    // Enforce minimum cooldown for virtual-metric rules (e.g. __last_seen_age_secs).
+    // Prevents 60s-tick alert spam.
+    if let Err(msg) = neomind_rules::RuleValidator::validate_virtual_metric_cooldown(&rule) {
+        return Err(ErrorResponse::bad_request(msg).with_hint(
+            "Set 'cooldown' to at least 3600000 (1 hour in milliseconds) when using \
+             __last_seen_age_secs in the condition.".to_string()
+        ));
     }
 
     // Add the rule to the engine
