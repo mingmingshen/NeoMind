@@ -523,9 +523,11 @@ fn parse_multipart_parts(body: &[u8], boundary: &str) -> Result<Vec<MultipartPar
 /// 2. Otherwise, if exactly one JSON part exists, use it as the base.
 /// 3. Otherwise, start with an empty `data: {}` object.
 /// 4. Then overlay remaining parts:
-///    - Image parts (Content-Type: image/*) → `data.image` (data URL). If a
-///      device sends multiple frames, later ones get keyed as `data.image_2`,
-///      `data.image_3`, etc.
+///    - Image parts (Content-Type: image/*) → keyed by the part's `name=`
+///      parameter when present (so devices can target a specific device-type
+///      metric, e.g. `name="frame"` → `data.frame`). Parts without a name fall
+///      back to `data.image` / `data.image_2` / `data.image_3` ... preserving
+///      the multi-frame convention.
 ///    - JSON parts with unknown names → merged into `data` if it's an object,
 ///      else stored under `data.<name>`.
 ///    - Text parts → `data.<name_or_"text">`.
@@ -535,6 +537,22 @@ fn parse_multipart_body(
     device_id_override: Option<&str>,
 ) -> Result<WebhookPayload, ErrorResponse> {
     let parts = parse_multipart_parts(body, boundary)?;
+
+    // Diagnostic log: helps onboarding camera devices by showing what part names
+    // the firmware actually sends. Match these against the device-type template's
+    // metric names — an image part named `image` won't populate a template metric
+    // named `image_data`; firmware must use `name="image_data"` (or whatever the
+    // template defines) so the unified extractor can route it.
+    tracing::info!(
+        target: "neomind::api::webhook::multipart",
+        part_count = parts.len(),
+        parts = ?parts.iter().map(|p| (
+            p.name.as_deref().unwrap_or("<none>"),
+            p.content_type.as_str(),
+            p.data.len(),
+        )).collect::<Vec<_>>(),
+        "multipart parts received"
+    );
 
     let mut base: Option<WebhookPayload> = None;
     let mut image_count = 0usize;
@@ -588,12 +606,19 @@ fn parse_multipart_body(
             || part.name.as_deref() == Some("payload");
 
         if is_image {
+            // Prefer the part's `name=` parameter as the data key so devices can
+            // target a specific metric defined in their device type (e.g. a camera
+            // template with metric `frame` POSTs `name="frame"`). Fall back to
+            // `image` / `image_2` / `image_3` ... only when the part has no name,
+            // preserving the original multi-frame convention.
             image_count += 1;
-            let key = if image_count == 1 {
-                "image".to_string()
-            } else {
-                format!("image_{}", image_count)
-            };
+            let key = part.name.clone().unwrap_or_else(|| {
+                if image_count == 1 {
+                    "image".to_string()
+                } else {
+                    format!("image_{}", image_count)
+                }
+            });
             let data_url = encode_image_data_url(&part.content_type, &part.data);
             data_obj.insert(key, serde_json::Value::String(data_url));
             continue;
@@ -973,8 +998,58 @@ mod tests {
         let payload = parse_multipart_body(&body, boundary, Some("cam-2")).expect("parse ok");
         assert_eq!(payload.device_id.as_deref(), Some("cam-2"));
         let data = payload.data.as_object().expect("object");
-        // The first image is always keyed under "image" regardless of part name.
-        assert!(data.contains_key("image"));
+        // When the part has a name, it is preserved as the data key so device-type
+        // templates can target a specific metric (e.g. `frame`).
+        let img = data.get("frame").and_then(|v| v.as_str()).expect("frame key");
+        assert!(img.starts_with("data:image/jpeg;base64,"));
+    }
+
+    /// Device-type templates often name their image metric explicitly (e.g.
+    /// `snapshot` / `frame` / `photo`). The part's `name=` parameter must be
+    /// honored as the data key so the unified extractor can route the image
+    /// into the correct metric. Regression test for the camera-onboarding
+    /// bug where images were always written to `data.image` regardless of the
+    /// part name, causing device-type templates to silently miss the frame.
+    #[test]
+    fn parses_multipart_image_part_name_preserved_as_data_key() {
+        let boundary = "boundary123";
+        let metadata = r#"{"device_id":"cam-X","data":{"width":1920}}"#;
+        let image = b"\xff\xd8\xff\xe0TESTJPEG\xff\xd9";
+
+        let mut body = Vec::new();
+        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        body.extend_from_slice(
+            b"Content-Disposition: form-data; name=\"metadata\"\r\n\
+              Content-Type: application/json\r\n\r\n",
+        );
+        body.extend_from_slice(metadata.as_bytes());
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        // Part name "snapshot" — what the device-type template expects.
+        body.extend_from_slice(
+            b"Content-Disposition: form-data; name=\"snapshot\"; filename=\"frame.jpg\"\r\n\
+              Content-Type: image/jpeg\r\n\r\n",
+        );
+        body.extend_from_slice(image);
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+
+        let payload = parse_multipart_body(&body, boundary, None).expect("parse ok");
+        let data = payload.data.as_object().expect("data is object");
+        // Image must land under the part's name, NOT under the hardcoded "image".
+        assert!(
+            data.contains_key("snapshot"),
+            "expected key 'snapshot', got: {:?}",
+            data.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !data.contains_key("image"),
+            "hardcoded 'image' key should NOT be set when part has a name"
+        );
+        let img = data.get("snapshot").and_then(|v| v.as_str()).expect("snapshot value");
+        assert!(img.starts_with("data:image/jpeg;base64,"));
+        // Metadata fields still merged alongside.
+        assert_eq!(data.get("width").and_then(|v| v.as_u64()), Some(1920));
     }
 
     #[test]
