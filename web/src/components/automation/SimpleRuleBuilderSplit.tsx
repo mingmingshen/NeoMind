@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Plus,
   X,
@@ -1936,7 +1936,10 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
 
           {/* Metric Selector */}
           {((cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'device' && cond.device_id) || (cond.source_type === 'transform' && cond.transform_id)) && metrics.length > 0 ? (
-            <Select value={cond.metric} onValueChange={(v) => updateField('metric', v)}>
+            <Select value={cond.metric} onValueChange={(v) => {
+              updateField('metric', v)
+              if (v === '__last_seen_age_secs') updateField('operator', '>')
+            }}>
               <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {metrics.map(m => (
@@ -1944,6 +1947,12 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                     {m.display_name || m.name}
                   </SelectItem>
                 ))}
+                {cond.source_type === 'device' && (
+                  <SelectGroup>
+                    <SelectLabel className="text-muted-foreground">{tBuilder('systemMetrics')}</SelectLabel>
+                    <SelectItem value="__last_seen_age_secs">{tBuilder('metricLastSeenAgeSecs')}</SelectItem>
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
           ) : (
@@ -2048,10 +2057,19 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
 
           {/* Metric Selector */}
           {hasValidId && metrics.length > 0 ? (
-            <Select value={cond.metric} onValueChange={(v) => updateField('metric', v)}>
+            <Select value={cond.metric} onValueChange={(v) => {
+              updateField('metric', v)
+              if (v === '__last_seen_age_secs') updateField('operator', '>')
+            }}>
               <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {metrics.map(m => <SelectItem key={m.name} value={m.name}>{m.display_name || m.name}</SelectItem>)}
+                {cond.source_type === 'device' && (
+                  <SelectGroup>
+                    <SelectLabel className="text-muted-foreground">{tBuilder('systemMetrics')}</SelectLabel>
+                    <SelectItem value="__last_seen_age_secs">{tBuilder('metricLastSeenAgeSecs')}</SelectItem>
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
           ) : (
