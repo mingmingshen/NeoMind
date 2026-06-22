@@ -251,6 +251,26 @@ impl RuleEngine {
         }
     }
 
+    /// Return device_ids referenced by any rule whose subscription index entry
+    /// matches `device:<id>:<metric_name>`.
+    ///
+    /// Used by `DeviceStatusEmitter` to know which devices need their virtual metric
+    /// refreshed. O(N) over the subscription index (bounded by rule count).
+    pub fn subscribed_virtual_metric_devices(&self, metric_name: &str) -> Vec<String> {
+        let idx = self.subscription_index.read();
+        let suffix = format!(":{}", metric_name);
+        let mut devices: Vec<String> = Vec::new();
+        for key in idx.keys() {
+            // storage_key format for devices is "device:<id>:<metric>"
+            if let Some(rest) = key.strip_prefix("device:") {
+                if let Some(device_id) = rest.strip_suffix(&suffix) {
+                    devices.push(device_id.to_string());
+                }
+            }
+        }
+        devices
+    }
+
     // -- Core: data-driven evaluation --
 
     /// Called when a data source value changes.
@@ -1121,5 +1141,57 @@ mod tests {
 
         let r = engine.get_rule(&rule_id).await.unwrap();
         assert_eq!(r.state.trigger_count, 1);
+    }
+
+    #[test]
+    fn test_subscribed_virtual_metric_devices_returns_only_matching() {
+        use neomind_core::datasource::DataSourceId;
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider);
+
+        // Rule 1 watches dev-A's last_seen_age_secs
+        let mut r1 = CompiledRule::new("A offline");
+        r1.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev-A", "__last_seen_age_secs"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 3600.0,
+            threshold_value: None,
+        });
+        r1.trigger = RuleTrigger::from_condition(&r1.condition);
+        r1.finalize();
+
+        // Rule 2 watches dev-B's temperature (regular metric — should NOT be picked up)
+        let mut r2 = CompiledRule::new("B hot");
+        r2.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev-B", "temperature"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 50.0,
+            threshold_value: None,
+        });
+        r2.trigger = RuleTrigger::from_condition(&r2.condition);
+        r2.finalize();
+
+        // Rule 3 watches dev-C's last_seen_age_secs
+        let mut r3 = CompiledRule::new("C offline");
+        r3.condition = Some(RuleCondition::Comparison {
+            source: DataSourceId::device("dev-C", "__last_seen_age_secs"),
+            operator: ComparisonOperator::GreaterThan,
+            threshold: 3600.0,
+            threshold_value: None,
+        });
+        r3.trigger = RuleTrigger::from_condition(&r3.condition);
+        r3.finalize();
+
+        // Use block_on to add all three
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            engine.add_rule(r1).await.unwrap();
+            engine.add_rule(r2).await.unwrap();
+            engine.add_rule(r3).await.unwrap();
+        });
+
+        let mut devices = engine.subscribed_virtual_metric_devices("__last_seen_age_secs");
+        devices.sort();
+        assert_eq!(devices, vec!["dev-A".to_string(), "dev-C".to_string()]);
     }
 }
