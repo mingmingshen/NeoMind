@@ -616,7 +616,9 @@
     "minPlaceholder": "最小值",
     "maxPlaceholder": "最大值",
     "between": "介于",
-    "and": "至"
+    "and": "至",
+    "systemMetrics": "系统指标",
+    "metricLastSeenAgeSecs": "最后通信距今（秒）"
   },
   "transformBuilder": {
     "title": "创建数据转换",

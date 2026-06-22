@@ -853,5 +853,23 @@
       "onboarding": "初始引导",
       "about": "版本与文档"
     }
+  },
+  "rules": {
+    "templates": {
+      "title": "从模板创建规则",
+      "subtitle": "选择一个模板快速配置常见规则",
+      "createFromTemplate": "从模板创建",
+      "deviceOffline": {
+        "label": "设备离线告警",
+        "description": "设备长时间无数据时触发告警",
+        "defaultName": "设备 {{device}} 离线告警",
+        "device": "设备",
+        "duration": "静默时长",
+        "severity": "告警级别",
+        "minutes": "分钟",
+        "hours": "小时",
+        "selectDevice": "请选择设备"
+      }
+    }
   }
 }
