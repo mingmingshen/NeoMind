@@ -94,22 +94,51 @@ for N hours" rules without touching device configs.
 - **New virtual metric `device:<id>:__last_seen_age_secs`**: enables rules that
   fire when a device has had no telemetry for a configured duration. A 60s
   background task (`DeviceStatusEmitter`) refreshes the metric for every device
-  currently referenced by a rule subscription. Validator enforces ≥1h cooldown
-  for virtual-metric rules to prevent alert spam. The rule UI adds a
+  currently referenced by a rule subscription. The emitter pushes `0` while
+  the device is online (age < `effective_offline_timeout`) and the actual age
+  once offline — so a rule like `age > 300` only starts firing when the device
+  is genuinely considered offline by the platform. Validator enforces ≥60s
+  cooldown (matches the emitter tick) for virtual-metric rules; production
+  guidance is 5 min – 1 h to avoid alert fatigue. The rule UI adds a
   "设备离线告警 / Device offline alert" template (default 12h, Critical severity)
   for one-click setup, plus a "System metrics / 系统指标" group in the rule-builder
   metric dropdown exposing `__last_seen_age_secs`.
   See `docs/superpowers/specs/2026-06-22-device-offline-rule-design.md`.
+- **`test_rule_handler` computes `__last_seen_age_secs` on-demand**: the 60s
+  emitter may not have ticked yet when a user tests a freshly-created rule.
+  The handler now computes the current age inline (same semantics: 0 while
+  online, actual age once offline) so users can test rules immediately.
+
+### Added — `__webhook_image` system metric (fault-tolerant image fallback)
+- **Problem**: NE301/NE302 cameras upload images via webhook multipart, but the
+  first image part was only aliased to `{image_data, frame, snapshot}`. If the
+  device-type template's image metric used a different name (or had no image
+  metric at all), the uploaded image silently disappeared into `_raw` and was
+  unrecoverable in the frontend.
+- **Fix**: multipart parser now aliases the first image part to
+  `__webhook_image` in addition to the existing names. The unified extractor
+  learns `SYSTEM_PASS_THROUGH_KEYS` — keys with the `__` prefix that bypass
+  template matching and are always extracted if present. Result: any
+  webhook-uploaded image is always recoverable via
+  `device:<id>:__webhook_image`, regardless of device-type template naming.
+  Mirrors the existing `__last_seen_age_secs` convention.
+- **Null-guard regression fix**: `extract_by_path` returns
+  `Ok(Some(Value::Null))` for missing keys (legacy semantics), so the
+  pass-through explicitly skips null values — otherwise every webhook payload
+  would synthesize a phantom `__webhook_image: null` metric.
 
 ### Tests
 - 9 webhook multipart / memory-guard unit tests (all passing).
-- 2 new `resolve_server_url` tests covering the Host-only rejection and
+- 2 `resolve_server_url` tests covering the Host-only rejection and
   X-Forwarded-Host-only acceptance paths (23 total in `handlers::common::tests`).
 - 1 `constant_time_eq` test covering equal / differing / empty / length-mismatch paths
   (11 total in `adapters::webhook::tests`).
-- All 78 `neomind-devices` lib tests pass (webhook, registry, service, telemetry,
-  unified_extractor). Pre-existing `test_unified_extractor_dot_notation` failure
-  is unrelated and tracked separately.
+- 2 new unified_extractor regression tests for the `__webhook_image`
+  pass-through (present-case + null-guard phantom-rejection), 10 total in
+  `unified_extractor::tests`.
+- All 83 `neomind-devices` lib tests pass (webhook, registry, service, telemetry,
+  unified_extractor).
+- All 25 `neomind-rules` lib tests + 2 offline-rule integration tests pass.
 
 ## [0.8.20] - 2026-06-22
 
