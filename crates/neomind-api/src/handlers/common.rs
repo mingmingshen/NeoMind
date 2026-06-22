@@ -622,4 +622,66 @@ mod tests {
         assert!(!meta.has_next);
         assert!(meta.next_cursor.is_none());
     }
+
+    // ----- resolve_server_url priority chain -----
+    //
+    // env vars are process-global, so all three branches are exercised in a
+    // single #[test] to avoid races between parallel tests. Each branch is a
+    // labeled block for clarity.
+
+    fn make_headers(
+        host: Option<&str>,
+        xfp: Option<&str>,
+    ) -> axum::http::HeaderMap {
+        let mut h = axum::http::HeaderMap::new();
+        if let Some(host) = host {
+            h.insert(axum::http::header::HOST, host.parse().unwrap());
+        }
+        if let Some(xfp) = xfp {
+            h.insert("x-forwarded-proto", xfp.parse().unwrap());
+        }
+        h
+    }
+
+    #[test]
+    fn test_resolve_server_url_priority_chain() {
+        const KEY: &str = "NEOMIND_SERVER_URL";
+        let prev = std::env::var(KEY).ok();
+        // Start each sub-case from a clean slate.
+        std::env::remove_var(KEY);
+
+        // 1. Fallback when nothing else applies.
+        {
+            let (url, src) = resolve_server_url(None);
+            assert_eq!(url, "http://localhost:9375");
+            assert_eq!(src, ServerUrlSource::Fallback);
+        }
+
+        // 2. Proxy headers branch (Host + X-Forwarded-Proto).
+        {
+            let (url, src) = resolve_server_url(Some(&make_headers(
+                Some("actual.host:8443"),
+                Some("https"),
+            )));
+            assert_eq!(url, "https://actual.host:8443");
+            assert_eq!(src, ServerUrlSource::ProxyHeader);
+        }
+
+        // 3. Env var wins over both proxy headers and fallback.
+        {
+            std::env::set_var(KEY, "https://from-env.example.com");
+            let (url, src) = resolve_server_url(Some(&make_headers(
+                Some("proxy.host"),
+                Some("http"),
+            )));
+            assert_eq!(url, "https://from-env.example.com");
+            assert_eq!(src, ServerUrlSource::Env);
+        }
+
+        // Restore so we don't leak state into other tests.
+        match prev {
+            Some(v) => std::env::set_var(KEY, v),
+            None => std::env::remove_var(KEY),
+        }
+    }
 }

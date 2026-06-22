@@ -764,4 +764,157 @@ mod tests {
         let url = adapter.get_webhook_url("http://localhost:3000", "sensor01");
         assert_eq!(url, "http://localhost:3000/api/devices/sensor01/webhook");
     }
+
+    // ----- validate_request coverage -----
+
+    fn make_adapter_with_config(config: WebhookAdapterConfig) -> WebhookAdapter {
+        WebhookAdapter::new(config, None, Arc::new(DeviceRegistry::new()))
+    }
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn test_validate_request_rejects_blacklisted_ip() {
+        let config = WebhookAdapterConfig::new("t").with_blocked_ip("10.0.0.5");
+        let adapter = make_adapter_with_config(config);
+        let res = adapter.validate_request("dev-1", None, Some(&ip("10.0.0.5")));
+        assert!(res.is_err(), "blacklisted IP must be rejected");
+        match res.unwrap_err() {
+            AdapterError::Connection(msg) => assert!(msg.contains("blocked")),
+            other => panic!("expected Connection error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_validate_request_enforces_whitelist() {
+        let config = WebhookAdapterConfig::new("t").with_allowed_ip("192.168.1.10");
+        let adapter = make_adapter_with_config(config);
+        // Not in whitelist → reject
+        let denied = adapter.validate_request("dev-1", None, Some(&ip("192.168.1.99")));
+        assert!(denied.is_err());
+        // In whitelist → allow
+        let allowed = adapter.validate_request("dev-1", None, Some(&ip("192.168.1.10")));
+        assert!(allowed.is_ok());
+    }
+
+    #[test]
+    fn test_validate_request_api_key_enforced_when_configured() {
+        let config = WebhookAdapterConfig::new("t").with_api_key("secret");
+        let adapter = make_adapter_with_config(config);
+        // Missing key
+        assert!(adapter.validate_request("dev-1", None, None).is_err());
+        // Wrong key
+        assert!(adapter
+            .validate_request("dev-1", Some("wrong"), None)
+            .is_err());
+        // Correct key
+        assert!(adapter.validate_request("dev-1", Some("secret"), None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_request_no_api_key_configured_allows_any() {
+        // When the adapter has no api_key configured (closed-LAN default),
+        // requests without an X-API-Key header are accepted.
+        let adapter = make_adapter_with_config(WebhookAdapterConfig::new("t"));
+        assert!(adapter.validate_request("dev-1", None, None).is_ok());
+        assert!(adapter.validate_request("dev-1", Some("anything"), None).is_ok());
+    }
+
+    // ----- discovery throttle -----
+    //
+    // Strategy: subscribe to the adapter's event stream and count how many
+    // `DeviceEvent::Discovery` variants fire. The stream is `Pin<Box<dyn
+    // Stream>>`, so we drive it with `futures::StreamExt::next` under a short
+    // timeout — events fired synchronously inside `process_webhook` land in
+    // the broadcast buffer before we poll, so they arrive on the first poll.
+
+    #[tokio::test]
+    async fn test_discovery_throttle_kicks_in_after_limit() {
+        use futures::StreamExt;
+        use std::time::Duration;
+
+        let mut config = WebhookAdapterConfig::new("t");
+        config.discovery_rate_per_minute = 3;
+
+        let adapter = make_adapter_with_config(config);
+        let src_ip = ip("203.0.113.7");
+
+        // Phase 1: fire 3 (== cap) unregistered-device posts. Each must emit
+        // exactly one Discovery event. Metrics also emit Metric events, so
+        // we filter by variant.
+        let mut stream = adapter.subscribe();
+
+        for i in 0..3 {
+            let payload = WebhookPayload {
+                device_id: Some(format!("unreg-{i}")),
+                timestamp: None,
+                quality: None,
+                data: serde_json::json!({"v": i}),
+            };
+            adapter
+                .process_webhook(format!("unreg-{i}"), payload, None, None, Some(&src_ip))
+                .await
+                .unwrap();
+            // Don't assert metric count in phase 1 — extraction width varies
+            // by device type/template state. The point is that the call
+            // succeeds.
+        }
+
+        // Collect all events pending for phase 1. Each post emits at least a
+        // Discovery and a Metric event, so drain until the channel is idle.
+        let mut discoveries_phase1 = 0u32;
+        let drain_deadline =
+            tokio::time::Instant::now() + Duration::from_millis(150);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(drain_deadline) => break,
+                ev = stream.next() => match ev {
+                    Some(DeviceEvent::Discovery { .. }) => discoveries_phase1 += 1,
+                    Some(_) => continue,
+                    None => break,
+                },
+            }
+        }
+        assert_eq!(
+            discoveries_phase1, 3,
+            "first 3 unregistered posts should each emit Discovery"
+        );
+
+        // Phase 2: fire 3 more. Discovery events MUST be throttled → zero
+        // new Discovery. Metrics still process (return value == 1).
+        for i in 3..6 {
+            let payload = WebhookPayload {
+                device_id: Some(format!("unreg-{i}")),
+                timestamp: None,
+                quality: None,
+                data: serde_json::json!({"v": i}),
+            };
+            let n = adapter
+                .process_webhook(format!("unreg-{i}"), payload, None, None, Some(&src_ip))
+                .await
+                .expect("metrics still process when discovery is throttled");
+            assert!(n >= 1, "metrics must still process when throttled");
+        }
+
+        // Drain again; only Metric events should appear.
+        let mut discoveries_phase2 = 0u32;
+        let drain_deadline =
+            tokio::time::Instant::now() + Duration::from_millis(150);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(drain_deadline) => break,
+                ev = stream.next() => match ev {
+                    Some(DeviceEvent::Discovery { .. }) => discoveries_phase2 += 1,
+                    Some(_) => continue,
+                    None => break,
+                },
+            }
+        }
+        assert_eq!(
+            discoveries_phase2, 0,
+            "discovery events must be throttled once per-IP cap is hit"
+        );
+    }
 }
