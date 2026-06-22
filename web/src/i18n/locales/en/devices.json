@@ -1205,6 +1205,8 @@
     "brokerStopped": "Stopped",
     "webhookEndpoint": "Webhook Endpoint",
     "webhookEndpointDesc": "POST JSON data to this URL for auto-discovery",
+    "webhookCurlTitle": "Quick Test (copy & run)",
+    "webhookCurlCopied": "curl command copied",
     "topicFormat": "Topic Format",
     "topicFormatDesc": "Configure your device to publish to this topic pattern",
     "uplinkFormat": "Uplink (Device → System)",

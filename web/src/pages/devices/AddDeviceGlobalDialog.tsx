@@ -595,6 +595,31 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
             <p className="xs text-muted-foreground">
               POST JSON to the webhook URL above, replacing <code className="font-mono">{'{device_id}'}</code> with your actual device ID
             </p>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{t('devices:auto.webhookCurlTitle')}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => {
+                    const cmd = `curl -X POST ${getServerOrigin()}/api/devices/my-sensor-001/webhook \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "data": {\n      "temperature": 23.5,\n      "humidity": 65.2\n    }\n  }'`
+                    navigator.clipboard.writeText(cmd)
+                    toast({ title: t('devices:auto.webhookCurlCopied') })
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <pre className="text-xs font-mono bg-muted-30 rounded-md px-3 py-2 overflow-x-auto whitespace-pre leading-relaxed">{`curl -X POST ${getServerOrigin()}/api/devices/my-sensor-001/webhook \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "data": {
+      "temperature": 23.5,
+      "humidity": 65.2
+    }
+  }'`}</pre>
+            </div>
           </div>
         )}
       </FormSection>
