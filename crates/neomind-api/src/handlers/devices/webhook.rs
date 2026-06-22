@@ -528,6 +528,13 @@ fn parse_multipart_parts(body: &[u8], boundary: &str) -> Result<Vec<MultipartPar
 ///      metric, e.g. `name="frame"` → `data.frame`). Parts without a name fall
 ///      back to `data.image` / `data.image_2` / `data.image_3` ... preserving
 ///      the multi-frame convention.
+///    - **First-frame aliasing**: the first image part is also exposed under
+///      the well-known camera-template metric names `image_data`, `frame`,
+///      `snapshot` (only when those keys aren't already set by the metadata
+///      JSON). This bridges firmware that sends `name="image"` or unnamed parts
+///      with templates like `ne301_camera` whose metric is `image_data` —
+///      without requiring either side to be modified. Subsequent frames are
+///      NOT aliased to avoid conflating multi-frame payloads.
 ///    - JSON parts with unknown names → merged into `data` if it's an object,
 ///      else stored under `data.<name>`.
 ///    - Text parts → `data.<name_or_"text">`.
@@ -620,6 +627,23 @@ fn parse_multipart_body(
                 }
             });
             let data_url = encode_image_data_url(&part.content_type, &part.data);
+
+            // Aliasing for the FIRST image part: also expose it under the
+            // well-known camera-template metric names (`image_data`, `frame`,
+            // `snapshot`) so device-type templates don't silently miss the image
+            // just because the firmware used a different part name. We do NOT
+            // overwrite existing keys (e.g. if metadata JSON already provided
+            // `image_data`, the binary part respects it). Only the first image
+            // gets aliases — subsequent frames stay under their unique keys
+            // (`image_2`, etc.) so multi-frame devices don't conflate them.
+            if image_count == 1 {
+                for alias in ["image_data", "frame", "snapshot"] {
+                    data_obj
+                        .entry(alias.to_string())
+                        .or_insert(serde_json::Value::String(data_url.clone()));
+                }
+            }
+
             data_obj.insert(key, serde_json::Value::String(data_url));
             continue;
         }
@@ -1050,6 +1074,44 @@ mod tests {
         assert!(img.starts_with("data:image/jpeg;base64,"));
         // Metadata fields still merged alongside.
         assert_eq!(data.get("width").and_then(|v| v.as_u64()), Some(1920));
+    }
+
+    /// Regression test for the NE301/NE302 onboarding bug: firmware sends
+    /// `name="image"` but the device-type template expects `image_data`.
+    /// The parser must alias the first image to the well-known camera metric
+    /// names so the unified extractor can route it without firmware changes.
+    #[test]
+    fn first_image_aliased_to_well_known_camera_metric_names() {
+        let boundary = "b";
+        let metadata = r#"{"device_id":"cam-NE301","data":{"width":1280}}"#;
+        let image = b"\xff\xd8\xff\xe0JPEG\xff\xd9";
+
+        let body = build_camera_multipart(boundary, metadata, image);
+        let payload = parse_multipart_body(&body, boundary, None).expect("parse ok");
+        let data = payload.data.as_object().expect("data object");
+
+        // Primary key (from `name="image"` in the test helper).
+        assert!(data.contains_key("image"));
+        // Aliases populated for camera template compatibility.
+        let aliased = data
+            .get("image_data")
+            .and_then(|v| v.as_str())
+            .expect("image_data alias");
+        assert!(aliased.starts_with("data:image/jpeg;base64,"));
+        assert!(
+            data.contains_key("frame"),
+            "frame alias missing: {:?}",
+            data.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            data.contains_key("snapshot"),
+            "snapshot alias missing: {:?}",
+            data.keys().collect::<Vec<_>>()
+        );
+        // All aliases point to the same data URL.
+        assert_eq!(aliased, data.get("image").and_then(|v| v.as_str()).unwrap());
+        // Metadata still merged.
+        assert_eq!(data.get("width").and_then(|v| v.as_u64()), Some(1280));
     }
 
     #[test]
