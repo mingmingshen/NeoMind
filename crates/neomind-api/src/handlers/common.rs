@@ -355,27 +355,61 @@ pub fn resolve_server_url(headers: Option<&axum::http::HeaderMap>) -> (String, S
     }
 
     // 2. Infer from reverse-proxy headers.
+    //
+    // IMPORTANT: We must NOT trust the `Host` header on its own. Every HTTP
+    // request carries `Host`, and its value is simply whatever the client
+    // typed in the URL — so a user browsing `http://localhost:9375` sends
+    // `Host: localhost:9375`, which is meaningless for device-facing display.
+    //
+    // We only trust `Host` when a clear reverse-proxy signal is also present
+    // (`X-Forwarded-Proto` or `X-Forwarded-Host`). nginx/caddy/traefik always
+    // set at least one of these when configured with `proxy_set_header`, so
+    // this is a reliable reverse-proxy discriminator.
     if let Some(hdrs) = headers {
-        let host = hdrs
-            .get(axum::http::header::HOST)
-            .and_then(|v| v.to_str().ok())
-            .filter(|s| !s.is_empty());
-        let scheme = hdrs
+        let forwarded_proto = hdrs
             .get("x-forwarded-proto")
             .and_then(|v| v.to_str().ok())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("http");
-        if let Some(host) = host {
-            return (
-                format!("{}://{}", scheme, host),
-                ServerUrlSource::ProxyHeader,
-            );
+            .filter(|s| !s.is_empty());
+        let forwarded_host = hdrs
+            .get("x-forwarded-host")
+            .and_then(|v| v.to_str().ok())
+            .filter(|s| !s.is_empty());
+        let has_reverse_proxy_signal = forwarded_proto.is_some() || forwarded_host.is_some();
+
+        if has_reverse_proxy_signal {
+            // Prefer X-Forwarded-Host (nginx `proxy_set_header X-Forwarded-Host $host`),
+            // fall back to the raw Host header. Either way, this is only trusted
+            // BECAUSE the reverse-proxy signal was seen.
+            let host = forwarded_host
+                .or_else(|| {
+                    hdrs.get(axum::http::header::HOST)
+                        .and_then(|v| v.to_str().ok())
+                        .filter(|s| !s.is_empty())
+                })
+                .map(|s| s.to_string());
+            let scheme = forwarded_proto.unwrap_or("http");
+            if let Some(host) = host {
+                return (
+                    format!("{}://{}", scheme, host),
+                    ServerUrlSource::ProxyHeader,
+                );
+            }
         }
     }
 
-    // 3. Hardcoded fallback.
+    // 3. Auto-detect LAN IP + known port.
+    //
+    // Previously this returned "http://localhost:9375" — which works for the
+    // FRONTEND running on the same machine, but is wrong when displayed to
+    // the user as the webhook URL devices should POST to (a device's
+    // `localhost` is the device itself, not the server). The auto-detected
+    // LAN IP is what devices actually need.
+    //
+    // MQTT status already does this correctly via `get_server_host()` — this
+    // brings webhook URL resolution in line.
+    let host = get_server_host();
     (
-        "http://localhost:9375".to_string(),
+        format!("http://{}:9375", host),
         ServerUrlSource::Fallback,
     )
 }
@@ -650,10 +684,16 @@ mod tests {
         // Start each sub-case from a clean slate.
         std::env::remove_var(KEY);
 
-        // 1. Fallback when nothing else applies.
+        // 1. Fallback when nothing else applies: auto-detected LAN IP.
+        //    The host varies by machine, so only check the structural shape.
         {
             let (url, src) = resolve_server_url(None);
-            assert_eq!(url, "http://localhost:9375");
+            assert!(
+                url.starts_with("http://") && url.ends_with(":9375"),
+                "fallback URL should be http://<host>:9375, got {}",
+                url
+            );
+            assert!(!url.contains("localhost"), "fallback should not be localhost: {}", url);
             assert_eq!(src, ServerUrlSource::Fallback);
         }
 
@@ -683,5 +723,35 @@ mod tests {
             Some(v) => std::env::set_var(KEY, v),
             None => std::env::remove_var(KEY),
         }
+    }
+
+    /// Host header alone (no X-Forwarded-Proto/Host) must NOT be trusted —
+    /// every HTTP request carries Host, and its value just echoes the URL
+    /// the client typed. A user browsing `http://localhost:9375` would
+    /// otherwise trick the server into advertising localhost as the canonical URL.
+    #[test]
+    fn test_resolve_server_url_host_alone_not_trusted() {
+        let (url, src) = resolve_server_url(Some(&make_headers(Some("localhost:9375"), None)));
+        assert_eq!(src, ServerUrlSource::Fallback);
+        assert!(
+            url.starts_with("http://") && url.ends_with(":9375"),
+            "should fall through to LAN-IP fallback, got {}",
+            url
+        );
+        assert!(
+            !url.contains("localhost"),
+            "Host-only header must not yield localhost URL: {}",
+            url
+        );
+    }
+
+    /// `X-Forwarded-Host` alone (no X-Forwarded-Proto) is also a valid reverse-proxy signal.
+    #[test]
+    fn test_resolve_server_url_forwarded_host_alone_trusted() {
+        let mut h = axum::http::HeaderMap::new();
+        h.insert("x-forwarded-host", "example.com".parse().unwrap());
+        let (url, src) = resolve_server_url(Some(&h));
+        assert_eq!(src, ServerUrlSource::ProxyHeader);
+        assert_eq!(url, "http://example.com");
     }
 }

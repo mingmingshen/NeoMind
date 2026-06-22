@@ -619,8 +619,7 @@
     "maxPlaceholder": "Max",
     "between": "BETWEEN",
     "and": "AND",
-    "systemMetrics": "System metrics",
-    "metricLastSeenAgeSecs": "Seconds since last data"
+    "systemMetrics": "System metrics"
   },
   "transformBuilder": {
     "title": "Create Data Transform",

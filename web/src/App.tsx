@@ -10,6 +10,7 @@ import { useIsMobile } from "@/hooks/useMobile"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager, getApiBase, isTauriEnv, setApiBase, getApiKey } from "@/lib/api"
+import { prefetchServerUrl } from "@/lib/server-url"
 import { StartupLoading } from "@/components/StartupLoading"
 import { LoadingState } from "@/components/shared/LoadingState"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
@@ -80,6 +81,12 @@ window.addEventListener('unhandledrejection', (event) => {
 // Checks authentication first, then setup status in background
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [setupRequired, setSetupRequired] = useState<boolean | false>(false)
+
+  // Warm the canonical server URL cache so webhook URL displays don't flash
+  // localhost before the backend-provided LAN IP arrives (Tauri mode only).
+  useEffect(() => {
+    prefetchServerUrl().catch(() => {})
+  }, [])
 
   useEffect(() => {
     // Check setup status in background - don't block rendering

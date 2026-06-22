@@ -87,6 +87,22 @@ fn default_discovery_rate() -> u32 {
     30
 }
 
+/// Constant-time string comparison to prevent timing attacks on token / API
+/// key verification. Returns false immediately on length mismatch (this leaks
+/// length info, which is acceptable for random secrets where length is fixed
+/// and known).
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a_bytes, b_bytes) = (a.as_bytes(), b.as_bytes());
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut result: u8 = 0;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
 impl WebhookAdapterConfig {
     /// Create a new webhook adapter configuration.
     pub fn new(name: impl Into<String>) -> Self {
@@ -231,7 +247,7 @@ impl WebhookAdapter {
         // Check API key if configured
         if let Some(ref expected_key) = self.config.api_key {
             match provided_api_key {
-                Some(key) if key == expected_key => {}
+                Some(key) if constant_time_eq(key, expected_key) => {}
                 Some(_) => return Err(AdapterError::Connection("Invalid API key".to_string())),
                 None => return Err(AdapterError::Connection("Missing API key".to_string())),
             }
@@ -328,7 +344,7 @@ impl WebhookAdapter {
                 .and_then(|v| v.as_str())
             {
                 match provided_token {
-                    Some(token) if token == expected => {}
+                    Some(token) if constant_time_eq(token, expected) => {}
                     Some(_) => {
                         return Err(AdapterError::Connection(
                             "Invalid webhook token".to_string(),
@@ -708,6 +724,20 @@ mod tests {
         assert!(config.allowed_ips.is_empty());
         assert!(config.blocked_ips.is_empty());
         assert!(config.rate_limit_per_minute.is_none());
+    }
+
+    #[test]
+    fn test_constant_time_eq_basic() {
+        // Equal strings
+        assert!(constant_time_eq("secret", "secret"));
+        // Different content, same length
+        assert!(!constant_time_eq("secret", "secreX"));
+        // Different length
+        assert!(!constant_time_eq("secret", "secret-extra"));
+        assert!(!constant_time_eq("short", "longer-string"));
+        // Empty
+        assert!(constant_time_eq("", ""));
+        assert!(!constant_time_eq("", "x"));
     }
 
     #[test]

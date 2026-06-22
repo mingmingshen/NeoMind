@@ -138,6 +138,9 @@ function getMetricDataTypeForResource(
   extensions?: Extension[],
   extensionDataSources?: ExtensionDataSourceInfo[]
 ): string {
+  // Virtual metrics emitted by the rule engine itself — always numeric age in seconds.
+  if (metricName === '__last_seen_age_secs') return 'float'
+
   if (isExtensionId(resourceId)) {
     const extId = getExtensionId(resourceId)
     const ds = extensionDataSources?.find((d: ExtensionDataSourceInfo) =>
@@ -298,32 +301,32 @@ function getNextExecutionTime(cronExpression: string): Date | null {
 // ============================================================================
 
 const getNumericOperators = (t: (key: string) => string) => [
-  { value: '>', label: t('dashboardComponents:ruleBuilder.operators.greaterThan'), symbol: '>' },
-  { value: '<', label: t('dashboardComponents:ruleBuilder.operators.lessThan'), symbol: '<' },
-  { value: '>=', label: t('dashboardComponents:ruleBuilder.operators.greaterOrEqual'), symbol: '≥' },
-  { value: '<=', label: t('dashboardComponents:ruleBuilder.operators.lessOrEqual'), symbol: '≤' },
+  { value: '>', label: t('automation:operators.greaterThan') },
+  { value: '<', label: t('automation:operators.lessThan') },
+  { value: '>=', label: t('automation:operators.greaterThanOrEqual') },
+  { value: '<=', label: t('automation:operators.lessThanOrEqual') },
 ]
 
 const getStringOperators = (t: (key: string) => string) => [
-  { value: '==', label: t('automation:operators.equal'), symbol: '=' },
-  { value: '!=', label: t('automation:operators.notEqual'), symbol: '≠' },
-  { value: 'contains', label: t('automation:operators.contains'), symbol: '×' },
-  { value: 'starts_with', label: t('automation:operators.startsWith'), symbol: 'A|' },
-  { value: 'ends_with', label: t('automation:operators.endsWith'), symbol: '|Z' },
-  { value: 'regex', label: t('automation:operators.regex'), symbol: '/re/' },
+  { value: '==', label: t('automation:operators.equal') },
+  { value: '!=', label: t('automation:operators.notEqual') },
+  { value: 'contains', label: t('automation:operators.contains') },
+  { value: 'starts_with', label: t('automation:operators.startsWith') },
+  { value: 'ends_with', label: t('automation:operators.endsWith') },
+  { value: 'regex', label: t('automation:operators.regex') },
 ]
 
 const getBooleanOperators = (t: (key: string) => string) => [
-  { value: '==', label: t('dashboardComponents:ruleBuilder.operators.equals'), symbol: '=' },
-  { value: '!=', label: t('dashboardComponents:ruleBuilder.operators.notEquals'), symbol: '≠' },
+  { value: '==', label: t('automation:operators.equal') },
+  { value: '!=', label: t('automation:operators.notEqual') },
 ]
 
 const getComparisonOperators = (t: (key: string) => string, dataType?: string) => {
   if (dataType === 'string') return getStringOperators(t)
   if (dataType === 'boolean') return getBooleanOperators(t)
   return [...getNumericOperators(t),
-    { value: '==', label: t('dashboardComponents:ruleBuilder.operators.equals'), symbol: '=' },
-    { value: '!=', label: t('dashboardComponents:ruleBuilder.operators.notEquals'), symbol: '≠' }
+    { value: '==', label: t('automation:operators.equal') },
+    { value: '!=', label: t('automation:operators.notEqual') },
   ]
 }
 
@@ -1817,16 +1820,29 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
       ? getDeviceMetrics(cond.device_id, devices, deviceTypes)
       : []
 
-    // Get metric data type
-    const metricDataType = cond.metric && ((cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'device' && cond.device_id) || (cond.source_type === 'transform' && cond.transform_id))
-      ? (cond.source_type === 'extension'
-          ? (extensionDataSources?.find((ds: ExtensionDataSourceInfo) =>
-              ds.extension_id === cond.extension_id && ds.field === cond.metric
-            )?.data_type || 'float')
-          : cond.source_type === 'transform'
-          ? (transformDataSources?.find(ds => ds.transform_id === cond.transform_id && ds.metric_name === cond.metric)?.data_type || 'float')
-          : getMetricDataTypeForResource(cond.device_id!, cond.metric, devices, deviceTypes, extensions, extensionDataSources))
-      : 'float'
+    // Resolve the data type for a given metric name under the current source selection.
+    // Used both for rendering the operator set and for validating the operator when
+    // the user switches metrics (a previously-chosen string operator like "contains"
+    // is invalid after switching to a numeric metric).
+    const resolveMetricDataType = (metricName: string | undefined): string => {
+      if (!metricName) return 'float'
+      if (cond.source_type === 'extension' && cond.extension_id) {
+        return extensionDataSources?.find((ds: ExtensionDataSourceInfo) =>
+          ds.extension_id === cond.extension_id && ds.field === metricName
+        )?.data_type || 'float'
+      }
+      if (cond.source_type === 'transform' && cond.transform_id) {
+        return transformDataSources?.find(ds =>
+          ds.transform_id === cond.transform_id && ds.metric_name === metricName
+        )?.data_type || 'float'
+      }
+      if (cond.source_type === 'device' && cond.device_id) {
+        return getMetricDataTypeForResource(cond.device_id, metricName, devices, deviceTypes, extensions, extensionDataSources)
+      }
+      return 'float'
+    }
+
+    const metricDataType = resolveMetricDataType(cond.metric)
 
     const isStringType = metricDataType === 'string'
     const isBooleanType = metricDataType === 'boolean'
@@ -1937,10 +1953,12 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
           {/* Metric Selector */}
           {((cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'device' && cond.device_id) || (cond.source_type === 'transform' && cond.transform_id)) && metrics.length > 0 ? (
             <Select value={cond.metric} onValueChange={(v) => {
+              const newDataType = resolveMetricDataType(v)
+              const allowedOps = getComparisonOperators(t, newDataType).map(o => o.value)
               onChange({
                 ...condition,
                 metric: v,
-                operator: v === '__last_seen_age_secs' ? '>' : condition.operator,
+                operator: (cond.operator && allowedOps.includes(cond.operator) ? cond.operator : allowedOps[0])!,
               })
             }}>
               <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -1953,7 +1971,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                 {cond.source_type === 'device' && (
                   <SelectGroup>
                     <SelectLabel className="text-muted-foreground">{tBuilder('systemMetrics')}</SelectLabel>
-                    <SelectItem value="__last_seen_age_secs">{tBuilder('metricLastSeenAgeSecs')}</SelectItem>
+                    <SelectItem value="__last_seen_age_secs">Seconds since last data</SelectItem>
                   </SelectGroup>
                 )}
               </SelectContent>
@@ -1972,9 +1990,9 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
             onValueChange={(v) => updateField('operator', v)}
             disabled={!((cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'transform' && cond.transform_id) || (cond.source_type === 'device' && cond.device_id))}
           >
-            <SelectTrigger className="w-20 h-9 text-sm"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {getComparisonOperators((k) => k, metricDataType).map(o => <SelectItem key={o.value} value={o.value}>{o.symbol}</SelectItem>)}
+              {getComparisonOperators(t, metricDataType).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
 
@@ -2064,7 +2082,6 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
               onChange({
                 ...condition,
                 metric: v,
-                operator: v === '__last_seen_age_secs' ? '>' : condition.operator,
               })
             }}>
               <SelectTrigger className="w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -2073,7 +2090,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                 {cond.source_type === 'device' && (
                   <SelectGroup>
                     <SelectLabel className="text-muted-foreground">{tBuilder('systemMetrics')}</SelectLabel>
-                    <SelectItem value="__last_seen_age_secs">{tBuilder('metricLastSeenAgeSecs')}</SelectItem>
+                    <SelectItem value="__last_seen_age_secs">Seconds since last data</SelectItem>
                   </SelectGroup>
                 )}
               </SelectContent>

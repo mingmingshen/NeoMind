@@ -31,7 +31,8 @@ import { FormField } from '@/components/ui/field'
 import { FormSection, FormSectionGroup } from '@/components/ui/form-section'
 import { BleProvisionTab } from './BleProvisionTab'
 import { toast } from '@/components/ui/use-toast'
-import { api, getServerOrigin } from '@/lib/api'
+import { api } from '@/lib/api'
+import { useServerUrl } from '@/lib/server-url'
 import { useStore } from '@/store'
 import { fetchCache } from '@/lib/utils/async'
 import type { DeviceType, AddDeviceRequest, ConnectionConfig, MqttStatus, ExternalBroker } from '@/types'
@@ -274,6 +275,7 @@ function StepCard({ step, icon: Icon, title, description, status = 'pending' }: 
 function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) => void }) {
   const { t } = useTranslation(['devices', 'common'])
   const isMobile = useIsMobile()
+  const serverUrl = useServerUrl()
   const [mqttStatus, setMqttStatus] = useState<MqttStatus | null>(null)
   const [brokers, setBrokers] = useState<ExternalBroker[]>([])
   const [embeddedConfig, setEmbeddedConfig] = useState<{
@@ -310,11 +312,11 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
   }, [])
 
   const brokerRunning = mqttStatus?.connected ?? false
-  const serverIp = mqttStatus?.server_ip || getServerOrigin().replace(/^https?:\/\//, '')
+  const serverIp = mqttStatus?.server_ip || serverUrl.replace(/^https?:\/\//, '')
   const brokerPort = mqttStatus?.listen_port ?? 1883
-  // Use getServerOrigin() for webhook URL to work through nginx reverse proxy
+  // Use canonical serverUrl (LAN IP in Tauri, window.location.origin in browser)
   // Don't use serverIp:apiPort as it may not be accessible from external networks
-  const webhookBaseUrl = `${getServerOrigin()}/api/devices/{device_id}/webhook`
+  const webhookBaseUrl = `${serverUrl}/api/devices/{device_id}/webhook`
   const enabledBrokers = brokers.filter(b => b.enabled)
   const hasAnyBroker = brokerRunning || enabledBrokers.length > 0
 
@@ -593,8 +595,33 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
               </code>
             </div>
             <p className="xs text-muted-foreground">
-              POST JSON to the webhook URL above, replacing <code className="font-mono">{'{device_id}'}</code> with your actual device ID
+              {t('devices:auto.webhookUrlHint')}
             </p>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{t('devices:auto.webhookCurlTitle')}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => {
+                    const cmd = `curl -X POST ${serverUrl}/api/devices/my-sensor-001/webhook \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "data": {\n      "temperature": 23.5,\n      "humidity": 65.2\n    }\n  }'`
+                    navigator.clipboard.writeText(cmd)
+                    toast({ title: t('devices:auto.webhookCurlCopied') })
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <pre className="text-xs font-mono bg-muted-30 rounded-md px-3 py-2 overflow-x-auto whitespace-pre leading-relaxed">{`curl -X POST ${serverUrl}/api/devices/my-sensor-001/webhook \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "data": {
+      "temperature": 23.5,
+      "humidity": 65.2
+    }
+  }'`}</pre>
+            </div>
           </div>
         )}
       </FormSection>
@@ -638,6 +665,7 @@ function ManualAddForm({
 }) {
   const { t } = useTranslation(['common', 'devices'])
   const isMobile = useIsMobile()
+  const serverUrl = useServerUrl()
 
   const [selectedDeviceType, setSelectedDeviceType] = useState('')
   const [deviceId, setDeviceId] = useState('')
@@ -1065,7 +1093,7 @@ function ManualAddForm({
                 {t('devices:add.webhookUrlDescription')}
               </p>
               <code className="text-xs break-all block font-mono">
-                {`${getServerOrigin()}/api/devices/${deviceId}/webhook`}
+                {`${serverUrl}/api/devices/${deviceId}/webhook`}
               </code>
             </div>
             <FormField label={t('devices:add.webhookToken')}>

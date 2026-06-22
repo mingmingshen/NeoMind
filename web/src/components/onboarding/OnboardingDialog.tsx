@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { notifySuccess, notifyError } from "@/lib/notify"
-import { getServerOrigin } from "@/lib/api"
+import { useServerUrl } from "@/lib/server-url"
 import type { OnboardingStatus } from "@/hooks/useOnboarding"
 
 interface OnboardingDialogProps {
@@ -295,14 +295,15 @@ const DEVICE_FOLLOWUP_COMMANDS = [
 
 function DeviceQuickStart() {
   const { t } = useTranslation("common")
+  const serverUrl = useServerUrl()
   const [expanded, setExpanded] = useState(true)
 
-  // Build curl command dynamically using current server origin
+  // Build curl command dynamically using canonical server URL
   const DEVICE_CURL_COMMAND = useMemo(() => [
-    `curl -X POST ${getServerOrigin()}/api/devices/demo-001/webhook \\`,
+    `curl -X POST ${serverUrl}/api/devices/demo-001/webhook \\`,
     '  -H "Content-Type: application/json" \\',
     `  -d '{"data": {"temperature": 25.5, "humidity": 60}}'`,
-  ].join("\n"), [])
+  ].join("\n"), [serverUrl])
 
   const handleCopy = async () => {
     try {
