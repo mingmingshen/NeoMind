@@ -31,6 +31,7 @@
 //! ```
 
 pub mod device_integration;
+pub mod device_status_emitter;
 pub mod engine;
 pub mod error;
 pub mod extension_integration;
@@ -41,6 +42,9 @@ pub mod unified_provider;
 pub mod validator;
 
 // Re-exports
+pub use device_status_emitter::{
+    DeviceStatusEmitter, VIRTUAL_METRIC_NAME as DEVICE_LAST_SEEN_AGE_METRIC,
+};
 pub use engine::{AgentTriggerCallback, InMemoryValueProvider, RuleEngine};
 pub use error::RuleError;
 pub use models::{
