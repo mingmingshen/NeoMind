@@ -279,8 +279,17 @@ value`) and the MQTT downlink topic could not be configured from the UI.
   signatures). Fixes the field observation where `aicam/status/offline`
   (NE301's MQTT LWT) was being parsed as `device_id=status, is_binary=true`
   and registered as a phantom device.
-- Regression test `test_lwt_and_status_topics_skip_auto_onboarding`
-  covers the NE301 pattern plus real-telemetry negative cases.
+- **Filter ordering fix**: the self-echo and LWT/status filters now run
+  AFTER the `topic_to_device` mapping lookup, not before. Previously, a
+  registered device whose telemetry topic contained a `status` segment
+  or ended with `online`/`offline` (common in real IoT firmware) had its
+  telemetry silently dropped by the filter — the device list showed stale
+  `last_seen` and no status updates even though the device was actively
+  publishing. Registered-device telemetry now always reaches the extraction
+  pipeline regardless of topic naming; the filters only apply to unknown
+  topics entering the auto-onboarding path.
+- Regression tests `test_lwt_and_status_topics_skip_auto_onboarding` and
+  `test_status_topic_filter_is_aggressive_by_design` document the contract.
 
 #### Heartbeat monitor respects transport-connected state
 - The background heartbeat loop in `service.rs` previously collapsed any

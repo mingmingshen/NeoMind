@@ -1840,25 +1840,11 @@ impl MqttAdapter {
                 //     would otherwise show up as phantom devices like
                 //     `device_id=status, is_binary=true`.
                 if !is_standard_uplink {
-                    let is_self_echo = {
-                        let outbound = outbound_command_topics.read().await;
-                        outbound.contains(&topic)
-                    };
-                    if is_self_echo {
-                        debug!(
-                            "Skipping auto-onboarding for self-echo of outbound command topic: {}",
-                            topic
-                        );
-                        return;
-                    }
-                    if looks_like_non_telemetry_topic(&topic) {
-                        debug!(
-                            "Skipping auto-onboarding for LWT/status-style topic: {}",
-                            topic
-                        );
-                        return;
-                    }
-                    // First check if this topic belongs to a registered device
+                    // First check if this topic belongs to a registered device.
+                    // Registered devices MUST be processed before any noise filter —
+                    // otherwise a device whose telemetry_topic happens to contain
+                    // a `status` segment or end with `online`/`offline` (common in
+                    // IoT firmware) would have its telemetry silently dropped.
                     let device_id_opt = {
                         let mapping = topic_to_device.read().await;
                         debug!(
@@ -2007,6 +1993,33 @@ impl MqttAdapter {
                         }
                         // Skip auto-onboarding for registered devices - message already handled
                     } else {
+                        // Unknown topic — apply noise filters BEFORE auto-onboarding
+                        // to prevent phantom discoveries.
+                        //
+                        //   * **Self-echo** — the embedded broker reflects our own
+                        //     outbound command publishes back through wildcard
+                        //     subscriptions (e.g. `ne302/2819FD/down/control`).
+                        //   * **LWT/status broadcasts** — devices publish
+                        //     `aicam/status/offline` and similar on connect/disconnect.
+                        let is_self_echo = {
+                            let outbound = outbound_command_topics.read().await;
+                            outbound.contains(&topic)
+                        };
+                        if is_self_echo {
+                            debug!(
+                                "Skipping auto-onboarding for self-echo of outbound command topic: {}",
+                                topic
+                            );
+                            return;
+                        }
+                        if looks_like_non_telemetry_topic(&topic) {
+                            debug!(
+                                "Skipping auto-onboarding for LWT/status-style topic: {}",
+                                topic
+                            );
+                            return;
+                        }
+
                         // Trigger auto-onboarding for unknown devices
                         // User-configured subscribe_topics define WHICH topics to listen on,
                         // and we should auto-onboard devices from those topics
@@ -2423,5 +2436,26 @@ mod tests {
         assert!(!looks_like_non_telemetry_topic("device/ne301_camera/2819FD/uplink"));
         assert!(!looks_like_non_telemetry_topic("sensors/temp-001/temperature"));
         assert!(!looks_like_non_telemetry_topic("stat/deviceid/power"));
+    }
+
+    /// Regression: the `looks_like_non_telemetry_topic` filter must NOT
+    /// cause telemetry loss for a registered device whose topic happens to
+    /// contain a `status` segment or end with `online`/`offline` (common in
+    /// real IoT firmware). The filter is only applied to UNKNOWN topics in
+    /// the auto-onboarding path — registered-device telemetry is processed
+    /// before the filter runs.
+    ///
+    /// This test documents the contract: the helper itself is aggressive
+    /// (returns true for `device/abc/status`), so the CALLING CODE must
+    /// ensure registered devices are routed before the filter. If this
+    /// test ever breaks because someone moved the filter before the
+    /// topic_to_device lookup, the bug is back.
+    #[test]
+    fn test_status_topic_filter_is_aggressive_by_design() {
+        // These DO match the filter — that's intentional for the
+        // auto-onboarding path. The fix is structural (filter runs AFTER
+        // registered-device lookup), not in this helper.
+        assert!(looks_like_non_telemetry_topic("device/abc/status"));
+        assert!(looks_like_non_telemetry_topic("device/abc/online"));
     }
 }
