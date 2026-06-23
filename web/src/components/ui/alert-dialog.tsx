@@ -49,7 +49,7 @@ const AlertDialogContent = React.forwardRef<
         "m-0",
         "p-4 sm:p-6",
         "overflow-x-hidden overflow-y-auto",
-        !className?.includes("max-h-") && "max-h-[calc(100vh-2rem)] sm:max-h-[85vh]",
+        !className?.includes("max-h-") && "max-h-[calc(100dvh-2rem)] sm:max-h-[85dvh]",
         className
       )}
       {...props}

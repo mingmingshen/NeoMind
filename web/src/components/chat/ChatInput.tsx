@@ -226,7 +226,7 @@ export const ChatInput = memo(function ChatInput({
   const canSend = (input.trim() || attachedImages.length > 0) && !isStreaming
 
   return (
-    <div className="bg-background sm:static fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border sm:border-0"
+    <div className="bg-background sm:static fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border sm:border-0"
       style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
       <div className="max-w-3xl mx-auto">
         {/* Input toolbar */}

@@ -6,6 +6,13 @@ import { useEffect } from 'react'
  * Fixes the issue where styles don't recover after keyboard dismissal
  * by using direct dvh units and forcing viewport recalculation.
  *
+ * iOS PWA standalone note: window.innerHeight does NOT shrink when the soft
+ * keyboard opens in standalone mode — only visualViewport.height does.
+ * We detect this environment and expose a separate `--keyboard-offset`
+ * CSS variable (0 everywhere else) so layout fixes can target iOS PWA
+ * without breaking Android / iOS Safari browser (where `100dvh` already
+ * shrinks correctly and applying the same offset would double-subtract).
+ *
  * @see https://dev.to/franciscomoretti/fix-mobile-keyboard-overlap-with-visualviewport-3a4a
  */
 
@@ -14,11 +21,39 @@ let initialHeight = 0
 let topNavHeight = 64 // Default 4rem = 64px
 
 /**
+ * Detect iOS PWA standalone mode — the only environment where the soft
+ * keyboard doesn't resize the layout viewport. On Android PWA and iOS
+ * Safari (browser tab), the webview / 100dvh already shrink to the
+ * visible area, so manual offsetting would double-subtract.
+ */
+function detectIOSPwaStandalone(): boolean {
+  if (typeof window === 'undefined') return false
+  // display-mode: standalone covers "Add to Home Screen" PWAs.
+  // display-mode: fullscreen covers iPad fullscreen PWAs.
+  const standalone =
+    window.matchMedia?.('(display-mode: standalone)').matches
+    || window.matchMedia?.('(display-mode: fullscreen)').matches
+  // Legacy iOS Safari property (deprecated but still set on iOS home-screen PWAs).
+  const legacyStandalone = (window.navigator as unknown as { standalone?: boolean }).standalone === true
+  if (!standalone && !legacyStandalone) return false
+  const ios = /\b(iPhone|iPad|iPod)\b/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  return ios
+}
+
+const isIOSPwaStandalone = detectIOSPwaStandalone()
+
+/**
  * Initialize global VisualViewport tracking
  * Call this once in your app root
  */
 export function initVisualViewport() {
   if (typeof window === 'undefined') return
+
+  // Tag the root element so CSS can target iOS PWA specifically.
+  if (isIOSPwaStandalone) {
+    document.documentElement.classList.add('ios-pwa-standalone')
+  }
 
   // Get the actual viewport height (considering safe area)
   initialHeight = window.innerHeight
@@ -40,8 +75,20 @@ export function initVisualViewport() {
     const isOpen = diff > 100
     keyboardHeight = isOpen ? diff : 0
 
-    // Update CSS variable
+    // Update CSS variables:
+    //   --keyboard-height: raw keyboard height (used for keyboard detection
+    //     and elements that should be offset by exactly the keyboard height
+    //     regardless of platform behavior — e.g. fixed-bottom bars that need
+    //     to clear the keyboard on iOS PWA).
+    //   --keyboard-offset: same as --keyboard-height on iOS PWA standalone,
+    //     0 elsewhere. Used by layout-level fixes (body height, --app-height)
+    //     that must NOT double-subtract on platforms where 100dvh already
+    //     shrinks.
     document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
+    document.documentElement.style.setProperty(
+      '--keyboard-offset',
+      isIOSPwaStandalone ? `${keyboardHeight}px` : '0px',
+    )
 
     // Update app height
     updateAppHeight()
@@ -93,16 +140,25 @@ export function initVisualViewport() {
 }
 
 /**
- * Update the app height CSS variable
- * Uses the larger of window.innerHeight or visualViewport.height
- * to ensure the app fills the screen even after keyboard dismissal
+ * Update the app height CSS variable.
+ *
+ * On iOS PWA standalone, window.innerHeight does NOT shrink when the soft
+ * keyboard opens — only visualViewport.height does. If we feed window.innerHeight
+ * to the root container, the root stays full-screen-tall while body has shrunk
+ * to the visible area; iOS then shifts the layout upward to reveal the focused
+ * input, pushing the safe-area-padded header under the notch.
+ *
+ * So: when keyboard is open on iOS PWA standalone, --app-height tracks
+ * visualViewport.height. Everywhere else (Android, iOS Safari browser,
+ * desktop), window.innerHeight already reflects the visible area, so we
+ * use it directly.
  */
 function updateAppHeight() {
   if (typeof window === 'undefined') return
 
-  // Use the actual viewport height, not the visual viewport
-  // This ensures the app fills the screen even after keyboard closes
-  const appHeight = window.innerHeight
+  const appHeight = (keyboardHeight > 0 && isIOSPwaStandalone && window.visualViewport)
+    ? window.visualViewport.height
+    : window.innerHeight
   document.documentElement.style.setProperty('--app-height', `${appHeight}px`)
 
   // Mobile layout: no global TopNav. Each page renders its own MobilePageHeader
@@ -155,6 +211,7 @@ export function forceViewportReset() {
 
   keyboardHeight = 0
   document.documentElement.style.setProperty('--keyboard-height', '0px')
+  document.documentElement.style.setProperty('--keyboard-offset', '0px')
 
   // Update app height to current window height
   updateAppHeight()

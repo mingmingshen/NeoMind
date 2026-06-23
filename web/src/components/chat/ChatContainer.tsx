@@ -308,13 +308,16 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
             "border border-input bg-background text-foreground placeholder:text-muted-foreground",
             "focus-visible:outline-none",
             "transition-all duration-200",
-            "min-h-[44px] max-h-32",
+            "min-h-[44px] max-h-[96px] lg:max-h-32",
             isStreaming && "opacity-60 cursor-wait"
           )}
           onInput={(e) => {
             const target = e.target as HTMLTextAreaElement
             target.style.height = "auto"
-            target.style.height = Math.min(target.scrollHeight, 128) + "px"
+            // Smaller cap on mobile so the panel chat leaves room for messages
+            // when the soft keyboard is open.
+            const isMobileView = typeof window !== 'undefined' && window.innerWidth < 1024
+            target.style.height = Math.min(target.scrollHeight, isMobileView ? 96 : 128) + "px"
           }}
         />
       </div>

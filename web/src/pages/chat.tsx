@@ -286,6 +286,9 @@ export function ChatPage() {
   // - Click events in SessionSidebar (which navigate to the URL)
   useEffect(() => {
     if (urlSessionId) {
+      // Reset pin state on session switch — new session should show latest
+      // messages regardless of where the user scrolled in the previous session.
+      isPinnedToBottomRef.current = true
       switchSession(urlSessionId).catch((err) => {
         handleError(err, { operation: 'Load session from URL', showToast: false })
       })
@@ -340,12 +343,30 @@ export function ChatPage() {
   // Ref for the scrollable message container
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
+  // Track whether the user is currently "pinned" to the bottom of the message
+  // list. We only auto-scroll on new content while pinned. If the user has
+  // scrolled up to read history, auto-scrolling would yank them back down —
+  // extremely annoying when waiting for a long response while reviewing context.
+  const isPinnedToBottomRef = useRef(true)
+
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    // Consider "pinned" if within 80px of the bottom — covers minor sub-pixel
+    // diffs and the gap inserted by smooth-scroll inertia.
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    isPinnedToBottomRef.current = distanceFromBottom < 80
+  }, [])
+
   // Auto-scroll to bottom by directly setting scrollTop on the scroll container
   // Using scrollIntoView is unreliable when sibling elements (like sidebar) have CSS transitions,
   // as it scrolls based on viewport position which shifts during layout reflow.
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current
     if (container) {
+      // Sending a new message or opening a session — force-pin so subsequent
+      // streaming tokens auto-scroll.
+      isPinnedToBottomRef.current = true
       container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
     }
   }, [])
@@ -354,6 +375,10 @@ export function ChatPage() {
   const debouncedScrollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    // Don't auto-scroll if the user has scrolled away from the bottom to read
+    // history. They can scroll down manually when ready.
+    if (!isPinnedToBottomRef.current) return
+
     // Clear existing timeout
     if (debouncedScrollRef.current) {
       clearTimeout(debouncedScrollRef.current)
@@ -611,6 +636,11 @@ export function ChatPage() {
       images: attachedImages.length > 0 ? [...attachedImages] : undefined,
     }
     addMessage(userMessage)
+
+    // User just sent a message — re-pin to bottom so the new message and the
+    // streaming response auto-scroll into view, even if they had scrolled up
+    // to read history a moment ago.
+    isPinnedToBottomRef.current = true
 
     setInput("")
     setAttachedImages([])
@@ -1013,6 +1043,7 @@ export function ChatPage() {
           /* Chat Messages - shown on /chat/:sessionId with messages */
           <div
             ref={scrollContainerRef}
+            onScroll={handleScroll}
             className="touch-scroll flex-1 min-h-0 overflow-y-auto px-2 sm:px-4 py-2 sm:py-4 pb-32 sm:pb-2"
             onClick={(e) => {
               // If clicking outside interactive elements, dismiss keyboard
@@ -1235,7 +1266,7 @@ export function ChatPage() {
           "px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
           isDesktop
             ? "border-0"
-            : "fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-[var(--surface-glass)] backdrop-blur-xl"
+            : "fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 border-t border-border bg-[var(--surface-glass)] backdrop-blur-xl"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Image previews */}
@@ -1405,13 +1436,16 @@ export function ChatPage() {
                   "flex-1 px-4 py-3 rounded-2xl resize-none text-sm leading-5 scroll-mb-32",
                   "bg-muted text-foreground placeholder:text-muted-foreground",
                   "focus:outline-none focus:ring-2 focus:ring-ring",
-                  "transition-all max-h-40"
+                  // Cap textarea height so mobile users (with keyboard open) still
+                  // see recent messages. Desktop allows taller for rapid typing.
+                  "transition-all max-h-[100px] lg:max-h-40"
                 )}
                 style={{ minHeight: "64px" }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement
                   target.style.height = "auto"
-                  target.style.height = Math.max(64, Math.min(target.scrollHeight, 160)) + "px"
+                  const maxHeight = isDesktop ? 160 : 100
+                  target.style.height = Math.max(64, Math.min(target.scrollHeight, maxHeight)) + "px"
                 }}
               />
 

@@ -9,6 +9,181 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.22] - 2026-06-23
+
+### Overview
+
+Three themes: (1) **iOS PWA keyboard + chat UX** — closing the keyboard-overflow-
+under-notch regression that affected every iOS PWA user on notched devices; (2)
+**PWA icon & splash overhaul** — transparent-background icons sourced from the
+original `logo-square.png`, real iOS launch screens matching the Tauri startup
+visual, and removing the `maskable` declaration so desktop Chrome stops applying
+its squircle mask; (3) **agent runtime capability refresh** — fixing the
+"malformed tool-call output" incident where stale `supports_multimodal=true`
+rows in `llm_backends.redb` caused text-only models to be sent `image_url`
+parts on the scheduled-execution path.
+
+### PWA — iOS keyboard handling
+
+#### `--keyboard-offset` CSS variable (`useVisualViewport.ts`)
+- **Problem**: iOS PWA standalone mode does **not** shrink `window.innerHeight`
+  when the soft keyboard opens — only `visualViewport.height` does. The previous
+  `body.keyboard-open` rule locked body to `var(--initial-viewport-height)`,
+  which kept the layout full-screen-tall while iOS shifted it upward to reveal
+  the focused input, pushing the safe-area-padded header under the notch.
+- **Fix**: introduce `--keyboard-offset` CSS variable. On iOS PWA standalone
+  it tracks the actual keyboard height; on every other platform (Android,
+  iOS Safari browser, desktop, Tauri) it stays `0px`. This avoids the
+  double-subtract regression where `100dvh - var(--keyboard-height)` would
+  collapse body on Android — there `100dvh` already shrinks on its own.
+- **`--app-height` also shrinks**: same conditional logic applied so the
+  root container tracks the visible area on iOS PWA instead of full screen.
+- **`ios-pwa-standalone` class** added to `<html>` for CSS targeting.
+- **`detectIOSPwaStandalone()`** helper checks `display-mode: standalone`
+  (and legacy `navigator.standalone`) plus iOS UA, including iPad's
+  `MacIntel + maxTouchPoints > 1` quirk.
+
+#### Fixed-bottom elements offset (`bottom-[var(--keyboard-offset,0px)]`)
+- Four previously `bottom-0` elements now lift with the keyboard on iOS PWA:
+  - `pages/chat.tsx` — chat input container
+  - `components/chat/ChatInput.tsx` — standalone ChatInput
+  - `components/layout/PageLayout.tsx` — page footer
+  - `components/shared/PageTabs.tsx` — bottom tab navigation
+- `components/chat/GlobalChatFab.tsx` — FAB + expanded panel both offset
+  via `bottom-[calc(...+var(--keyboard-offset,0px))]`.
+
+#### Dynamic viewport units (`index.css`)
+- **`@layer utilities` override**: `.h-screen` / `.min-h-screen` / `.max-h-screen`
+  now resolve to `100dvh` with `100vh` fallback. Fixes the iOS Safari browser
+  mode where `100vh` includes the address bar.
+- **iOS PWA-specific body rule** (`html.ios-pwa-standalone body.keyboard-open`):
+  `height: calc(100dvh - var(--keyboard-offset, 0px))` shrinks body to the
+  visible area when the keyboard is open — eliminates the upward shift that
+  hid the header under the notch.
+- **Touch device hover visibility** (`@media (hover: none) and (pointer: coarse)`):
+  `group-hover:opacity-100` and `group-hover:opacity-50` are forced to 1/0.55
+  on pure touch devices, restoring visibility of the 20+ hover-only buttons
+  that were invisible on phones/tablets.
+
+#### Chat UX polish
+- **Auto-scroll pinned-to-bottom** (`pages/chat.tsx`):
+  - `isPinnedToBottomRef` tracks whether the user is near the bottom.
+  - Auto-scroll only fires when pinned. Scrolling up to read history no
+    longer yanks the user back.
+  - Re-pin on `handleSend` (so user sees their new message + AI reply) and
+    on session switch (so opening a session shows the latest content).
+- **Mobile textarea max-height** (`pages/chat.tsx`, `ChatContainer.tsx`):
+  `max-h-[100px]` on mobile (was `max-h-40` = 160px), with JS clamp
+  matching. Prevents the textarea from eating the conversation view when
+  the user pastes a long block.
+- **Dialogs**: `max-h-[85dvh]` / `max-h-[calc(100dvh-2rem)]` on
+  `components/ui/dialog.tsx`, `alert-dialog.tsx`, `dialog/UnifiedFormDialog.tsx`
+  so dialogs fit within viewport on small screens with browser chrome.
+
+### PWA — Icons & splash screens
+
+#### Transparent-background icons
+- All 5 icons (`icon-192.png`, `icon-512.png`, `apple-touch-icon.png`,
+  `favicon-16x16.png`, `favicon-32x32.png`) regenerated from the original
+  `logo-square.png` with its natural alpha channel preserved — no canvas
+  color fill, no `#1A1A1F` tinting.
+- **Why transparent**: the previous `#1A1A1F` canvas plus interior tinting
+  produced a muddy dark-gray icon that didn't match the brand. With
+  transparency, the OS surfaces the wallpaper/window behind the icon
+  corners naturally.
+- Removed orphan `public/logo.png` (512×512 file, zero references in code).
+
+#### iOS PWA splash screens (`apple-touch-startup-image`)
+- Five static PNG splash screens generated from the Tauri `StartupLoading`
+  visual (solid black background + horizontal logo, no React/JS execution
+  possible on iOS launch screen):
+  - `splash-1290x2796.png` — iPhone 14/13/12/11 Pro Max, XS Max
+  - `splash-1179x2556.png` — iPhone 14/13/12/11 Pro, XS, X
+  - `splash-1284x2778.png` — iPhone 14 Plus / 14 / 13 / 12 / 11 / XR
+  - `splash-750x1334.png`  — iPhone 8 / 7 / 6s / 6 / SE
+  - `splash-2048x2732.png` — iPad Pro 12.9"
+- 9 `<link rel="apple-touch-startup-image">` tags added to `index.html`
+  with device-specific media queries (`device-width` + `device-height` +
+  `-webkit-device-pixel-ratio`).
+- Logo sized to 45% of canvas width (cap 540px), centered. Bg `#000000`.
+
+#### Manifest & theme color
+- **`site.webmanifest`**: `background_color` and `theme_color` changed
+  from `#1a1a1f` to `#000000` (matches the black icon/splash canvas;
+  previous gray showed as a visible ring on dark wallpapers).
+- **`index.html`**: dark-mode `<meta name="theme-color">` also `#000000`.
+  Light-mode stays `#f7f7f7`.
+- **`maskable` purpose removed** from webmanifest icons. Previously the
+  same PNG was declared both `any` and `maskable`, which told desktop
+  Chrome/Edge "feel free to apply your squircle mask" — producing the
+  "桌面icon 圆角严重" user complaint. With only `any` purpose declared,
+  browsers now display the icon as-is (square).
+- **macOS caveat**: macOS itself applies a squircle mask to all icons in
+  Dock/Launchpad at the OS level; that one we can't bypass from the web
+  layer. Other platforms (Windows, Linux, Chrome OS) now show the
+  intended square icon.
+
+### Backend — Agent runtime capability refresh
+
+#### Symptom
+`LLM tool-calling produced malformed output` on a scheduled agent using
+DeepSeek-V4. The tool-call stream returned unparseable fragments instead
+of the expected `tool_call` blocks.
+
+#### Root cause
+`crates/neomind-agent/src/ai_agent/executor/llm_runtime.rs::get_llm_runtime_for_agent`
+loaded backend rows straight from storage and trusted the persisted
+`supports_multimodal` field verbatim. A stale row from before layered
+capability detection shipped (0.8.20) had `supports_multimodal=true` on
+a text-only DeepSeek backend. The chat path refreshed capabilities on
+every load via `instance_manager`, so chat reported it as text-only
+correctly — but the scheduled-agent path didn't, so the executor:
+
+1. Detected the backend as multimodal → kept the `vision` tool available.
+2. The LLM emitted `image_url` content parts (which the tool layer happily
+   forwarded) in a text-only API request.
+3. DeepSeek's text endpoint rejected the unknown `image_url` variant,
+   causing the streaming tool-call parse to fail with malformed fragments.
+
+#### Fix
+- **`ensure_instance_capabilities` promoted to `pub(crate)`** in
+  `crates/neomind-agent/src/llm_backends/instance_manager.rs`. Chat and
+  agent-runtime paths now both go through this single refresh entry point.
+- **`llm_runtime.rs::get_llm_runtime_for_agent`** calls
+  `ensure_instance_capabilities(backend)` before building the cache key,
+  so a stale DB row is corrected to current layered-detection output
+  (registry → heuristic) before the multimodal decision is made.
+- **User override preserved**: `multimodal_user_override` remains sacred
+  in both paths. Refresh never clobbers a user override.
+
+#### Regression tests
+- `test_ensure_instance_capabilities_refreshes_stale_text_model` —
+  verifies a DeepSeek-V4 row with stale `supports_multimodal=true` is
+  downgraded to `false`.
+- `test_ensure_instance_capabilities_respects_user_override` —
+  verifies user override wins over auto-detection.
+
+### Backend — Shared dashboard proxy
+
+- **`is_share_proxy_path_allowed`** (`handlers/dashboards.rs`) now allows
+  `frontend-components/` GETs through the share proxy. Community widget
+  manifests and JS bundles are needed for rendering shared dashboards
+  that use community widgets. Install/uninstall endpoints remain blocked
+  by the existing method check.
+
+### Upgrade notes
+
+- **iOS PWA users**: delete the existing home-screen icon and re-add it.
+  iOS caches web clip icons aggressively; the new transparent-background
+  icon won't appear until the cache is invalidated.
+- **Desktop PWA users** (Chrome/Edge): uninstall via `chrome://apps`,
+  clear browser cache for the site, then re-install. Chrome caches PWA
+  icons inside `~/Applications/Chrome Apps.localized/<App>.app/Contents/
+  Resources/app.icns` and does **not** refresh that file when the source
+  manifest changes — only on first install.
+- No data migrations.
+- No breaking API changes.
+
 ## [0.8.21] - 2026-06-22
 
 ### Overview

@@ -128,6 +128,16 @@ body,
   height: 100dvh;
 }
 
+/* Override Tailwind's h-screen / min-h-screen to include dvh fallback.
+   Tailwind 3.4 ships only 100vh; on iOS Safari that includes the URL bar
+   area, cutting off bottom content. The second declaration wins in modern
+   browsers, falls back to the first elsewhere. */
+@layer utilities {
+  .h-screen { height: 100vh; height: 100dvh; }
+  .min-h-screen { min-height: 100vh; min-height: 100dvh; }
+  .max-h-screen { max-height: 100vh; max-height: 100dvh; }
+}
+
 /* Minimum height that adapts */
 .min-viewport-full {
   min-height: 100vh;
@@ -145,11 +155,34 @@ body,
     min-height: 100dvh;
   }
 
-  /* Prevent body from shrinking when keyboard is open */
-  body.keyboard-open {
-    min-height: 100dvh;
-    height: var(--initial-viewport-height, 100dvh);
+  /* iOS PWA standalone ONLY: when keyboard opens, window.innerHeight and
+     100dvh do NOT shrink — only visualViewport does. If body stays at
+     full-screen height, iOS scrolls the whole layout upward to reveal the
+     focused input, pushing the safe-area-padded header under the notch.
+     Fix: shrink body to the visible area. --keyboard-offset is set to the
+     real keyboard height only on iOS PWA standalone (see useVisualViewport.ts);
+     it is 0 on Android / iOS Safari browser, where 100dvh already shrinks
+     and subtracting again would collapse body. */
+  html.ios-pwa-standalone body.keyboard-open {
+    min-height: 0;
+    height: calc(100dvh - var(--keyboard-offset, 0px));
     overflow: hidden;
+  }
+}
+
+/* Touch devices: `group-hover:` never fires (no hover state), so any element
+   using `opacity-0 group-hover:opacity-100` for action buttons (delete, close,
+   edit) stays invisible forever. There are ~20 such sites across the codebase
+   (image attachment remove, session delete, rule condition delete, component
+   delete, etc.). Rather than touching each one, force these visible on coarse-
+   pointer devices. The class selector escapes the colon to match the literal
+   Tailwind utility class name. */
+@media (hover: none) and (pointer: coarse) {
+  .group-hover\:opacity-100 {
+    opacity: 1 !important;
+  }
+  .group-hover\:opacity-50 {
+    opacity: 0.55 !important;
   }
 }
 

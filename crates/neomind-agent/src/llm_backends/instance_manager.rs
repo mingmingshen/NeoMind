@@ -31,7 +31,14 @@ use super::backends::ollama::{detect_model_context, OllamaConfig, OllamaRuntime}
 /// `"registry"` if the layered detector found the model in LiteLLM, or
 /// `"heuristic"` otherwise. Runtime API sources (`/api/show`, `/props`) are
 /// tracked separately when the runtime refreshes them.
-fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
+///
+/// Called from two paths: the chat/instance-manager path (on every list/load)
+/// and the scheduled-agent runtime path (`get_llm_runtime_for_agent`). The
+/// latter loads backends directly from storage, so without this refresh any
+/// stale DB row (e.g. `supports_multimodal=true` written by a pre-layered-
+/// detection version) would cause text models to be treated as multimodal on
+/// the agent path while chat correctly reported them as text-only.
+pub(crate) fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
     // User override is sacred — never auto-correct.
     if let Some(user_val) = instance.capabilities.multimodal_user_override {
         if instance.capabilities.supports_multimodal != user_val
@@ -1202,5 +1209,93 @@ mod tests {
         let schema = manager.get_config_schema("ollama");
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"].is_object());
+    }
+
+    /// Regression test for the "LLM tool-calling produced malformed output"
+    /// incident (2026-06-23): a DeepSeek backend stored
+    /// `supports_multimodal=true` from a legacy row was used verbatim by the
+    /// scheduled-agent runtime path, causing the executor to strip the vision
+    /// tool and ship `image_url` parts to a text-only API. The agent runtime
+    /// path now refreshes capabilities via this function — verify the refresh
+    /// actually downgrades a stale text model back to text-only.
+    #[test]
+    fn test_ensure_instance_capabilities_refreshes_stale_text_model() {
+        use neomind_storage::{BackendCapabilities, LlmBackendInstance, LlmBackendType};
+
+        let stale_text_model = LlmBackendInstance {
+            id: "test-deepseek".to_string(),
+            name: "DeepSeek (stale)".to_string(),
+            backend_type: LlmBackendType::DeepSeek,
+            endpoint: Some("https://api.deepseek.com".to_string()),
+            model: "deepseek-v4-flash".to_string(),
+            api_key: Some("sk-test".to_string()),
+            is_active: true,
+            temperature: 0.7,
+            top_p: 1.0,
+            max_tokens: 4096,
+            top_k: 0,
+            thinking_enabled: false,
+            capabilities: BackendCapabilities {
+                supports_streaming: true,
+                // Stale: deepseek-v4-flash is text-only but DB says true.
+                supports_multimodal: true,
+                multimodal_user_override: None,
+                multimodal_source: None,
+                supports_thinking: false,
+                supports_tools: true,
+                max_context: 128000,
+            },
+            updated_at: 0,
+        };
+
+        let refreshed = ensure_instance_capabilities(stale_text_model);
+        assert!(
+            !refreshed.capabilities.supports_multimodal,
+            "deepseek-v4-flash is a text-only model; stale supports_multimodal=true must be \
+             refreshed to false so the agent path does not ship image parts to a text API"
+        );
+    }
+
+    /// User override must win over auto-detection even when the stored
+    /// `supports_multimodal` value disagrees with the model name.
+    #[test]
+    fn test_ensure_instance_capabilities_respects_user_override() {
+        use neomind_storage::{BackendCapabilities, LlmBackendInstance, LlmBackendType};
+
+        let overridden_text_model = LlmBackendInstance {
+            id: "test-deepseek-override".to_string(),
+            name: "DeepSeek (user override)".to_string(),
+            backend_type: LlmBackendType::DeepSeek,
+            endpoint: Some("https://api.deepseek.com".to_string()),
+            model: "deepseek-v4-flash".to_string(),
+            api_key: None,
+            is_active: true,
+            temperature: 0.7,
+            top_p: 1.0,
+            max_tokens: 4096,
+            top_k: 0,
+            thinking_enabled: false,
+            capabilities: BackendCapabilities {
+                supports_streaming: true,
+                // Wrong vs. detection, but user override is sacred.
+                supports_multimodal: true,
+                multimodal_user_override: Some(true),
+                multimodal_source: Some("user_override".to_string()),
+                supports_thinking: false,
+                supports_tools: true,
+                max_context: 128000,
+            },
+            updated_at: 0,
+        };
+
+        let refreshed = ensure_instance_capabilities(overridden_text_model);
+        assert!(
+            refreshed.capabilities.supports_multimodal,
+            "user override=true must be respected even when detection would return false"
+        );
+        assert_eq!(
+            refreshed.capabilities.multimodal_source.as_deref(),
+            Some("user_override"),
+        );
     }
 }

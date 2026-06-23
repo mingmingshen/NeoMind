@@ -66,6 +66,23 @@ impl AgentExecutor {
                 if let Ok(Some(backend)) = store.load_instance(backend_id) {
                     use neomind_storage::LlmBackendType;
 
+                    // Refresh capabilities from the model name. The agent
+                    // runtime path loads backends straight from storage, so
+                    // without this any stale DB row (legacy
+                    // `supports_multimodal=true` from before layered detection
+                    // shipped, or a backend that was never updated via
+                    // `PUT /llm-backends/:id`) would be trusted verbatim.
+                    // Chat path already does the same refresh via the instance
+                    // manager; this keeps the two paths consistent. See
+                    // `LLM tool-calling produced malformed output` for the
+                    // symptom this prevents (text model treated as multimodal
+                    // → `image_url` parts shipped to a text-only API →
+                    // unparseable tool-call fragments).
+                    let backend =
+                        crate::llm_backends::instance_manager::ensure_instance_capabilities(
+                            backend,
+                        );
+
                     // Build cache key
                     let endpoint = backend.endpoint.clone().unwrap_or_default();
                     let model = backend.model.clone();

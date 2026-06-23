@@ -1067,6 +1067,7 @@ fn is_share_proxy_path_allowed(path: &str) -> bool {
         "agents/",     // execution history + detail; full CRUD blocked by method check in step 4
         "data-sources",
         "messages", // alerts shown on dashboard (list + detail); channel mutation blocked by method
+        "frontend-components", // community widget manifests + bundles (GET only; install/uninstall blocked by method check)
     ];
     // First path segment (no query string).
     let first_segment = path.split('/').next().unwrap_or("");

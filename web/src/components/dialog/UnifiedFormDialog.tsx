@@ -331,7 +331,7 @@ export function UnifiedFormDialog({
             'duration-200',
             'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
             'rounded-lg sm:rounded-xl',
-            'max-h-[calc(100vh-2rem)] sm:max-h-[85vh]',
+            'max-h-[calc(100dvh-2rem)] sm:max-h-[85dvh]',
             'flex flex-col',
             widthClasses[width],
             '-translate-x-1/2 -translate-y-1/2',
