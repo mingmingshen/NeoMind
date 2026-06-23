@@ -53,9 +53,6 @@ pub struct EmbeddedBrokerConfig {
     #[serde(default = "default_max_payload")]
     pub max_payload_size: usize,
 
-    #[serde(default = "default_connection_timeout")]
-    pub connection_timeout_ms: u16,
-
     #[serde(default = "default_dynamic_filters")]
     pub dynamic_filters: bool,
 
@@ -87,9 +84,6 @@ fn default_max_connections() -> usize {
 fn default_max_payload() -> usize {
     268435456 // 256 MB
 }
-fn default_connection_timeout() -> u16 {
-    60000
-}
 fn default_dynamic_filters() -> bool {
     true
 }
@@ -101,7 +95,6 @@ impl Default for EmbeddedBrokerConfig {
             port: default_port(),
             max_connections: default_max_connections(),
             max_payload_size: default_max_payload(),
-            connection_timeout_ms: default_connection_timeout(),
             dynamic_filters: default_dynamic_filters(),
             auth_enabled: false,
             tls_enabled: false,

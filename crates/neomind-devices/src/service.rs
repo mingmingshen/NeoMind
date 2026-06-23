@@ -689,9 +689,33 @@ impl DeviceService {
                     }
                 }
 
-                // Mark stale devices as offline
-                for (device_id, last_seen) in stale_devices {
-                    let elapsed = now - last_seen;
+                // Mark stale devices as offline.
+                //
+                // CRITICAL: re-check each device's current state before marking
+                // it offline. Between the scan phase (above) and this mark
+                // phase, a DeviceMetric event may have arrived and set the
+                // device back to Connected with a fresh last_seen. Without
+                // this re-check, we'd overwrite the fresh Connected status
+                // with Disconnected and fire a spurious DeviceOffline event
+                // — the frontend list would show offline despite just having
+                // received data.
+                for (device_id, stale_last_seen) in stale_devices {
+                    // Re-check under lock: skip if the device has received
+                    // fresh data since the scan phase.
+                    {
+                        let status_map = device_status.read().await;
+                        if let Some(entry) = status_map.get(&device_id) {
+                            if entry.last_seen > stale_last_seen {
+                                tracing::info!(
+                                    "Device {} received fresh data after stale scan (last_seen {} > {}), skipping offline mark",
+                                    device_id, entry.last_seen, stale_last_seen
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
+                    let elapsed = now - stale_last_seen;
                     tracing::info!(
                         "Device {} is stale (last seen {}s ago), marking as offline",
                         device_id,

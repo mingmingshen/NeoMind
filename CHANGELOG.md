@@ -304,7 +304,27 @@ value`) and the MQTT downlink topic could not be configured from the UI.
   a real persisted timestamp correctly show `offline` instead of
   `disconnected`.
 
-#### Heartbeat monitor respects transport-connected state
+#### Heartbeat TOCTOU race — stale mark overwrites fresh reconnection
+- The heartbeat monitor ran in two phases: (1) scan all devices and
+  collect stale ones into a vector, (2) mark each stale device offline.
+  Between these phases, a `DeviceMetric` event could arrive and set the
+  device back to `Connected` with a fresh `last_seen`. Phase 2
+  unconditionally overwrote the status to `Disconnected` and fired
+  `DeviceOffline` — so the frontend list received `DeviceMetric`→online,
+  `DeviceOnline`→online, then `DeviceOffline`→offline (last event wins).
+  The device showed offline in the list despite just having sent data.
+- Phase 2 now re-checks each device's current `last_seen` under a read
+  lock before marking it offline. If the device received fresh data
+  after the scan phase (`entry.last_seen > stale_last_seen`), the
+  offline mark is skipped entirely.
+
+#### Dead config field removed
+- `EmbeddedBrokerConfig.connection_timeout_ms` was defined (default
+  60000) but never passed to the rmqtt builder — it was dead code from
+  an earlier design iteration. Removed from the config struct, its
+  default function, the `Default` impl, the config.toml loader, and the
+  broker config DTO. rmqtt uses its own internal keep-alive enforcement
+  (1.5× client-declared keep-alive via `keepalive_backoff=0.75`).
 - The background heartbeat loop in `service.rs` previously collapsed any
   `Connected` device whose `last_seen` exceeded the effective offline
   timeout to `Disconnected`, even when the MQTT session itself was still

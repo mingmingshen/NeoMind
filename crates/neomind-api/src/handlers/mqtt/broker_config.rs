@@ -33,8 +33,6 @@ struct BrokerConfigDto {
     max_connections: usize,
     /// Maximum payload size in bytes
     max_payload_size: usize,
-    /// Connection timeout in milliseconds
-    connection_timeout_ms: u16,
     /// Enable dynamic topic filters
     dynamic_filters: bool,
     /// Authentication enabled
@@ -139,7 +137,6 @@ pub async fn get_broker_config_handler() -> HandlerResult<serde_json::Value> {
         port: config.port,
         max_connections: config.max_connections,
         max_payload_size: config.max_payload_size,
-        connection_timeout_ms: config.connection_timeout_ms,
         dynamic_filters: config.dynamic_filters,
         auth_enabled: config.auth_enabled,
         tls_enabled: config.tls_enabled,

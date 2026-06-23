@@ -431,7 +431,6 @@ pub fn load_embedded_broker_config() -> Option<EmbeddedBrokerConfig> {
         port: mqtt.port,
         max_connections: 1000,
         max_payload_size: 268435456,
-        connection_timeout_ms: 60000,
         dynamic_filters: true,
         auth_enabled: false,
         tls_enabled: false,
