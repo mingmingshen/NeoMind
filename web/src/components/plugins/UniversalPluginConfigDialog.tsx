@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { RefreshCw, Eye, Brain, Wrench, Loader2, Server, RotateCcw } from "lucide-react"
+import { RefreshCw, Eye, Brain, Wrench, Loader2, Server, RotateCcw, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -809,6 +809,16 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
               )}
             </div>
           </FormField>
+        )}
+
+        {/* Schema-driven notice banner (e.g. external broker feature diff) */}
+        {schema.ui_hints?.notice?.i18nKey && (
+          <div className="mt-4 flex gap-2.5 rounded-lg bg-muted p-3">
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {t(schema.ui_hints.notice.i18nKey, { defaultValue: '' })}
+            </p>
+          </div>
         )}
 
         {/* Config Form - Embedded directly */}

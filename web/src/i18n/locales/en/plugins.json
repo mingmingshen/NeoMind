@@ -1,6 +1,7 @@
 {
   "title": "Plugins",
   "description": "Legacy plugin system (deprecated - use Extensions instead)",
+  "mqttExternalBrokerNotice": "External broker mode cannot detect device MQTT transport status. Device status shows 3 states (Online / Offline / Never Connected); the \"Standby\" state is unavailable. Data reporting and command dispatch are unaffected.",
   "llm": {
     "status": "Status",
     "instances": "Instances",

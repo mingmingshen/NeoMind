@@ -1,6 +1,7 @@
 {
   "title": "插件",
   "description": "旧版插件系统（已弃用 - 请使用扩展）",
+  "mqttExternalBrokerNotice": "外部 Broker 模式下，NeoMind 无法检测设备的 MQTT 连接状态，设备状态将显示为三态（在线 / 离线 / 从未连接），不显示“待机”状态。数据上报与命令下发不受影响。",
   "llm": {
     "status": "状态",
     "instances": "实例",

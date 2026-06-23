@@ -148,6 +148,12 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
               then_show: ['ca_cert', 'client_cert', 'client_key'],
             },
           ],
+          // External brokers cannot detect device MQTT transport status
+          // (NeoMind is not the broker owner). Show a notice so users
+          // understand the 4-state model degrades to 3-state here.
+          notice: {
+            i18nKey: 'plugins:mqttExternalBrokerNotice',
+          },
         },
       }
     case 'webhook':
