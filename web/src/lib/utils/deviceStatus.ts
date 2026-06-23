@@ -102,7 +102,7 @@ export function getDeviceStateStatus(state: DeviceConnectionState): string {
  * Color variant for the `StatusBadge` component.
  *
  * - online        → success (green, animated)
- * - connectedIdle → info    (blue, calm — session alive but no data)
+ * - connectedIdle → info    (blue, calm — MQTT session alive, awaiting data; UI label: "连接中·待机")
  * - offline       → warning (orange — recently went silent)
  * - disconnected  → muted   (gray — never seen)
  */

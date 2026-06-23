@@ -555,7 +555,7 @@
     "offline": "Offline",
     "connected": "Connected",
     "disconnected": "Never Connected",
-    "connectedIdle": "Connected·Idle",
+    "connectedIdle": "Connected·Standby",
     "active": "Active",
     "inactive": "Inactive",
     "enabled": "Enabled",

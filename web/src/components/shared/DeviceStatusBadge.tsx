@@ -17,7 +17,7 @@ export interface DeviceStatusBadgeProps {
 /**
  * 4-state device status badge.
  *
- * Renders Online / Connected·Idle / Offline / Never Connected using the
+ * Renders Online / Connected·Standby / Offline / Never Connected using the
  * backend-supplied `transport_connected` + `online` + `last_seen` signals.
  * Falls back to legacy 3-state rendering when `transport_connected` is
  * undefined (older backend or external broker without $SYS).
