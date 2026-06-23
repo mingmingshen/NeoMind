@@ -675,7 +675,11 @@ impl DeviceService {
                         let elapsed = now - status.last_seen;
                         if matches!(status.status, ConnectionStatus::Connected)
                             && elapsed > effective_timeout as i64
+                            && !status.transport_connected
                         {
+                            // MQTT session still alive but no data → keep Connected so frontend
+                            // can render `connectedIdle`. Only collapse to Offline when transport
+                            // itself is gone.
                             stale_devices.push((device_id.clone(), status.last_seen));
                         } else if status.last_seen == 0 {
                             // Device was never seen - mark as disconnected

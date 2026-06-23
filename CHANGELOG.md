@@ -282,6 +282,25 @@ value`) and the MQTT downlink topic could not be configured from the UI.
 - Regression test `test_lwt_and_status_topics_skip_auto_onboarding`
   covers the NE301 pattern plus real-telemetry negative cases.
 
+#### Heartbeat monitor respects transport-connected state
+- The background heartbeat loop in `service.rs` previously collapsed any
+  `Connected` device whose `last_seen` exceeded the effective offline
+  timeout to `Disconnected`, even when the MQTT session itself was still
+  alive (as tracked by `DevicePresenceHook` → `transport_connected`).
+  This silently threw away the transport signal: the in-memory status
+  diverged from reality, and the device had to fully re-establish its
+  `Connected` state on the next telemetry tick instead of seamlessly
+  recovering.
+- The stale-check now also requires `!status.transport_connected`, so a
+  device with an alive MQTT session but no recent data stays in
+  `Connected`. The DTO layer still reports `online=false` (because
+  `is_connected_within` checks `last_seen`), and `transport_connected`
+  continues to flow through to the frontend, which correctly renders the
+  `connectedIdle` state. Only when the broker actually fires
+  `ClientDisconnected` (keep-alive timeout, TCP RST, etc.) does
+  `transport_connected` flip to `false` and the heartbeat then collapses
+  the status to `Disconnected`.
+
 #### Frontend — command topic always configurable
 - `EditDeviceDialog`, `AddDeviceDialog`, `AddDeviceGlobalDialog`: removed
   the `{hasCommands && ...}` gate around the `command_topic` input.
