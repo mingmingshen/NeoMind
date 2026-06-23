@@ -262,6 +262,7 @@ export interface DeviceCurrentStateResponse {
     name: string
     display_name: string
     parameters?: ParameterDefinition[]
+    parameter_groups?: ParameterGroup[]
   }>
 }
 

@@ -33,7 +33,7 @@ use futures::{Stream, StreamExt};
 use neomind_core::EventBus;
 use neomind_core::NeoMindEvent;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -163,6 +163,13 @@ pub struct MqttAdapter {
         Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
     /// Topic to device ID mapping (for routing messages to registered devices)
     topic_to_device: Arc<RwLock<HashMap<String, String>>>,
+    /// Topics this adapter has published OUTBOUND command payloads to.
+    /// Used to suppress the broker self-echo — when the embedded broker
+    /// reflects our own publish back through our wildcard subscription,
+    /// the inbound handler must NOT route it through auto-onboarding
+    /// (otherwise every `capture` command creates a phantom "discovered
+    /// device" entry for the command topic).
+    outbound_command_topics: Arc<RwLock<HashSet<String>>>,
     /// Unified data extractor
     extractor: Arc<UnifiedExtractor>,
 }
@@ -188,6 +195,7 @@ impl MqttAdapter {
             telemetry_storage: Arc::new(RwLock::new(None)),
             metric_cache: Arc::new(RwLock::new(HashMap::new())),
             topic_to_device: Arc::new(RwLock::new(HashMap::new())),
+            outbound_command_topics: Arc::new(RwLock::new(HashSet::new())),
             extractor,
         }
     }
@@ -248,6 +256,7 @@ impl MqttAdapter {
             telemetry_storage: Arc::new(RwLock::new(None)),
             metric_cache: Arc::new(RwLock::new(HashMap::new())),
             topic_to_device: Arc::new(RwLock::new(HashMap::new())),
+            outbound_command_topics: Arc::new(RwLock::new(HashSet::new())),
             extractor,
         }
     }
@@ -537,6 +546,7 @@ impl MqttAdapter {
         let broker_id_clone = broker_id.clone();
         let extractor = self.extractor.clone();
         let topic_to_device = self.topic_to_device.clone();
+        let outbound_command_topics = self.outbound_command_topics.clone();
 
         info!(
             "Starting event loop task for broker '{}', connecting to {}...",
@@ -573,6 +583,7 @@ impl MqttAdapter {
                             &broker_id_clone,
                             &extractor,
                             &topic_to_device,
+                            &outbound_command_topics,
                         )
                         .await;
                     }
@@ -825,6 +836,7 @@ impl MqttAdapter {
         let broker_id_clone2 = broker_id.clone();
         let extractor = self.extractor.clone();
         let topic_to_device = self.topic_to_device.clone();
+        let outbound_command_topics = self.outbound_command_topics.clone();
 
         let (eventloop_tx, eventloop_rx) = async_channel::unbounded();
         let event_tx_clone = event_tx.clone();
@@ -846,6 +858,7 @@ impl MqttAdapter {
                             &broker_id_clone,
                             &extractor,
                             &topic_to_device,
+                            &outbound_command_topics,
                         )
                         .await;
                     }
@@ -1164,86 +1177,6 @@ impl MqttAdapter {
 
         Err("Failed to parse payload".to_string())
     }
-
-    /// Send a command via MQTT.
-    /// Sends to ALL connected brokers - the device will receive from whichever broker it's connected to.
-    async fn send_command_mqtt(
-        &self,
-        device_id: &str,
-        command: &str,
-        params: &HashMap<String, Value>,
-        custom_topic: Option<String>,
-    ) -> Result<(), AdapterError> {
-        let clients = self.mqtt_clients.read().await;
-
-        if clients.is_empty() {
-            return Err(AdapterError::Connection(
-                "No MQTT brokers connected".to_string(),
-            ));
-        }
-
-        // Topic resolution priority:
-        //   1. Device-configured `command_topic` (passed in via the trait
-        //      method's `topic` parameter by DeviceService::send_command).
-        //      This is required for devices that don't follow the default
-        //      `device/{type}/{id}/downlink` convention.
-        //   2. Default when a device_type is known.
-        //   3. Bare fallback.
-        let topic = if let Some(t) = custom_topic.filter(|t| !t.is_empty()) {
-            t
-        } else {
-            let device_type = self.device_types.read().await.get(device_id).cloned();
-            if let Some(dt) = device_type {
-                format!("device/{}/{}/downlink", dt, device_id)
-            } else {
-                format!("{}/command/{}", device_id, command)
-            }
-        };
-
-        // Build payload
-        let payload = serde_json::to_string(params).map_err(|e| {
-            AdapterError::Communication(format!("Failed to serialize params: {}", e))
-        })?;
-
-        // Send to all connected brokers
-        let mut last_error = None;
-        let mut success_count = 0;
-
-        for (broker_id, inner) in clients.iter() {
-            match inner
-                .client
-                .publish(
-                    topic.clone(),
-                    rumqttc::QoS::AtLeastOnce,
-                    false,
-                    payload.clone(),
-                )
-                .await
-            {
-                Ok(_) => {
-                    success_count += 1;
-                    info!(
-                        "Sent command '{}' to device {} via broker {}",
-                        command, device_id, broker_id
-                    );
-                }
-                Err(e) => {
-                    last_error = Some(AdapterError::Communication(format!(
-                        "Failed to publish on {}: {}",
-                        broker_id, e
-                    )));
-                }
-            }
-        }
-
-        if success_count == 0 {
-            Err(last_error.unwrap_or_else(|| {
-                AdapterError::Communication("Failed to publish on any broker".to_string())
-            }))
-        } else {
-            Ok(())
-        }
-    }
 }
 
 #[async_trait]
@@ -1346,11 +1279,89 @@ impl DeviceAdapter for MqttAdapter {
         payload: String,
         topic: Option<String>,
     ) -> AdapterResult<()> {
-        // Parse payload as JSON params
-        let params: HashMap<String, Value> = serde_json::from_str(&payload).unwrap_or_default();
+        // `payload` is the ALREADY-RENDERED payload produced by
+        // `DeviceService::build_command_payload` (which delegates to
+        // `payload_template::render`). The previous implementation
+        // re-parsed this string into `HashMap<String, Value>` and
+        // re-serialized it — which (a) destroyed non-object payloads
+        // like HASS-style bare `"ON"` strings via `unwrap_or_default()`
+        // collapsing them to `{}`, and (b) randomised key order via
+        // HashMap iteration. We now publish the rendered bytes
+        // verbatim.
+        let clients = self.mqtt_clients.read().await;
 
-        self.send_command_mqtt(device_id, command_name, &params, topic)
-            .await
+        if clients.is_empty() {
+            return Err(AdapterError::Connection(
+                "No MQTT brokers connected".to_string(),
+            ));
+        }
+
+        // Topic resolution priority:
+        //   1. Device-configured `command_topic` (required for devices
+        //      that don't follow the default downlink convention).
+        //   2. Default when device_type is known.
+        //   3. Bare fallback.
+        let topic = if let Some(t) = topic.filter(|t| !t.is_empty()) {
+            t
+        } else {
+            let device_type = self.device_types.read().await.get(device_id).cloned();
+            if let Some(dt) = device_type {
+                format!("device/{}/{}/downlink", dt, device_id)
+            } else {
+                format!("{}/command/{}", device_id, command_name)
+            }
+        };
+
+        // Record this topic as an outbound command channel so the
+        // inbound handler can recognise the broker self-echo (the
+        // embedded broker reflects our own publish back through any
+        // wildcard subscription) and skip auto-onboarding for it.
+        // Without this, every successful `capture`/`sleep` publish
+        // generates a phantom "Triggering auto-onboarding for
+        // non-standard topic: <command-topic>" log entry and a
+        // matching bogus discovered-device row.
+        {
+            let mut outbound = self.outbound_command_topics.write().await;
+            outbound.insert(topic.clone());
+        }
+
+        let mut last_error = None;
+        let mut success_count = 0u32;
+
+        for (broker_id, inner) in clients.iter() {
+            match inner
+                .client
+                .publish(
+                    topic.clone(),
+                    rumqttc::QoS::AtLeastOnce,
+                    false,
+                    payload.clone(),
+                )
+                .await
+            {
+                Ok(_) => {
+                    success_count += 1;
+                    info!(
+                        "Sent command '{}' to device {} via broker {}",
+                        command_name, device_id, broker_id
+                    );
+                }
+                Err(e) => {
+                    last_error = Some(AdapterError::Communication(format!(
+                        "Failed to publish on {}: {}",
+                        broker_id, e
+                    )));
+                }
+            }
+        }
+
+        if success_count == 0 {
+            Err(last_error.unwrap_or_else(|| {
+                AdapterError::Communication("Failed to publish on any broker".to_string())
+            }))
+        } else {
+            Ok(())
+        }
     }
 
     fn connection_status(&self) -> ConnectionStatus {
@@ -1584,6 +1595,7 @@ impl MqttAdapter {
         broker_id: &str,
         extractor: &Arc<UnifiedExtractor>,
         topic_to_device: &Arc<RwLock<HashMap<String, String>>>,
+        outbound_command_topics: &Arc<RwLock<HashSet<String>>>,
     ) {
         match notification {
             rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)) => {
@@ -1812,8 +1824,40 @@ impl MqttAdapter {
                 // Auto-onboarding: For non-standard topics, trigger auto-discovery
                 // This handles arbitrary MQTT topics like "device12asdas"
                 // Supports both JSON and binary/hex data
-                // Only trigger if NOT a standard uplink format (those are handled above)
+                // Only trigger if NOT a standard uplink format (those are handled above).
+                //
+                // Skip two classes of noise that previously polluted the
+                // discovered-device stream:
+                //   * **Self-echo** — the embedded broker reflects our own
+                //     outbound command publishes back through wildcard
+                //     subscriptions (e.g. `ne302/2819FD/down/control`).
+                //     `outbound_command_topics` is populated by
+                //     `send_command` immediately before each publish, so
+                //     we can recognise and drop the echo here.
+                //   * **LWT/status broadcasts** — devices publish
+                //     `aicam/status/offline` and similar on
+                //     connect/disconnect; these are not telemetry and
+                //     would otherwise show up as phantom devices like
+                //     `device_id=status, is_binary=true`.
                 if !is_standard_uplink {
+                    let is_self_echo = {
+                        let outbound = outbound_command_topics.read().await;
+                        outbound.contains(&topic)
+                    };
+                    if is_self_echo {
+                        debug!(
+                            "Skipping auto-onboarding for self-echo of outbound command topic: {}",
+                            topic
+                        );
+                        return;
+                    }
+                    if looks_like_non_telemetry_topic(&topic) {
+                        debug!(
+                            "Skipping auto-onboarding for LWT/status-style topic: {}",
+                            topic
+                        );
+                        return;
+                    }
                     // First check if this topic belongs to a registered device
                     let device_id_opt = {
                         let mapping = topic_to_device.read().await;
@@ -2152,6 +2196,41 @@ fn extract_device_type_from_topic(topic: &str) -> Option<String> {
     }
 }
 
+/// Detect topics that are NOT device telemetry and therefore should NOT
+/// trigger auto-onboarding. Two classes:
+///
+/// 1. **LWT / status broadcasts**: many cameras and IoT devices publish
+///    a Last-Will-and-Testament message on connect/disconnect to a
+///    status topic such as `aicam/status/offline` or
+///    `{prefix}/status/online`. These are not per-device telemetry —
+///    treating them as devices creates phantom rows like
+///    `device_id=status, is_binary=true`.
+///
+/// 2. **Downlink command echoes**: when the platform publishes to a
+///    device's command topic (e.g. `ne302/2819FD/down/control`), the
+///    embedded broker may reflect the publish back through a wildcard
+///    subscription. The inbound handler must skip these so we don't
+///    re-onboard a device we just sent a command to.
+fn looks_like_non_telemetry_topic(topic: &str) -> bool {
+    // Fast path: split once, reuse for all checks.
+    let segments: Vec<&str> = topic.split('/').collect();
+
+    // LWT-style: any segment is `status`, or topic ends with
+    // `online`/`offline`/`connected`/`disconnected`. These are
+    // near-universal LWT signatures across IoT firmware.
+    if segments.iter().any(|s| *s == "status") {
+        return true;
+    }
+    if let Some(last) = segments.last() {
+        matches!(
+            *last,
+            "online" | "offline" | "connected" | "disconnected" | "lwt" | "will"
+        )
+    } else {
+        false
+    }
+}
+
 /// Create an MQTT adapter connected to an event bus.
 pub fn create_mqtt_adapter(
     config: MqttAdapterConfig,
@@ -2317,5 +2396,32 @@ mod tests {
             Ok(MetricValue::String(s)) => assert_eq!(s, "hello"),
             _ => panic!("Expected String value"),
         }
+    }
+
+    /// Regression: LWT/status broadcast topics must NOT trigger
+    /// auto-onboarding. Real-world example from NE301 field deployment:
+    /// the device publishes `aicam/status/offline` as its MQTT
+    /// Last-Will-Testament; without filtering this produced a phantom
+    /// "discovered device" row with `device_id=status, is_binary=true`
+    /// on every disconnect. Other patterns include `{prefix}/status/online`
+    /// (connect) and bare `/lwt` topics.
+    #[test]
+    fn test_lwt_and_status_topics_skip_auto_onboarding() {
+        // Status-broadcast topics
+        assert!(looks_like_non_telemetry_topic("aicam/status/offline"));
+        assert!(looks_like_non_telemetry_topic("aicam/status/online"));
+        assert!(looks_like_non_telemetry_topic("homeassistant/status/online"));
+        assert!(looks_like_non_telemetry_topic("devices/status/connected"));
+
+        // Bare LWT signatures
+        assert!(looks_like_non_telemetry_topic("aicam/offline"));
+        assert!(looks_like_non_telemetry_topic("dev/abc/lwt"));
+        assert!(looks_like_non_telemetry_topic("dev/abc/will"));
+
+        // Real telemetry MUST pass through
+        assert!(!looks_like_non_telemetry_topic("ne301/2A0015/upload/report"));
+        assert!(!looks_like_non_telemetry_topic("device/ne301_camera/2819FD/uplink"));
+        assert!(!looks_like_non_telemetry_topic("sensors/temp-001/temperature"));
+        assert!(!looks_like_non_telemetry_topic("stat/deviceid/power"));
     }
 }

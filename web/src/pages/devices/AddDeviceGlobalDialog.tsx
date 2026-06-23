@@ -777,9 +777,6 @@ function ManualAddForm({
     )
   }, [selectedDeviceType, adding, handleSubmit, renderFooter, t])
 
-  const selectedTemplate = deviceTypes.find(dt => dt.device_type === selectedDeviceType)
-  const hasCommands = (selectedTemplate?.commands?.length || 0) > 0
-
   return (
     <FormSectionGroup>
       {/* Basic Info */}
@@ -1072,16 +1069,14 @@ function ManualAddForm({
                 className="font-mono text-sm"
               />
             </FormField>
-            {hasCommands && (
-              <FormField label={t('devices:add.commandTopic')} helpText={t('devices:add.commandTopicHelp')}>
-                <Input
-                  value={connectionConfig.command_topic || ''}
-                  onChange={(e) => setConnectionConfig({ ...connectionConfig, command_topic: e.target.value })}
-                  placeholder="device/{type}/{id}/downlink"
-                  className="font-mono text-sm"
-                />
-              </FormField>
-            )}
+            <FormField label={t('devices:add.commandTopic')} helpText={t('devices:add.commandTopicHelp')}>
+              <Input
+                value={connectionConfig.command_topic || ''}
+                onChange={(e) => setConnectionConfig({ ...connectionConfig, command_topic: e.target.value })}
+                placeholder="device/{type}/{id}/downlink"
+                className="font-mono text-sm"
+              />
+            </FormField>
           </div>
         )}
 

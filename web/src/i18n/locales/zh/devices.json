@@ -169,7 +169,11 @@
       "jsonPreview": "参数预览 (JSON)",
       "sendCommand": "发送命令",
       "executing": "执行中",
-      "noParameters": "无参数"
+      "noParameters": "无参数",
+      "selectValue": "请选择…",
+      "binaryPlaceholder": "Base64 编码数据…",
+      "allParametersFixed": "所有参数均为固定值",
+      "generalGroup": "常规"
     }
   },
   "actions": {
@@ -1242,5 +1246,9 @@
   "emptyType": {
     "title": "暂无设备",
     "description": "描述"
+  },
+  "range": {
+    "min": "最小",
+    "max": "最大"
   }
 }

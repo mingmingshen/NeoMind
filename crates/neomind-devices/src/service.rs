@@ -1582,38 +1582,81 @@ impl DeviceService {
         }
     }
 
+    /// Infer a `MetricValue` from a JSON value's shape, with no
+    /// expected-type hint. Used for `fixed_values` entries which have
+    /// no corresponding `ParameterDefinition`.
+    fn infer_metric_from_json(json: &serde_json::Value) -> Result<MetricValue, DeviceError> {
+        match json {
+            serde_json::Value::Null => Ok(MetricValue::Null),
+            serde_json::Value::Bool(b) => Ok(MetricValue::Boolean(*b)),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(MetricValue::Integer(i))
+                } else {
+                    n.as_f64()
+                        .map(MetricValue::Float)
+                        .ok_or_else(|| {
+                            DeviceError::InvalidParameter(format!(
+                                "fixed_value number not representable: {n}"
+                            ))
+                        })
+                }
+            }
+            serde_json::Value::String(s) => Ok(MetricValue::String(s.clone())),
+            serde_json::Value::Array(arr) => {
+                let mut out = Vec::with_capacity(arr.len());
+                for v in arr {
+                    out.push(Self::infer_metric_from_json(v)?);
+                }
+                Ok(MetricValue::Array(out))
+            }
+            serde_json::Value::Object(_) => Err(DeviceError::InvalidParameter(format!(
+                "fixed_value object cannot be converted to MetricValue: {json}"
+            ))),
+        }
+    }
+
     /// Build command payload from template
     fn build_command_payload(
         &self,
         command_def: &super::mdl_format::CommandDefinition,
         params: &HashMap<String, MetricValue>,
     ) -> Result<String, DeviceError> {
-        let mut payload = command_def.payload_template.clone();
-
-        // Replace ${param} placeholders with actual values
-        for (param_name, value) in params {
-            let placeholder = format!("${{{{{}}}}}", param_name);
-            let value_str = match value {
-                MetricValue::Integer(i) => i.to_string(),
-                MetricValue::Float(f) => f.to_string(),
-                MetricValue::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
-                MetricValue::Boolean(b) => b.to_string(),
-                MetricValue::Array(_) => {
-                    return Err(DeviceError::InvalidParameter(
-                        "Array values not supported in command payloads".into(),
-                    ));
-                }
-                MetricValue::Binary(_) => {
-                    return Err(DeviceError::InvalidParameter(
-                        "Binary values not supported in command payloads".into(),
-                    ));
-                }
-                MetricValue::Null => "null".to_string(),
-            };
-            payload = payload.replace(&placeholder, &value_str);
+        // Merge fixed_values (template-declared constants the user
+        // never sees) under user-supplied params. User params win on
+        // key collision — fixed_values are defaults, not overrides.
+        let mut merged = HashMap::new();
+        for (k, v) in &command_def.fixed_values {
+            merged.insert(k.clone(), Self::infer_metric_from_json(v)?);
+        }
+        for (k, v) in params {
+            merged.insert(k.clone(), v.clone());
         }
 
-        Ok(payload)
+        // Auto-inject system-level placeholders that should never
+        // surface to the user. Today this is just `request_id` (used
+        // by request/response correlation over MQTT). If the template
+        // references it but neither user nor fixed_values supplied
+        // one, mint a fresh UUID. Template authors therefore don't
+        // need to declare `request_id` in `parameters` — it's pure
+        // system plumbing.
+        if command_def.payload_template.contains("${request_id}")
+            && !merged.contains_key("request_id")
+        {
+            merged.insert(
+                "request_id".to_string(),
+                MetricValue::String(format!("req-{}", uuid::Uuid::new_v4())),
+            );
+        }
+
+        // Delegate to the structured JSON-aware renderer. See
+        // `payload_template` module docs for why string substitution
+        // is unsafe (placeholder syntax drift, quote collision, type
+        // erasure, JSON injection).
+        let bytes = super::payload_template::render(&command_def.payload_template, &merged)
+            .map_err(|e| DeviceError::InvalidParameter(format!("payload render: {e}")))?;
+        String::from_utf8(bytes)
+            .map_err(|e| DeviceError::InvalidParameter(format!("payload not UTF-8: {e}")))
     }
 
     // ========== Data Querying ==========
@@ -2070,7 +2113,7 @@ mod tests {
         let command_def = CommandDefinition {
             name: "set_temperature".to_string(),
             display_name: "Set Temperature".to_string(),
-            payload_template: r#"{"action": "set_temperature", "value": ${{value}}}"#.to_string(),
+            payload_template: r#"{"action": "set_temperature", "value": ${value}}"#.to_string(),
             parameters: vec![ParameterDefinition {
                 name: "value".to_string(),
                 display_name: "Temperature".to_string(),
@@ -2121,7 +2164,7 @@ mod tests {
         let command_def = CommandDefinition {
             name: "set_temperature".to_string(),
             display_name: "Set Temperature".to_string(),
-            payload_template: r#"{"action": "set_temperature", "value": ${{value}}}"#.to_string(),
+            payload_template: r#"{"action": "set_temperature", "value": ${value}}"#.to_string(),
             parameters: vec![],
             samples: vec![],
             description: String::new(),
@@ -2136,5 +2179,158 @@ mod tests {
             .build_command_payload(&command_def, &params)
             .unwrap();
         assert!(payload.contains("25.5"));
+    }
+
+    #[tokio::test]
+    async fn test_build_command_payload_merges_fixed_values() {
+        // Regression test: fixed_values declared in a CommandDefinition
+        // must be merged into the params HashMap before rendering, and
+        // user-supplied params override them on key collision.
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl_format::CommandDefinition;
+
+        let mut fixed = std::collections::HashMap::new();
+        fixed.insert("cmd".to_string(), serde_json::json!("capture"));
+        fixed.insert(
+            "store_to_sd".to_string(),
+            serde_json::json!(false),
+        );
+
+        let command_def = CommandDefinition {
+            name: "capture".to_string(),
+            display_name: "Capture".to_string(),
+            payload_template: r#"{"cmd": ${cmd}, "store_to_sd": ${store_to_sd}}"#.to_string(),
+            parameters: vec![],
+            samples: vec![],
+            description: String::new(),
+            fixed_values: fixed,
+            parameter_groups: vec![],
+        };
+
+        // User sends no params — fixed_values must fill in.
+        let params = HashMap::new();
+        let payload = service
+            .build_command_payload(&command_def, &params)
+            .expect("fixed_values should satisfy template");
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(parsed["cmd"], "capture");
+        assert_eq!(parsed["store_to_sd"], false);
+
+        // User overrides one fixed_value.
+        let mut params = HashMap::new();
+        params.insert("store_to_sd".to_string(), MetricValue::Boolean(true));
+        let payload = service
+            .build_command_payload(&command_def, &params)
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(parsed["cmd"], "capture");
+        assert_eq!(parsed["store_to_sd"], true, "user param must override fixed_value");
+    }
+
+    #[tokio::test]
+    async fn test_build_command_payload_auto_injects_request_id() {
+        // Regression test: when a template references ${request_id}
+        // but neither the user nor fixed_values supplied one, the
+        // service mints a fresh UUID. This lets templates drop
+        // `request_id` from `parameters` entirely — it's pure system
+        // plumbing for request/response correlation.
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl_format::CommandDefinition;
+
+        let command_def = CommandDefinition {
+            name: "capture".to_string(),
+            display_name: "Capture".to_string(),
+            payload_template: r#"{"cmd": "capture", "request_id": "${request_id}"}"#.to_string(),
+            parameters: vec![],  // no request_id declared — system handles it
+            samples: vec![],
+            description: String::new(),
+            fixed_values: std::collections::HashMap::new(),
+            parameter_groups: vec![],
+        };
+
+        let params = HashMap::new();
+        let payload = service
+            .build_command_payload(&command_def, &params)
+            .expect("auto-injection should satisfy request_id");
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let generated = parsed["request_id"].as_str().expect("request_id must be a string");
+        assert!(
+            generated.starts_with("req-"),
+            "auto-generated request_id should be prefixed with 'req-', got: {}",
+            generated
+        );
+        assert!(
+            generated.len() > "req-".len() + 8,
+            "auto-generated request_id should contain a UUID, got: {}",
+            generated
+        );
+
+        // User-supplied request_id must NOT be clobbered.
+        let mut params = HashMap::new();
+        params.insert(
+            "request_id".to_string(),
+            MetricValue::String("my-correlation-id".into()),
+        );
+        let payload = service
+            .build_command_payload(&command_def, &params)
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(
+            parsed["request_id"], "my-correlation-id",
+            "explicit request_id must override auto-injection"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ne301_capture_protocol_contract() {
+        // End-to-end regression for the corrected NE301 capture
+        // protocol: `{"cmd":"capture","request_id":"..."}` with NO
+        // params field. User supplies zero parameters; the service
+        // auto-injects request_id.
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl_format::CommandDefinition;
+
+        let command_def = CommandDefinition {
+            name: "capture".to_string(),
+            display_name: "Capture".to_string(),
+            payload_template: r#"{"cmd": "capture", "request_id": "${request_id}"}"#.to_string(),
+            parameters: vec![],
+            samples: vec![],
+            description: String::new(),
+            fixed_values: std::collections::HashMap::new(),
+            parameter_groups: vec![],
+        };
+
+        let params = HashMap::new();
+        let payload = service
+            .build_command_payload(&command_def, &params)
+            .expect("capture with no user params should render");
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+
+        // Protocol contract — see user-provided NE301 spec.
+        assert_eq!(parsed["cmd"], "capture");
+        assert!(
+            parsed["request_id"].is_string(),
+            "request_id must be auto-injected"
+        );
+        assert!(
+            parsed.get("params").is_none(),
+            "capture must NOT carry a params field — the real protocol has none"
+        );
+        assert!(
+            parsed.get("enable_ai").is_none()
+                && parsed.get("chunk_size").is_none()
+                && parsed.get("store_to_sd").is_none(),
+            "fabricated fields from the old buggy template must be gone"
+        );
     }
 }

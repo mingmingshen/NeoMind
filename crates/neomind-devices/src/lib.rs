@@ -24,6 +24,7 @@
 pub mod mdl;
 pub mod mdl_format;
 pub mod mqtt;
+pub mod payload_template;
 pub mod telemetry;
 
 // Simplified device management

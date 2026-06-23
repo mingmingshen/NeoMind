@@ -8,25 +8,18 @@
  * This is NOT a toggle switch - it's a command trigger button.
  */
 
-import { Power, Lightbulb, Fan, Lock, Play, ChevronRight, Info } from 'lucide-react'
+import { Power, Lightbulb, Fan, Lock, Play, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useState, useCallback, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { findDevice } from '@/lib/deviceUtils'
 import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
-import type { ParameterDefinition } from '@/types'
+import type { ParameterDefinition, ParameterGroup } from '@/types'
 import { api } from '@/lib/api'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { ParameterForm } from '@/components/devices/ParameterForm'
+import { seedCommandDefaults } from '@/components/devices/seedCommandDefaults'
 import { useToast } from '@/hooks/use-toast'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useStore } from '@/store'
@@ -72,6 +65,7 @@ export function CommandButton({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [commandParams, setCommandParams] = useState<Record<string, unknown>>({})
   const [parameterDefinitions, setParameterDefinitions] = useState<ParameterDefinition[]>([])
+  const [parameterGroups, setParameterGroups] = useState<ParameterGroup[]>([])
   const [commandDisplayName, setCommandDisplayName] = useState<string>('')
   const [loadingParams, setLoadingParams] = useState(false)
   const [sending, setSending] = useState(false)
@@ -99,23 +93,12 @@ export function CommandButton({
           const response = await api.getDeviceCurrent(deviceId)
           const commandDef = response.commands?.find((c: any) => c.name === commandName)
           if (commandDef) {
-            setParameterDefinitions(commandDef.parameters || [])
+            const params: ParameterDefinition[] = commandDef.parameters || []
+            setParameterDefinitions(params)
+            setParameterGroups(commandDef.parameter_groups || [])
             setCommandDisplayName(commandDef.display_name || commandDef.name)
-
-            // Initialize parameters with defaults
-            const defaults: Record<string, unknown> = {}
-            commandDef.parameters?.forEach((param: any) => {
-              if (param.default_value !== undefined) {
-                defaults[param.name] = param.default_value
-              } else if (param.data_type === 'integer' || param.data_type === 'float') {
-                defaults[param.name] = 0
-              } else if (param.data_type === 'boolean') {
-                defaults[param.name] = false
-              } else if (param.data_type === 'string') {
-                defaults[param.name] = ''
-              }
-            })
-            setCommandParams(defaults)
+            // Seed defaults (auto-generates request_id, applies declared defaults)
+            setCommandParams(seedCommandDefaults(params))
           }
         } else if (isExtensionCommand && extensionId && extensionCommand) {
           // Get extension command parameters
@@ -139,14 +122,9 @@ export function CommandButton({
                 allowed_values: schema.enum,
               }))
               setParameterDefinitions(paramDefs)
+              setParameterGroups([])
               setCommandDisplayName(cmd.display_name || cmd.id)
-
-              // Initialize with defaults
-              const defaults: Record<string, unknown> = {}
-              Object.entries(params).forEach(([name, schema]: [string, any]) => {
-                defaults[name] = schema.default !== undefined ? schema.default : ''
-              })
-              setCommandParams(defaults)
+              setCommandParams(seedCommandDefaults(paramDefs))
             }
           }
         }
@@ -212,78 +190,8 @@ export function CommandButton({
     }))
   }
 
-  // Render parameter input based on data type
-  const renderParameterInput = (param: ParameterDefinition) => {
-    const value = commandParams[param.name]
-
-    if (param.allowed_values && param.allowed_values.length > 0) {
-      return (
-        <Select
-          value={String(value ?? '')}
-          onValueChange={(v) => updateParameter(param.name, v)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder={t('commandButton.selectValue')} />
-          </SelectTrigger>
-          <SelectContent>
-            {param.allowed_values.map((allowed, idx) => (
-              <SelectItem key={idx} value={String(allowed)}>
-                {String(allowed)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )
-    }
-
-    if (param.data_type === 'boolean') {
-      return (
-        <Select
-          value={String(value ?? 'false')}
-          onValueChange={(v) => updateParameter(param.name, v === 'true')}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="true">{t('commandButton.yes')}</SelectItem>
-            <SelectItem value="false">{t('commandButton.no')}</SelectItem>
-          </SelectContent>
-        </Select>
-      )
-    }
-
-    if (param.data_type === 'integer' || param.data_type === 'float') {
-      return (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            value={String(value ?? 0)}
-            onChange={(e) =>
-              updateParameter(
-                param.name,
-                param.data_type === 'integer'
-                  ? parseInt(e.target.value) || 0
-                  : parseFloat(e.target.value) || 0
-              )
-            }
-            min={param.min}
-            max={param.max}
-            step={param.data_type === 'integer' ? 1 : 0.1}
-          />
-          {param.unit && <span className="text-xs text-muted-foreground">{param.unit}</span>}
-        </div>
-      )
-    }
-
-    return (
-      <Input
-        value={String(value ?? '')}
-        onChange={(e) => updateParameter(param.name, e.target.value)}
-        placeholder={param.display_name || param.name}
-      />
-    )
-  }
+  // Whether the command declares any groups — drives flat vs. grouped render.
+  const hasGroups = parameterGroups.length > 0
 
   const config = dashboardComponentSize[size]
   const Icon = getIconForTitle(title)
@@ -381,54 +289,17 @@ export function CommandButton({
         }
       >
         <div className="space-y-4">
-          {/* Parameter inputs - skip parameters with default values (fixed values) */}
-          {!loadingParams && parameterDefinitions.filter(p => p.default_value === undefined).length > 0 && (
-            <div className="space-y-4">
-              <div className="text-sm font-medium">{t('commandButton.parameters')}</div>
-              {parameterDefinitions
-                .filter(param => param.default_value === undefined)
-                .map(param => (
-                <div key={param.name} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">
-                      {param.display_name || param.name}
-                      {param.required && <span className="text-error ml-1">*</span>}
-                    </Label>
-                    {(param.min !== undefined && param.min !== null || param.max !== undefined && param.max !== null) && (
-                      <span className="text-xs text-muted-foreground">
-                        {param.min !== undefined && param.min !== null && `${t('range.min')} ${param.min}`}
-                        {param.min !== undefined && param.min !== null && param.max !== undefined && param.max !== null && ' | '}
-                        {param.max !== undefined && param.max !== null && `${t('range.max')} ${param.max}`}
-                      </span>
-                    )}
-                  </div>
-                  {renderParameterInput(param)}
-                  {param.help_text && (
-                    <p className="text-xs text-muted-foreground">{param.help_text}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* All parameters have fixed values */}
-          {!loadingParams && parameterDefinitions.length > 0 && parameterDefinitions.filter(p => p.default_value === undefined).length === 0 && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-success-light border border-success-light">
-              <Info className="h-4 w-4 text-success dark:text-success" />
-              <span className="text-sm text-success dark:text-success">
-                {t('commandButton.allParametersFixed')}
-              </span>
-            </div>
-          )}
-
-          {/* No parameters */}
-          {!loadingParams && parameterDefinitions.length === 0 && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted-50">
-              <Info className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">
-                {t('commandButton.noParameters')}
-              </span>
-            </div>
+          {!loadingParams && (
+            <>
+              <ParameterForm
+                parameters={parameterDefinitions}
+                groups={parameterGroups}
+                values={commandParams}
+                onChange={updateParameter}
+                hideDefault={false}
+                grouped={hasGroups}
+              />
+            </>
           )}
         </div>
       </UnifiedFormDialog>

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Overview
 
-Three themes: (1) **iOS PWA keyboard + chat UX** — closing the keyboard-overflow-
+Four themes: (1) **iOS PWA keyboard + chat UX** — closing the keyboard-overflow-
 under-notch regression that affected every iOS PWA user on notched devices, plus
 a follow-up that extends the same fix to mobile full-screen Radix Dialogs; (2)
 **PWA icon & splash overhaul** — transparent-background icons sourced from the
@@ -22,7 +22,13 @@ visual, and removing the `maskable` declaration so desktop Chrome stops applying
 its squircle mask; (3) **agent runtime capability refresh** — fixing the
 "malformed tool-call output" incident where stale `supports_multimodal=true`
 rows in `llm_backends.redb` caused text-only models to be sent `image_url`
-parts on the scheduled-execution path.
+parts on the scheduled-execution path; (4) **device command payload
+pipeline overhaul** — a new JSON-aware template renderer, system-vs-user
+parameter separation (`request_id` auto-injection, `fixed_values`
+merging), verbatim adapter publishing, NE301 template corrections, and
+auto-onboarding hygiene that stops the embedded broker from treating our
+own outbound publishes or device LWT broadcasts as phantom discovered
+devices.
 
 ### PWA — iOS keyboard handling
 
@@ -194,6 +200,131 @@ correctly — but the scheduled-agent path didn't, so the executor:
   manifest changes — only on first install.
 - No data migrations.
 - No breaking API changes.
+
+### Device command payload pipeline
+
+A focused overhaul prompted by real-world NE301 field reports where
+`capture` failed to render (`placeholder ${request_id} was not given a
+value`) and the MQTT downlink topic could not be configured from the UI.
+
+#### New structured renderer (`crates/neomind-devices/src/payload_template.rs`)
+- Replaces five classes of `str.replace` bug — placeholder syntax drift,
+  quote collision, type erasure, JSON injection, reactive validation —
+  with a JSON-aware tree walker.
+- **4-phase pipeline**: (1) state-machine scan rewrites `${name}` into
+  `__PH:name__` sentinels while preserving JSON validity; (2) `serde_json`
+  parse; (3) recursive tree walk replacing sentinel leaves; (4) reserialize
+  as compact JSON.
+- **Typed substitution** via `MetricValue` variants — Integer/Float/
+  String/Boolean/Null/Array all preserve their JSON types. Binary values
+  are rejected (`RenderError::BinaryUnsupported`).
+- **Quote-insensitive**: `"${var}"` and `${var}` produce identical typed
+  output — template authors can keep or omit quotes for readability.
+- **Non-JSON fallback** for legacy bare-string payloads (HASS-style
+  `ON`/`OFF`), bypassing the JSON path entirely.
+- **13 unit tests** including NE301 protocol contract tests.
+
+#### `service.rs::build_command_payload`
+- Now merges `command_def.fixed_values` (template-declared constants the
+  user never sees) under user-supplied params before rendering. User params
+  win on key collision. Previously the production path ignored
+  `fixed_values` entirely.
+- **`request_id` auto-injection**: when a template references
+  `${request_id}` but neither user nor `fixed_values` supplied one, the
+  service mints `req-<uuid>`. Templates therefore no longer need to
+  declare `request_id` in `parameters` — it is pure system plumbing and
+  should never surface in a UI form. Three regression tests cover the
+  merge, injection, and NE301 contract scenarios.
+
+#### `adapters/mqtt.rs::send_command`
+- Publishes the already-rendered payload **verbatim**. The previous
+  implementation re-parsed the rendered string as `HashMap<String, Value>`
+  and re-serialized — destroying bare-string payloads via
+  `unwrap_or_default()` collapse to `{}` and randomising key order via
+  HashMap iteration.
+- Deleted the dead `send_command_mqtt` method (~80 lines).
+
+#### Deletions and delegations
+- `protocol/mqtt_mapping.rs::render_payload_template` now delegates to
+  `payload_template::render`; updated test to expect compact JSON
+  (`{"action":"set","interval":60}`).
+- Deleted dead `MdlRegistry::build_command_payload` (~70 lines, zero
+  callers, same `${{var}}` double-brace bug as the legacy service path).
+
+#### NE301 template aligned with real device protocol
+- `crates/neomind-storage/src/builtin_types/ne301_camera.json`:
+  - **Capture** (`{"cmd": "capture", "request_id": "${request_id}"}`):
+    zero parameters. Removed fabricated `enable_ai` / `chunk_size` /
+    `store_to_sd` fields the device silently ignored. Removed `request_id`
+    from `parameters` (auto-injected by the service).
+  - **Sleep** (`{"cmd": "sleep", "request_id": "${request_id}", "params":
+    {"duration_sec": ${duration_sec}}}`): only `duration_sec` user-facing
+    parameter. Removed `request_id` from `parameters`.
+  - Verified against the real NE301 wire format provided by the device
+    vendor.
+
+#### Auto-onboarding hygiene
+- **Self-echo suppression**: new `outbound_command_topics:
+  Arc<RwLock<HashSet<String>>>` field on `MqttAdapter`. `send_command`
+  inserts the resolved topic before each publish; the inbound handler
+  checks membership and skips auto-onboarding on hit. Fixes the log-spam +
+  phantom-discovery pattern where every `capture`/`sleep` publish was
+  reflected by the embedded broker back through the wildcard subscription,
+  generating `Triggering auto-onboarding for non-standard topic:
+  ne302/2819FD/down/control` plus a bogus discovered-device row.
+- **LWT/status broadcast filtering**: new helper
+  `looks_like_non_telemetry_topic(topic)` returns true for topics
+  containing a `status` segment or ending in
+  `online|offline|connected|disconnected|lwt|will` (near-universal LWT
+  signatures). Fixes the field observation where `aicam/status/offline`
+  (NE301's MQTT LWT) was being parsed as `device_id=status, is_binary=true`
+  and registered as a phantom device.
+- Regression test `test_lwt_and_status_topics_skip_auto_onboarding`
+  covers the NE301 pattern plus real-telemetry negative cases.
+
+#### Frontend — command topic always configurable
+- `EditDeviceDialog`, `AddDeviceDialog`, `AddDeviceGlobalDialog`: removed
+  the `{hasCommands && ...}` gate around the `command_topic` input.
+  Previously the downlink-topic field disappeared whenever the frontend's
+  cached device-types list didn't include the target type — even when the
+  device and protocol supported commands — leaving the user unable to
+  configure a downlink channel from the UI.
+- The `hasCommands` flag is retained in the Edit/Add dialogs purely to
+  drive the **auto-fill convenience** (defaulting `command_topic` to
+  `device/{type}/{id}/downlink` only when commands exist); the field
+  itself is now always visible.
+- Added `commandTopicHint` help text explaining the field semantics.
+
+#### Frontend — command-parameter UX refactor
+- New `ParameterForm` component iterates a command's parameters with
+  consistent grouping, conditional visibility, and validation hints.
+- New `ParameterInput` renders a single parameter with type-appropriate
+  control (text, number, select, textarea, checkbox).
+- New `seedCommandDefaults` initialises parameter values from declared
+  defaults instead of the previous per-type fallback ladder.
+- New `parameterExpr` minimal evaluator for `ParameterDefinition.
+  visible_when` conditional rendering.
+- `CommandButton` (dashboard widget) refactored onto the new
+  `ParameterForm`/`seedCommandDefaults` pipeline; deleted inline default
+  seeding and ad-hoc param synthesis.
+- `DeviceDetail` command-sending surface refactored to match.
+- Added `ParameterGroup` type to `web/src/types/device.ts`.
+- i18n: added `selectValue`, `binaryPlaceholder`, `allParametersFixed`,
+  `generalGroup`, and `range.{min,max}` keys (en + zh).
+
+#### Command payload pipeline — upgrade notes
+- **Device-type templates referencing `${request_id}`** in their
+  `payload_template` no longer need to declare it in `parameters`. The
+  service auto-injects `req-<uuid>`. Existing templates that still
+  declare `request_id` in `parameters` will continue to work — the user
+  value (if supplied) wins; otherwise auto-injection fills it in.
+- **Device-type templates with `fixed_values`** now actually see those
+  values merged into the rendered payload on the production path.
+  Previously `fixed_values` was honoured only by a dead code path.
+- **NE301 `ne301_camera` builtin**: the corrected template is seeded into
+  `devices.redb` only on fresh databases. Existing deployments must
+  re-import the type via **Import from Cloud** to pick up the zero-param
+  `capture` command.
 
 ## [0.8.21] - 2026-06-22
 

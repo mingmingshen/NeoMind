@@ -237,16 +237,19 @@ export function AddDeviceDialog({
                   className="font-mono text-sm"
                 />
               </FormField>
-              {hasCommands && (
-                <FormField label={t('devices:add.commandTopic')}>
-                  <Input
-                    value={connectionConfig.command_topic || ''}
-                    onChange={(e) => setConnectionConfig({ ...connectionConfig, command_topic: e.target.value })}
-                    placeholder="device/{type}/{id}/downlink"
-                    className="font-mono text-sm"
-                  />
-                </FormField>
-              )}
+              <FormField
+                label={t('devices:add.commandTopic')}
+                helpText={t('devices:add.commandTopicHint', {
+                  defaultValue: 'Topic the device subscribes to for commands. Leave blank if the device has no downlink.',
+                })}
+              >
+                <Input
+                  value={connectionConfig.command_topic || ''}
+                  onChange={(e) => setConnectionConfig({ ...connectionConfig, command_topic: e.target.value })}
+                  placeholder="device/{type}/{id}/downlink"
+                  className="font-mono text-sm"
+                />
+              </FormField>
             </div>
           </FormSection>
         )}

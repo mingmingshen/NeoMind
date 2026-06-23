@@ -169,7 +169,11 @@
       "jsonPreview": "Parameters Preview (JSON)",
       "sendCommand": "Send Command",
       "executing": "Executing",
-      "noParameters": "No Parameters"
+      "noParameters": "No Parameters",
+      "selectValue": "Select…",
+      "binaryPlaceholder": "Base64 encoded data…",
+      "allParametersFixed": "All parameters have fixed values",
+      "generalGroup": "General"
     }
   },
   "actions": {
@@ -1242,5 +1246,9 @@
   "emptyType": {
     "title": "No Devices",
     "description": "Description"
+  },
+  "range": {
+    "min": "min",
+    "max": "max"
   }
 }

@@ -241,37 +241,9 @@
     {
       "name": "capture",
       "display_name": "Capture",
-      "description": "Capture an image from the camera with optional AI detection",
-      "payload_template": "{\"cmd\": \"capture\", \"request_id\": \"${request_id}\", \"params\": {\"enable_ai\": ${enable_ai}, \"chunk_size\": ${chunk_size}, \"store_to_sd\": ${store_to_sd}}}",
-      "parameters": [
-        {
-          "name": "request_id",
-          "display_name": "Request ID",
-          "data_type": "String",
-          "required": true
-        },
-        {
-          "name": "enable_ai",
-          "display_name": "Enable AI Detection",
-          "data_type": "Boolean",
-          "default_value": true,
-          "required": false
-        },
-        {
-          "name": "chunk_size",
-          "display_name": "Chunk Size",
-          "data_type": "Integer",
-          "default_value": 0,
-          "required": false
-        },
-        {
-          "name": "store_to_sd",
-          "display_name": "Store to SD Card",
-          "data_type": "Boolean",
-          "default_value": false,
-          "required": false
-        }
-      ]
+      "description": "Capture an image from the camera",
+      "payload_template": "{\"cmd\": \"capture\", \"request_id\": \"${request_id}\"}",
+      "parameters": []
     },
     {
       "name": "sleep",
@@ -279,12 +251,6 @@
       "description": "Put the camera into sleep mode for a specified duration",
       "payload_template": "{\"cmd\": \"sleep\", \"request_id\": \"${request_id}\", \"params\": {\"duration_sec\": ${duration_sec}}}",
       "parameters": [
-        {
-          "name": "request_id",
-          "display_name": "Request ID",
-          "data_type": "String",
-          "required": true
-        },
         {
           "name": "duration_sec",
           "display_name": "Sleep Duration",

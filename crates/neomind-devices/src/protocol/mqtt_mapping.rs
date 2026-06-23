@@ -330,44 +330,14 @@ impl MqttMapping {
         template: &str,
         params: &HashMap<String, MetricValue>,
     ) -> MappingResult<String> {
-        let mut result = template.to_string();
-
-        // Replace ${param} placeholders
-        for (key, value) in params {
-            let placeholder = format!("${{{}}}", key);
-            let replacement = match value {
-                MetricValue::String(s) => {
-                    // Add quotes if not already present
-                    if !s.starts_with('"') && !s.starts_with('{') && !s.starts_with('[') {
-                        format!("\"{}\"", s)
-                    } else {
-                        s.clone()
-                    }
-                }
-                MetricValue::Integer(i) => i.to_string(),
-                MetricValue::Float(f) => f.to_string(),
-                MetricValue::Boolean(b) => b.to_string(),
-                MetricValue::Array(a) => {
-                    // Convert array to JSON string representation
-                    let json_arr: Vec<String> = a
-                        .iter()
-                        .map(|v| match v {
-                            MetricValue::String(s) => format!("\"{}\"", s),
-                            MetricValue::Integer(i) => i.to_string(),
-                            MetricValue::Float(f) => f.to_string(),
-                            MetricValue::Boolean(b) => b.to_string(),
-                            _ => "null".to_string(),
-                        })
-                        .collect();
-                    format!("[{}]", json_arr.join(", "))
-                }
-                MetricValue::Null => "null".to_string(),
-                MetricValue::Binary(_) => "\"<binary>\"".to_string(),
-            };
-            result = result.replace(&placeholder, &replacement);
-        }
-
-        Ok(result)
+        // Delegate to the structured JSON-aware renderer. See
+        // `payload_template` module docs for the failure modes of
+        // string-substitution (quote collision, type erasure, JSON
+        // injection, placeholder syntax drift).
+        let bytes = crate::payload_template::render(template, params)
+            .map_err(|e| MappingError::ParseError(format!("payload render: {e}")))?;
+        String::from_utf8(bytes)
+            .map_err(|e| MappingError::ParseError(format!("payload not UTF-8: {e}")))
     }
 }
 
@@ -611,9 +581,10 @@ mod tests {
         params.insert("interval".to_string(), MetricValue::Integer(60));
 
         let payload = mapping.serialize_command("set_interval", &params).unwrap();
+        // Structured renderer produces compact JSON (no spaces).
         assert_eq!(
             String::from_utf8_lossy(&payload),
-            r#"{"action": "set", "interval": 60}"#
+            r#"{"action":"set","interval":60}"#
         );
     }
 
