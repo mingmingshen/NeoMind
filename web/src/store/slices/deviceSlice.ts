@@ -352,6 +352,36 @@ export const createDeviceSlice: StateCreator<
     try {
       const details = await api.getDevice(id)
       set({ deviceDetails: details })
+      // Propagate fresh status fields back to the `devices` list cache so the
+      // list page shows consistent state immediately after the user returns
+      // from the detail page. Without this, fetchCache TTL (10s) skips the
+      // list refetch and the user sees stale online/last_seen for up to 10s.
+      // Events fired while the user was on the detail page (which doesn't
+      // subscribe to useDeviceEvents) are also lost, so this is the only
+      // reliable propagation path.
+      if (details) {
+        const online = !!(details as any).online
+        const status = (details as any).status as string | undefined
+        const lastSeen = (details as any).last_seen as string | undefined
+        const transportConnected = (details as any).transport_connected as boolean | undefined
+        const transportChangedAt = (details as any).transport_changed_at as number | undefined
+        set((state) => ({
+          devices: state.devices.map((d) =>
+            d.id === id || d.device_id === id
+              ? {
+                  ...d,
+                  // Only overwrite status fields when the detail fetch provides them
+                  // (older backends may omit transport_*)
+                  ...(online !== undefined ? { online } : {}),
+                  ...(status !== undefined ? { status } : {}),
+                  ...(lastSeen !== undefined ? { last_seen: lastSeen } : {}),
+                  ...(transportConnected !== undefined ? { transport_connected: transportConnected } : {}),
+                  ...(transportChangedAt !== undefined ? { transport_changed_at: transportChangedAt } : {}),
+                }
+              : d
+          ),
+        }))
+      }
       return details
     } catch (error) {
       logError(error, { operation: 'Fetch device details' })
@@ -405,6 +435,13 @@ export const createDeviceSlice: StateCreator<
 
       // Also update device telemetry with current values
       const newValues = buildNestedValues(data.metrics || {})
+      // Sync status fields (online/status/last_seen/transport_*) back to the
+      // devices list cache — same rationale as fetchDeviceDetails above.
+      const online = (data as any).online as boolean | undefined
+      const status = (data as any).status as string | undefined
+      const lastSeen = (data as any).last_seen as string | undefined
+      const transportConnected = (data as any).transport_connected as boolean | undefined
+      const transportChangedAt = (data as any).transport_changed_at as number | undefined
       set((state) => ({
         deviceTelemetry: newValues && Object.keys(newValues).length > 0
           ? { ...state.deviceTelemetry, [deviceId]: newValues }
@@ -414,6 +451,11 @@ export const createDeviceSlice: StateCreator<
             ? {
                 ...d,
                 current_values: newValues,
+                ...(online !== undefined ? { online } : {}),
+                ...(status !== undefined ? { status } : {}),
+                ...(lastSeen !== undefined ? { last_seen: lastSeen } : {}),
+                ...(transportConnected !== undefined ? { transport_connected: transportConnected } : {}),
+                ...(transportChangedAt !== undefined ? { transport_changed_at: transportChangedAt } : {}),
               }
             : d
         ),
