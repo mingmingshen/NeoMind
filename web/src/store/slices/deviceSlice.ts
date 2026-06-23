@@ -52,6 +52,10 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
 
   // Update device metric from real-time events
   updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => void
+  // Lightweight "device is alive" ping from DeviceMetric events — updates
+  // last_seen + online=true. Throttled per-device to at most once / 5s to
+  // avoid excessive re-renders on high-frequency telemetry streams.
+  touchDeviceActivity: (deviceId: string) => void
   // Update transport connection state from real-time events (MQTT session)
   updateDeviceTransportStatus: (deviceId: string, connected: boolean) => void
   // Update device metric from real-time events
@@ -531,6 +535,58 @@ export const createDeviceSlice: StateCreator<
       fetchCache.invalidate('devicesCurrentBatch')
     }
   },
+
+  // Throttle map: deviceId → epoch-ms of last touchDeviceActivity write.
+  // Prevents store churn on high-frequency telemetry (one device can emit
+  // dozens of metrics per second). 5s granularity is well within the
+  // "x seconds ago" display resolution.
+  // Module-scoped so it survives re-renders without entering React state.
+  touchDeviceActivity: (() => {
+    const lastTouch = new Map<string, number>()
+    const THROTTLE_MS = 5000
+
+    const fn = (deviceId: string) => {
+      const now = Date.now()
+      const last = lastTouch.get(deviceId) ?? 0
+      if (now - last < THROTTLE_MS) return
+      lastTouch.set(deviceId, now)
+
+      const isoNow = new Date(now).toISOString()
+      set((state) => ({
+        devices: state.devices.map((device) =>
+          device.id === deviceId || device.device_id === deviceId
+            ? {
+                ...device,
+                last_seen: isoNow,
+                // Mark as online — we just received data from it
+                online: true,
+                status: device.status === 'offline' || device.status === 'disconnected'
+                  ? 'online'
+                  : device.status,
+              }
+            : device
+        ),
+      }))
+      set((state) => ({
+        selectedDevice:
+          state.selectedDevice?.id === deviceId ||
+          state.selectedDevice?.device_id === deviceId
+            ? {
+                ...state.selectedDevice,
+                last_seen: isoNow,
+                online: true,
+                status: state.selectedDevice.status === 'offline' || state.selectedDevice.status === 'disconnected'
+                  ? 'online'
+                  : state.selectedDevice.status,
+              }
+            : state.selectedDevice,
+      }))
+    }
+
+    // Expose the throttle map for testing / reset
+    ;(fn as any)._reset = () => lastTouch.clear()
+    return fn
+  })(),
 
   // Update device status from real-time events
   updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => {

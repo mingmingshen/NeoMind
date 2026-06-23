@@ -47,18 +47,26 @@ export function DeviceList({
 }: DeviceListProps) {
   const { t } = useTranslation(['common', 'devices'])
   const updateDeviceStatus = useStore((state) => state.updateDeviceStatus)
+  const touchDeviceActivity = useStore((state) => state.touchDeviceActivity)
   const isMobile = useIsMobile()
   const { deviceCounts, refresh: refreshTransformCounts } = useTransformCounts()
 
-  // Listen to device status change events
+  // Listen to device status change events + telemetry activity.
+  // DeviceMetric events update last_seen (throttled) so the list reflects
+  // active data flow in real time without a manual refresh.
   useDeviceEvents({
     enabled: true,
-    eventTypes: ['DeviceOnline', 'DeviceOffline'],
+    eventTypes: ['DeviceOnline', 'DeviceOffline', 'DeviceMetric'],
     onEvent: (event) => {
       if (event.type === 'DeviceOnline' || event.type === 'DeviceOffline') {
         const data = event.data as { device_id: string }
         if (data.device_id) {
           updateDeviceStatus(data.device_id, event.type === 'DeviceOnline' ? 'online' : 'offline')
+        }
+      } else if (event.type === 'DeviceMetric') {
+        const data = event.data as { device_id: string }
+        if (data.device_id) {
+          touchDeviceActivity(data.device_id)
         }
       }
     },
