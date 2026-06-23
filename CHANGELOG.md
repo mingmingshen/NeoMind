@@ -9,33 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Device Transport
-
-- **Broker learns `client_id → device_id` mapping from publish topics.** When a
-  device uses an MQTT `client_id` that differs from its NeoMind `device_id`
-  (e.g. a camera with a hardcoded client `NE302-000000` registered as
-  `2819FD`), transport connect/disconnect events previously fired for the raw
-  client_id and were silently dropped by the frontend's status updater. The
-  `DevicePresenceHook` now also hooks `MessagePublish`, resolves the publish
-  topic to a registered device via `DeviceRegistry::find_device_by_telemetry_topic`,
-  and caches the mapping. All subsequent `ClientConnected` / `ClientDisconnected`
-  events for that client_id carry the correct NeoMind `device_id`, so
-  `transport_connected` actually toggles for these devices and the 4-state UI
-  (`online` / `connectedIdle` / `offline` / `disconnected`) works as designed.
-  Falls back to the legacy passthrough when the registry is empty or the topic
-  is unknown.
-
-### Web Frontend
-
-- **Detail-page fetch now propagates fresh status to the list cache.**
-  `fetchDeviceDetails` and `fetchDeviceCurrentState` previously only wrote to
-  `deviceDetails` / `deviceCurrentState`, leaving `state.devices` (the list
-  cache) untouched. With a 10s `fetchCache` TTL, returning from the detail
-  page to the list within that window showed stale `online` / `last_seen`.
-  Both fetchers now merge the fresh `online`, `status`, `last_seen`,
-  `transport_connected`, and `transport_changed_at` into the matching
-  `devices` entry, so the list shows consistent state immediately.
-
 ## [0.8.22] - 2026-06-23
 
 ### Overview
@@ -413,6 +386,41 @@ value`) and the MQTT downlink topic could not be configured from the UI.
   `devices.redb` only on fresh databases. Existing deployments must
   re-import the type via **Import from Cloud** to pick up the zero-param
   `capture` command.
+
+### Post-release — device transport & status consistency
+
+- **Broker learns `client_id → device_id` mapping from publish topics.** When a
+  device uses an MQTT `client_id` that differs from its NeoMind `device_id`
+  (e.g. a camera with a hardcoded client `NE302-000000` registered as
+  `2819FD`), transport connect/disconnect events previously fired for the raw
+  client_id and were silently dropped by the frontend's status updater. The
+  `DevicePresenceHook` now also hooks `MessagePublish`, resolves the publish
+  topic to a registered device via `DeviceRegistry::find_device_by_telemetry_topic`,
+  and caches the mapping. All subsequent `ClientConnected` / `ClientDisconnected`
+  events for that client_id carry the correct NeoMind `device_id`, so
+  `transport_connected` actually toggles for these devices and the 4-state UI
+  (`online` / `connectedIdle` / `offline` / `disconnected`) works as designed.
+  Falls back to the legacy passthrough when the registry is empty or the topic
+  is unknown.
+- **Detail-page fetch now propagates fresh status to the list cache.**
+  `fetchDeviceDetails` and `fetchDeviceCurrentState` previously only wrote to
+  `deviceDetails` / `deviceCurrentState`, leaving `state.devices` (the list
+  cache) untouched. With a 10s `fetchCache` TTL, returning from the detail
+  page to the list within that window showed stale `online` / `last_seen`.
+  Both fetchers now merge the fresh `online`, `status`, `last_seen`,
+  `transport_connected`, and `transport_changed_at` into the matching
+  `devices` entry, so the list shows consistent state immediately.
+- **`connectedIdle` label renamed to "连接中·待机" / "Connected·Standby".**
+  The previous "已连接·空闲" ("Connected·Idle") read as "the device is doing
+  nothing", confusing users into thinking it was unhealthy. "Standby"
+  correctly conveys that the MQTT session is alive and the device is ready
+  to accept commands.
+- **External broker config dialog now warns about transport status
+  limitation.** When NeoMind connects to an external MQTT broker (not the
+  embedded one), it cannot detect device MQTT session state, so the 4-state
+  model degrades to 3-state. A schema-driven notice banner in the adapter
+  config dialog explains this at creation time, rather than building a costly
+  `$SYS` / HTTP-API presence sync that external-broker users don't need.
 
 ## [0.8.21] - 2026-06-22
 
