@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Overview
 
 Three themes: (1) **iOS PWA keyboard + chat UX** — closing the keyboard-overflow-
-under-notch regression that affected every iOS PWA user on notched devices; (2)
+under-notch regression that affected every iOS PWA user on notched devices, plus
+a follow-up that extends the same fix to mobile full-screen Radix Dialogs; (2)
 **PWA icon & splash overhaul** — transparent-background icons sourced from the
 original `logo-square.png`, real iOS launch screens matching the Tauri startup
 visual, and removing the `maskable` declaration so desktop Chrome stops applying
@@ -60,6 +61,16 @@ parts on the scheduled-execution path.
   `height: calc(100dvh - var(--keyboard-offset, 0px))` shrinks body to the
   visible area when the keyboard is open — eliminates the upward shift that
   hid the header under the notch.
+- **Mobile full-screen Dialog rule**: same calc-height override applied to
+  `[role="dialog"][data-state="open"][style*="safe-area-inset-top"]`. The
+  attribute selector matches only the mobile branch of `dialog.tsx` (the
+  only path that injects safe-area padding as inline style), so the desktop
+  centered dialog is untouched. Specificity `(0,3,0)` beats Tailwind
+  `.h-full` `(0,1,0)` even with `!important`, so the calc wins and the
+  `sticky bottom-0` form footer rises above the keyboard instead of being
+  hidden behind it. Affects every form dialog on mobile — `UnifiedFormDialog`,
+  `EditDeviceDialog`, `LLMBackendConfigDialog`, `ChannelEditorDialog`,
+  `PushTargetDialog`, setup `AccountStep`, etc.
 - **Touch device hover visibility** (`@media (hover: none) and (pointer: coarse)`):
   `group-hover:opacity-100` and `group-hover:opacity-50` are forced to 1/0.55
   on pure touch devices, restoring visibility of the 20+ hover-only buttons
