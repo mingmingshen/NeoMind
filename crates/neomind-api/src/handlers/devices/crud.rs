@@ -296,13 +296,23 @@ pub async fn get_device_handler(
     };
     let status = convert_status(status);
 
+    // Use persisted last_seen (survives server restart) with in-memory fallback.
+    // This MUST match the list handler's logic — otherwise the detail page shows
+    // "从未上线" (disconnected) after a server restart even for devices that were
+    // previously online, because the in-memory status map is empty on cold start.
+    let effective_last_seen = if config.last_seen > 1 {
+        config.last_seen
+    } else {
+        device_status.last_seen
+    };
+
     // Handle the case where last_seen is 0 (never seen) - return null
-    let last_seen = if device_status.last_seen == 0 {
+    let last_seen = if effective_last_seen <= 1 {
         None
     } else {
-        chrono::DateTime::from_timestamp(device_status.last_seen, 0).map(|dt| dt.to_rfc3339())
+        chrono::DateTime::from_timestamp(effective_last_seen, 0).map(|dt| dt.to_rfc3339())
     };
-    let last_seen_dt = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+    let last_seen_dt = chrono::DateTime::from_timestamp(effective_last_seen, 0)
         .unwrap_or_else(chrono::Utc::now);
     let instance = config_to_device_instance(&config, status, last_seen_dt);
 
@@ -368,13 +378,23 @@ pub async fn get_device_current_handler(
     };
     let status = convert_status(status);
 
+    // Use persisted last_seen (survives server restart) with in-memory fallback.
+    // This MUST match the list handler's logic — otherwise the detail page shows
+    // "从未上线" (disconnected) after a server restart even for devices that were
+    // previously online, because the in-memory status map is empty on cold start.
+    let effective_last_seen = if config.last_seen > 1 {
+        config.last_seen
+    } else {
+        device_status.last_seen
+    };
+
     // Handle the case where last_seen is 0 (never seen) - return null
-    let last_seen = if device_status.last_seen == 0 {
+    let last_seen = if effective_last_seen <= 1 {
         None
     } else {
-        chrono::DateTime::from_timestamp(device_status.last_seen, 0).map(|dt| dt.to_rfc3339())
+        chrono::DateTime::from_timestamp(effective_last_seen, 0).map(|dt| dt.to_rfc3339())
     };
-    let last_seen_dt = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+    let last_seen_dt = chrono::DateTime::from_timestamp(effective_last_seen, 0)
         .unwrap_or_else(chrono::Utc::now);
     let instance = config_to_device_instance(&config, status, last_seen_dt);
 

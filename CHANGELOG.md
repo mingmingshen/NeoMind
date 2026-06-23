@@ -291,6 +291,19 @@ value`) and the MQTT downlink topic could not be configured from the UI.
 - Regression tests `test_lwt_and_status_topics_skip_auto_onboarding` and
   `test_status_topic_filter_is_aggressive_by_design` document the contract.
 
+#### Device detail page showed "从未上线" after server restart
+- `get_device_handler` and `get_device_current_handler` read
+  `device_status.last_seen` directly from the in-memory status map.
+  After a server restart this map is empty, so every device got
+  `last_seen=0` → `last_seen=null` in the JSON response → frontend
+  rendered `disconnected` ("从未上线") even for devices that were
+  previously online with persisted `config.last_seen` in redb.
+- Both handlers now use the same `effective_last_seen` logic as the
+  list handler: prefer `config.last_seen` (persisted), fall back to
+  `device_status.last_seen` (in-memory). After restart, devices with
+  a real persisted timestamp correctly show `offline` instead of
+  `disconnected`.
+
 #### Heartbeat monitor respects transport-connected state
 - The background heartbeat loop in `service.rs` previously collapsed any
   `Connected` device whose `last_seen` exceeded the effective offline
