@@ -15,15 +15,31 @@
 //! the broker. Only `listen`, `port`, or `tls_enabled` changes require
 //! a broker restart.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use neomind_core::{EventBus, NeoMindEvent};
+
+/// Topic-to-device-id resolver used by `DevicePresenceHook` to learn which
+/// NeoMind `device_id` corresponds to an MQTT `client_id`.
+///
+/// Devices don't always set their MQTT `client_id` equal to their NeoMind
+/// `device_id` (e.g. an NE301 camera may use `NE302-000000` as its MQTT
+/// client_id while registered as `2819FD`). The resolver lets the broker
+/// learn the mapping by observing PUBLISH topics: when a client publishes
+/// to a topic owned by a registered device, we record `client_id → device_id`
+/// and reuse it for transport connect/disconnect events.
+///
+/// The closure is called with the publish topic and returns the owning
+/// device_id, if any. Provided by the caller (typically wraps
+/// `DeviceRegistry::find_device_by_telemetry_topic`).
+pub type TopicResolverFn = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 /// Embedded MQTT broker error type
 #[derive(Debug, Error)]
@@ -233,25 +249,59 @@ impl rmqtt::hook::Handler for NeoMindAuthHandler {
 /// a device that's connected to the broker but hasn't published yet shows
 /// up as "Never Connected" in the UI — a common customer-reported bug.
 ///
-/// The `device_id` is taken from the MQTT `client_id` verbatim. Devices are
-/// expected to use their NeoMind `device_id` as the MQTT client_id; if they
-/// don't, the event is still emitted (best-effort) and downstream consumers
-/// can decide whether to ignore unknown client_ids.
+/// ## client_id → device_id resolution
+///
+/// Devices don't always set their MQTT `client_id` equal to their NeoMind
+/// `device_id` (e.g. an NE301 camera may use `NE302-000000` as its MQTT
+/// client_id while registered as `2819FD`). To handle this:
+///
+/// 1. On every `MessagePublish`, look up the publishing topic via
+///    `topic_resolver`. If it matches a registered device's telemetry
+///    topic, cache `client_id → device_id` in `client_id_cache`.
+/// 2. On `ClientConnected` / `ClientDisconnected`, check the cache first.
+///    If a mapping is known, fire the event with the cached `device_id`.
+///    Otherwise, fall back to the legacy passthrough (MQTT client_id IS
+///    the device_id).
+///
+/// The cache is shared across all hook instances (connect/disconnect/publish)
+/// via `Arc<RwLock<...>>` so a single observed publish teaches the broker
+/// the correct device_id for all future transport events from that client.
 struct DevicePresenceHook {
     event_bus: Arc<EventBus>,
+    /// Shared cache: MQTT client_id → NeoMind device_id, learned from
+    /// observed PUBLISH topics. Falls back to client_id verbatim on miss.
+    client_id_cache: Arc<RwLock<HashMap<String, String>>>,
+    /// Optional resolver that maps a publish topic to a registered device_id.
+    /// If `None`, no caching occurs and passthrough is always used.
+    topic_resolver: Option<TopicResolverFn>,
 }
 
 impl DevicePresenceHook {
-    fn new(event_bus: Arc<EventBus>) -> Self {
-        Self { event_bus }
+    fn new(
+        event_bus: Arc<EventBus>,
+        client_id_cache: Arc<RwLock<HashMap<String, String>>>,
+        topic_resolver: Option<TopicResolverFn>,
+    ) -> Self {
+        Self {
+            event_bus,
+            client_id_cache,
+            topic_resolver,
+        }
     }
 
-    /// Convert an rmqtt client_id into a NeoMind device_id. Currently a
-    /// passthrough — the convention is that the MQTT client_id IS the
-    /// NeoMind device_id. Centralized here so future remapping logic
-    /// (e.g. prefix stripping) has a single home.
-    fn client_id_to_device_id(client_id: &rmqtt::types::ClientId) -> String {
-        client_id.to_string()
+    /// Resolve an rmqtt client_id to a NeoMind device_id.
+    ///
+    /// Priority:
+    /// 1. Cached mapping (learned from prior MessagePublish observations)
+    /// 2. Passthrough (client_id == device_id) — legacy convention
+    fn resolve_device_id(&self, client_id: &rmqtt::types::ClientId) -> String {
+        let client_id_str = client_id.to_string();
+        if let Ok(cache) = self.client_id_cache.read() {
+            if let Some(device_id) = cache.get(&client_id_str) {
+                return device_id.clone();
+            }
+        }
+        client_id_str
     }
 
     /// True if this client_id belongs to a NeoMind-internal MQTT client
@@ -289,16 +339,19 @@ impl rmqtt::hook::Handler for DevicePresenceHook {
                     );
                     return (true, _acc);
                 }
-                let device_id = Self::client_id_to_device_id(&session.id.client_id);
+                let client_id_str = session.id.client_id.to_string();
+                let device_id = self.resolve_device_id(&session.id.client_id);
+                let cached = device_id != client_id_str;
                 tracing::debug!(
-                    "DevicePresenceHook: client_connected client_id='{}' -> device_id='{}'",
-                    session.id.client_id,
-                    device_id
+                    "DevicePresenceHook: client_connected client_id='{}' -> device_id='{}' (cached={})",
+                    client_id_str,
+                    device_id,
+                    cached
                 );
                 self.event_bus
                     .publish(NeoMindEvent::DeviceTransportOnline {
                         device_id,
-                        client_id: session.id.client_id.to_string(),
+                        client_id: client_id_str,
                         timestamp: now,
                     })
                     .await;
@@ -307,24 +360,63 @@ impl rmqtt::hook::Handler for DevicePresenceHook {
                 if Self::is_internal_client(&session.id.client_id) {
                     return (true, _acc);
                 }
-                let device_id = Self::client_id_to_device_id(&session.id.client_id);
+                let client_id_str = session.id.client_id.to_string();
+                let device_id = self.resolve_device_id(&session.id.client_id);
+                let cached = device_id != client_id_str;
                 let reason_str = match reason {
                     rmqtt::types::Reason::Unknown => None,
                     other => Some(format!("{:?}", other)),
                 };
                 tracing::debug!(
-                    "DevicePresenceHook: client_disconnected client_id='{}' reason={:?}",
-                    session.id.client_id,
+                    "DevicePresenceHook: client_disconnected client_id='{}' -> device_id='{}' (cached={}) reason={:?}",
+                    client_id_str,
+                    device_id,
+                    cached,
                     reason
                 );
                 self.event_bus
                     .publish(NeoMindEvent::DeviceTransportOffline {
                         device_id,
-                        client_id: session.id.client_id.to_string(),
+                        client_id: client_id_str,
                         reason: reason_str,
                         timestamp: now,
                     })
                     .await;
+            }
+            rmqtt::hook::Parameter::MessagePublish(_session, from, publish) => {
+                // Learn client_id → device_id from observed publish topics.
+                // Skip internal clients (broker self-publish, bridge traffic).
+                let client_id_str = from.id.client_id.to_string();
+                if client_id_str.starts_with("neomind-") {
+                    return (true, _acc);
+                }
+                // Avoid holding the resolver across the cache write lock.
+                let device_id_opt = self
+                    .topic_resolver
+                    .as_ref()
+                    .and_then(|resolver| resolver(&publish.topic));
+                if let Some(device_id) = device_id_opt {
+                    let mut changed = false;
+                    if let Ok(mut cache) = self.client_id_cache.write() {
+                        match cache.get(&client_id_str) {
+                            Some(existing) if existing == &device_id => {
+                                // Already cached, no-op.
+                            }
+                            _ => {
+                                cache.insert(client_id_str.clone(), device_id.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        tracing::debug!(
+                            "DevicePresenceHook: learned mapping client_id='{}' -> device_id='{}' from topic='{}'",
+                            client_id_str,
+                            device_id,
+                            publish.topic
+                        );
+                    }
+                }
             }
             _ => {}
         }
@@ -351,6 +443,12 @@ pub struct EmbeddedBroker {
     /// `start()` is called; if `None`, the broker runs without presence
     /// tracking (legacy behavior).
     event_bus: Mutex<Option<Arc<EventBus>>>,
+    /// Optional topic-to-device-id resolver. Set via `set_topic_resolver`
+    /// before `start()` is called. When set, the broker observes
+    /// `MessagePublish` events to learn the mapping from MQTT client_id
+    /// to NeoMind device_id (necessary when devices use a client_id
+    /// different from their registered device_id).
+    topic_resolver: Mutex<Option<TopicResolverFn>>,
 }
 
 impl EmbeddedBroker {
@@ -367,6 +465,7 @@ impl EmbeddedBroker {
             auth_enabled,
             credential_validator,
             event_bus: Mutex::new(None),
+            topic_resolver: Mutex::new(None),
         }
     }
 
@@ -380,6 +479,19 @@ impl EmbeddedBroker {
     /// broker — call `stop()` then `start()` again to pick up a new bus.
     pub fn set_event_bus(&self, bus: Arc<EventBus>) {
         *self.event_bus.lock().unwrap() = Some(bus);
+    }
+
+    /// Provide a topic-to-device-id resolver. Must be called before `start()`.
+    ///
+    /// When set, the broker observes `MessagePublish` events to learn the
+    /// mapping from MQTT client_id to NeoMind device_id. This is necessary
+    /// when devices use an MQTT client_id different from their registered
+    /// device_id (common for cameras that ship with a hardcoded client_id).
+    /// Without it, transport connect/disconnect events fire for an unknown
+    /// device_id (the raw client_id), and the frontend can't correlate them
+    /// with registered devices.
+    pub fn set_topic_resolver(&self, resolver: TopicResolverFn) {
+        *self.topic_resolver.lock().unwrap() = Some(resolver);
     }
 
     /// Check if the broker is running
@@ -481,7 +593,19 @@ impl EmbeddedBroker {
         // appearing as "Never Connected".
         let presence_bus = self.event_bus.lock().unwrap().clone();
         if let Some(bus) = presence_bus {
-            let presence_handler = DevicePresenceHook::new(bus);
+            // Shared cache: MQTT client_id → NeoMind device_id, learned from
+            // observed publishes. All three hook instances (connect/disconnect/
+            // publish) share this Arc so a single publish teaches the broker
+            // the correct device_id for all future transport events.
+            let client_id_cache: Arc<RwLock<HashMap<String, String>>> =
+                Arc::new(RwLock::new(HashMap::new()));
+            let topic_resolver = self.topic_resolver.lock().unwrap().clone();
+
+            let presence_handler = DevicePresenceHook::new(
+                bus,
+                client_id_cache.clone(),
+                topic_resolver.clone(),
+            );
             reg.add(
                 rmqtt::hook::Type::ClientConnected,
                 Box::new(presence_handler),
@@ -493,13 +617,37 @@ impl EmbeddedBroker {
             // `reg.add` takes ownership of the Box.
             let presence_handler_disc = DevicePresenceHook::new(
                 self.event_bus.lock().unwrap().clone().expect("bus re-acquired"),
+                client_id_cache.clone(),
+                topic_resolver.clone(),
             );
             reg.add(
                 rmqtt::hook::Type::ClientDisconnected,
                 Box::new(presence_handler_disc),
             )
             .await;
-            tracing::info!("Embedded broker: DevicePresenceHook registered (transport events will be emitted)");
+            // Register MessagePublish hook to learn client_id → device_id
+            // mappings from observed publish topics. Only effective when
+            // set_topic_resolver was called with a resolver; otherwise the
+            // hook is a no-op (resolver is None).
+            if topic_resolver.is_some() {
+                let presence_handler_pub = DevicePresenceHook::new(
+                    self.event_bus.lock().unwrap().clone().expect("bus re-acquired"),
+                    client_id_cache.clone(),
+                    topic_resolver.clone(),
+                );
+                reg.add(
+                    rmqtt::hook::Type::MessagePublish,
+                    Box::new(presence_handler_pub),
+                )
+                .await;
+                tracing::info!(
+                    "Embedded broker: DevicePresenceHook registered with topic resolver (transport events + client_id learning)"
+                );
+            } else {
+                tracing::info!(
+                    "Embedded broker: DevicePresenceHook registered (transport events only; set_topic_resolver for client_id → device_id mapping)"
+                );
+            }
         }
 
         reg.start().await;

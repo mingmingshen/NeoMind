@@ -57,7 +57,7 @@ pub use registry::{
 pub use adapter::{AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
 
 #[cfg(feature = "embedded-broker")]
-pub use embedded_broker::{EmbeddedBroker, EmbeddedBrokerConfig};
+pub use embedded_broker::{EmbeddedBroker, EmbeddedBrokerConfig, TopicResolverFn};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

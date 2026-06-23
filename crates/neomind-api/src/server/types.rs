@@ -98,7 +98,7 @@ use crate::server::state::{
 };
 
 #[cfg(feature = "embedded-broker")]
-use neomind_devices::EmbeddedBroker;
+use neomind_devices::{EmbeddedBroker, TopicResolverFn};
 
 /// Maximum request body size (10 MB)
 pub const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
@@ -337,6 +337,9 @@ impl ServerState {
         if let Some(bus) = self.core.event_bus.as_ref() {
             broker.set_event_bus(bus.clone());
         }
+        if let Some(resolver) = self.build_topic_resolver() {
+            broker.set_topic_resolver(resolver);
+        }
 
         if let Err(e) = broker.start().await {
             // Attempt rollback: restart with the old config and rebuild adapter
@@ -357,6 +360,9 @@ impl ServerState {
                         })
                     });
                 let rollback_broker = EmbeddedBroker::new(old_cfg.clone(), rollback_validator);
+                if let Some(resolver) = self.build_topic_resolver() {
+                    rollback_broker.set_topic_resolver(resolver);
+                }
                 if let Some(bus) = self.core.event_bus.as_ref() {
                     rollback_broker.set_event_bus(bus.clone());
                 }
@@ -536,6 +542,24 @@ impl ServerState {
     /// Get device registry (backward compatibility).
     pub fn device_registry(&self) -> Arc<DeviceRegistry> {
         self.devices.registry.clone()
+    }
+
+    /// Build a topic-to-device-id resolver suitable for
+    /// `EmbeddedBroker::set_topic_resolver`. The resolver does an exact-match
+    /// lookup against `DeviceRegistry::find_device_by_telemetry_topic`.
+    /// Returns `None` if the registry is the empty in-memory fallback (so
+    /// the broker skips the `MessagePublish` hook entirely).
+    fn build_topic_resolver(&self) -> Option<TopicResolverFn> {
+        let registry = self.devices.registry.clone();
+        // Optimization: skip resolver when registry is empty (e.g. tests /
+        // first-run before any device is registered) to avoid registering
+        // a no-op publish hook.
+        if registry.list_devices().is_empty() {
+            return None;
+        }
+        Some(Arc::new(move |topic: &str| {
+            registry.find_device_by_telemetry_topic(topic).map(|(id, _)| id)
+        }))
     }
 
     /// Get device service (backward compatibility).
@@ -1527,6 +1551,11 @@ impl ServerState {
         // so connected-but-idle devices no longer display as "Never Connected".
         if let Some(bus) = self.core.event_bus.as_ref() {
             broker.set_event_bus(bus.clone());
+        }
+        // Wire up topic resolver so the broker can learn the mapping from
+        // MQTT client_id to NeoMind device_id by observing publish topics.
+        if let Some(resolver) = self.build_topic_resolver() {
+            broker.set_topic_resolver(resolver);
         }
 
         match broker.start().await {
