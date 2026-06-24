@@ -5,7 +5,7 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { generateId } from "@/lib/id"
-import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, Plus, Check } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, Plus, Check, ArrowUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -1451,13 +1451,11 @@ export function ChatPage() {
                   <Button
                     type="button"
                     onClick={handleCancelRequest}
-                    className={cn(
-                      "h-8 w-8 rounded-lg flex-shrink-0 p-0",
-                      "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
-                    )}
+                    variant="outline"
+                    className="h-8 w-8 rounded-full flex-shrink-0 p-0 border-destructive text-destructive hover:bg-destructive-light"
                     title="Cancel request"
                   >
-                    <X className="h-4 w-4" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   </Button>
                 ) : (
                   <Button
@@ -1465,12 +1463,13 @@ export function ChatPage() {
                     onClick={handleSend}
                     disabled={!input.trim() && attachedImages.length === 0}
                     className={cn(
-                      "h-8 w-8 rounded-lg flex-shrink-0 p-0",
-                      "bg-primary hover:bg-primary-hover text-primary-foreground",
-                      (!input.trim() && attachedImages.length === 0) && "opacity-40"
+                      "h-8 w-8 rounded-full flex-shrink-0 p-0 transition-all",
+                      (!input.trim() && attachedImages.length === 0)
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-primary hover:bg-primary-hover text-primary-foreground"
                     )}
                   >
-                    <Send className="h-4 w-4" />
+                    <ArrowUp className="h-4 w-4" />
                   </Button>
                 )}
               </div>
