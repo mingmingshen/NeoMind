@@ -232,22 +232,34 @@ export const ChatInput = memo(function ChatInput({
         {/* Image previews */}
         <ImagePreviews images={attachedImages} onRemove={handleRemoveImage} />
 
-        {/* Unified input container — image btn + textarea + send btn nested inside */}
-        <div className="rounded-2xl border border-input bg-card shadow-sm focus-within:border-primary transition-colors overflow-hidden">
-          {/* Top row: model selector + connection (fused into the container) */}
-          <div className="flex items-center gap-1 px-2 pt-1.5">
-            <ModelSelector
-              backends={backends}
-              activeBackendId={activeBackendId}
-              onBackendChange={onBackendChange}
-              t={t}
-            />
-            <div className="flex-1" />
-          </div>
+        {/* Single unified input box — everything lives inside one container */}
+        <div className="rounded-2xl border border-input bg-card shadow-sm focus-within:border-primary transition-colors">
+          {/* Textarea — fills the top of the box, borderless */}
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t('chat:input.placeholder')}
+            rows={1}
+            className={cn(
+              "w-full block px-4 pt-3 pb-1 resize-none text-base bg-transparent",
+              "placeholder:text-muted-foreground",
+              "focus:outline-none",
+              "max-h-32 scroll-mb-32"
+            )}
+            style={{ minHeight: "44px" }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement
+              target.style.height = "auto"
+              target.style.height = Math.min(target.scrollHeight, 128) + "px"
+            }}
+            disabled={disabled}
+          />
 
-          {/* Input row */}
-          <div className="flex items-end gap-1 px-1.5 pb-1.5">
-            {/* Image upload button */}
+          {/* Bottom toolbar — left: image + model, right: send. All inside the box. */}
+          <div className="flex items-center gap-1 px-2 pb-2">
+            {/* Image upload */}
             <input
               ref={fileInputRef}
               type="file"
@@ -263,7 +275,7 @@ export const ChatInput = memo(function ChatInput({
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming || !supportsMultimodal}
               className={cn(
-                "h-9 w-9 rounded-full flex-shrink-0 text-muted-foreground hover:text-foreground",
+                "h-8 w-8 rounded-lg flex-shrink-0 text-muted-foreground hover:text-foreground",
                 !supportsMultimodal && "opacity-50"
               )}
               title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
@@ -272,38 +284,25 @@ export const ChatInput = memo(function ChatInput({
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : attachedImages.length > 0 ? (
                 <div className="relative">
-                  <ImageIcon className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-semibold">
+                  <ImageIcon className="h-4.5 w-4.5" />
+                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-semibold tabular-nums">
                     {attachedImages.length}
                   </span>
                 </div>
               ) : (
-                <ImageIcon className="h-5 w-5" />
+                <ImageIcon className="h-4.5 w-4.5" />
               )}
             </Button>
 
-            {/* Textarea — borderless, fills the container */}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={t('chat:input.placeholder')}
-              rows={1}
-              className={cn(
-                "flex-1 px-2 py-2 resize-none text-base bg-transparent",
-                "placeholder:text-muted-foreground placeholder:text-sm",
-                "focus:outline-none",
-                "max-h-32 scroll-mb-32"
-              )}
-              style={{ minHeight: "36px", height: "36px" }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement
-                target.style.height = "36px"
-                target.style.height = Math.min(target.scrollHeight, 128) + "px"
-              }}
-              disabled={disabled}
+            {/* Model selector */}
+            <ModelSelector
+              backends={backends}
+              activeBackendId={activeBackendId}
+              onBackendChange={onBackendChange}
+              t={t}
             />
+
+            <div className="flex-1" />
 
             {/* Send or Cancel button */}
             {isStreaming ? (
@@ -311,7 +310,7 @@ export const ChatInput = memo(function ChatInput({
                 type="button"
                 onClick={handleCancel}
                 className={cn(
-                  "h-9 w-9 rounded-full flex-shrink-0",
+                  "h-8 w-8 rounded-lg flex-shrink-0 p-0",
                   "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
                 )}
                 title="Cancel request"
@@ -324,7 +323,7 @@ export const ChatInput = memo(function ChatInput({
                 onClick={handleSend}
                 disabled={!canSend}
                 className={cn(
-                  "h-9 w-9 rounded-full flex-shrink-0",
+                  "h-8 w-8 rounded-lg flex-shrink-0 p-0",
                   "bg-primary hover:bg-primary-hover text-primary-foreground",
                   !canSend && "opacity-40"
                 )}
