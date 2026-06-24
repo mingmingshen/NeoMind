@@ -1402,10 +1402,10 @@ export function ChatPage() {
                                   <span title={t('chat:model.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.thinking', { defaultValue: 'Thinking' })}</span>
                                 )}
                               </div>
-                              <span className={cn(textNano, "text-muted-foreground shrink-0")}>
-                                {backend.backend_type} · {backend.model}
-                              </span>
                             </div>
+                            <p className={cn(textNano, "text-muted-foreground truncate")}>
+                              {backend.backend_type} · {backend.model}
+                            </p>
                           </div>
                           {backend.id === activeBackendId && (
                             <Check className="h-4 w-4 text-primary shrink-0" />
