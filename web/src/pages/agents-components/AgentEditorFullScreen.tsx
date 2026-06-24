@@ -1497,15 +1497,15 @@ export function AgentEditorFullScreen({
                     <SelectItem key={backend.id} value={backend.id}>
                       <div className="flex items-center gap-2">
                         <span>{backend.name}</span>
-                        <div className="flex items-center gap-0.5 text-muted-foreground">
+                        <div className="flex items-center gap-1">
                           {backend.capabilities?.supports_multimodal && (
-                            <span title={tAgent('creator.basicInfo.supportsVision')}><Eye className="h-4 w-4" /></span>
+                            <span title={tAgent('creator.basicInfo.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.vision', { defaultValue: 'Vision' })}</span>
                           )}
                           {backend.capabilities?.supports_tools && (
-                            <span title={tAgent('creator.basicInfo.supportsTools')}><Wrench className="h-4 w-4" /></span>
+                            <span title={tAgent('creator.basicInfo.supportsTools')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.tools', { defaultValue: 'Tools' })}</span>
                           )}
                           {backend.capabilities?.supports_thinking && (
-                            <span title={tAgent('creator.basicInfo.supportsThinking')}><Brain className="h-4 w-4" /></span>
+                            <span title={tAgent('creator.basicInfo.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.thinking', { defaultValue: 'Thinking' })}</span>
                           )}
                         </div>
                         <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
