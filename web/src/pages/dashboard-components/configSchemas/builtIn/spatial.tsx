@@ -604,7 +604,7 @@ export function getCustomLayerSchema(config: any, ctx: SchemaContext, u: Updater
                             variant="ghost"
                             size="sm"
                             onClick={() => updateConfig('backgroundImage')('')}
-                            className="h-8 text-destructive hover:text-destructive"
+                            className="h-8 text-error hover:text-error"
                           >
                             {t('visualDashboard.clear')}
                           </Button>

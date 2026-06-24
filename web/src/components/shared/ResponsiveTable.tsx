@@ -6,12 +6,14 @@
  */
 
 import { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Loader2 } from 'lucide-react'
+import { MoreVertical, Loader2, Inbox } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { EmptyStateCompact } from '@/components/shared/EmptyState'
 import { cn } from '@/lib/utils'
 import { textMini } from "@/design-system/tokens/typography"
 
@@ -78,8 +80,17 @@ export function ResponsiveTable({
   maxHeight = 'calc(100vh - 280px)',
   flexHeight = false,
 }: ResponsiveTableProps) {
+  const { t } = useTranslation('common')
   // Show empty state only on mobile when no data
   const showEmptyState = data.length === 0 && !loading
+
+  // Default empty state — uses shared EmptyStateCompact for consistency
+  const defaultEmpty = (
+    <EmptyStateCompact
+      icon={<Inbox className="h-5 w-5" />}
+      title={t('noData', { defaultValue: 'No data available' })}
+    />
+  )
 
   if (loading) {
     const skeletonRows = 8
@@ -89,7 +100,7 @@ export function ResponsiveTable({
         <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
           <table className={cn("w-full caption-bottom text-sm", className)}>
             <thead className="[&_tr]:border-b">
-              <tr className="bg-muted-30 rounded-t-lg">
+              <tr className="bg-muted-50 rounded-t-lg">
                 {columns.map((column) => (
                   <th
                     key={column.key}
@@ -158,7 +169,7 @@ export function ResponsiveTable({
             "[&_tr]:border-b",
             stickyHeader && "sticky top-0 z-10 bg-card"
           )}>
-            <tr className="bg-muted-30 rounded-t-xl">
+            <tr className="bg-muted-50 rounded-t-xl">
               {columns.map((column) => (
                 <th
                   key={column.key}
@@ -183,14 +194,7 @@ export function ResponsiveTable({
               <tr>
                 <td colSpan={columns.length + (actions && actions.length > 0 ? 1 : 0)} className="px-4 py-12">
                   <div className="flex flex-col items-center justify-center text-center">
-                    {emptyState || (
-                      <>
-                        <div className="w-12 h-12 rounded-full bg-muted-50 flex items-center justify-center mb-3">
-                          <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
-                        </div>
-                        <p className="text-sm text-muted-foreground">No data available</p>
-                      </>
-                    )}
+                    {emptyState || defaultEmpty}
                   </div>
                 </td>
               </tr>
@@ -254,7 +258,7 @@ export function ResponsiveTable({
                                 }}
                                 className={cn(
                                   "gap-2",
-                                  action.variant === 'destructive' && 'text-destructive focus:text-destructive'
+                                  action.variant === 'destructive' && 'text-error focus:text-error'
                                 )}
                                 disabled={action.disabled}
                               >
@@ -279,14 +283,7 @@ export function ResponsiveTable({
         {data.length === 0 ? (
           <Card className="overflow-hidden border-border">
             <div className="p-8">
-              {emptyState || (
-                <div className="flex flex-col items-center justify-center text-center">
-                  <div className="w-12 h-12 rounded-full bg-muted-50 flex items-center justify-center mb-3">
-                    <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">No data available</p>
-                </div>
-              )}
+              {emptyState || defaultEmpty}
             </div>
           </Card>
         ) : (
@@ -335,7 +332,7 @@ export function ResponsiveTable({
                               }}
                               className={cn(
                                 "gap-2",
-                                action.variant === 'destructive' && 'text-destructive focus:text-destructive'
+                                action.variant === 'destructive' && 'text-error focus:text-error'
                               )}
                               disabled={action.disabled}
                             >

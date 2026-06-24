@@ -121,10 +121,10 @@ export const valueCardSize = {
     // Balanced padding for standard display
     padding: 'p-3.5',
     headerPadding: 'pb-2',
-    // Text: standard hierarchy
-    titleText: 'text-sm',
-    labelText: 'text-xs',
-    valueText: 'text-base font-semibold',
+    // Text: stronger value/label contrast for data focus
+    titleText: 'text-xs uppercase tracking-wide',
+    labelText: 'text-[11px]',
+    valueText: 'text-lg font-semibold tracking-tight tabular-nums',
     // Icons: standard size
     iconSize: 'w-4 h-4',
     iconContainer: 'w-8 h-8',
@@ -138,10 +138,10 @@ export const valueCardSize = {
     // More padding for visual prominence
     padding: 'p-4.5',
     headerPadding: 'pb-2.5',
-    // Text: emphasize value, subtle increase elsewhere
-    titleText: 'text-sm',
+    // Text: emphasize value as the hero of the card
+    titleText: 'text-xs uppercase tracking-wide',
     labelText: 'text-xs',
-    valueText: 'text-xl font-bold',
+    valueText: 'text-2xl font-bold tracking-tight tabular-nums',
     // Icons: slightly larger for emphasis
     iconSize: 'w-5 h-5',
     iconContainer: 'w-10 h-10',
@@ -226,15 +226,29 @@ export type DashboardComponentSize = keyof typeof dashboardComponentSize
  * Base card styles for all dashboard components
  * Use these classes for consistent card appearance
  */
+/**
+ * Base card styles for all dashboard components.
+ *
+ * Uses an opaque tonal surface (bg-card) rather than glass. Glass/backdrop-blur
+ * is reserved for the navigation layer (TopNav, toolbars, drawers) per the
+ * Apple HIG / Material 3 layered-surface model: content stays on a solid,
+ * readable surface while only chrome floats above it. This also removes ~60
+ * backdrop-filter layers from a dense dashboard, a significant GPU saving
+ * (guidance: keep stacked backdrop-filter layers ≤ 2–3).
+ */
 export const dashboardCardBase = [
   // Layout
   'flex flex-col h-full w-full overflow-hidden',
-  // Glass morphism background
-  'bg-surface-glass backdrop-blur-md',
-  // Border & shadow
-  'border border-glass-border shadow-glass',
-  // Radius
+  // Opaque tonal surface — readable content layer
+  'bg-card',
+  // Border, subtle shadow, and a 1px top highlight that conveys material
+  // thickness (a quiet nod to physical surfacing, not flat-glass).
+  'border border-glass-border shadow-sm',
+  // Top edge highlight + hover lift, applied via the pseudo classes below.
+  // Using ring on hover keeps it crisp without extra DOM.
   'rounded-lg',
+  // Pseudo-element top highlight (set in index.css .dashboard-card-sheen)
+  'dashboard-card-sheen',
 ].join(' ')
 
 /**
@@ -244,10 +258,10 @@ export const dashboardCardBase = [
 export const dashboardCardHorizontal = [
   // Layout - horizontal instead of vertical
   'flex flex-row h-full w-full overflow-hidden',
-  // Glass morphism background
-  'bg-surface-glass backdrop-blur-md',
-  // Border & shadow
-  'border border-glass-border shadow-glass',
+  // Opaque tonal surface
+  'bg-card',
+  // Border & subtle shadow
+  'border border-glass-border shadow-sm',
   // Radius
   'rounded-lg',
 ].join(' ')
@@ -293,6 +307,18 @@ export const dashboardScrollableContent = [
  */
 export const cardBase = [
   'rounded-lg border bg-card shadow-sm',
+].join(' ')
+
+/**
+ * Interactive card — a clickable card surface (device/agent/extension cards,
+ * list rows, etc.). Unifies the previously scattered hover treatments
+ * (translate-y / shadow-md / border changes) into one consistent interaction.
+ * Opaque surface: no backdrop-blur, keeping content legible and GPU-light.
+ */
+export const interactiveCard = [
+  'bg-card rounded-lg border shadow-sm',
+  'cursor-pointer transition-all duration-200',
+  'hover:shadow-md hover:-translate-y-0.5',
 ].join(' ')
 
 /**

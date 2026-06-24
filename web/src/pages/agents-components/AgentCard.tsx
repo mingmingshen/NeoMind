@@ -92,7 +92,7 @@ export function AgentCard({
     <div
       className={cn(
         "group relative bg-card rounded-lg border transition-all cursor-pointer p-4 h-full",
-        "hover:border-border hover:shadow-md hover:-translate-y-0.5"
+        "hover:shadow-md hover:-translate-y-0.5"
       )}
       onClick={onClick}
     >
@@ -118,7 +118,7 @@ export function AgentCard({
         {/* Name and Status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-base font-semibold truncate">{agent.name}</h3>
+            <h3 className="text-base font-semibold truncate" title={agent.name}>{agent.name}</h3>
             <StatusIcon className={cn(
               "h-4 w-4 shrink-0",
               statusConfig.color,
@@ -157,7 +157,7 @@ export function AgentCard({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={(e) => { e.stopPropagation(); onDelete(agent); }}
-              className="text-destructive"
+              className="text-error"
             >
               <Trash2 className="h-4 w-4 mr-2" />
               {t('common:delete')}
@@ -170,14 +170,14 @@ export function AgentCard({
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 mb-3">
         {/* Execution Count */}
         <div className="text-center p-2 rounded-lg bg-muted-30">
-          <div className="text-lg font-semibold">{agent.execution_count}</div>
+          <div className="text-lg font-semibold tabular-nums">{agent.execution_count}</div>
           <div className="text-xs text-muted-foreground">{t('agents:card.executions')}</div>
         </div>
 
         {/* Success Rate */}
         <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className={cn(
-            "text-lg font-semibold",
+            "text-lg font-semibold tabular-nums",
             successRate >= 80 ? "text-success" : successRate >= 50 ? "text-warning" : "text-error"
           )}>
             {successRate}%
@@ -187,7 +187,7 @@ export function AgentCard({
 
         {/* Avg Duration */}
         <div className="text-center p-2 rounded-lg bg-muted-30">
-          <div className="text-lg font-semibold">
+          <div className="text-lg font-semibold tabular-nums">
             {agent.avg_duration_ms > 0 ? `${(agent.avg_duration_ms / 1000).toFixed(1)}s` : '-'}
           </div>
           <div className="text-xs text-muted-foreground">{t('agents:card.avgDuration')}</div>

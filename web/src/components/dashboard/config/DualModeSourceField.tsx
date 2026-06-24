@@ -201,7 +201,7 @@ export function DualModeSourceField({
               variant="ghost"
               size="sm"
               onClick={handleUnbind}
-              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-error"
             >
               <Unlink className="h-3.5 w-3.5" />
             </Button>
@@ -269,7 +269,7 @@ export function DualModeSourceField({
                     variant="ghost"
                     size="sm"
                     onClick={handleClearImage}
-                    className="h-7 text-destructive hover:text-destructive"
+                    className="h-7 text-error hover:text-error"
                   >
                     <Trash2 className="h-3 w-3 mr-1" />
                     {t('dualMode.clear')}

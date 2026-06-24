@@ -109,7 +109,7 @@ function CardWithDropdown({
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
       {children}
     </div>
   )

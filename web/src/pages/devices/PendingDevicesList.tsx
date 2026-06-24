@@ -621,7 +621,7 @@ export function PendingDevicesList({
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive hover:bg-error-light"
+                className="text-error hover:text-error hover:bg-error-light"
                 onClick={() => {
                   setShowApproveDialog(false)
                   if (selectedDraftForApproval) handleReject(selectedDraftForApproval)

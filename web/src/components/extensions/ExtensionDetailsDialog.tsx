@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -82,6 +82,7 @@ export function ExtensionDetailsDialog({
   // Logs state
   const [logs, setLogs] = useState<ExtensionLogEntry[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
+  const logListRef = useRef<HTMLDivElement>(null)
 
   // Section navigation
   const [activeSection, setActiveSection] = useState<SectionId>("overview")
@@ -347,6 +348,12 @@ export function ExtensionDetailsDialog({
 
     return () => clearInterval(interval)
   }, [activeSection, extension?.id, open, loadLogs, silentRefreshLogs])
+
+  // Auto-scroll log list to bottom when new logs arrive (latest at bottom)
+  useEffect(() => {
+    if (activeSection !== 'logs' || !logListRef.current) return
+    logListRef.current.scrollTop = logListRef.current.scrollHeight
+  }, [logs, activeSection])
 
   // Render config input based on type
   const renderConfigInput = (paramName: string, param: any) => {
@@ -867,7 +874,7 @@ export function ExtensionDetailsDialog({
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : error ? (
-                    <div className="text-center py-4 text-destructive text-xs">{error}</div>
+                    <div className="text-center py-4 text-error text-xs">{error}</div>
                   ) : data.length === 0 ? (
                     <div className="flex flex-col items-center py-6 text-muted-foreground text-xs">
                       <Database className="h-6 w-6 mb-1 opacity-50" />
@@ -912,11 +919,19 @@ export function ExtensionDetailsDialog({
 
   const getLogLevelColor = (level: string) => {
     switch (level) {
-      case 'error': return 'text-error'
-      case 'warn': return 'text-warning'
+      case 'error':
+      case 'fatal':
+        return 'text-error'
+      case 'warn':
+      case 'warning':
+        return 'text-warning'
+      case 'info':
+        return 'text-foreground'
       case 'debug':
-      case 'trace': return 'text-muted-foreground'
-      default: return 'text-foreground'
+      case 'trace':
+        return 'text-muted-foreground'
+      default:
+        return 'text-foreground'
     }
   }
 
@@ -924,21 +939,32 @@ export function ExtensionDetailsDialog({
     return (
       <div className="space-y-3">
         {/* Toolbar */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {logsLoading
               ? t("extensions:logs.loading", { defaultValue: "Loading..." })
-              : t("extensions:logs.count", { defaultValue: `{{count}} entries`, count: logs.length })
-                .replace('{{count}}', String(logs.length))
+              : t("extensions:logs.count", { count: logs.length, defaultValue: "{{count}} entries" })
             }
           </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="xs" onClick={loadLogs} disabled={logsLoading}>
-              <RefreshCw className="h-3 w-3 mr-1" />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              className="gap-1.5"
+              onClick={loadLogs}
+              disabled={logsLoading}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
               {t("extensions:logs.refresh", { defaultValue: "Refresh" })}
             </Button>
-            <Button variant="outline" size="xs" onClick={handleClearLogs} disabled={logsLoading || logs.length === 0}>
-              <Trash2 className="h-3 w-3 mr-1" />
+            <Button
+              variant="ghost"
+              size="xs"
+              className="gap-1.5 hover:bg-error-light hover:text-error"
+              onClick={handleClearLogs}
+              disabled={logsLoading || logs.length === 0}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
               {t("extensions:logs.clear", { defaultValue: "Clear" })}
             </Button>
           </div>
@@ -952,28 +978,35 @@ export function ExtensionDetailsDialog({
         ) : logs.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>{t("extensions:logs.noLogs", { defaultValue: "No log entries available." })}</p>
+            <p>{t("extensions:logs.noLogs", { defaultValue: "No log entries yet" })}</p>
           </div>
         ) : (
           <div className="border rounded-lg overflow-hidden font-mono text-xs">
-            <div className="max-h-[500px] overflow-y-auto">
-              {logs.map((log, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex gap-3 px-3 py-1.5 border-b border-border last:border-b-0 hover:bg-muted-30",
-                    log.level === 'error' && "bg-error-light",
-                  )}
-                >
-                  <span className="shrink-0 text-muted-foreground w-[70px]">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                  <span className={cn("shrink-0 w-[50px] uppercase font-semibold", getLogLevelColor(log.level))}>
-                    {log.level}
-                  </span>
-                  <span className="break-all whitespace-pre-wrap flex-1 min-w-0">{log.message}</span>
-                </div>
-              ))}
+            <div ref={logListRef} className="max-h-[500px] overflow-y-auto">
+              {logs.map((log, i) => {
+                const levelKey = (log.level || 'info').toLowerCase()
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      "flex gap-2 sm:gap-3 px-3 py-1.5 border-b border-border last:border-b-0 hover:bg-muted-30",
+                      levelKey === 'error' && "bg-error-light",
+                      levelKey === 'warn' && "bg-warning-light",
+                    )}
+                  >
+                    <span className="shrink-0 text-muted-foreground tabular-nums w-[64px] sm:w-[72px]">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
+                    <span className={cn(
+                      "shrink-0 w-[52px] sm:w-[56px] uppercase font-semibold tracking-wide text-[10px] leading-5",
+                      getLogLevelColor(levelKey)
+                    )}>
+                      {levelKey}
+                    </span>
+                    <span className="whitespace-pre-wrap break-words flex-1 min-w-0">{log.message}</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

@@ -167,7 +167,7 @@ export function MessagesTab({
                   <div className={`w-2 h-8 rounded-full ${card.color}`} />
                   <div>
                     <p className="text-sm text-muted-foreground">{card.label}</p>
-                    <p className="text-2xl font-bold">{card.value}</p>
+                    <p className="text-2xl font-semibold tabular-nums">{card.value}</p>
                   </div>
                 </div>
               </CardContent>

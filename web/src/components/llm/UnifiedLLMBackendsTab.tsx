@@ -530,7 +530,7 @@ export function UnifiedLLMBackendsTab({
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          className="h-8 w-8 p-0 text-error hover:text-error"
                           onClick={() => handleDelete(instance.id)}
                         >
                           <Trash2 className="h-4 w-4" />

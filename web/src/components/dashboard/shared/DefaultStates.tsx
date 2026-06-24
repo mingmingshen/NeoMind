@@ -96,7 +96,7 @@ export function ErrorState({
       className
     )}>
       <div className="text-center">
-        <p className="text-destructive text-sm font-medium">{message}</p>
+        <p className="text-error text-sm font-medium">{message}</p>
         {subMessage && (
           <p className="text-muted-foreground text-xs mt-1">{subMessage}</p>
         )}

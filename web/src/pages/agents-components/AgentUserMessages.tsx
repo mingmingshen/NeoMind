@@ -184,7 +184,7 @@ function MessageBubble({ message, onDelete }: MessageBubbleProps) {
         className={cn(
           "absolute top-2 right-2 opacity-0 group-hover:opacity-100",
           "transition-opacity p-1 rounded hover:bg-muted",
-          "text-muted-foreground hover:text-destructive"
+          "text-muted-foreground hover:text-error"
         )}
         title={t('common:delete')}
       >

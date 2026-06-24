@@ -293,10 +293,10 @@
   "logs": {
     "cleared": "Cleared",
     "loading": "Loading",
-    "count": "Count",
+    "count": "{{count}} entries",
     "refresh": "Refresh",
     "clear": "Clear",
-    "noLogs": "No Logs"
+    "noLogs": "No log entries yet"
   },
   "sections": {
     "overview": "Overview",

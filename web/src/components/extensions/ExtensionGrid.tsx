@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/shared/EmptyState"
 import {
   Search,
   X,
-  Filter,
   Grid3x3,
   Brain,
   Wrench,
@@ -262,35 +261,44 @@ export function ExtensionGrid({
 
   return (
     <div className="space-y-4">
-      {/* Enhanced Search and Filter Bar */}
-      <div className="flex flex-col gap-3">
-        {/* Search Bar */}
-        <div className="flex gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={t("searchPlaceholder", { defaultValue: "Search extensions by name, ID, or description..." })}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10 bg-background"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={t("searchPlaceholder", { defaultValue: "Search extensions by name, ID, or description..." })}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10 h-10 bg-background"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Results summary + Status filters on one row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Left: results count */}
+        <div className="flex items-center gap-3 text-sm min-w-0">
+          <span className="text-muted-foreground whitespace-nowrap">
+            {hasActiveFilters
+              ? t("filteredResults", { count: filteredExtensions.length, total: stats.total }).replace("{{count}}", String(filteredExtensions.length)).replace("{{total}}", String(stats.total))
+              : t("showingResults", { count: filteredExtensions.length, defaultValue: "Showing {{count}} extensions" }).replace("{{count}}", String(filteredExtensions.length))}
+          </span>
+          {!hasActiveFilters && stats.active > 0 && (
+            <span className="flex items-center gap-1 text-success whitespace-nowrap">
+              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              {stats.active} {t("active", { defaultValue: "active" })}
+            </span>
+          )}
         </div>
 
-        {/* Status Filter Pills */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground mr-2">
-            <Filter className="h-4 w-4" />
-            <span>{t("filterByStatus", { defaultValue: "Filter by:" })}</span>
-          </div>
+        {/* Right: status filter pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
           {statusOptions.map((option) => {
             const isSelected = statusFilter === option.value
             const count = option.value === "all" ? stats.total :
@@ -302,48 +310,33 @@ export function ExtensionGrid({
                 key={option.value}
                 onClick={() => setStatusFilter(option.value)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium transition-all",
+                  "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium transition-all border",
                   isSelected
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted-50 hover:bg-muted text-muted-foreground"
+                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                    : "bg-background hover:bg-muted-50 text-muted-foreground border-border hover:border-input"
                 )}
               >
                 {option.icon}
                 <span>{option.label}</span>
-                <Badge variant={isSelected ? "secondary" : "outline"} className={cn(
-                  "h-4 px-1 text-[10px]",
-                  isSelected && "bg-primary-foreground/20 text-primary-foreground"
+                <span className={cn(
+                  "inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded text-[10px] font-semibold tabular-nums",
+                  isSelected
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
                 )}>
                   {count}
-                </Badge>
+                </span>
               </button>
             )
           })}
           {hasActiveFilters && (
-            <Button variant="ghost" size="xs" onClick={clearFilters}>
+            <Button variant="ghost" size="xs" onClick={clearFilters} className="h-7">
               <X className="h-3 w-3 mr-1" />
               {t("clearFilters", { ns: "common" })}
             </Button>
           )}
         </div>
       </div>
-
-      {/* Results Summary */}
-      {!hasActiveFilters && (
-        <div className="flex items-center justify-between text-sm pt-1">
-          <div className="flex items-center gap-4">
-            <span className="text-muted-foreground">
-              {t("showingResults", { count: filteredExtensions.length, defaultValue: "Showing {{count}} extensions" }).replace("{{count}}", String(filteredExtensions.length))}
-            </span>
-            {stats.active > 0 && (
-              <span className="flex items-center gap-1 text-success">
-                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                {stats.active} {t("active", { defaultValue: "active" })}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Extension Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -362,17 +355,6 @@ export function ExtensionGrid({
           </div>
         ))}
       </div>
-
-      {/* Filter Active Summary */}
-      {hasActiveFilters && (
-        <div className="flex items-center justify-between text-sm pt-2 border-t">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">
-              {t("filteredResults", { count: filteredExtensions.length, total: stats.total }).replace("{{count}}", String(filteredExtensions.length)).replace("{{total}}", String(stats.total))}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

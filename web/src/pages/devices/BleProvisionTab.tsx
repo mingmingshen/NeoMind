@@ -256,7 +256,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
         </div>
         {/* Preparation guide */}
         <div className="max-w-sm w-full rounded-xl border bg-card p-4 space-y-2.5">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('devices:ble.prepTitle')}</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('devices:ble.prepTitle')}</p>
           <div className="flex items-start gap-2.5">
             <Check className="w-4 h-4 text-success mt-0.5 shrink-0" />
             <p className="text-sm">{t('devices:ble.prepStep1')}</p>

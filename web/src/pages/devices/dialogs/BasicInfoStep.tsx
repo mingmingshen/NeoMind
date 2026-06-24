@@ -78,7 +78,7 @@ export function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
       {/* Device Type (name) */}
       <div className="space-y-2">
         <Label htmlFor="device-type-name" className="text-sm font-medium">
-          Device Type <span className="text-destructive">*</span>
+          Device Type <span className="text-error">*</span>
         </Label>
         <Input
           id="device-type-name"
@@ -86,10 +86,10 @@ export function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
           onChange={(e) => handleNameChange(e.target.value)}
           onBlur={handleNameBlur}
           placeholder="e.g., Smart Temperature Sensor"
-          className={cn(errors.name && "border-destructive")}
+          className={cn(errors.name && "border-error")}
         />
         {errors.name && (
-          <p className="text-xs text-destructive flex items-center gap-1">
+          <p className="text-xs text-error flex items-center gap-1">
             <AlertCircle className="h-4 w-4" />
             {errors.name}
           </p>
@@ -99,20 +99,20 @@ export function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
       {/* Type ID (auto-generated from Device Type) */}
       <div className="space-y-2">
         <Label htmlFor="type-id" className="text-sm font-medium">
-          Type ID <span className="text-destructive">*</span>
+          Type ID <span className="text-error">*</span>
         </Label>
         <Input
           id="type-id"
           value={data.device_type || ""}
           onChange={(e) => onChange('device_type', e.target.value)}
           placeholder="smart_temp_sensor"
-          className={cn("font-mono", errors.device_type && "border-destructive")}
+          className={cn("font-mono", errors.device_type && "border-error")}
         />
         <p className="text-xs text-muted-foreground">
           Auto-generated from Device Type after you finish typing
         </p>
         {errors.device_type && (
-          <p className="text-xs text-destructive flex items-center gap-1">
+          <p className="text-xs text-error flex items-center gap-1">
             <AlertCircle className="h-4 w-4" />
             {errors.device_type}
           </p>
@@ -141,7 +141,7 @@ export function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
               {cat}
               <button
                 onClick={() => removeCategory(cat)}
-                className="ml-1 hover:text-destructive"
+                className="ml-1 hover:text-error"
               >
                 ×
               </button>

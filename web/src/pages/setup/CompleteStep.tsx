@@ -63,7 +63,7 @@ export function CompleteStep({ username, onComplete }: CompleteStepProps) {
 
             {/* Quick Start Guide */}
             <div className="text-left space-y-2 mb-6">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
                 {t('setup:nextSteps')}
               </div>
               {quickActions.map((action, i) => (

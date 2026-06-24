@@ -487,7 +487,7 @@ function FormField({
       )}
 
       {error && (
-        <p className="text-xs text-destructive">
+        <p className="text-xs text-error">
           {error.message as string || t('plugins:fieldError')}
         </p>
       )}

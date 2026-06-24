@@ -154,16 +154,16 @@ interface ComponentErrorFallbackProps {
 
 function ComponentErrorFallback({ className }: ComponentErrorFallbackProps) {
   return (
-    <Card className={cn('border-destructive-light', className)}>
+    <Card className={cn('border-error-light', className)}>
       <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center">
         <div className="w-8 h-8 rounded-full bg-destructive-light flex items-center justify-center mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-destructive">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-error">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
             <line x1="12" y1="9" x2="12" y2="13" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
         </div>
-        <p className="text-xs font-medium text-destructive">Component Error</p>
+        <p className="text-xs font-medium text-error">Component Error</p>
         <p className="text-[10px] text-muted-foreground mt-1">Check config or remove this component</p>
       </div>
     </Card>
@@ -626,9 +626,9 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // Show error state for dynamic/community component load failures (only after all retries exhausted)
   if ((isDynamic || isCommunity) && loadError && attemptCount >= MAX_LOAD_RETRIES) {
     return (
-      <Card className={cn('border-destructive', className)}>
+      <Card className={cn('border-error', className)}>
         <div className="flex items-center justify-center h-full min-h-[120px] p-4 text-center">
-          <div className="text-destructive">
+          <div className="text-error">
             <p className="font-medium">Component Load Failed</p>
             <p className="text-sm text-muted-foreground mt-1">
               {loadError.message}

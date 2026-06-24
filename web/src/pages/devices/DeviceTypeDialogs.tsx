@@ -471,7 +471,7 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
       {/* Device Type (name) */}
       <div className="space-y-2">
         <Label htmlFor="device-type-name" className="text-sm font-medium">
-          Device Type <span className="text-destructive">*</span>
+          Device Type <span className="text-error">*</span>
         </Label>
         <Input
           id="device-type-name"
@@ -479,10 +479,10 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
           onChange={(e) => handleNameChange(e.target.value)}
           onBlur={handleNameBlur}
           placeholder="e.g., Smart Temperature Sensor"
-          className={cn(errors.name && "border-destructive")}
+          className={cn(errors.name && "border-error")}
         />
         {errors.name && (
-          <p className="text-xs text-destructive flex items-center gap-1">
+          <p className="text-xs text-error flex items-center gap-1">
             <AlertCircle className="h-4 w-4" />
             {errors.name}
           </p>
@@ -492,20 +492,20 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
       {/* Type ID (auto-generated from Device Type) */}
       <div className="space-y-2">
         <Label htmlFor="type-id" className="text-sm font-medium">
-          Type ID <span className="text-destructive">*</span>
+          Type ID <span className="text-error">*</span>
         </Label>
         <Input
           id="type-id"
           value={data.device_type || ""}
           onChange={(e) => onChange('device_type', e.target.value)}
           placeholder="smart_temp_sensor"
-          className={cn("font-mono", errors.device_type && "border-destructive")}
+          className={cn("font-mono", errors.device_type && "border-error")}
         />
         <p className="text-xs text-muted-foreground">
           Auto-generated from Device Type after you finish typing
         </p>
         {errors.device_type && (
-          <p className="text-xs text-destructive flex items-center gap-1">
+          <p className="text-xs text-error flex items-center gap-1">
             <AlertCircle className="h-4 w-4" />
             {errors.device_type}
           </p>
@@ -534,7 +534,7 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
               {cat}
               <button
                 onClick={() => removeCategory(cat)}
-                className="ml-1 hover:text-destructive"
+                className="ml-1 hover:text-error"
               >
                 ×
               </button>
@@ -976,7 +976,7 @@ function DataDefinitionStep({
           className="font-mono text-xs min-h-[150px] resize-none"
         />
         {importError && (
-          <p className="text-xs text-destructive flex items-center gap-1">
+          <p className="text-xs text-error flex items-center gap-1">
             <AlertCircle className="h-4 w-4" />
             {importError}
           </p>
@@ -1247,11 +1247,11 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           {/* Summary Cards */}
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 sm:gap-4 mb-4 sm:mb-6">
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
-              <div className="text-xl sm:text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
+              <div className="text-xl sm:text-2xl font-semibold text-primary">{data.metrics?.length || 0}</div>
               <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Metrics</div>
             </div>
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
-              <div className="text-xl sm:text-2xl font-bold text-info">{data.commands?.length || 0}</div>
+              <div className="text-xl sm:text-2xl font-semibold text-info">{data.commands?.length || 0}</div>
               <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Commands</div>
             </div>
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
@@ -1381,7 +1381,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
             {validationResult && (
               <div className={cn(
                 "p-3 rounded-lg text-sm",
-                validationResult.valid ? "bg-success-light text-success dark:bg-success-light dark:text-success" : "bg-muted text-destructive"
+                validationResult.valid ? "bg-success-light text-success dark:bg-success-light dark:text-success" : "bg-muted text-error"
               )}>
                 <div className="flex items-center gap-2 font-medium">
                   {validationResult.valid ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
@@ -1457,7 +1457,7 @@ function MetricEditorCompact({
   return (
     <div className={cn(
       "rounded-lg border p-3 space-y-2",
-      error && "border-destructive"
+      error && "border-error"
     )}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -1555,7 +1555,7 @@ function MetricEditorCompact({
           </div>
         </div>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-xs text-error">{error}</p>}
     </div>
   )
 }
@@ -1721,7 +1721,7 @@ function CommandEditorCompact({
   return (
     <div className={cn(
       "rounded-lg border p-3 space-y-2",
-      error && "border-destructive"
+      error && "border-error"
     )}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -2087,7 +2087,7 @@ function CommandEditorCompact({
           </div>
         </div>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-xs text-error">{error}</p>}
     </div>
   )
 }
@@ -2288,7 +2288,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                     <ArrowDown className="h-4 w-4 sm:h-5 sm:w-5 text-success dark:text-success" />
                   </div>
                   <div>
-                    <div className="text-lg sm:text-2xl font-bold">{deviceType.metrics?.length || 0}</div>
+                    <div className="text-lg sm:text-2xl font-semibold">{deviceType.metrics?.length || 0}</div>
                     <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Native Metrics</div>
                   </div>
                 </div>
@@ -2299,7 +2299,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                     <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-accent-purple" />
                   </div>
                   <div>
-                    <div className="text-lg sm:text-2xl font-bold">{virtualMetrics.length || 0}</div>
+                    <div className="text-lg sm:text-2xl font-semibold">{virtualMetrics.length || 0}</div>
                     <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Virtual Metrics</div>
                   </div>
                 </div>
@@ -2310,7 +2310,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                     <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-info" />
                   </div>
                   <div>
-                    <div className="text-lg sm:text-2xl font-bold">{deviceType.commands?.length || 0}</div>
+                    <div className="text-lg sm:text-2xl font-semibold">{deviceType.commands?.length || 0}</div>
                     <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Commands</div>
                   </div>
                 </div>

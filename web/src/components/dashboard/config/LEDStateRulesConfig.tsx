@@ -246,7 +246,7 @@ export function LEDStateRulesConfig({
                       removeRule(index)
                     }}
                     disabled={readonly}
-                    className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                    className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-error"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

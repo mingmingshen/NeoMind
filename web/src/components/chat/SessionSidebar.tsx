@@ -216,7 +216,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                className="h-6 w-6 text-muted-foreground hover:text-error"
                 onClick={() => setClearAllDialogOpen(true)}
                 disabled={loading || sessions.length === 0}
                 title={t('clearHistory')}
@@ -303,7 +303,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
         <DialogContent className="flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Eraser className="h-5 w-5 text-destructive" />
+              <Eraser className="h-5 w-5 text-error" />
               {t('clearHistoryTitle', { ns: 'dashboard' })}
             </DialogTitle>
             <DialogDescription>

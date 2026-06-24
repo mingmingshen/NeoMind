@@ -1377,7 +1377,7 @@ export function AgentEditorFullScreen({
             {/* Name */}
             <div className="space-y-2">
               <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
-                {tAgent('creator.basicInfo.name')} <span className="text-destructive">*</span>
+                {tAgent('creator.basicInfo.name')} <span className="text-error">*</span>
               </Label>
               <Input
                 ref={nameInputRef}
@@ -1391,10 +1391,10 @@ export function AgentEditorFullScreen({
                   if (err) setFieldErrors(prev => ({ ...prev, name: err }))
                 }}
                 placeholder={tAgent('creator.basicInfo.namePlaceholder')}
-                className={cn(isMobile ? "h-12 text-base" : "h-10", fieldErrors.name && "border-destructive")}
+                className={cn(isMobile ? "h-12 text-base" : "h-10", fieldErrors.name && "border-error")}
               />
               {fieldErrors.name && (
-                <p className="text-sm text-destructive mt-1">{fieldErrors.name}</p>
+                <p className="text-sm text-error mt-1">{fieldErrors.name}</p>
               )}
             </div>
 
@@ -1412,7 +1412,7 @@ export function AgentEditorFullScreen({
             {/* Prompt */}
             <div className="space-y-3">
               <Label className="text-sm font-medium">
-                {tAgent('creator.basicInfo.requirement')} <span className="text-destructive">*</span>
+                {tAgent('creator.basicInfo.requirement')} <span className="text-error">*</span>
               </Label>
 
               {/* Quick templates */}
@@ -1441,10 +1441,10 @@ export function AgentEditorFullScreen({
                   if (err) setFieldErrors(prev => ({ ...prev, prompt: err }))
                 }}
                 placeholder={tAgent('creator.basicInfo.promptPlaceholder')}
-                className={cn("min-h-[140px] resize-y text-sm leading-relaxed", fieldErrors.prompt && "border-destructive")}
+                className={cn("min-h-[140px] resize-y text-sm leading-relaxed", fieldErrors.prompt && "border-error")}
               />
               {fieldErrors.prompt && (
-                <p className="text-sm text-destructive mt-1">{fieldErrors.prompt}</p>
+                <p className="text-sm text-error mt-1">{fieldErrors.prompt}</p>
               )}
 
               {/* AI Helper Tip */}
@@ -1473,7 +1473,7 @@ export function AgentEditorFullScreen({
                   ) : llmValid === true ? (
                     <Check className="h-4 w-4 mr-1 text-success" />
                   ) : llmValid === false ? (
-                    <span className="text-destructive">!</span>
+                    <span className="text-error">!</span>
                   ) : null}
                   {llmValidating ? 'Checking...' : llmValid === true ? 'OK' : llmValid === false ? 'Failed' : 'Test'}
                 </Button>
@@ -1515,7 +1515,7 @@ export function AgentEditorFullScreen({
                 </SelectContent>
               </Select>
               {llmValidationError && (
-                <p className="text-xs text-destructive">{llmValidationError}</p>
+                <p className="text-xs text-error">{llmValidationError}</p>
               )}
             </div>
 

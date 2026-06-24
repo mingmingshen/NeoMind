@@ -269,7 +269,7 @@ export const ComponentPreview = memo(function ComponentPreview({
           </div>
         ) : hasError ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
-            <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+            <AlertCircle className="h-8 w-8 text-error mb-2" />
             <p className="text-sm">{t('componentPreview.loadingFailed')}</p>
             <p className="text-xs text-muted-foreground mt-1">{t('componentPreview.usingStaticData')}</p>
           </div>

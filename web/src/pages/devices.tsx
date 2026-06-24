@@ -13,6 +13,7 @@ import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, type TabAction } from "@/components/shared"
 import { Upload, Download, Settings, Server, Layers, FileEdit, Cloud, ChevronLeft } from "lucide-react"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { Button } from "@/components/ui/button"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Switch } from "@/components/ui/switch"
@@ -850,12 +851,7 @@ export function DevicesPage() {
             />
           ) : (
             // Loading state for device detail
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center">
-                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
-                <p className="mt-4 text-muted-foreground">Loading device details...</p>
-              </div>
-            </div>
+            <LoadingState size="lg" className="h-64" text={t('common:loading')} />
           )
         ) : (
           // Tabbed View - Content only (tabs are in headerContent)

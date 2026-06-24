@@ -41,7 +41,7 @@ export function InstanceSelector({ onManageInstances }: InstanceSelectorProps) {
         "cursor-pointer hover:opacity-80 disabled:opacity-50",
         isOnline
           ? "bg-success-light text-success border border-success-light"
-          : "text-destructive bg-muted"
+          : "text-error bg-muted"
       )}
     >
       <Server className="h-4 w-4 shrink-0" />

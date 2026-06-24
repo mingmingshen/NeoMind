@@ -64,7 +64,7 @@ export const FieldMessage = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm font-medium text-destructive", className)}
+    className={cn("text-sm font-medium text-error", className)}
     {...props}
   />
 ))
@@ -139,13 +139,13 @@ const validationIcons = {
 }
 
 const validationColors = {
-  error: 'text-destructive',
+  error: 'text-error',
   warning: 'text-warning',
   success: 'text-success',
 }
 
 const validationBorderColors = {
-  error: 'border-destructive focus-visible:ring-destructive',
+  error: 'border-error focus-visible:ring-error',
   warning: 'border-warning focus-visible:ring-warning',
   success: 'border-success focus-visible:ring-success',
 }
@@ -207,9 +207,10 @@ export const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(({
   size = 'md',
   ...props
 }, ref) => {
+  const generatedId = React.useId()
+  const fieldId = id || generatedId
   const validationState = getValidationState(error, warning, success)
   const ValidationIcon = validationState ? validationIcons[validationState] : null
-  const fieldId = id || React.useId()
 
   // Get validation message to display
   const validationMessage = error || warning || success
@@ -261,7 +262,7 @@ export const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(({
         >
           {label}
           {required && (
-            <span className="text-destructive ml-0.5" aria-hidden="true">*</span>
+            <span className="text-error ml-0.5" aria-hidden="true">*</span>
           )}
         </Label>
         {tooltip && (

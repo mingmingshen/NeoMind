@@ -123,7 +123,7 @@ export function StyledBrandName({
         // Use foreground color that adapts to light/dark mode
         'text-foreground',
         // Orange shadow effect (3D) - top-right direction with #EB4C27
-        'drop-shadow-[1.5px_-1.5px_0_#EB4C27]',
+        'drop-shadow-[1.5px_-1.5px_0_var(--brand-shadow)]',
         // Transition
         'transition-all duration-200',
         sizeClasses[size],

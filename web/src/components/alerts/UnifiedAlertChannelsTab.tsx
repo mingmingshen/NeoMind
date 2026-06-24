@@ -617,7 +617,7 @@ export function UnifiedAlertChannelsTab({
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          className="h-8 w-8 p-0 text-error hover:text-error"
                           disabled={deletingId === instance.id}
                           onClick={async () => {
                             const confirmed = await confirm({

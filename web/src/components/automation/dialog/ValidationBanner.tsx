@@ -24,7 +24,7 @@ export interface ValidationBannerProps {
 }
 
 const bannerStyles = {
-  error: 'bg-muted border-destructive text-destructive',
+  error: 'bg-muted border-error text-error',
   warning: 'bg-warning-light border-warning text-warning',
   info: 'bg-info-light border-info text-info',
 }
@@ -106,7 +106,7 @@ export function ValidationBadge({ count, type = 'error', onClick }: ValidationBa
   if (count === 0) return null
 
   const styles = {
-    error: 'bg-destructive text-destructive-foreground',
+    error: 'bg-destructive text-error-foreground',
     warning: 'bg-warning text-primary-foreground',
     info: 'bg-info text-primary-foreground',
   }

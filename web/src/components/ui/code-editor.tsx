@@ -275,12 +275,12 @@ export function LegacyCodeEditor({
           "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
           "resize-y overflow-auto",
           readOnly && "cursor-not-allowed opacity-50",
-          error && "border-destructive"
+          error && "border-error"
         )}
         spellCheck={false}
       />
       {error && (
-        <p className="text-xs text-destructive mt-1">{error}</p>
+        <p className="text-xs text-error mt-1">{error}</p>
       )}
     </div>
   )

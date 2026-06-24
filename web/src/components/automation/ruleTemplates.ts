@@ -17,6 +17,8 @@ export interface RuleTemplate<TOptions> {
   labelKey: string
   descriptionKey: string
   icon: LucideIcon
+  /** Tailwind accent token base, e.g. 'error' → bg-error-light text-error */
+  accent?: 'primary' | 'success' | 'warning' | 'error' | 'info'
   build: (opts: TOptions) => Partial<Rule>
 }
 
@@ -37,6 +39,7 @@ export const RULE_TEMPLATES: RuleTemplate<DeviceOfflineTemplateOptions>[] = [
     labelKey: 'rules.templates.deviceOffline.label',
     descriptionKey: 'rules.templates.deviceOffline.description',
     icon: Unplug,
+    accent: 'warning',
     build: ({ deviceId, durationValue, durationUnit, severity }) => {
       const seconds = toSeconds(durationValue, durationUnit)
       return {

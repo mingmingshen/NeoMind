@@ -179,8 +179,8 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
 
         {/* Error Display */}
         {error && (
-          <Card className="p-4 bg-muted border-destructive">
-            <div className="flex items-center gap-2 text-destructive">
+          <Card className="p-4 bg-muted border-error">
+            <div className="flex items-center gap-2 text-error">
               <AlertTriangle className="h-4 w-4" />
               <span>{error}</span>
             </div>

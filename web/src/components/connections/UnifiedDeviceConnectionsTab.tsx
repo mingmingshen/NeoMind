@@ -875,7 +875,7 @@ export function UnifiedDeviceConnectionsTab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            className="h-8 w-8 p-0 text-error hover:text-error"
                             onClick={() => {
                               setEditingInstance(instance)
                               handleDelete(instance.id)
@@ -902,7 +902,7 @@ export function UnifiedDeviceConnectionsTab() {
                         </div>
                       )}
                       {instance.status?.error && (
-                        <div className="text-xs text-destructive">
+                        <div className="text-xs text-error">
                           {instance.status.error}
                         </div>
                       )}
@@ -961,7 +961,7 @@ export function UnifiedDeviceConnectionsTab() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
+                <AlertTriangle className="h-5 w-5 text-error" />
                 {t('plugins:deleteConfirmTitle', { defaultValue: 'Delete Broker?' })}
               </DialogTitle>
               <DialogDescription>

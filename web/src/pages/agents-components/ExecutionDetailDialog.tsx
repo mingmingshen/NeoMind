@@ -291,8 +291,8 @@ export function ExecutionDetailDialog({
           </div>
 
           {execution.error && (
-            <Card className="p-2 border-destructive bg-muted">
-              <div className="flex items-start gap-1.5 text-destructive">
+            <Card className="p-2 border-error bg-muted">
+              <div className="flex items-start gap-1.5 text-error">
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 <div className="text-xs break-words">{execution.error}</div>
               </div>

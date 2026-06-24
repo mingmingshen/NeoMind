@@ -297,7 +297,7 @@ export function AgentExecutionTimeline({
                                 </span>
                               )}
                               {execution.error && (
-                                <span className="flex items-center gap-1 text-destructive">
+                                <span className="flex items-center gap-1 text-error">
                                   <AlertCircle className="h-4 w-4" />
                                   <span className="truncate max-w-[200px]">{execution.error}</span>
                                 </span>

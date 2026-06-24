@@ -901,9 +901,9 @@ function ConditionCanvas({
               </div>
 
               {errors.condition && errors.condition.length > 0 && (
-                <div className="p-3 bg-error-light border border-destructive rounded-lg">
+                <div className="p-3 bg-error-light border border-error rounded-lg">
                   {errors.condition.map((err, i) => (
-                    <p key={i} className="text-sm text-destructive">• {err}</p>
+                    <p key={i} className="text-sm text-error">• {err}</p>
                   ))}
                 </div>
               )}
@@ -951,7 +951,7 @@ function ConditionCanvas({
               <div className="flex items-center justify-between mb-2">
                 <Label className="text-xs text-muted-foreground">
                   {tBuilder('cronExpression')}
-                  <span className="text-destructive ml-0.5">*</span>
+                  <span className="text-error ml-0.5">*</span>
                 </Label>
                 <button
                   type="button"
@@ -982,7 +982,7 @@ function ConditionCanvas({
                   aria-invalid={!!errors.cron}
                   className={cn(
                     "font-mono text-sm h-9",
-                    errors.cron && "border-destructive"
+                    errors.cron && "border-error"
                   )}
                 />
               ) : (
@@ -1632,14 +1632,14 @@ export function SimpleRuleBuilderSplit({
           <Field>
             <FieldLabel htmlFor="rule-name">
               {t('automation:ruleBuilder.ruleName')}
-              <span className="text-destructive ml-0.5">*</span>
+              <span className="text-error ml-0.5">*</span>
             </FieldLabel>
             <Input
               id="rule-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               aria-invalid={!!formErrors.name}
-              className={formErrors.name ? "border-destructive" : undefined}
+              className={formErrors.name ? "border-error" : undefined}
             />
             {formErrors.name && <FieldMessage>{formErrors.name}</FieldMessage>}
           </Field>
@@ -2621,7 +2621,7 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
           </div>
           {renderActionContent()}
           {error && (
-            <p className="text-xs text-destructive mt-2">{error}</p>
+            <p className="text-xs text-error mt-2">{error}</p>
           )}
         </div>
       </div>

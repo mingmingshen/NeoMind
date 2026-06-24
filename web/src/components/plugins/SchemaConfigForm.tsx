@@ -99,7 +99,7 @@ function FormField({ field, value, onChange }: FormFieldProps) {
         <div className="space-y-2">
           <Label htmlFor={id}>
             {field.label}
-            {field.required && <span className="text-destructive ml-1">*</span>}
+            {field.required && <span className="text-error ml-1">*</span>}
           </Label>
           <Input
             id={id}
@@ -122,7 +122,7 @@ function FormField({ field, value, onChange }: FormFieldProps) {
         <div className="space-y-2">
           <Label htmlFor={id}>
             {field.label}
-            {field.required && <span className="text-destructive ml-1">*</span>}
+            {field.required && <span className="text-error ml-1">*</span>}
           </Label>
           <Input
             id={id}
@@ -144,7 +144,7 @@ function FormField({ field, value, onChange }: FormFieldProps) {
         <div className="space-y-2">
           <Label htmlFor={id}>
             {field.label}
-            {field.required && <span className="text-destructive ml-1">*</span>}
+            {field.required && <span className="text-error ml-1">*</span>}
           </Label>
           <Input
             id={id}
@@ -187,7 +187,7 @@ function FormField({ field, value, onChange }: FormFieldProps) {
         <div className="space-y-2">
           <Label htmlFor={id}>
             {field.label}
-            {field.required && <span className="text-destructive ml-1">*</span>}
+            {field.required && <span className="text-error ml-1">*</span>}
           </Label>
           <Select
             value={currentValue as string ?? field.default}
@@ -221,7 +221,7 @@ function FormField({ field, value, onChange }: FormFieldProps) {
         <div className="space-y-2">
           <Label htmlFor={id}>
             {field.label}
-            {field.required && <span className="text-destructive ml-1">*</span>}
+            {field.required && <span className="text-error ml-1">*</span>}
           </Label>
           <Textarea
             id={id}
@@ -303,7 +303,7 @@ function FormField({ field, value, onChange }: FormFieldProps) {
         <div className="space-y-2">
           <Label htmlFor={id}>
             {field.label}
-            {field.required && <span className="text-destructive ml-1">*</span>}
+            {field.required && <span className="text-error ml-1">*</span>}
           </Label>
           <Input
             id={id}
@@ -364,7 +364,7 @@ function JsonFormField({ field, value, onChange, isReadOnly, id }: JsonFormField
       <div className="flex items-center justify-between">
         <Label htmlFor={id}>
           {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
+          {field.required && <span className="text-error ml-1">*</span>}
         </Label>
         {!isReadOnly && value && (
           <Button
@@ -388,12 +388,12 @@ function JsonFormField({ field, value, onChange, isReadOnly, id }: JsonFormField
         rows={4}
         className={cn(
           "font-mono text-xs",
-          jsonError && "border-destructive focus-visible:ring-destructive"
+          jsonError && "border-error focus-visible:ring-error"
         )}
         required={field.required}
       />
       {jsonError && (
-        <p className="text-xs text-destructive">{jsonError}</p>
+        <p className="text-xs text-error">{jsonError}</p>
       )}
       {field.description && !jsonError && (
         <p className="text-xs text-muted-foreground">{field.description}</p>
@@ -429,7 +429,7 @@ function MultiSelectFormField({ field, value, onChange, isReadOnly }: MultiSelec
     <div className="space-y-2">
       <Label>
         {field.label}
-        {field.required && value.length === 0 && <span className="text-destructive ml-1">*</span>}
+        {field.required && value.length === 0 && <span className="text-error ml-1">*</span>}
       </Label>
       <div className="flex flex-wrap gap-2">
         {field.options?.map((option) => {
@@ -498,7 +498,7 @@ function ArrayFormField({ field, value, onChange, isReadOnly, id }: ArrayFormFie
     <div className="space-y-2">
       <Label htmlFor={id}>
         {field.label}
-        {field.required && value.length === 0 && <span className="text-destructive ml-1">*</span>}
+        {field.required && value.length === 0 && <span className="text-error ml-1">*</span>}
       </Label>
       <div className="space-y-2">
         {value.map((item, index) => (
@@ -587,7 +587,7 @@ function ObjectFormField({ field, value, onChange, id }: ObjectFormFieldProps) {
         <Braces className="h-4 w-4 text-muted-foreground" />
         <Label>
           {field.label}
-          {field.required && <span className="text-destructive ml-1">*</span>}
+          {field.required && <span className="text-error ml-1">*</span>}
         </Label>
       </div>
       <div className="space-y-2 pl-6 border-l-2 border-muted">
@@ -646,7 +646,7 @@ function KeyValueFormField({ field, value, onChange, isReadOnly, id }: KeyValueF
     <div className="space-y-2">
       <Label htmlFor={id}>
         {field.label}
-        {field.required && Object.keys(value).length === 0 && <span className="text-destructive ml-1">*</span>}
+        {field.required && Object.keys(value).length === 0 && <span className="text-error ml-1">*</span>}
       </Label>
       <div className="space-y-2">
         {Object.entries(value).map(([key, val]) => (

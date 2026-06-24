@@ -803,7 +803,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
               {/* Error state */}
               {llamacppServerInfo && llamacppServerInfo.status !== "ok" && (
-                <div className="p-3 bg-muted rounded-lg text-sm text-destructive">
+                <div className="p-3 bg-muted rounded-lg text-sm text-error">
                   {t("plugins:llm.serverUnreachable", { defaultValue: "Server unreachable" })}: {llamacppServerInfo.health.status}
                 </div>
               )}

@@ -240,7 +240,7 @@ export function ExtensionUploadDialog({
         className={cn(
           "border-2 border-dashed rounded-lg p-6 text-center transition-colors",
           progress?.status === 'error'
-            ? 'border-destructive bg-muted cursor-pointer hover:border-destructive'
+            ? 'border-error bg-muted cursor-pointer hover:border-error'
             : 'cursor-pointer hover:border-border'
         )}
         onClick={() => {
@@ -264,14 +264,14 @@ export function ExtensionUploadDialog({
             {progress.status === 'error' ? (
               // Error state - show error with retry option
               <>
-                <div className="flex items-center justify-center gap-2 text-destructive">
+                <div className="flex items-center justify-center gap-2 text-error">
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span className="text-sm font-medium">{t('extensions:installFailed')}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{progress.filename}</p>
-                <div className="text-destructive text-xs bg-muted rounded p-2">
+                <div className="text-error text-xs bg-muted rounded p-2">
                   {progress.message || t('extensions:installFailed')}
                 </div>
                 <p className="text-xs text-muted-foreground">

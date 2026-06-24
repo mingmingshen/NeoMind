@@ -422,7 +422,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                     {t('userMenu.about')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                  <DropdownMenuItem onClick={handleLogout} className="text-error focus:text-error">
                     <LogOut className="h-4 w-4 mr-2" />
                     {t('logout')}
                   </DropdownMenuItem>

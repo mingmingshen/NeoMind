@@ -77,7 +77,7 @@ const ActionButton = memo(function ActionButton({
         'cursor-pointer',
         'touch-action-manipulation',
         variant === 'destructive'
-          ? 'bg-muted text-destructive active:bg-muted'
+          ? 'bg-muted text-error active:bg-muted'
           : 'bg-secondary text-secondary-foreground active:bg-secondary-hover',
         className
       )}
@@ -122,7 +122,7 @@ const CompactButton = memo(function CompactButton({
         'cursor-pointer',
         'touch-action-manipulation',
         variant === 'destructive'
-          ? 'bg-muted text-destructive active:bg-muted'
+          ? 'bg-muted text-error active:bg-muted'
           : 'bg-secondary text-secondary-foreground active:bg-secondary-hover'
       )}
       aria-label={label}

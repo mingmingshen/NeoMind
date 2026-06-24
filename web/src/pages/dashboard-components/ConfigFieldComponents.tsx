@@ -142,7 +142,7 @@ export function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
             variant="ghost"
             size="sm"
             onClick={handleClear}
-            className="h-8 text-destructive hover:text-destructive"
+            className="h-8 text-error hover:text-error"
           >
             <Trash2 className="h-4 w-4 mr-1" />
             {t('visualDashboard.clear')}

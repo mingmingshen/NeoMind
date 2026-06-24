@@ -450,7 +450,7 @@ function VariablesRail({
               <span>{tab.label}</span>
               {tab.count > 0 && (
                 <span className={cn(
-                  "rounded-full min-w-[15px] text-center text-[9px] leading-[15px] px-1 font-semibold",
+                  "inline-flex items-center justify-center rounded-full min-w-[15px] h-[15px] text-[9px] leading-none px-1 font-semibold",
                   activeTab === tab.id
                     ? "bg-muted text-foreground"
                     : "bg-muted text-muted-foreground"
@@ -868,7 +868,7 @@ function TestStrip({
           </div>
           <div className="rounded-md bg-muted-30 p-2 max-h-40 overflow-auto">
             {testError && (
-              <div className="p-1.5 bg-muted border border-destructive rounded text-xs text-destructive font-mono">
+              <div className="p-1.5 bg-muted border border-error rounded text-xs text-error font-mono">
                 {testError}
               </div>
             )}
@@ -993,7 +993,7 @@ function TransformWorkspace({
           />
           {formErrors.code && (
             <div className="px-3 pb-2 shrink-0">
-              <p className="text-xs text-destructive">{formErrors.code}</p>
+              <p className="text-xs text-error">{formErrors.code}</p>
             </div>
           )}
         </div>
@@ -1313,7 +1313,7 @@ export function TransformBuilder({
       {/* Name */}
       <Field>
         <FieldLabel>
-          {tBuilder('name')} <span className="text-destructive">*</span>
+          {tBuilder('name')} <span className="text-error">*</span>
         </FieldLabel>
         <Input
           value={name}
@@ -1379,10 +1379,10 @@ export function TransformBuilder({
           value={outputPrefix}
           onChange={e => setOutputPrefix(e.target.value)}
           placeholder={tBuilder('outputPrefixPlaceholder')}
-          className={cn(formErrors.outputPrefix && "border-destructive")}
+          className={cn(formErrors.outputPrefix && "border-error")}
         />
         {formErrors.outputPrefix && (
-          <p className="text-xs text-destructive">{formErrors.outputPrefix}</p>
+          <p className="text-xs text-error">{formErrors.outputPrefix}</p>
         )}
         <FieldDescription>{tBuilder('outputPrefixHint')}</FieldDescription>
       </Field>

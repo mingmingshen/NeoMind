@@ -66,15 +66,15 @@ function MetricTile({
     <div className="rounded-lg border bg-muted-30 p-4 space-y-2 transition-colors hover:bg-muted-50">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="h-3.5 w-3.5" />
-        <span className="uppercase tracking-wider truncate">{label}</span>
+        <span className="uppercase tracking-wide truncate">{label}</span>
       </div>
       <div
-        className={`text-2xl font-bold leading-none truncate ${mono ? "font-mono" : ""}`}
+        className={`text-2xl font-semibold leading-none truncate ${mono ? "font-mono" : ""}`}
       >
         {value}
       </div>
       {/* Unified secondary line: always rendered (preserves vertical rhythm across tiles) */}
-      <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider truncate min-h-[1rem]">
+      <div className="text-xs text-muted-foreground font-mono uppercase tracking-wide truncate min-h-[1rem]">
         {sub ?? "\u00A0"}
       </div>
     </div>
@@ -108,10 +108,10 @@ function MemoryGauge({
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <HardDrive className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wider">{memoryLabel}</span>
+            <span className="uppercase tracking-wide">{memoryLabel}</span>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-bold leading-none">
+            <span className="font-mono text-2xl font-semibold leading-none">
               {pct}
               <span className="text-lg text-muted-foreground">%</span>
             </span>
@@ -121,7 +121,7 @@ function MemoryGauge({
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xs text-muted-foreground uppercase tracking-wider">
+          <div className="text-xs text-muted-foreground uppercase tracking-wide">
             {availableLabel}
           </div>
           <div className="font-mono text-sm font-medium">{formatBytes(available)}</div>
@@ -141,7 +141,7 @@ function MemoryGauge({
           />
         ))}
       </div>
-      <div className="flex justify-between text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+      <div className="flex justify-between text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
         <span>{usedLabel}: {formatBytes(used)}</span>
       </div>
     </div>
@@ -310,7 +310,7 @@ export function AboutTab() {
 
         <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-6">
           <div className="space-y-3 min-w-0">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground font-mono">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground font-mono">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 animate-ping" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
@@ -326,10 +326,10 @@ export function AboutTab() {
           </div>
 
           <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
-            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.2em]">
+            <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
               build
             </div>
-            <div className="font-mono text-2xl md:text-3xl font-bold text-brand leading-none">
+            <div className="font-mono text-2xl md:text-3xl font-semibold text-brand leading-none">
               [{heroVersion}]
             </div>
           </div>
@@ -459,7 +459,7 @@ export function AboutTab() {
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-medium truncate">{gpu.name}</div>
-                          <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
+                          <div className="text-xs text-muted-foreground font-mono uppercase tracking-wide">
                             {gpu.vendor}
                           </div>
                         </div>
@@ -469,7 +469,7 @@ export function AboutTab() {
                           <div className="font-mono text-base font-bold leading-none">
                             {(gpu.total_memory_mb / 1024).toFixed(1)}
                           </div>
-                          <div className="text-[10px] text-muted-foreground uppercase tracking-[0.16em] mt-1">
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">
                             GB VRAM
                           </div>
                         </div>

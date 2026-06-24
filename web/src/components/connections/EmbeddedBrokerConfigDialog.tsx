@@ -351,7 +351,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      className="h-8 w-8 text-error hover:text-error"
                       onClick={() => handleDeleteCredential(cred.username)}
                       aria-label={t('broker.deleteUser')}
                     >

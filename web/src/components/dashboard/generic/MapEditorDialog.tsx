@@ -282,7 +282,7 @@ export function MapEditorDialog({
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 text-destructive"
+            className="h-6 w-6 text-error"
             onClick={(e) => {
               e.stopPropagation()
               handleRemoveBinding(binding.id)

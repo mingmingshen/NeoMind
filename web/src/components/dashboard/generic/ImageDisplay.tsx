@@ -244,7 +244,7 @@ export const ImageDisplay = memo(function ImageDisplay({
       <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
         <div className="relative">
           <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-10 w-10' : size === 'md' ? 'h-14 w-14' : 'h-18 w-18')} />
-          <AlertTriangle className="absolute -bottom-1 -right-1 text-destructive bg-background rounded-full h-5 w-5" />
+          <AlertTriangle className="absolute -bottom-1 -right-1 text-error bg-background rounded-full h-5 w-5" />
         </div>
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageDisplay.failedToLoad')}</p>

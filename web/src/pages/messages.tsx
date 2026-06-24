@@ -638,7 +638,7 @@ export default function MessagesPage() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('messages.severity.label')}</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('messages.severity.label')}</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {(['emergency', 'critical', 'warning', 'info'] as MessageSeverity[]).map((sev) => {
@@ -677,7 +677,7 @@ export default function MessagesPage() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('messages.status.label')}</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('messages.status.label')}</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {(['active', 'acknowledged', 'resolved', 'archived'] as MessageStatus[]).map((stat) => {
@@ -711,7 +711,7 @@ export default function MessagesPage() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('messages.category.label')}</span>
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('messages.category.label')}</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {availableCategories.map((cat) => {
@@ -922,7 +922,7 @@ export default function MessagesPage() {
                                 </DropdownMenuItem>
                               )}
                               <DropdownMenuItem
-                                className="text-destructive"
+                                className="text-error"
                                 onClick={(e) => { e.stopPropagation(); handleDelete(message.id) }}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -1246,7 +1246,7 @@ export default function MessagesPage() {
                                   )}
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    className="text-destructive"
+                                    className="text-error"
                                     onClick={(e) => { e.stopPropagation(); handleDeleteChannel(channel.name) }}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -1849,7 +1849,7 @@ export default function MessagesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0 ml-2"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-error shrink-0 ml-2"
                       onClick={() => handleRemoveRecipient(email)}
                     >
                       <X className="h-4 w-4" />

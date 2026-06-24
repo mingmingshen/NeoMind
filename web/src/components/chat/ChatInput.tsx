@@ -67,7 +67,7 @@ const ImagePreviews = memo(function ImagePreviews({
           <button
             type="button"
             onClick={() => onRemove(idx)}
-            className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-error-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X className="h-4 w-4" />
           </button>
@@ -310,7 +310,7 @@ export const ChatInput = memo(function ChatInput({
               onClick={handleCancel}
               className={cn(
                 "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
+                "bg-destructive hover:bg-destructive-hover text-error-foreground"
               )}
               title="Cancel request"
             >

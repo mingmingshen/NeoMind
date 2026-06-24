@@ -300,7 +300,7 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
                     )}
                   </div>
                   {passwordErrors.length > 0 && (
-                    <div className="text-xs text-destructive">{passwordErrors[0]}</div>
+                    <div className="text-xs text-error">{passwordErrors[0]}</div>
                   )}
                 </div>
               )}
@@ -328,7 +328,7 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
 
               {/* Error */}
               {error && (
-                <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
+                <div className="flex items-start gap-2 text-sm text-error bg-muted rounded-md p-3">
                   <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>

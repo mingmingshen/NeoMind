@@ -278,7 +278,7 @@ export function DashboardTabBar({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleDeleteCurrent}
-                  className="gap-2 text-destructive focus:text-destructive"
+                  className="gap-2 text-error focus:text-error"
                 >
                   <Trash2 className="h-4 w-4" />
                   {t('tabBar.delete')}
@@ -431,7 +431,7 @@ export function DashboardTabBar({
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={handleDeleteCurrent}
-                          className="text-destructive focus:text-destructive"
+                          className="text-error focus:text-error"
                         >
                           <Trash2 className="h-4 w-4" />
                           {t('tabBar.delete')}

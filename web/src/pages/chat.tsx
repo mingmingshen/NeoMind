@@ -1281,7 +1281,7 @@ export function ChatPage() {
                     />
                     <button
                       type="button"
-                      className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-error-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => removeAttachedImage(index)}
                     >
                       <X className="h-2 w-2" />
@@ -1456,7 +1456,7 @@ export function ChatPage() {
                   onClick={handleCancelRequest}
                   className={cn(
                     "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                    "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
+                    "bg-destructive hover:bg-destructive-hover text-error-foreground"
                   )}
                   title="Cancel request"
                 >

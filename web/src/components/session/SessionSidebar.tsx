@@ -511,7 +511,7 @@ export function SessionSidebar({
                                 onClick={(e) => handleDeleteClick(e, session.sessionId)}
                                 disabled={isDeleting}
                                 className={cn(
-                                  "h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors",
+                                  "h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-error transition-colors",
                                   isDeleting && "opacity-50"
                                 )}
                                 title={t('delete')}
@@ -576,7 +576,7 @@ export function SessionSidebar({
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleConfirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive-hover"
+                className="bg-destructive text-error-foreground hover:bg-destructive-hover"
               >
                 {t('delete')}
               </AlertDialogAction>
@@ -625,7 +625,7 @@ export function SessionSidebar({
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive-hover"
+              className="bg-destructive text-error-foreground hover:bg-destructive-hover"
             >
               {t('delete')}
             </AlertDialogAction>

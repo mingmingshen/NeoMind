@@ -640,14 +640,14 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           {journalRecords.length > 0 && (
             <div className="flex flex-col items-center p-3 rounded-lg bg-info-light border border-info">
               <History className="h-4 w-4 text-info mb-1" />
-              <span className="text-lg font-bold text-info">{journalRecords.length}</span>
+              <span className="text-lg font-semibold text-info">{journalRecords.length}</span>
               <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.executions')}</span>
             </div>
           )}
           {knowledgeFiles.length > 0 && (
             <div className="flex flex-col items-center p-3 rounded-lg bg-accent-purple-light border border-accent-purple-light">
               <FileText className="h-4 w-4 text-accent-purple mb-1" />
-              <span className="text-lg font-bold text-accent-purple">{knowledgeFiles.length}</span>
+              <span className="text-lg font-semibold text-accent-purple">{knowledgeFiles.length}</span>
               <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.knowledgeFiles')}</span>
             </div>
           )}

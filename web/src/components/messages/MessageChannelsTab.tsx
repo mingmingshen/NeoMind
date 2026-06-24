@@ -268,7 +268,7 @@ export function MessageChannelsTab({
                 <div className="w-2 h-8 rounded-full bg-info" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('messages.channels.total')}</p>
-                  <p className="text-2xl font-bold">{stats.total || channels.length}</p>
+                  <p className="text-2xl font-semibold tabular-nums">{stats.total || channels.length}</p>
                 </div>
               </div>
             </CardContent>
@@ -279,7 +279,7 @@ export function MessageChannelsTab({
                 <div className="w-2 h-8 rounded-full bg-success" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('messages.channels.enabled')}</p>
-                  <p className="text-2xl font-bold">{stats.enabled || channels.filter(c => c.enabled).length}</p>
+                  <p className="text-2xl font-semibold tabular-nums">{stats.enabled || channels.filter(c => c.enabled).length}</p>
                 </div>
               </div>
             </CardContent>
@@ -290,7 +290,7 @@ export function MessageChannelsTab({
                 <div className="w-2 h-8 rounded-full bg-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('messages.channels.types')}</p>
-                  <p className="text-2xl font-bold">{channelTypes.length}</p>
+                  <p className="text-2xl font-semibold tabular-nums">{channelTypes.length}</p>
                 </div>
               </div>
             </CardContent>

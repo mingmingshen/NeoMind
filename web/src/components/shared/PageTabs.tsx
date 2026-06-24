@@ -130,7 +130,7 @@ export function PageTabsBar({
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div
             className={cn(
-              'inline-flex w-auto flex-wrap overflow-visible rounded-md bg-muted p-0.5',
+              'inline-flex w-auto flex-wrap overflow-visible rounded-lg border border-border bg-muted-30 p-1',
               tabsClassName
             )}
           >
@@ -144,7 +144,7 @@ export function PageTabsBar({
                   className={cn(
                     'inline-flex items-center justify-center gap-2 rounded-sm px-4 py-1.5 h-9 text-sm font-medium whitespace-nowrap transition-all',
                     isActive
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-card text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
@@ -265,7 +265,7 @@ export function PageTabs({
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div
                 className={cn(
-                  'inline-flex w-auto flex-wrap overflow-visible rounded-md bg-muted p-0.5',
+                  'inline-flex w-auto flex-wrap overflow-visible rounded-lg border border-border bg-muted-30 p-1',
                   tabsClassName
                 )}
               >
@@ -279,7 +279,7 @@ export function PageTabs({
                       className={cn(
                         'inline-flex items-center justify-center gap-2 rounded-sm px-4 py-1.5 h-9 text-sm font-medium whitespace-nowrap transition-all',
                         isActive
-                          ? 'bg-background text-foreground shadow-sm'
+                          ? 'bg-card text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
@@ -681,14 +681,14 @@ function TabActionsOverflow({
               disabled={action.disabled || action.loading}
               className={cn(
                 'gap-2',
-                isDestructive && 'text-destructive focus:text-destructive'
+                isDestructive && 'text-error focus:text-error'
               )}
             >
               {icon && (
                 <span
                   className={cn(
                     'flex h-4 w-4 shrink-0 items-center justify-center',
-                    isDestructive && 'text-destructive'
+                    isDestructive && 'text-error'
                   )}
                 >
                   {icon}

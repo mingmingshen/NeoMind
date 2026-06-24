@@ -279,8 +279,8 @@ export function UnifiedFormDialog({
 
             {/* Error message */}
             {submitError && (
-              <div className="px-4 py-3 bg-muted border-t border-destructive">
-                <div className="flex items-center gap-2 text-sm text-destructive">
+              <div className="px-4 py-3 bg-muted border-t border-error">
+                <div className="flex items-center gap-2 text-sm text-error">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{submitError}</span>
                 </div>
@@ -371,8 +371,8 @@ export function UnifiedFormDialog({
 
           {/* Error message */}
           {submitError && (
-            <div className="px-6 py-3 bg-muted border-t border-destructive">
-              <div className="flex items-center gap-2 text-sm text-destructive">
+            <div className="px-6 py-3 bg-muted border-t border-error">
+              <div className="flex items-center gap-2 text-sm text-error">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{submitError}</span>
               </div>

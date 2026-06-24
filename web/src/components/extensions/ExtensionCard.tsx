@@ -37,7 +37,6 @@ export function ExtensionCard({
   const hasError = extension.state === "Error"
   const hasWarning = extension.state === "Warning"
   const isFailed = extension.state === "Failed" || extension.state === "Stopped"
-  const isHealthy = !hasError && !hasWarning && !isFailed
 
   const displayState = hasError
     ? t('error', { defaultValue: 'Error' })
@@ -53,17 +52,25 @@ export function ExtensionCard({
       tabIndex={0}
       onClick={() => onDetails?.()}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onDetails?.() } }}
-      className="group border-border hover:border-primary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm flex flex-col cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className={cn(
+        "group h-full transition-all duration-200 overflow-hidden flex flex-col cursor-pointer",
+        "hover:shadow-md hover:-translate-y-0.5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      )}
     >
       <CardContent className="p-4 flex flex-col flex-1">
-        {/* Header */}
+        {/* Header: status-tinted icon + name + state + actions */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3 min-w-0">
+            {/* Icon with status-tinted background (mirrors AgentCard) */}
             <div className={cn(
-              "relative p-2 rounded-lg transition-all shrink-0",
-              isHealthy ? "bg-primary text-primary-foreground" : "bg-muted",
+              "relative w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+              hasError ? "bg-error-light text-error" :
+              hasWarning ? "bg-warning-light text-warning" :
+              isFailed ? "bg-muted text-muted-foreground" :
+              "bg-success-light text-success",
             )}>
-              <Code2 className="h-4 w-4" />
+              <Code2 className="h-5 w-5" />
               {/* Status indicator dot */}
               <div className={cn(
                 "absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background",
@@ -72,7 +79,7 @@ export function ExtensionCard({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-medium text-sm truncate">{extension.name}</h3>
+                <h3 className="font-semibold text-sm truncate" title={extension.name}>{extension.name}</h3>
                 <span className={cn(
                   textNano, "px-1.5 py-0.5 rounded-full shrink-0",
                   hasError ? "bg-error-light text-error" :
@@ -84,7 +91,7 @@ export function ExtensionCard({
                 </span>
               </div>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className={cn(textMini, "text-muted-foreground font-mono truncate max-w-[100px]")}>{extension.id}</span>
+                <span className={cn(textMini, "text-muted-foreground font-mono truncate max-w-[100px]")} title={extension.id}>{extension.id}</span>
                 {extension.version && (
                   <span className={cn(textNano, "text-muted-foreground shrink-0")}>v{extension.version}</span>
                 )}
@@ -102,7 +109,7 @@ export function ExtensionCard({
                 <RefreshCw className="mr-2 h-4 w-4" />
                 {t('card.reload', { defaultValue: 'Reload' })}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onUninstall?.()} className="text-destructive">
+              <DropdownMenuItem onClick={() => onUninstall?.()} className="text-error">
                 <Trash className="mr-2 h-4 w-4" />
                 {t('card.uninstall', { defaultValue: "Uninstall" })}
               </DropdownMenuItem>
@@ -110,35 +117,33 @@ export function ExtensionCard({
           </DropdownMenu>
         </div>
 
-        {/* Capabilities Badge */}
-        <div className="flex items-center gap-2 mb-3">
+        {/* Description */}
+        {extension.description && (
+          <p className="text-xs text-muted-foreground line-clamp-2 mb-3 leading-relaxed">
+            {extension.description}
+          </p>
+        )}
+
+        {/* Footer: capabilities + author (compact, single row) */}
+        <div className="mt-auto flex items-center gap-2 pt-2">
           {extension.commands?.length > 0 && (
-            <span className={cn(textMini, "text-muted-foreground flex items-center gap-1")}>
+            <span className={cn(textMini, "text-muted-foreground flex items-center gap-1 shrink-0")}>
               <Terminal className="h-3 w-3" />
               {extension.commands.length} {t('commandsLabel', { defaultValue: 'commands' })}
             </span>
           )}
           {extension.metrics?.length > 0 && (
-            <span className={cn(textMini, "text-muted-foreground flex items-center gap-1")}>
+            <span className={cn(textMini, "text-muted-foreground flex items-center gap-1 shrink-0")}>
               <Database className="h-3 w-3" />
               {extension.metrics.length} {t('metricsLabel', { defaultValue: 'metrics' })}
             </span>
           )}
+          {extension.author && (
+            <span className={cn(textNano, "text-muted-foreground truncate ml-auto")} title={extension.author}>
+              {t('card.byAuthor', { author: extension.author })}
+            </span>
+          )}
         </div>
-
-        {/* Description */}
-        {extension.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2 h-8 mb-3 leading-4">
-            {extension.description}
-          </p>
-        )}
-
-        {/* Author */}
-        {extension.author && (
-          <p className={cn(textNano, "text-muted-foreground mt-auto pt-2")}>
-            {t('card.byAuthor', { author: extension.author })}
-          </p>
-        )}
       </CardContent>
     </Card>
   )

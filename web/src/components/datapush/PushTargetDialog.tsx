@@ -493,15 +493,15 @@ export function PushTargetDialog() {
               {/* ── Name ── */}
               <div className="space-y-2">
                 <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
-                  {t('common:dataPush.name', 'Name')} <span className="text-destructive">*</span>
+                  {t('common:dataPush.name', 'Name')} <span className="text-error">*</span>
                 </Label>
                 <Input
                   value={name}
                   onChange={(e) => { setName(e.target.value); setNameError(null) }}
                   placeholder={t('common:dataPush.namePlaceholder', 'My Push Target')}
-                  className={cn(isMobile ? "h-12 text-base" : "h-10", nameError && "border-destructive")}
+                  className={cn(isMobile ? "h-12 text-base" : "h-10", nameError && "border-error")}
                 />
-                {nameError && <p className="text-sm text-destructive mt-1">{nameError}</p>}
+                {nameError && <p className="text-sm text-error mt-1">{nameError}</p>}
               </div>
 
               {/* ── Target Config ── */}
@@ -509,16 +509,16 @@ export function PushTargetDialog() {
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
-                      {t('common:dataPush.webhookUrl', 'Webhook URL')} <span className="text-destructive">*</span>
+                      {t('common:dataPush.webhookUrl', 'Webhook URL')} <span className="text-error">*</span>
                     </Label>
                     <Input
                       type="url"
                       value={webhookUrl}
                       onChange={(e) => { setWebhookUrl(e.target.value); setWebhookUrlError(null) }}
                       placeholder="https://example.com/webhook"
-                      className={cn(isMobile ? "h-12 text-base" : "h-10", webhookUrlError && "border-destructive")}
+                      className={cn(isMobile ? "h-12 text-base" : "h-10", webhookUrlError && "border-error")}
                     />
-                    {webhookUrlError && <p className="text-sm text-destructive mt-1">{webhookUrlError}</p>}
+                    {webhookUrlError && <p className="text-sm text-error mt-1">{webhookUrlError}</p>}
                   </div>
 
                   {/* Auth type selector */}

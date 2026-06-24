@@ -326,7 +326,7 @@ export function LoginPage() {
         <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-accent-indigo-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
         <div className="absolute inset-0 opacity-[0.02]">
           <div className="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-transparent via-primary to-transparent" />
-          <div className="absolute top-0 right-1/4 w-px h-full bg-gradient-to-b from-transparent via-blue-500 to-transparent" />
+          <div className="absolute top-0 right-1/4 w-px h-full bg-gradient-to-b from-transparent via-accent-indigo to-transparent" />
           <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-purple to-transparent" />
           <div className="absolute bottom-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-cyan to-transparent" />
         </div>
@@ -426,7 +426,7 @@ export function LoginPage() {
                 </span>
               </label>
               {error && (
-                <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
+                <div className="flex items-start gap-2 text-sm text-error bg-muted rounded-md p-3">
                   <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>

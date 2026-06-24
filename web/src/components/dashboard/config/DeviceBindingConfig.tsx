@@ -83,7 +83,7 @@ export function DeviceBindingConfig({
         <SelectContent>
           {Object.entries(grouped).map(([type, devs]) => (
             <div key={type}>
-              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 {type}
               </div>
               {devs.map((d) => (

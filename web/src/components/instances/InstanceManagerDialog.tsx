@@ -245,7 +245,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                       'relative rounded-xl border p-4 transition-all',
                       isCurrent
                         ? 'border-primary ring-2 ring-primary bg-primary-light'
-                        : 'border-border hover:border-primary hover:bg-muted-30 cursor-pointer',
+                        : 'border-border hover:bg-muted-30 hover:shadow-sm cursor-pointer',
                     )}
                   >
                     <div className="flex items-center gap-4">
@@ -283,7 +283,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                         </div>
                         {/* Test result */}
                         {testResults[instance.id] && (
-                          <p className={cn('text-xs mt-0.5', testResults[instance.id].success ? 'text-success' : 'text-destructive')}>
+                          <p className={cn('text-xs mt-0.5', testResults[instance.id].success ? 'text-success' : 'text-error')}>
                             {testResults[instance.id].success
                               ? t('testSuccess', { latency: testResults[instance.id].latency_ms })
                               : t('testFailed', { error: testResults[instance.id].error })}
@@ -312,7 +312,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                                   ) : instance.last_status === 'online' ? (
                                     <Wifi className="h-4 w-4 text-success" />
                                   ) : (
-                                    <WifiOff className="h-4 w-4 text-destructive" />
+                                    <WifiOff className="h-4 w-4 text-error" />
                                   )}
                                 </Button>
                                 <Button
@@ -326,7 +326,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-destructive"
+                                  className="h-8 w-8 text-error"
                                   onClick={(e) => handleDelete(e, instance.id)}
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -367,23 +367,23 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
       >
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('name')} <span className="text-destructive">*</span></Label>
+            <Label>{t('name')} <span className="text-error">*</span></Label>
             <Input
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
               placeholder={t('namePlaceholder')}
             />
-            {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
+            {formErrors.name && <p className="text-xs text-error">{formErrors.name}</p>}
           </div>
           <div className="space-y-2">
-            <Label>{t('url')} <span className="text-destructive">*</span></Label>
+            <Label>{t('url')} <span className="text-error">*</span></Label>
             <Input
               value={formUrl}
               onChange={(e) => setFormUrl(e.target.value)}
               placeholder={t('urlPlaceholder')}
             />
             {!formErrors.url && <p className="text-xs text-muted-foreground">{t('urlHint')}</p>}
-            {formErrors.url && <p className="text-xs text-destructive">{formErrors.url}</p>}
+            {formErrors.url && <p className="text-xs text-error">{formErrors.url}</p>}
           </div>
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5">
@@ -400,7 +400,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                   variant="outline"
                   size="sm"
                   onClick={() => setClearApiKey(true)}
-                  className="text-destructive shrink-0"
+                  className="text-error shrink-0"
                 >
                   {t('apiKeyClear', { ns: 'instances' }) || t('delete')}
                 </Button>
@@ -418,7 +418,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
                   <ShieldCheck className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-success" />
                 )}
                 {apiKeyValidation === 'invalid' && (
-                  <AlertCircle className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />
+                  <AlertCircle className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-error" />
                 )}
                 {apiKeyValidation === 'testing' && (
                   <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />

@@ -292,7 +292,7 @@ function DashboardSidebarContent({
                           <Pencil className="h-3 w-3" />
                         </button>
                         <button
-                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors"
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-error transition-colors"
                           onClick={(e) => { e.stopPropagation(); handleDelete(dashboard.id) }}
                           title={t('sidebar.delete')}
                         >

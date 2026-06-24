@@ -82,17 +82,17 @@ export function BaseInfoSection({
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="info-name" className="text-sm font-medium">
-              {defaultNameLabel} <span className="text-destructive">*</span>
+              {defaultNameLabel} <span className="text-error">*</span>
             </Label>
             <Input
               id="info-name"
               value={name}
               onChange={e => onNameChange(e.target.value)}
               placeholder={defaultNamePlaceholder}
-              className={cn(errors?.name && "border-destructive focus-visible:ring-destructive")}
+              className={cn(errors?.name && "border-error focus-visible:ring-error")}
             />
             {errors?.name && (
-              <p className="text-xs text-destructive">{errors.name}</p>
+              <p className="text-xs text-error">{errors.name}</p>
             )}
           </div>
 

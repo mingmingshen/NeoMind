@@ -293,7 +293,7 @@
   "logs": {
     "cleared": "已清除",
     "loading": "加载中",
-    "count": "数量",
+    "count": "共 {{count}} 条",
     "refresh": "刷新",
     "clear": "清除",
     "noLogs": "暂无日志"

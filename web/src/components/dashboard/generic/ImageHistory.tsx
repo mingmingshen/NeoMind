@@ -429,7 +429,7 @@ export const ImageHistory = memo(function ImageHistory({
         {/* Error overlay */}
         {imageLoadState === 'error' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-bg-80 z-20">
-            <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+            <AlertTriangle className="h-8 w-8 text-error mb-2" />
             <span className="text-sm text-muted-foreground">{t('imageHistory.failedToLoad')}</span>
           </div>
         )}
