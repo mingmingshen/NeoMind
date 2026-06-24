@@ -370,14 +370,11 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                         <div
                           key={alert.id}
                           className={cn(
-                            "group relative flex gap-3 px-4 py-2.5 border-b last:border-b-0 transition-colors",
+                            "group flex gap-3 px-4 py-2.5 border-b last:border-b-0 transition-colors",
                             isUnread ? "bg-muted-30" : "bg-transparent",
                             "hover:bg-muted-50",
                           )}
                         >
-                          {/* Severity left bar */}
-                          <div className={cn("absolute left-0 top-0 bottom-0 w-0.5", sev.bar)} />
-
                           {/* Severity icon */}
                           <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", sev.badge)}>
                             <SevIcon className="h-3.5 w-3.5" />
