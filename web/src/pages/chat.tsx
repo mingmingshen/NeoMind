@@ -1391,15 +1391,15 @@ export function ChatPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm truncate">{backend.name || backend.model}</p>
-                              <div className="flex items-center gap-0.5 text-muted-foreground/70">
+                              <div className="flex items-center gap-0.5 text-muted-foreground/50">
                                 {backend.capabilities?.supports_multimodal && (
-                                  <span title={t('chat:model.supportsVision')}><Eye className="h-3 w-3" /></span>
+                                  <span title={t('chat:model.supportsVision')}><Eye className="h-2.5 w-2.5" /></span>
                                 )}
                                 {backend.capabilities?.supports_tools && (
-                                  <span title={t('chat:model.supportsTools')}><Wrench className="h-3 w-3" /></span>
+                                  <span title={t('chat:model.supportsTools')}><Wrench className="h-2.5 w-2.5" /></span>
                                 )}
                                 {backend.capabilities?.supports_thinking && (
-                                  <span title={t('chat:model.supportsThinking')}><Brain className="h-3 w-3" /></span>
+                                  <span title={t('chat:model.supportsThinking')}><Brain className="h-2.5 w-2.5" /></span>
                                 )}
                               </div>
                             </div>
