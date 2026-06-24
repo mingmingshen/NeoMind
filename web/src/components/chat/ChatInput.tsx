@@ -226,109 +226,113 @@ export const ChatInput = memo(function ChatInput({
   const canSend = (input.trim() || attachedImages.length > 0) && !isStreaming
 
   return (
-    <div className="bg-background sm:static fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border sm:border-0"
+    <div className="bg-background sm:static fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 px-2.5 sm:px-4 pt-2 sm:pt-3 pb-8 sm:pb-4 safe-bottom"
       style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
       <div className="max-w-3xl mx-auto">
-        {/* Input toolbar */}
-        <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
-          <ModelSelector
-            backends={backends}
-            activeBackendId={activeBackendId}
-            onBackendChange={onBackendChange}
-            t={t}
-          />
-          <div className="flex-1" />
-        </div>
-
         {/* Image previews */}
         <ImagePreviews images={attachedImages} onRemove={handleRemoveImage} />
 
-        {/* Input row */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Image upload button */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={handleImageSelect}
-            disabled={isStreaming || !supportsMultimodal}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming || !supportsMultimodal}
-            className={cn(
-              "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-              !supportsMultimodal && "opacity-50"
-            )}
-            title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
-          >
-            {isUploadingImage ? (
-              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
-            ) : attachedImages.length > 0 ? (
-              <div className="relative">
-                <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                  {attachedImages.length}
-                </span>
-              </div>
+        {/* Unified input container — image btn + textarea + send btn nested inside */}
+        <div className="rounded-2xl border border-input bg-card shadow-sm focus-within:border-primary transition-colors overflow-hidden">
+          {/* Top row: model selector + connection (fused into the container) */}
+          <div className="flex items-center gap-1 px-2 pt-1.5">
+            <ModelSelector
+              backends={backends}
+              activeBackendId={activeBackendId}
+              onBackendChange={onBackendChange}
+              t={t}
+            />
+            <div className="flex-1" />
+          </div>
+
+          {/* Input row */}
+          <div className="flex items-end gap-1 px-1.5 pb-1.5">
+            {/* Image upload button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleImageSelect}
+              disabled={isStreaming || !supportsMultimodal}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming || !supportsMultimodal}
+              className={cn(
+                "h-9 w-9 rounded-full flex-shrink-0 text-muted-foreground hover:text-foreground",
+                !supportsMultimodal && "opacity-50"
+              )}
+              title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
+            >
+              {isUploadingImage ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : attachedImages.length > 0 ? (
+                <div className="relative">
+                  <ImageIcon className="h-5 w-5" />
+                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-semibold">
+                    {attachedImages.length}
+                  </span>
+                </div>
+              ) : (
+                <ImageIcon className="h-5 w-5" />
+              )}
+            </Button>
+
+            {/* Textarea — borderless, fills the container */}
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('chat:input.placeholder')}
+              rows={1}
+              className={cn(
+                "flex-1 px-2 py-2 resize-none text-base bg-transparent",
+                "placeholder:text-muted-foreground placeholder:text-sm",
+                "focus:outline-none",
+                "max-h-32 scroll-mb-32"
+              )}
+              style={{ minHeight: "36px", height: "36px" }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement
+                target.style.height = "36px"
+                target.style.height = Math.min(target.scrollHeight, 128) + "px"
+              }}
+              disabled={disabled}
+            />
+
+            {/* Send or Cancel button */}
+            {isStreaming ? (
+              <Button
+                type="button"
+                onClick={handleCancel}
+                className={cn(
+                  "h-9 w-9 rounded-full flex-shrink-0",
+                  "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
+                )}
+                title="Cancel request"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             ) : (
-              <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Button
+                type="button"
+                onClick={handleSend}
+                disabled={!canSend}
+                className={cn(
+                  "h-9 w-9 rounded-full flex-shrink-0",
+                  "bg-primary hover:bg-primary-hover text-primary-foreground",
+                  !canSend && "opacity-40"
+                )}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
             )}
-          </Button>
-
-          {/* Textarea */}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('chat:input.placeholder')}
-            rows={1}
-            className={cn(
-              "flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl resize-none text-base scroll-mb-32",
-              "border border-input bg-background text-foreground placeholder:text-muted-foreground placeholder:text-sm",
-              "focus-visible:outline-none",
-              "transition-all max-h-32"
-            )}
-            style={{ minHeight: "40px", height: "40px" }}
-            onInput={(e) => {
-              const target = e.target as HTMLTextAreaElement
-              target.style.height = "40px"
-              target.style.height = Math.min(target.scrollHeight, 128) + "px"
-            }}
-            disabled={disabled}
-          />
-
-          {/* Send or Cancel button */}
-          {isStreaming ? (
-            <Button
-              type="button"
-              onClick={handleCancel}
-              className={cn(
-                "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                "bg-destructive hover:bg-destructive-hover text-error-foreground"
-              )}
-              title="Cancel request"
-            >
-              <X className="h-4 w-4 sm:h-5 sm:w-5" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleSend}
-              disabled={!canSend}
-              className={cn(
-                "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                "bg-foreground hover:bg-foreground text-background"
-              )}
-            >
-              <Send className="h-4 w-4 sm:h-5 sm:w-5" />
-            </Button>
-          )}
+          </div>
         </div>
       </div>
     </div>
