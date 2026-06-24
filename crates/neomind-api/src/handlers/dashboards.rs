@@ -1063,8 +1063,10 @@ fn is_share_proxy_path_allowed(path: &str) -> bool {
         "telemetry",
         "telemetry-stats",
         "devices",
-        "extensions/", // only metric/outputs subpaths below are useful, but list access is harmless
-        "agents/",     // execution history + detail; full CRUD blocked by method check in step 4
+        "device-types", // device type metadata for rendering device widgets; GET only, mutations blocked by method check
+        "extensions", // list + metric/outputs subpaths; install/uninstall/write blocked by method check
+        "agents",     // list + execution history + detail; full CRUD blocked by method check in step 4
+        "llm-backends", // model list for AI analyst widget; DTO exposes only api_key_configured, never the key
         "data-sources",
         "messages", // alerts shown on dashboard (list + detail); channel mutation blocked by method
         "frontend-components", // community widget manifests + bundles (GET only; install/uninstall blocked by method check)
@@ -1075,6 +1077,50 @@ fn is_share_proxy_path_allowed(path: &str) -> bool {
     ALLOWED_PREFIXES
         .iter()
         .any(|p| path.starts_with(*p) || first_segment == *p)
+}
+
+#[cfg(test)]
+mod share_proxy_tests {
+    use super::is_share_proxy_path_allowed;
+
+    #[test]
+    fn allows_bare_list_endpoints() {
+        // Regression: `extensions/` and `agents/` (trailing slash) blocked
+        // the bare list GETs that shared-dashboard widgets call.
+        for p in [
+            "devices",
+            "device-types",
+            "extensions",
+            "agents",
+            "llm-backends",
+            "messages",
+            "frontend-components",
+            "data-sources",
+            "telemetry",
+        ] {
+            assert!(is_share_proxy_path_allowed(p), "bare `{p}` should be allowed");
+        }
+    }
+
+    #[test]
+    fn allows_subpaths() {
+        for p in [
+            "devices/abc/current",
+            "device-types/foo",
+            "extensions/weather/command",
+            "agents/xyz/executions",
+            "telemetry/foo/values",
+        ] {
+            assert!(is_share_proxy_path_allowed(p), "`{p}` should be allowed");
+        }
+    }
+
+    #[test]
+    fn rejects_unlisted_paths() {
+        for p in ["users", "api-keys", "settings", "instances", "rules", "dashboards"] {
+            assert!(!is_share_proxy_path_allowed(p), "`{p}` should be blocked");
+        }
+    }
 }
 
 /// Check if a path matches a pattern where `:id` matches any single segment.
