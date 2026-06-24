@@ -106,6 +106,7 @@
     "adapter": "Adapter",
     "plugin": "Plugin",
     "status": "Status",
+    "lastReport": "Last Report",
     "lastOnline": "Last Online",
     "actions": "Actions"
   },

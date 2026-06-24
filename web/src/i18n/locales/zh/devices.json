@@ -106,6 +106,7 @@
     "adapter": "适配器",
     "plugin": "插件",
     "status": "状态",
+    "lastReport": "最近上报",
     "lastOnline": "最后上线",
     "actions": "操作"
   },

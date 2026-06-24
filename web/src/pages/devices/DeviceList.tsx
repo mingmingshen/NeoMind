@@ -182,8 +182,8 @@ export function DeviceList({
             align: 'center',
           },
           {
-            key: 'lastOnline',
-            label: t('devices:headers.lastOnline'),
+            key: 'lastReport',
+            label: t('devices:headers.lastReport'),
             align: 'center',
           },
         ]}
@@ -236,7 +236,7 @@ export function DeviceList({
             case 'status':
               return <DeviceStatusBadge device={device} />
 
-            case 'lastOnline':
+            case 'lastReport':
               return (
                 <span className="text-xs text-muted-foreground">
                   {formatTimestamp(device.last_seen, false)}
