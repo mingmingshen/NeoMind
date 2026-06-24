@@ -1495,8 +1495,11 @@ export function AgentEditorFullScreen({
                   </SelectItem>
                   {llmBackends.map((backend) => (
                     <SelectItem key={backend.id} value={backend.id}>
-                      <div className="flex items-center gap-2">
-                        <span>{backend.name}</span>
+                      <div className="flex flex-col gap-1 w-full py-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate">{backend.name}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{backend.model}</span>
+                        </div>
                         <div className="flex items-center gap-1">
                           {backend.capabilities?.supports_multimodal && (
                             <span title={tAgent('creator.basicInfo.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.vision', { defaultValue: 'Vision' })}</span>
@@ -1508,7 +1511,6 @@ export function AgentEditorFullScreen({
                             <span title={tAgent('creator.basicInfo.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.thinking', { defaultValue: 'Thinking' })}</span>
                           )}
                         </div>
-                        <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
                       </div>
                     </SelectItem>
                   ))}
