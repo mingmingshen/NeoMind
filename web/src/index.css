@@ -302,7 +302,7 @@ html {
        this token falls back to --card so the same class works in both. */
     --chrome: oklch(1 0 0);
     --foreground: oklch(0.21 0.01 264);
-    --card: oklch(1 0 0 / 92%);
+    --card: oklch(1 0 0);
     --card-foreground: oklch(0.21 0.01 264);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.21 0.01 264);
@@ -450,6 +450,32 @@ html {
     --session-drawer-border: oklch(0 0 0 / 8%);
     --session-item-hover: oklch(0.95 0.003 270);
     --session-item-active: oklch(0.93 0.003 270);
+
+    /* ============================================================================
+     * CODE EDITOR (CodeMirror) SYNTAX TOKENS
+     * Used by web/src/components/ui/code-editor.tsx. Theme-agnostic — the editor
+     * reads these CSS vars directly, so light/dark switching is instant with no
+     * JS re-render. Hue conventions:
+     *   25  = keyword/operator/null (red — control flow)
+     *   250 = cursor/number/property/bool (blue — literal/identifier accent)
+     *   220 = string (cyan-leaning blue)
+     *   300 = def (purple — user definitions)
+     *   264 = base text/gutter/comment (neutral with foreground hue)
+     * ========================================================================== */
+    --syntax-text: oklch(0.25 0.01 264);
+    --syntax-gutter: oklch(0.55 0.008 264);
+    --syntax-active-line: oklch(0.55 0.15 250 / 8%);
+    --syntax-selection: oklch(0.55 0.15 250 / 20%);
+    --syntax-cursor: oklch(0.50 0.18 250);
+    --syntax-bracket: oklch(0.50 0.18 250);
+    --syntax-keyword: oklch(0.55 0.22 25);
+    --syntax-string: oklch(0.40 0.18 260);
+    --syntax-number: oklch(0.50 0.20 250);
+    --syntax-comment: oklch(0.55 0.008 264);
+    --syntax-def: oklch(0.50 0.18 300);
+    --syntax-property: oklch(0.50 0.20 250);
+    --syntax-scrollbar: oklch(0.82 0.005 264);
+    --syntax-scrollbar-hover: oklch(0.68 0.008 264);
   }
 
   .dark {
@@ -573,6 +599,24 @@ html {
     --session-drawer-border: oklch(1 0 0 / 8%);
     --session-item-hover: oklch(0.18 0.008 270);
     --session-item-active: oklch(0.22 0.008 270);
+
+    /* CodeMirror syntax tokens — dark variants. See light-mode block above for
+     * hue conventions. Brighter lightness + slightly higher chroma so each
+     * token class stays legible against the dark editor surface. */
+    --syntax-text: oklch(0.87 0.005 264);
+    --syntax-gutter: oklch(0.52 0.012 264);
+    --syntax-active-line: oklch(0.70 0.15 250 / 12%);
+    --syntax-selection: oklch(0.70 0.15 250 / 28%);
+    --syntax-cursor: oklch(0.72 0.15 250);
+    --syntax-bracket: oklch(0.72 0.15 250);
+    --syntax-keyword: oklch(0.72 0.20 25);
+    --syntax-string: oklch(0.80 0.10 220);
+    --syntax-number: oklch(0.76 0.13 250);
+    --syntax-comment: oklch(0.60 0.012 264);
+    --syntax-def: oklch(0.76 0.16 300);
+    --syntax-property: oklch(0.76 0.13 250);
+    --syntax-scrollbar: oklch(0.34 0.005 264);
+    --syntax-scrollbar-hover: oklch(0.42 0.008 264);
   }
 
   /* Aurora background - animated flowing gradient layer.

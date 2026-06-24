@@ -228,7 +228,7 @@ export const ImageDisplay = memo(function ImageDisplay({
   // --- No source ---
   if (!loading && !hasValidSource && imageLoadState !== 'error') {
     return (
-      <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3', sizeConfig.padding, className)}>
         <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16')} />
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageDisplay.noImageSource')}</p>
@@ -241,7 +241,7 @@ export const ImageDisplay = memo(function ImageDisplay({
   // --- Error ---
   if (imageLoadState === 'error') {
     return (
-      <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
+      <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3', sizeConfig.padding, className)}>
         <div className="relative">
           <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-10 w-10' : size === 'md' ? 'h-14 w-14' : 'h-18 w-18')} />
           <AlertTriangle className="absolute -bottom-1 -right-1 text-error bg-background rounded-full h-5 w-5" />

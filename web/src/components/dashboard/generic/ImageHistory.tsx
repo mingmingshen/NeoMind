@@ -359,7 +359,7 @@ export const ImageHistory = memo(function ImageHistory({
       return <LoadingState size={size} className={className} />
     }
     return (
-      <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3', sizeConfig.padding, className)}>
         <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16')} />
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageHistory.noImages')}</p>

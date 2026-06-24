@@ -2,13 +2,14 @@
  * Code Editor Component
  *
  * Wraps @uiw/react-codemirror with syntax highlighting for JavaScript/TypeScript.
- * Supports light/dark themes and provides a clean editing experience.
+ * Supports light/dark themes via CSS variables (no JS theme switching) — colors
+ * come from the --syntax-* tokens defined in index.css, so the editor tracks
+ * the active theme automatically with zero React re-renders.
  */
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
 import { cn } from '@/lib/utils'
 import { fontMonoStack } from '@/design-system/tokens/typography'
@@ -36,6 +37,129 @@ export interface CodeEditorProps {
   compact?: boolean
 }
 
+/**
+ * CodeMirror theme driven entirely by CSS variables. The editor therefore
+ * follows the active light/dark theme without any JS detection or re-render.
+ * See `--syntax-*` tokens in index.css for the color source-of-truth.
+ */
+const editorTheme = EditorView.theme({
+  // Base editor styles
+  '&': {
+    fontSize: '14px',
+    color: 'var(--syntax-text)',
+  },
+  // Scroller (main content area)
+  '.cm-scroller': {
+    fontFamily: fontMonoStack,
+    lineHeight: '1.6',
+  },
+  // Content padding (compact mode applied via inline override on the wrapper)
+  '.cm-content': {
+    padding: '14px',
+  },
+  // Line spacing
+  '.cm-line': {
+    padding: '0 0',
+  },
+  // Gutter (line numbers)
+  '.cm-gutters': {
+    backgroundColor: 'transparent',
+    color: 'var(--syntax-gutter)',
+    border: 'none',
+    paddingRight: '8px',
+    marginRight: '4px',
+    fontSize: '13px',
+  },
+  // Current line highlight
+  '.cm-activeLine': {
+    backgroundColor: 'var(--syntax-active-line)',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: 'transparent',
+    color: 'var(--syntax-text)',
+    fontWeight: '500',
+  },
+  // Selection
+  '.cm-selectionBackground': {
+    backgroundColor: 'var(--syntax-selection)',
+  },
+  // Placeholder
+  '.cm-placeholder': {
+    color: 'var(--syntax-gutter)',
+    fontStyle: 'italic',
+  },
+  // Cursor
+  '.cm-cursorLayer': {
+    color: 'var(--syntax-cursor)',
+  },
+  // Matching bracket
+  '.cm-matchingBracket': {
+    color: 'var(--syntax-bracket)',
+    borderBottom: '2px solid var(--syntax-bracket)',
+  },
+  // Token classes (used by CodeMirror's default JS highlighter)
+  '.tok-keyword': {
+    color: 'var(--syntax-keyword)',
+    fontWeight: '500',
+  },
+  '.tok-string': {
+    color: 'var(--syntax-string)',
+  },
+  '.tok-number': {
+    color: 'var(--syntax-number)',
+  },
+  '.tok-comment': {
+    color: 'var(--syntax-comment)',
+    fontStyle: 'italic',
+  },
+  '.tok-variableName': {
+    color: 'var(--syntax-text)',
+  },
+  '.tok-def': {
+    color: 'var(--syntax-def)',
+  },
+  '.tok-propertyName': {
+    color: 'var(--syntax-property)',
+  },
+  '.tok-operator': {
+    color: 'var(--syntax-keyword)',
+  },
+  '.tok-punctuation': {
+    color: 'var(--syntax-text)',
+  },
+  '.tok-bool': {
+    color: 'var(--syntax-number)',
+  },
+  '.tok-null': {
+    color: 'var(--syntax-keyword)',
+  },
+  // Scrollbar styling
+  '&::-webkit-scrollbar': {
+    width: '8px',
+    height: '8px',
+  },
+  '&::-webkit-scrollbar-track': {
+    background: 'transparent',
+  },
+  '&::-webkit-scrollbar-thumb': {
+    background: 'var(--syntax-scrollbar)',
+    borderRadius: '4px',
+  },
+  '&::-webkit-scrollbar-thumb:hover': {
+    background: 'var(--syntax-scrollbar-hover)',
+  },
+})
+
+/**
+ * Compact-mode overrides — applied as a separate theme extension so the base
+ * theme stays untouched and compact is opt-in per instance.
+ */
+const compactTheme = EditorView.theme({
+  '&': { fontSize: '13px' },
+  '.cm-content': { padding: '10px 14px' },
+  '.cm-gutters': { fontSize: '12px' },
+})
+
 export const CodeEditor = React.forwardRef<ReactCodeMirrorRef, CodeEditorProps>(
   ({
     value,
@@ -49,35 +173,11 @@ export const CodeEditor = React.forwardRef<ReactCodeMirrorRef, CodeEditorProps>(
     className,
     compact = false,
   }, ref) => {
-    // Reactive dark mode detection — re-checks when <html> class/data-theme changes
-    const [isDark, setIsDark] = useState(() => {
-      if (typeof document === 'undefined') return false
-      const root = document.documentElement
-      return root.getAttribute('data-theme') === 'dark' ||
-             root.classList.contains('dark')
-    })
-    useEffect(() => {
-      if (typeof document === 'undefined') return
-      const root = document.documentElement
-      const check = () =>
-        root.getAttribute('data-theme') === 'dark' ||
-        root.classList.contains('dark')
-      const observer = new MutationObserver(() => setIsDark(check()))
-      observer.observe(root, {
-        attributes: true,
-        attributeFilter: ['class', 'data-theme'],
-      })
-      return () => observer.disconnect()
-    }, [])
-
     return (
       <div className={cn(
         'relative rounded-lg border overflow-hidden transition-all flex flex-col',
         'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
-        // Light theme
-        !isDark && 'bg-background border-input',
-        // Dark theme
-        isDark && 'bg-[#1e1e1e] border-[#3c3c3c]',
+        'bg-background border-input',
         readOnly && 'opacity-60 cursor-not-allowed',
         className
       )}>
@@ -91,122 +191,8 @@ export const CodeEditor = React.forwardRef<ReactCodeMirrorRef, CodeEditorProps>(
           extensions={[
             javascript({ jsx: true }),
             EditorView.lineWrapping,
-            EditorView.theme({
-              // Base editor styles
-              '&': {
-                fontSize: compact ? '13px' : '14px',
-                color: isDark ? '#d4d4d4' : '#24292e',
-              },
-              // Scroller (main content area)
-              '.cm-scroller': {
-                fontFamily: fontMonoStack,
-                lineHeight: '1.6',
-              },
-              // Content padding
-              '.cm-content': {
-                padding: compact ? '10px 14px' : '14px',
-              },
-              // Line spacing
-              '.cm-line': {
-                padding: '0 0',
-              },
-              // Gutter (line numbers)
-              '.cm-gutters': {
-                backgroundColor: 'transparent',
-                color: isDark ? '#6e7681' : '#8b949e',
-                border: 'none',
-                paddingRight: '8px',
-                marginRight: '4px',
-                fontSize: compact ? '12px' : '13px',
-              },
-              // Current line highlight
-              '.cm-activeLine': {
-                backgroundColor: isDark ? 'rgba(88, 166, 255, 0.1)' : 'rgba(88, 166, 255, 0.08)',
-              },
-              '.cm-activeLineGutter': {
-                backgroundColor: 'transparent',
-                color: isDark ? '#d4d4d4' : '#24292e',
-                fontWeight: '500',
-              },
-              // Selection
-              '.cm-selectionBackground': {
-                backgroundColor: isDark ? 'rgba(88, 166, 255, 0.25)' : 'rgba(88, 166, 255, 0.2)',
-              },
-              // Placeholder
-              '.cm-placeholder': {
-                color: isDark ? '#6e7681' : '#8b949e',
-                fontStyle: 'italic',
-              },
-              // Cursor
-              '.cm-cursorLayer': {
-                color: isDark ? '#58a6ff' : '#24292e',
-              },
-              // Matching bracket
-              '.cm-matchingBracket': {
-                color: isDark ? '#58a6ff' : '#24292e',
-                borderBottom: isDark ? '2px solid #58a6ff' : '2px solid #24292e',
-              },
-              // Keyword
-              '.tok-keyword': {
-                color: isDark ? '#ff7b72' : '#cf222e',
-                fontWeight: '500',
-              },
-              // String
-              '.tok-string': {
-                color: isDark ? '#a5d6ff' : '#0a3069',
-              },
-              // Number
-              '.tok-number': {
-                color: isDark ? '#79c0ff' : '#0550ae',
-              },
-              // Comment
-              '.tok-comment': {
-                color: isDark ? '#8b949e' : '#6e7781',
-                fontStyle: 'italic',
-              },
-              // Function/Variable
-              '.tok-variableName': {
-                color: isDark ? '#d4d4d4' : '#24292e',
-              },
-              '.tok-def': {
-                color: isDark ? '#d2a8ff' : '#953800',
-              },
-              '.tok-propertyName': {
-                color: isDark ? '#79c0ff' : '#0550ae',
-              },
-              // Operator
-              '.tok-operator': {
-                color: isDark ? '#ff7b72' : '#cf222e',
-              },
-              // Punctuation
-              '.tok-punctuation': {
-                color: isDark ? '#d4d4d4' : '#24292e',
-              },
-              // Boolean
-              '.tok-bool': {
-                color: isDark ? '#79c0ff' : '#0550ae',
-              },
-              // Null/Undefined
-              '.tok-null': {
-                color: isDark ? '#ff7b72' : '#cf222e',
-              },
-              // Scrollbar styling
-              '&::-webkit-scrollbar': {
-                width: '8px',
-                height: '8px',
-              },
-              '&::-webkit-scrollbar-track': {
-                background: isDark ? 'transparent' : 'transparent',
-              },
-              '&::-webkit-scrollbar-thumb': {
-                background: isDark ? '#424242' : '#d1d5db',
-                borderRadius: '4px',
-              },
-              '&::-webkit-scrollbar-thumb:hover': {
-                background: isDark ? '#4f4f4f' : '#9ca3af',
-              },
-            }),
-            ...(isDark ? [oneDark] : []),
+            editorTheme,
+            ...(compact ? [compactTheme] : []),
           ]}
           onChange={onChange}
           placeholder={placeholder}

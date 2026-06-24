@@ -153,7 +153,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
     <>
       {mode === 'icon' ? (
         // Icon mode - compact sidebar
-        <div className="flex h-full w-full flex-col border-r bg-muted overflow-hidden">
+        <div className="flex h-full w-full flex-col border-r bg-background overflow-hidden">
           {/* Header - New chat button */}
           <div className="flex items-center justify-center border-b p-2">
             <Button
@@ -185,7 +185,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
         </div>
       ) : (
         // Full mode - complete sidebar
-        <div className="flex h-full w-full flex-col border-r bg-muted overflow-hidden">
+        <div className="flex h-full w-full flex-col border-r bg-background overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between border-b p-3">
             <div className="flex items-center gap-2">
