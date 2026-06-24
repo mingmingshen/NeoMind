@@ -296,6 +296,11 @@ html {
        tone — the Linear/GitHub/shadcn approach for tool/data UIs. Pure-white
        cards sit clearly above it without harsh contrast. */
     --background: oklch(0.97 0.003 264);
+    /* Solid white for stable chrome layers (TopNav, tab strips, toolbars,
+       page headers). These anchor the layout — they should NOT float with
+       the aurora the way the scrollable content area does. In dark mode
+       this token falls back to --card so the same class works in both. */
+    --chrome: oklch(1 0 0);
     --foreground: oklch(0.21 0.01 264);
     --card: oklch(1 0 0 / 92%);
     --card-foreground: oklch(0.21 0.01 264);
@@ -453,6 +458,10 @@ html {
     --background: oklch(0.135 0.01 270 / 97%);
     --foreground: oklch(0.95 0.006 270);
     --card: oklch(0.165 0.01 270 / 82%);
+    /* Dark-mode chrome: slightly lighter than background so nav/toolbars
+       read as a distinct elevated layer, mirroring how light-mode --chrome
+       (pure white) sits above --background. */
+    --chrome: oklch(0.20 0.008 270);
     --card-foreground: oklch(0.95 0.006 270);
     --popover: oklch(0.165 0.01 270);
     --popover-foreground: oklch(0.95 0.006 270);

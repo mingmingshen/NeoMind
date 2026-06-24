@@ -225,7 +225,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
     <TooltipProvider delayDuration={500}>
       <nav
         ref={innerRef}
-        className="fixed top-0 left-0 right-0 z-20 bg-surface-glass backdrop-blur-xl border-b border-glass-border flex flex-col"
+        className="fixed top-0 left-0 right-0 z-20 bg-[var(--chrome)] border-b border-border flex flex-col"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         {/* Main bar */}
