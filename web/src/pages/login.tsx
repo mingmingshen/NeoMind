@@ -304,32 +304,24 @@ export function LoginPage() {
     <div className="flex flex-col bg-background relative overflow-hidden viewport-full">
       {/* Background Effects */}
       <div className="fixed inset-0">
+        {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
+        {/* Subtle dot grid texture */}
         <div className="absolute inset-0" style={{
-          backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px)',
           backgroundSize: '32px 32px'
         }} />
-        <svg className="absolute inset-0 w-full h-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="network-grid" width="120" height="120" patternUnits="userSpaceOnUse">
-              <circle cx="60" cy="60" r="1.5" fill="currentColor" />
-              <line x1="60" y1="0" x2="60" y2="120" stroke="currentColor" strokeWidth="0.5" />
-              <line x1="0" y1="60" x2="120" y2="60" stroke="currentColor" strokeWidth="0.5" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#network-grid)" />
-        </svg>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-        <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
-        <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-accent-purple-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
-        <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-accent-cyan-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
-        <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-accent-indigo-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
-        <div className="absolute inset-0 opacity-[0.02]">
-          <div className="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-transparent via-primary to-transparent" />
-          <div className="absolute top-0 right-1/4 w-px h-full bg-gradient-to-b from-transparent via-accent-indigo to-transparent" />
-          <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-purple to-transparent" />
-          <div className="absolute bottom-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-cyan to-transparent" />
-        </div>
+        {/* Two restrained ambient glows — neutral violet/indigo, easier to
+            live with at scale than the saturated brand orange. Echoes the
+            app's aurora-bg palette. */}
+        <div
+          className="absolute top-[12%] left-[8%] w-[28rem] h-[28rem] rounded-full blur-3xl"
+          style={{ background: 'color-mix(in oklch, var(--accent-indigo) 12%, transparent)' }}
+        />
+        <div
+          className="absolute bottom-[14%] right-[10%] w-[26rem] h-[26rem] rounded-full blur-3xl opacity-70"
+          style={{ background: 'color-mix(in oklch, var(--accent-purple) 10%, transparent)' }}
+        />
       </div>
 
       {/* Top Header */}
