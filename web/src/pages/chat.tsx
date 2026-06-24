@@ -1393,13 +1393,13 @@ export function ChatPage() {
                               <p className="text-sm truncate">{backend.name || backend.model}</p>
                               <div className="flex items-center gap-1">
                                 {backend.capabilities?.supports_multimodal && (
-                                  <span title={t('chat:model.supportsVision')} className="inline-flex items-center justify-center h-4 w-4 rounded bg-muted-30 text-muted-foreground"><Eye className="h-2.5 w-2.5" /></span>
+                                  <span title={t('chat:model.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.vision', { defaultValue: 'Vision' })}</span>
                                 )}
                                 {backend.capabilities?.supports_tools && (
-                                  <span title={t('chat:model.supportsTools')} className="inline-flex items-center justify-center h-4 w-4 rounded bg-muted-30 text-muted-foreground"><Wrench className="h-2.5 w-2.5" /></span>
+                                  <span title={t('chat:model.supportsTools')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.tools', { defaultValue: 'Tools' })}</span>
                                 )}
                                 {backend.capabilities?.supports_thinking && (
-                                  <span title={t('chat:model.supportsThinking')} className="inline-flex items-center justify-center h-4 w-4 rounded bg-muted-30 text-muted-foreground"><Brain className="h-2.5 w-2.5" /></span>
+                                  <span title={t('chat:model.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.thinking', { defaultValue: 'Thinking' })}</span>
                                 )}
                               </div>
                             </div>
