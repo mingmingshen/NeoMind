@@ -233,7 +233,7 @@ export const ChatInput = memo(function ChatInput({
         <ImagePreviews images={attachedImages} onRemove={handleRemoveImage} />
 
         {/* Single unified input box — everything lives inside one container */}
-        <div className="rounded-2xl border border-input bg-card shadow-sm focus-within:border-primary transition-colors">
+        <div className="rounded-2xl border border-input bg-card shadow-sm transition-colors">
           {/* Textarea — fills the top of the box, borderless */}
           <textarea
             ref={inputRef}

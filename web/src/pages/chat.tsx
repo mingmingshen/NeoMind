@@ -1292,7 +1292,7 @@ export function ChatPage() {
             )}
 
             {/* Single unified input box — everything inside one container */}
-            <div className="rounded-2xl border border-input bg-card shadow-sm focus-within:border-primary transition-colors">
+            <div className="rounded-2xl border border-input bg-card shadow-sm transition-colors">
               {/* Textarea — fills the top, borderless */}
               <textarea
                 ref={inputRef}
