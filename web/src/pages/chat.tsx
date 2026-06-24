@@ -5,7 +5,7 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { generateId } from "@/lib/id"
-import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, Plus } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, Plus, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -1362,7 +1362,6 @@ export function ChatPage() {
                         size="sm"
                         className="h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[120px] sm:max-w-[140px]"
                       >
-                        <Zap className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">
                           {llmBackends.find(b => b.id === activeBackendId)?.name ||
                            llmBackends.find(b => b.id === activeBackendId)?.model ||
@@ -1392,15 +1391,15 @@ export function ChatPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm truncate">{backend.name || backend.model}</p>
-                              <div className="flex items-center gap-0.5 text-muted-foreground">
+                              <div className="flex items-center gap-0.5 text-muted-foreground/70">
                                 {backend.capabilities?.supports_multimodal && (
-                                  <span title={t('chat:model.supportsVision')}><Eye className="h-4 w-4" /></span>
+                                  <span title={t('chat:model.supportsVision')}><Eye className="h-3 w-3" /></span>
                                 )}
                                 {backend.capabilities?.supports_tools && (
-                                  <span title={t('chat:model.supportsTools')}><Wrench className="h-4 w-4" /></span>
+                                  <span title={t('chat:model.supportsTools')}><Wrench className="h-3 w-3" /></span>
                                 )}
                                 {backend.capabilities?.supports_thinking && (
-                                  <span title={t('chat:model.supportsThinking')}><Brain className="h-4 w-4" /></span>
+                                  <span title={t('chat:model.supportsThinking')}><Brain className="h-3 w-3" /></span>
                                 )}
                               </div>
                             </div>
@@ -1409,7 +1408,7 @@ export function ChatPage() {
                             </p>
                           </div>
                           {backend.id === activeBackendId && (
-                            <span className={cn(textNano, "text-muted-foreground")}>✓</span>
+                            <Check className="h-4 w-4 text-primary shrink-0" />
                           )}
                         </DropdownMenuItem>
                       ))}

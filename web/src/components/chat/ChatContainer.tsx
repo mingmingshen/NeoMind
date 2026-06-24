@@ -35,6 +35,7 @@ import {
   Zap,
   ChevronDown,
   BookOpen,
+  Check,
   X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -813,13 +814,12 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                       size="sm"
                       className="h-7 px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[140px]"
                     >
-                      <Zap className="h-4 w-4 shrink-0" />
                       <span className="truncate">
                         {llmBackends.find(b => b.id === activeBackendId)?.name ||
                          llmBackends.find(b => b.id === activeBackendId)?.model ||
                          t("input.selectModel")}
                       </span>
-                      <ChevronDown className="h-4 w-4 shrink-0" />
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-56">
@@ -847,7 +847,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                           </p>
                         </div>
                         {backend.id === activeBackendId && (
-                          <span className={cn(textNano, "text-muted-foreground")}>✓</span>
+                          <Check className="h-4 w-4 text-primary shrink-0" />
                         )}
                       </DropdownMenuItem>
                     ))}
