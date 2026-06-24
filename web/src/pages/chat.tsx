@@ -1291,190 +1291,190 @@ export function ChatPage() {
               </div>
             )}
 
-            {/* Input toolbar with model selector */}
-            <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
-              {/* Model selector */}
-              {llmBackends.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 sm:h-7 px-1.5 sm:px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[120px] sm:max-w-[140px]"
-                    >
-                      <Zap className="h-4 w-4 shrink-0" />
-                      <span className="truncate">
-                        {llmBackends.find(b => b.id === activeBackendId)?.name ||
-                         llmBackends.find(b => b.id === activeBackendId)?.model ||
-                         t('chat:input.selectModel')}
-                      </span>
-                      <ChevronDown className="h-4 w-4 shrink-0" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      {t('chat:input.selectLLMModel')}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {llmBackends.map((backend) => (
-                      <DropdownMenuItem
-                        key={backend.id}
-                        onClick={() => activateBackend(backend.id)}
-                        className={cn(
-                          "flex items-center gap-2 py-2",
-                          backend.id === activeBackendId && "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "w-1.5 h-1.5 rounded-full shrink-0",
-                          backend.healthy ? "bg-success" : "bg-muted-foreground"
-                        )} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm truncate">{backend.name || backend.model}</p>
-                            {/* Capability icons - simple monochrome style */}
-                            <div className="flex items-center gap-0.5 text-muted-foreground">
-                              {backend.capabilities?.supports_multimodal && (
-                                <span title={t('chat:model.supportsVision')}><Eye className="h-4 w-4" /></span>
-                              )}
-                              {backend.capabilities?.supports_tools && (
-                                <span title={t('chat:model.supportsTools')}><Wrench className="h-4 w-4" /></span>
-                              )}
-                              {backend.capabilities?.supports_thinking && (
-                                <span title={t('chat:model.supportsThinking')}><Brain className="h-4 w-4" /></span>
-                              )}
-                            </div>
-                          </div>
-                          <p className={cn(textNano, "text-muted-foreground truncate")}>
-                            {backend.backend_type} · {backend.model}
-                          </p>
-                        </div>
-                        {backend.id === activeBackendId && (
-                          <span className={cn(textNano, "text-muted-foreground")}>✓</span>
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
-              <div className="flex-1" />
-              {/* Context usage indicator */}
-              {(() => {
-                const activeBackend = llmBackends.find(b => b.id === activeBackendId)
-                const maxContext = activeBackend?.capabilities?.max_context ?? 8192
-                // Prefer actual token count from LLM backend, fall back to estimation
-                const promptTokens = lastTokenUsage?.promptTokens
-                let displayTokens: number
-                let ratio: number
-                if (promptTokens != null && !isStreaming) {
-                  displayTokens = promptTokens
-                  ratio = promptTokens / maxContext
-                } else {
-                  const msgChars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
-                  const streamChars = (streamingContent?.length ?? 0) + (streamingThinking?.length ?? 0)
-                    + streamingToolCalls.reduce((s, tc) => s + (tc.arguments?.length ?? 0) + (tc.result?.length ?? 0), 0)
-                  displayTokens = Math.ceil((msgChars + streamChars) / 3)
-                  ratio = displayTokens / maxContext
-                }
-                if (messages.length === 0 || isWelcomeMode) return null
-                return (
-                  <span className={cn(
-                    textMini, "shrink-0 transition-colors",
-                    ratio > 0.9 ? "text-error" : ratio > 0.7 ? "text-warning" : "text-muted-foreground"
-                  )}>
-                    Context {(displayTokens / 1000).toFixed(1)}K / {(maxContext / 1000).toFixed(0)}K
-                  </span>
-                )
-              })()}
-            </div>
-
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Image upload button */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={handleImageSelect}
-                disabled={isStreaming || !supportsMultimodal}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || !supportsMultimodal}
-                className={cn(
-                  "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                  !supportsMultimodal && "opacity-50"
-                )}
-                title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
-              >
-                {isUploadingImage ? (
-                  <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
-                ) : attachedImages.length > 0 ? (
-                  <div className="relative">
-                    <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                    <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                      {attachedImages.length}
-                    </span>
-                  </div>
-                ) : (
-                  <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                )}
-              </Button>
-
+            {/* Single unified input box — everything inside one container */}
+            <div className="rounded-2xl border border-input bg-card shadow-sm focus-within:border-primary transition-colors">
+              {/* Textarea — fills the top, borderless */}
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t('chat:input.placeholder')}
-                rows={2}
+                rows={1}
                 className={cn(
-                  "flex-1 px-4 py-3 rounded-2xl resize-none text-sm leading-5 scroll-mb-32",
-                  "bg-muted text-foreground placeholder:text-muted-foreground",
-                  "focus:outline-none focus:ring-2 focus:ring-ring",
-                  // Cap textarea height so mobile users (with keyboard open) still
-                  // see recent messages. Desktop allows taller for rapid typing.
-                  "transition-all max-h-[100px] lg:max-h-40"
+                  "w-full block px-4 pt-3 pb-1 resize-none text-sm leading-5 bg-transparent",
+                  "placeholder:text-muted-foreground",
+                  "focus:outline-none",
+                  "max-h-[100px] lg:max-h-40 scroll-mb-32"
                 )}
-                style={{ minHeight: "64px" }}
+                style={{ minHeight: "44px" }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement
                   target.style.height = "auto"
                   const maxHeight = isDesktop ? 160 : 100
-                  target.style.height = Math.max(64, Math.min(target.scrollHeight, maxHeight)) + "px"
+                  target.style.height = Math.max(44, Math.min(target.scrollHeight, maxHeight)) + "px"
                 }}
               />
 
-              {/* Send or Cancel button */}
-              {isStreaming ? (
+              {/* Bottom toolbar — left: image + model + context, right: send */}
+              <div className="flex items-center gap-1 px-2 pb-2">
+                {/* Image upload */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleImageSelect}
+                  disabled={isStreaming || !supportsMultimodal}
+                />
                 <Button
-                  type="button"
-                  onClick={handleCancelRequest}
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming || !supportsMultimodal}
                   className={cn(
-                    "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                    "bg-destructive hover:bg-destructive-hover text-error-foreground"
+                    "h-8 w-8 rounded-lg flex-shrink-0 text-muted-foreground hover:text-foreground",
+                    !supportsMultimodal && "opacity-50"
                   )}
-                  title="Cancel request"
+                  title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
                 >
-                  <X className="h-4 w-4 sm:h-5 sm:w-5" />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={!input.trim() && attachedImages.length === 0}
-                  className={cn(
-                    "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                    "bg-foreground hover:bg-foreground text-background"
+                  {isUploadingImage ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : attachedImages.length > 0 ? (
+                    <div className="relative">
+                      <ImageIcon className="h-4.5 w-4.5" />
+                      <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full h-4 w-4 flex items-center justify-center font-semibold tabular-nums">
+                        {attachedImages.length}
+                      </span>
+                    </div>
+                  ) : (
+                    <ImageIcon className="h-4.5 w-4.5" />
                   )}
-                >
-                  <Send className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
-              )}
+
+                {/* Model selector */}
+                {llmBackends.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[120px] sm:max-w-[140px]"
+                      >
+                        <Zap className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {llmBackends.find(b => b.id === activeBackendId)?.name ||
+                           llmBackends.find(b => b.id === activeBackendId)?.model ||
+                           t('chat:input.selectModel')}
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
+                      <DropdownMenuLabel className="text-xs text-muted-foreground">
+                        {t('chat:input.selectLLMModel')}
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {llmBackends.map((backend) => (
+                        <DropdownMenuItem
+                          key={backend.id}
+                          onClick={() => activateBackend(backend.id)}
+                          className={cn(
+                            "flex items-center gap-2 py-2",
+                            backend.id === activeBackendId && "bg-muted"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-1.5 h-1.5 rounded-full shrink-0",
+                            backend.healthy ? "bg-success" : "bg-muted-foreground"
+                          )} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm truncate">{backend.name || backend.model}</p>
+                              <div className="flex items-center gap-0.5 text-muted-foreground">
+                                {backend.capabilities?.supports_multimodal && (
+                                  <span title={t('chat:model.supportsVision')}><Eye className="h-4 w-4" /></span>
+                                )}
+                                {backend.capabilities?.supports_tools && (
+                                  <span title={t('chat:model.supportsTools')}><Wrench className="h-4 w-4" /></span>
+                                )}
+                                {backend.capabilities?.supports_thinking && (
+                                  <span title={t('chat:model.supportsThinking')}><Brain className="h-4 w-4" /></span>
+                                )}
+                              </div>
+                            </div>
+                            <p className={cn(textNano, "text-muted-foreground truncate")}>
+                              {backend.backend_type} · {backend.model}
+                            </p>
+                          </div>
+                          {backend.id === activeBackendId && (
+                            <span className={cn(textNano, "text-muted-foreground")}>✓</span>
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+
+                {/* Context usage indicator */}
+                {(() => {
+                  const activeBackend = llmBackends.find(b => b.id === activeBackendId)
+                  const maxContext = activeBackend?.capabilities?.max_context ?? 8192
+                  const promptTokens = lastTokenUsage?.promptTokens
+                  let displayTokens: number
+                  let ratio: number
+                  if (promptTokens != null && !isStreaming) {
+                    displayTokens = promptTokens
+                    ratio = promptTokens / maxContext
+                  } else {
+                    const msgChars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
+                    const streamChars = (streamingContent?.length ?? 0) + (streamingThinking?.length ?? 0)
+                      + streamingToolCalls.reduce((s, tc) => s + (tc.arguments?.length ?? 0) + (tc.result?.length ?? 0), 0)
+                    displayTokens = Math.ceil((msgChars + streamChars) / 3)
+                    ratio = displayTokens / maxContext
+                  }
+                  if (messages.length === 0 || isWelcomeMode) return null
+                  return (
+                    <span className={cn(
+                      textMini, "shrink-0 transition-colors tabular-nums",
+                      ratio > 0.9 ? "text-error" : ratio > 0.7 ? "text-warning" : "text-muted-foreground"
+                    )}>
+                      Context {(displayTokens / 1000).toFixed(1)}K / {(maxContext / 1000).toFixed(0)}K
+                    </span>
+                  )
+                })()}
+
+                <div className="flex-1" />
+
+                {/* Send or Cancel button */}
+                {isStreaming ? (
+                  <Button
+                    type="button"
+                    onClick={handleCancelRequest}
+                    className={cn(
+                      "h-8 w-8 rounded-lg flex-shrink-0 p-0",
+                      "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
+                    )}
+                    title="Cancel request"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={!input.trim() && attachedImages.length === 0}
+                    className={cn(
+                      "h-8 w-8 rounded-lg flex-shrink-0 p-0",
+                      "bg-primary hover:bg-primary-hover text-primary-foreground",
+                      (!input.trim() && attachedImages.length === 0) && "opacity-40"
+                    )}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>
