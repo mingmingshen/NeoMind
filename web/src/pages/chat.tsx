@@ -1389,18 +1389,20 @@ export function ChatPage() {
                             backend.healthy ? "bg-success" : "bg-muted-foreground"
                           )} />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{backend.name || backend.model}</p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              {backend.capabilities?.supports_multimodal && (
-                                <span title={t('chat:model.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.vision', { defaultValue: 'Vision' })}</span>
-                              )}
-                              {backend.capabilities?.supports_tools && (
-                                <span title={t('chat:model.supportsTools')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.tools', { defaultValue: 'Tools' })}</span>
-                              )}
-                              {backend.capabilities?.supports_thinking && (
-                                <span title={t('chat:model.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.thinking', { defaultValue: 'Thinking' })}</span>
-                              )}
-                              <span className={cn(textNano, "text-muted-foreground truncate")}>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm truncate">{backend.name || backend.model}</p>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {backend.capabilities?.supports_multimodal && (
+                                  <span title={t('chat:model.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.vision', { defaultValue: 'Vision' })}</span>
+                                )}
+                                {backend.capabilities?.supports_tools && (
+                                  <span title={t('chat:model.supportsTools')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.tools', { defaultValue: 'Tools' })}</span>
+                                )}
+                                {backend.capabilities?.supports_thinking && (
+                                  <span title={t('chat:model.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.thinking', { defaultValue: 'Thinking' })}</span>
+                                )}
+                              </div>
+                              <span className={cn(textNano, "text-muted-foreground shrink-0")}>
                                 {backend.backend_type} · {backend.model}
                               </span>
                             </div>
