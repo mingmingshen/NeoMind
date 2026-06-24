@@ -231,7 +231,7 @@ export function ExtensionGrid({
           {categories.map((c) => (
             <div
               key={c.label}
-              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-muted-foreground bg-background"
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-muted-foreground bg-card"
             >
               <span className="shrink-0">{c.icon}</span>
               {c.label}
@@ -268,7 +268,7 @@ export function ExtensionGrid({
           placeholder={t("searchPlaceholder", { defaultValue: "Search extensions by name, ID, or description..." })}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 h-10 bg-background"
+          className="pl-10 h-10 bg-card"
         />
         {searchQuery && (
           <button
@@ -313,7 +313,7 @@ export function ExtensionGrid({
                   "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium transition-all border",
                   isSelected
                     ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "bg-background hover:bg-muted-50 text-muted-foreground border-border hover:border-input"
+                    : "bg-card hover:bg-muted-50 text-muted-foreground border-border hover:border-input"
                 )}
               >
                 {option.icon}
