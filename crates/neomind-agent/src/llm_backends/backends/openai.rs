@@ -735,7 +735,7 @@ impl CloudRuntime {
                 completion_tokens: u.completion_tokens,
                 total_tokens: u.total_tokens,
             }),
-            thinking: None,
+            thinking: choice.message.reasoning_content,
             tool_calls: native_tool_calls,
         });
 
@@ -1726,6 +1726,14 @@ struct ApiMessageResponse {
     /// Tool calls made by the model (for function calling)
     #[serde(default)]
     tool_calls: Option<Vec<OpenAiToolCallResponse>>,
+    /// Reasoning chain emitted by thinking/reasoning models (DeepSeek-R1,
+    /// Qwen3.x-plus, GLM-4.6 thinking, Moonshot K2, etc.). This is the
+    /// de-facto industry standard field originated by DeepSeek-R1 and adopted
+    /// by vLLM/SGLang/LMDeploy/SiliconFlow. Silently dropping it loses the
+    /// model's chain-of-thought — must be captured into `LlmOutput.thinking`
+    /// to mirror the llamacpp path.
+    #[serde(default)]
+    reasoning_content: Option<String>,
 }
 
 /// Tool call in OpenAI response format

@@ -505,7 +505,7 @@ impl AgentExecutor {
         );
         let mut messages = tool_prompt::build_tool_messages(&system_prompt, data_collected);
 
-        let loop_output = self
+        let mut loop_output = self
             .run_tool_loop(
                 agent,
                 &registry,
@@ -520,7 +520,7 @@ impl AgentExecutor {
 
         // Surface LLM failures as explicit errors.
         //
-        // Two failure modes:
+        // Three failure modes:
         // 1. `llm_generation_failed`: the LLM generate() call itself failed
         //    (HTTP 403, timeout, network). This is a definitive failure —
         //    the sentinel string is only set in tool_loop.rs when generate()
@@ -530,10 +530,14 @@ impl AgentExecutor {
         //    tools were executed at all. Only trigger for this combination
         //    because malformed output after successful tools might be the
         //    LLM's legitimate final text containing XML.
+        //    **Detection requires BOTH opening and closing tags** — orphan
+        //    closing tags alone (e.g. qwen3.6-35b-a3b under complex multimodal
+        //    context emits `</parameter></function></tool_call>` as content
+        //    with no opening tags and no `tool_calls` API field) are model
+        //    noise, not a real tool-call attempt. Stripped below.
         let no_tools_executed = loop_output.all_tool_results.is_empty();
-        let has_malformed_output = loop_output.final_text.contains("</parameter>")
-            || loop_output.final_text.contains("</function>")
-            || loop_output.final_text.contains("</tool_call");
+        let classification = classify_tool_call_text(&loop_output.final_text);
+        let has_malformed_output = classification.is_malformed;
         let llm_generation_failed =
             loop_output.final_text == "LLM generation failed during tool execution.";
 
@@ -555,6 +559,27 @@ impl AgentExecutor {
                 "Tool-calling failed — propagating error"
             );
             return Err(NeoMindError::Llm(msg));
+        }
+
+        // Orphan closing-tag cleanup: small thinking-capable models
+        // (e.g. qwen3.6-35b-a3b MoE) sometimes emit bare closing tags
+        // (`</parameter></function></tool_call>`) as content under complex
+        // multimodal + multi-round context, with NO corresponding opening
+        // tags and NO native `tool_calls` API field. This is model noise, not
+        // a real tool-call attempt — strip the orphan tags so downstream
+        // result building sees clean text and treats this as a normal stop.
+        if classification.has_orphan_closing_tags {
+            tracing::warn!(
+                agent_id = %agent.id,
+                orphan_tags_detected = true,
+                stripped_preview = %loop_output
+                    .final_text
+                    .chars()
+                    .take(200)
+                    .collect::<String>(),
+                "Stripping orphan XML closing tags from LLM output (model noise)"
+            );
+            loop_output.final_text = classification.cleaned_text;
         }
 
         let (decision_process, execution_result) =
@@ -1478,5 +1503,128 @@ impl AgentExecutor {
                 Ok((decision_process, execution_result))
             }
         }
+    }
+}
+
+// ========================================================================
+// Tool-call text classification (malformed detection + orphan cleanup)
+// ========================================================================
+
+/// Result of inspecting LLM output text for tool-call XML fragments.
+///
+/// Small thinking-capable models (qwen3.6-35b-a3b MoE, etc.) sometimes emit
+/// bare XML closing tags as content under complex multimodal + multi-round
+/// context, with no corresponding opening tags and no native `tool_calls`
+/// API field. This is model noise — must NOT be confused with a genuine
+/// malformed tool-call attempt (which has both opening and closing tags).
+pub(super) struct ToolCallTextClassification {
+    /// True only when BOTH opening and closing tags are present — a real
+    /// (but unparseable) tool-call attempt. Triggers the malformed-output
+    /// error path so the user sees the failure surface.
+    pub is_malformed: bool,
+    /// True when closing tags appear WITHOUT opening tags — model noise.
+    /// Caller should replace `final_text` with `cleaned_text`.
+    pub has_orphan_closing_tags: bool,
+    /// Text with orphan closing tags stripped (only meaningful when
+    /// `has_orphan_closing_tags` is true; otherwise mirrors the input).
+    pub cleaned_text: String,
+}
+
+/// Inspect LLM output text for tool-call XML fragments and decide whether
+/// it's malformed (real attempt that failed to parse) or just orphan-tag
+/// noise (closing tags only — common on small MoE thinking models under
+/// complex multimodal context).
+pub(super) fn classify_tool_call_text(text: &str) -> ToolCallTextClassification {
+    let has_opening_tag = text.contains("<parameter")
+        || text.contains("<function")
+        || text.contains("<tool_call");
+    let has_closing_tag = text.contains("</parameter>")
+        || text.contains("</function>")
+        || text.contains("</tool_call");
+
+    let is_malformed = has_opening_tag && has_closing_tag;
+    let has_orphan_closing_tags = has_closing_tag && !has_opening_tag;
+
+    let cleaned_text = if has_orphan_closing_tags {
+        text.replace("</parameter>", "")
+            .replace("</function>", "")
+            .replace("</tool_call>", "")
+            .replace("</tool_call", "")
+            .trim()
+            .to_string()
+    } else {
+        text.to_string()
+    };
+
+    ToolCallTextClassification {
+        is_malformed,
+        has_orphan_closing_tags,
+        cleaned_text,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_tool_call_text;
+
+    #[test]
+    fn normal_text_is_not_malformed() {
+        let c = classify_tool_call_text("Looks normal — no anomalies detected.");
+        assert!(!c.is_malformed);
+        assert!(!c.has_orphan_closing_tags);
+        assert_eq!(c.cleaned_text, "Looks normal — no anomalies detected.");
+    }
+
+    #[test]
+    fn empty_text_is_not_malformed() {
+        let c = classify_tool_call_text("");
+        assert!(!c.is_malformed);
+        assert!(!c.has_orphan_closing_tags);
+    }
+
+    #[test]
+    fn real_malformed_attempt_with_open_and_close_tags_detected() {
+        // Both opening and closing tags = a real but unparseable tool-call
+        // attempt. Must surface as malformed so user sees the failure.
+        let text = r#"<tool_call>{"name":"foo"}</tool_call>"#;
+        let c = classify_tool_call_text(text);
+        assert!(c.is_malformed);
+        assert!(!c.has_orphan_closing_tags); // not orphan — has opening
+    }
+
+    #[test]
+    fn orphan_closing_tags_stripped_as_model_noise() {
+        // Reproduces qwen3.6-35b-a3b production failure on prod-01 (agent
+        // e64fb295 Garbage Monitoring, event:values.image trigger):
+        // model emits bare `</parameter></function></tool_call>` as content,
+        // no opening tags, no native tool_calls API field. Must be treated
+        // as noise and stripped, NOT surfaced as malformed-output error.
+        let text = "\n</parameter>\n</function>\n</tool_call>";
+        let c = classify_tool_call_text(text);
+        assert!(!c.is_malformed, "orphan tags must not trigger malformed");
+        assert!(
+            c.has_orphan_closing_tags,
+            "orphan closing tags must be detected"
+        );
+        assert_eq!(c.cleaned_text, "");
+    }
+
+    #[test]
+    fn orphan_closing_tags_with_leading_text_preserves_text() {
+        let text = "Anomaly detected.</parameter></function>";
+        let c = classify_tool_call_text(text);
+        assert!(!c.is_malformed);
+        assert!(c.has_orphan_closing_tags);
+        assert_eq!(c.cleaned_text, "Anomaly detected.");
+    }
+
+    #[test]
+    fn opening_tag_only_not_malformed() {
+        // Half-formed attempt without closing — not detected as malformed
+        // (parser may still extract a tool call from incomplete input).
+        let text = "I will call <tool_call>";
+        let c = classify_tool_call_text(text);
+        assert!(!c.is_malformed);
+        assert!(!c.has_orphan_closing_tags);
     }
 }
