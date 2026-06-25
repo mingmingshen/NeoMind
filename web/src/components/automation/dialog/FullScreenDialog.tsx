@@ -82,8 +82,11 @@ export function FullScreenDialog({
         )}
         onClick={(e) => e.stopPropagation()}
         style={isMobile ? {
-          marginTop: `${insets.top}px`,
-          marginBottom: `${insets.bottom}px`,
+          // Extend edge-to-edge; safe-area insets become INTERNAL padding so the
+          // solid `bg-bg-95` background covers the full viewport (no backdrop
+          // color stripes showing through at top/bottom on PWA / iOS Safari).
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         } : undefined}
       >
         {children}
@@ -117,9 +120,6 @@ export function FullScreenDialogHeader({
   onClose,
   actions,
 }: FullScreenDialogHeaderProps) {
-  const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
-
   return (
     <header
       className={cn(
@@ -206,9 +206,6 @@ export function FullScreenDialogFooter({
   children,
   className,
 }: FullScreenDialogFooterProps) {
-  const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
-
   return (
     <footer
       className={cn(
@@ -218,7 +215,6 @@ export function FullScreenDialogFooter({
         "bg-black/[0.02] dark:bg-white/[0.02]",
         className
       )}
-      style={isMobile ? { paddingBottom: `${Math.max(insets.bottom, 12)}px` } : undefined}
     >
       {children}
     </footer>

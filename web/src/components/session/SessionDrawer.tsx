@@ -222,7 +222,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
       {/* Drawer */}
       <div
         className={cn(
-          "fixed top-0 left-0 h-full z-50",
+          "fixed top-0 left-0 h-full z-50 safe-top",
           // Responsive width: 85% on mobile, max 320px on small screens, 320px on larger screens
           "w-[85vw] max-w-[320px] sm:w-80",
           "bg-[var(--session-drawer-bg)] border-r border-[var(--session-drawer-border)]",

@@ -856,7 +856,10 @@ export function ChatPage() {
 
   return (
     <>
-    <div className="fixed inset-0 flex flex-row overflow-hidden" style={{paddingTop: 'var(--topnav-height, calc(4rem + env(safe-area-inset-top, 0px)))'}}>
+    <div className="fixed top-0 left-0 right-0 flex flex-row overflow-hidden" style={{
+      paddingTop: 'var(--topnav-height, calc(4rem + env(safe-area-inset-top, 0px)))',
+      height: 'calc(100dvh - var(--keyboard-offset, 0px))',
+    }}>
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-80 backdrop-blur-sm">
@@ -993,7 +996,7 @@ export function ChatPage() {
         ) : isWelcomeMode ? (
           /* Welcome Area - shown on /chat (no sessionId), scrollable on mobile */
           <div
-            className="touch-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 sm:px-6 py-4 sm:py-6 pb-32 sm:pb-6"
+            className="touch-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 sm:px-6 py-4 sm:py-6 pb-6"
             onClick={(e) => {
               // If clicking outside interactive elements, dismiss keyboard
               if ((e.target as HTMLElement).closest('button, a, input, textarea, [role="button"]')) return
@@ -1044,7 +1047,7 @@ export function ChatPage() {
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="touch-scroll flex-1 min-h-0 overflow-y-auto px-2 sm:px-4 py-2 sm:py-4 pb-32 sm:pb-2"
+            className="touch-scroll flex-1 min-h-0 overflow-y-auto px-2 sm:px-4 py-2 sm:py-4 pb-4"
             onClick={(e) => {
               // If clicking outside interactive elements, dismiss keyboard
               if ((e.target as HTMLElement).closest('button, a, input, textarea, [role="button"]')) return
@@ -1239,7 +1242,7 @@ export function ChatPage() {
         ) : (
           /* Empty chat - shown on /chat/:sessionId with no messages yet */
           <div
-            className="flex-1 min-h-0 flex items-center justify-center px-4 py-4 sm:py-6 pb-32 sm:pb-0"
+            className="flex-1 min-h-0 flex items-center justify-center px-4 py-4 sm:py-6"
             onClick={(e) => {
               // If clicking outside interactive elements, dismiss keyboard
               if ((e.target as HTMLElement).closest('button, a, input, textarea, [role="button"]')) return
@@ -1261,13 +1264,18 @@ export function ChatPage() {
         )}
         </div>
 
-        {/* Input Area - fixed on mobile, normal flex on desktop */}
+        {/* Input Area - flex child of chat column (was: fixed bottom-offset).
+            Previous mobile `position: fixed` caused iOS Safari to mis-position
+            the input when the soft keyboard opened — iOS fixed elements bind
+            to layoutViewport, which doesn't shrink, so the input would float
+            in the wrong place. Letting the parent container shrink via
+            `height: calc(100dvh - var(--keyboard-offset))` and rendering the
+            input as a flex child makes it naturally sit at the bottom of the
+            visible area on every platform. */}
         <div className={cn(
-          "px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
-          isDesktop
-            ? "border-0"
-            : "fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 backdrop-blur-xl"
-        )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
+          "shrink-0 px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
+          isDesktop ? "border-0" : "bg-background/95 backdrop-blur-xl"
+        )} style={isDesktop ? undefined : { paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Image previews */}
             {attachedImages.length > 0 && (

@@ -371,7 +371,7 @@ export function LoginPage() {
 
       {/* Main Content */}
       <main
-        className="flex-1 px-4 sm:px-6 safe-bottom flex items-center justify-center min-h-0"
+        className="flex-1 px-4 sm:px-6 safe-bottom flex items-center justify-center min-h-0 overflow-y-auto"
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('form, button, a')) return
           handleBackdropClick()
