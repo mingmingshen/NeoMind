@@ -1266,7 +1266,7 @@ export function ChatPage() {
           "px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
           isDesktop
             ? "border-0"
-            : "fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 border-t border-border bg-[var(--surface-glass)] backdrop-blur-xl"
+            : "fixed bottom-[var(--keyboard-offset,0px)] left-0 right-0 z-40 backdrop-blur-xl"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Image previews */}
