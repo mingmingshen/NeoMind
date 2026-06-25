@@ -571,6 +571,8 @@
     "columnSkill": "技能",
     "columnPriority": "优先级",
     "columnSize": "大小",
+    "columnCategory": "分类",
+    "columnKeywords": "关键词",
     "actionView": "查看",
     "actionEdit": "编辑",
     "actionDelete": "删除",

@@ -326,6 +326,11 @@ anti_triggers:
             label: t("skills.columnSkill"),
           },
           {
+            key: "category",
+            label: t("skills.columnCategory"),
+            width: "w-28",
+          },
+          {
             key: "priority",
             label: (
               <div className="flex items-center gap-1">
@@ -335,6 +340,10 @@ anti_triggers:
             ),
             align: "center",
             width: "w-20",
+          },
+          {
+            key: "keywords",
+            label: t("skills.columnKeywords"),
           },
           {
             key: "body_length",
@@ -354,35 +363,31 @@ anti_triggers:
 
           switch (columnKey) {
             case "name":
+              // Compact header cell: icon (32px, matches other list pages) + name only.
+              // Category and keywords live in their own columns so the mobile card
+              // header stays a single-line anchor point, not a multi-row info dump.
               return (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
                   <div
                     className={cn(
-                      "w-9 h-9 rounded-lg flex items-center justify-center border",
+                      "w-8 h-8 rounded-lg flex items-center justify-center border shrink-0",
                       catConf.color
                     )}
                   >
                     <Icon className="h-4 w-4" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="font-medium text-sm truncate">{row.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      <span>{row.category}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-0.5">
-                      {row.keywords.slice(0, 3).map((kw, i) => (
-                        <span key={i} className="text-xs bg-muted px-1 py-0 rounded">
-                          {kw}
-                        </span>
-                      ))}
-                      {row.keywords.length > 3 && (
-                        <span className="text-xs text-muted-foreground">
-                          +{row.keywords.length - 3}
-                        </span>
-                      )}
-                    </div>
+                  <div className="font-medium text-sm truncate min-w-0">
+                    {row.name}
                   </div>
                 </div>
+              )
+
+            case "category":
+              return (
+                <Badge variant="outline" className={cn("h-6 gap-1", catConf.color)}>
+                  <Icon className="h-3 w-3" />
+                  {catConf.label}
+                </Badge>
               )
 
             case "priority":
@@ -390,6 +395,29 @@ anti_triggers:
                 <Badge variant="secondary" className="font-mono">
                   {row.priority}
                 </Badge>
+              )
+
+            case "keywords":
+              // Render up to 3 keyword tags + overflow count.
+              // On mobile this lands in the card body (white bg) where the
+              // muted-background tags have proper contrast — previously they
+              // sat inside the bg-muted card header and were nearly invisible.
+              if (row.keywords.length === 0) {
+                return <span className="text-xs text-muted-foreground">—</span>
+              }
+              return (
+                <div className="flex flex-wrap gap-1">
+                  {row.keywords.slice(0, 3).map((kw, i) => (
+                    <span key={i} className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                      {kw}
+                    </span>
+                  ))}
+                  {row.keywords.length > 3 && (
+                    <span className="text-xs text-muted-foreground self-center">
+                      +{row.keywords.length - 3}
+                    </span>
+                  )}
+                </div>
               )
 
             case "body_length":

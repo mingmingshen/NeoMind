@@ -571,6 +571,8 @@
     "columnSkill": "Skill",
     "columnPriority": "Priority",
     "columnSize": "Size",
+    "columnCategory": "Category",
+    "columnKeywords": "Keywords",
     "actionView": "View",
     "actionEdit": "Edit",
     "actionDelete": "Delete",
