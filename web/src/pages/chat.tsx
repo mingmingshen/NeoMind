@@ -1281,10 +1281,10 @@ export function ChatPage() {
                     />
                     <button
                       type="button"
-                      className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-0"
+                      className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-0"
                       onClick={() => removeAttachedImage(index)}
                     >
-                      <X className="h-2 w-2" />
+                      <X className="h-1.5 w-1.5" />
                     </button>
                   </div>
                 ))}
