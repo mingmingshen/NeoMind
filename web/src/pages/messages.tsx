@@ -1087,6 +1087,11 @@ export default function MessagesPage() {
                 const message = rowData as unknown as NotificationMessage
                 return (message.status === 'resolved' || message.status === 'archived') ? 'opacity-60' : ''
               }}
+              onRowClick={(rowData) => {
+                // Quick-open detail dialog on row click — same as "View Details"
+                // action in the dropdown, just one tap instead of two.
+                setSelectedMessage(rowData as unknown as NotificationMessage)
+              }}
               actions={[
                 {
                   label: t('messages.viewDetails', 'View Details'),
