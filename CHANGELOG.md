@@ -9,6 +9,167 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.24] - 2026-06-26
+
+### Overview
+
+A **data-management hardening + cross-cutting fix** release. The headline
+work is a rework of the telemetry retention cleanup pipeline: the image-data
+short-retention rule now detects image content by inspecting the actual
+datapoint value (base64 magic bytes) instead of matching metric names, and
+the cleanup path itself gains concurrency dedup, batched deletion, and
+async HTTP triggering to handle million-point backlogs safely. Around that,
+a batch of mobile / desktop UX fixes land: row-click detail dialogs across
+Rules / Messages / Devices, the Tauri updater no longer re-prompts after a
+successful install, and several long-standing theme / safe-area / i18n
+bugs are closed.
+
+Themes: (1) **retention overhaul** — content-based image detection +
+cache-bypass + concurrency guard + batched deletion + async trigger;
+(2) **list-page interactions** — click a row to open a detail dialog
+(Rules, Messages, Devices) with richer metadata; (3) **agent reliability** —
+transient LLM errors now retry instead of marking the agent Error, plus
+event-trigger dedup covers image-vs-regular and cross-channel overlap;
+(4) **theme & frontend polish** — light-mode tokens aligned with shadcn /
+Vercel conventions, `--error-foreground` token (was missing → black text
+on red), mobile chat bar transparency, Skills mobile card declutter;
+(5) **Tauri updater race fix** — the "update successful" dialog no longer
+re-appears on the just-installed version; (6) **iOS PWA safe-area** —
+top padding / headers now clear the notch.
+
+### Data retention overhaul
+
+- **Content-based image retention** (`crates/neomind-storage/src/timeseries.rs`).
+  The previous keyword fallback (`"image"`, `"frame"`, `"snapshot"`, …) was
+  too narrow — it missed metrics like `payload` / `data` / `sample` that
+  carry base64 image blobs, and false-positived on names like `framerate`.
+  Replaced with `value_looks_like_image()`, which decodes the first 32 chars
+  of the latest datapoint's value and checks for image magic bytes (JPEG
+  `FF D8 FF`, PNG `89 50 4E 47`, GIF `GIF8`, WebP `RIFF`, BMP `BM`) or a
+  `data:image/` URL prefix. Priority unchanged: explicit metric_overrides →
+  device_type_overrides → image_retention (content-based) → default_hours.
+- **Bypass LRU cache during retention walks**
+  (`query_latest_uncached()`). `apply_retention()` walks every metric pair
+  to peek at the latest value; calling the cached `query_latest()` for each
+  would populate `latest_cache` (capacity 1000, TTL 60s) and evict the hot
+  entries users are actively querying. The new uncached helper skips both
+  cache read and cache write, leaving the hot window untouched.
+- **Concurrency dedup** for `apply_retention()`. The hourly background task
+  and `PUT /settings/retention` can both fire simultaneously; without a
+  guard they'd race, doing duplicate full-table scans + N
+  `query_latest_uncached` calls and piling on redb's single-writer lock.
+  Added a `retention_in_progress: AtomicBool` gated by an RAII
+  `RetentionGuard` that clears the flag on every exit path (success, error,
+  panic). A concurrent caller observes the flag and returns immediately.
+- **Batched deletion** in `delete_range()`. The previous implementation
+  collected every key into a `Vec<(String, String, i64)>` and removed them
+  in one giant `write_txn`. For a metric with millions of expired points
+  this meant O(N) memory (~100 bytes/key), a single txn held open for
+  minutes starving other writers, and WAL bloat. Now deletes in batches of
+  1000 keys per committed txn. Partial failure is tolerable — deletion is
+  idempotent, the next hourly pass picks up where this one left off.
+- **Async retention trigger**
+  (`crates/neomind-api/src/handlers/settings.rs`).
+  `trigger_retention_cleanup` was awaiting `apply_retention()` inline on
+  the HTTP path. With a large backlog this blocked the response for
+  minutes, causing frontend timeouts and retry storms. The handler now
+  spawns the cleanup in the background and returns `{triggered: true}`
+  immediately. The in-progress flag dedupes against the concurrent hourly
+  run.
+
+### List-page interactions
+
+- **Row-click detail dialogs** across Rules, Messages, and Devices. Clicking
+  a row opens a detail dialog instead of requiring the action menu.
+  - `feat(web/automation)`: `RuleDetailDialog` — click a rule to see full
+    condition / actions / trigger config + paginated execution history.
+  - `feat(web/messages)`: message row → quick-open detail dialog.
+  - `feat(web/devices)`: richer `DeviceDetail` metadata + row-click to open.
+  - `refactor(web/automation)`: `RuleDetailDialog` migrated to
+    `UnifiedFormDialog` + paginated history (was ad-hoc layout).
+  - Desktop `ResponsiveTable` in `RulesList` gained `onRowClick` parity
+    with mobile.
+
+### Agent reliability
+
+- **Retry transient LLM errors** (`crates/neomind-agent`). Network blips
+  and rate-limit responses now trigger an inline retry with backoff instead
+  of immediately failing the execution. Transient failures no longer flip
+  the agent to `Error` status — the agent stays `Active` so the scheduler
+  keeps firing on the next tick. `is_transient_failure` gained unit tests.
+- **Event-trigger dedup** — two related fixes:
+  - Event-triggered image collection vs regular collection no longer
+    double-fire (prefix-match dedup).
+  - Cross-channel data collection (metric vs device overlap) no longer
+    duplicates work when the same source is bound via multiple channels.
+
+### Theme & frontend polish
+
+- **Light-mode token alignment** (`refactor(web/theme)`). `--background`,
+  `--muted`, `--secondary`, `--accent` retuned to shadcn / Vercel
+  conventions (`oklch(0.985 0 0)` canvas, `oklch(0.97 0 0)` muted) so
+  surfaces separate cleanly. Table headers upgraded to the Strong label
+  style (`text-[11px] uppercase tracking-wider text-foreground`). Mobile
+  page header switched to the `--chrome` token with `text-base` title.
+- **`--error-foreground` token** — was missing entirely, causing black
+  text on red error surfaces. Defined the token, added
+  `error.foreground` to the Tailwind config, and swept residual
+  `hsl(var())` references in `DashboardGrid` + `CustomLayer`.
+- **Mobile chat input bar** — transparent `backdrop-blur` instead of the
+  solid glass background that clashing with the page chrome.
+- **Skills mobile card declutter** (`fix(web/skills)`). The SkillsPanel
+  card packed icon + name + raw category text + up to 3 keyword tags all
+  into the `bg-muted` card header, producing a tall top-heavy card with
+  near-invisible muted-on-muted keyword tags. Split into focused columns:
+  name (icon 36→32px + name only), category (colored Badge from the
+  previously-unused `categoryConfig`), keywords (own column, renders on
+  the white card body where contrast is correct).
+
+### Tauri updater race fix
+
+- **Update dialog no longer re-appears after a successful install**
+  (`fix(update)`). `localStorage.setItem('neomind_installed_version')` was
+  running AFTER `await invoke('download_and_install')`. On macOS / Windows
+  Tauri's updater can trigger a process restart or webview reload the
+  moment `download_and_install` resolves — so the marker write never
+  executed, the next launch found no marker, fell through to
+  `check_update`, and re-showed the dialog on the just-installed version.
+  Two-layer fix: (1) frontend pre-writes the marker BEFORE the invoke and
+  clears it on install failure; (2) backend `normalize()` now splits on
+  `+` / `-` so `0.8.24+build.1` / `0.8.24-beta` match `0.8.24` — a
+  last-resort safety net when the marker is lost entirely.
+
+### iOS PWA safe-area
+
+- **CSS variable scoping bug** (`fix(web)`). `--topnav-height` and
+  `--chat-content-padding-top` were declared bare (no selector) inside an
+  `@supports` block. Bare custom-property declarations have no selector to
+  attach to, so they silently never applied — `var()` downstream fell back
+  to the hardcoded `4rem`, causing PWA content to overflow the top safe
+  area on iPhone X+ notches. Moved both into an explicit `:root {}` rule.
+- **Header safe-area adoption** — `login.tsx` and `SetupHeader.tsx` headers
+  gained `safe-top` so the back-button row clears the notch.
+- **App.tsx** main padding fallback now mirrors the real token
+  (`calc(4rem + env(safe-area-inset-top))` instead of plain `4rem`).
+
+### i18n
+
+- **Stop leaking hardcoded Chinese via `plugin_name`**
+  (`fix(devices)`). `get_plugin_info()` in `crud.rs` was emitting
+  `"内置MQTT"` / `"外部MQTT: …"` directly into the API response. English-
+  locale users saw Chinese broker names regardless of their UI language.
+  Backend now returns stable English identifiers; `DeviceDetail` maps
+  `adapter_id` to localized labels via `t('brokerInternalMqtt' |
+  'brokerExternalMqtt')`.
+
+### Other
+
+- **Device last_seen fallback** — after a server restart, in-memory
+  `last_seen` is 0; the API now falls back to the registry value so
+  devices don't momentarily appear as "never seen".
+- **Tauri `Cargo.lock` sync** — `base64 0.22.1` added to the Tauri
+  lockfile (workspace already had it for content-based image detection).
+
 ## [0.8.23] - 2026-06-25
 
 ### Overview
