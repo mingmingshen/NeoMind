@@ -318,6 +318,9 @@ html {
     --accent-foreground: oklch(0.21 0.01 264);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(1 0 0);
+    /* Alias: some components use text-error-foreground; map it to the same
+       white so red buttons/toasts render correctly (was missing → black text) */
+    --error-foreground: oklch(1 0 0);
     --border: oklch(0.21 0.01 264 / 9%);
     --input: oklch(0.21 0.01 264 / 10%);
     /* Focus ring uses the brand orange — makes brand the interaction anchor */
@@ -501,6 +504,7 @@ html {
     --accent-foreground: oklch(0.95 0.006 270);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(0.95 0.006 270);
+    --error-foreground: oklch(0.95 0.006 270);
     --border: oklch(1 0 0 / 9%);
     --input: oklch(1 0 0 / 11%);
     /* Brand orange ring — consistent with light mode interaction anchor */
