@@ -684,13 +684,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {journalRecords.map((record: JournalExecutionRecord, idx: number) => (
-                <div key={idx} className={cn(
-                  "group rounded-lg bg-background border border-border border-l-[3px] transition-colors",
-                  "hover:border-info",
-                  record.success
-                    ? "border-l-success hover:border-l-success"
-                    : "border-l-error hover:border-l-error"
-                )}>
+                <div key={idx} className="group rounded-lg bg-background border border-border hover:border-info transition-colors">
                   <div className="pl-4 pr-3 py-3">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
