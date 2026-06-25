@@ -157,6 +157,9 @@ export function DeviceList({
         </div>
       ) : (
         <ResponsiveTable
+        onRowClick={(rowData) => {
+          onViewDetails(rowData as unknown as Device)
+        }}
         columns={[
           {
             key: 'name',

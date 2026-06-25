@@ -265,6 +265,9 @@ export function DeviceDetail({
 
   if (!device) return null
 
+  // Effective offline timeout: device override > template default > none
+  const effectiveTimeout = device.effective_offline_timeout_secs ?? device.offline_timeout_secs
+
   // Get current metric data from API response (already paginated)
   const currentMetricData = selectedMetric && telemetryData?.data[selectedMetric]
     ? telemetryData.data[selectedMetric]
@@ -415,11 +418,63 @@ export function DeviceDetail({
                     {device.last_seen ? formatTimestamp(new Date(device.last_seen).getTime() / 1000) : '-'}
                   </p>
                 </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{t('devices:detailPage.deviceId', { defaultValue: 'Device ID' })}</p>
+                  <code className="text-xs font-mono text-muted-foreground break-all">{device.device_id || device.id}</code>
+                </div>
+
+                {/* Row 2: transport + offline timeout + counts */}
+                {device.transport_connected !== undefined && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">{t('devices:detailPage.transportState', { defaultValue: 'Transport' })}</p>
+                    <p className="text-sm font-medium">
+                      {device.transport_connected
+                        ? t('devices:detailPage.transportConnected', { defaultValue: 'Connected' })
+                        : t('devices:detailPage.transportDisconnected', { defaultValue: 'Disconnected' })}
+                    </p>
+                  </div>
+                )}
+                {effectiveTimeout !== undefined && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">{t('devices:detailPage.offlineTimeout', { defaultValue: 'Offline Timeout' })}</p>
+                    <p className="text-sm font-medium">
+                      {device.offline_timeout_secs
+                        ? `${device.offline_timeout_secs}s (${t('devices:detailPage.timeoutOverride', { defaultValue: 'override' })})`
+                        : `${effectiveTimeout}s (${t('devices:detailPage.timeoutDefault', { defaultValue: 'default' })})`}
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{t('devices:headers.metrics', { defaultValue: 'Metrics' })}</p>
+                  <p className="text-sm font-medium tabular-nums">{device.metric_count ?? metricDefinitions.length ?? '-'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{t('devices:headers.commands', { defaultValue: 'Commands' })}</p>
+                  <p className="text-sm font-medium tabular-nums">{device.command_count ?? commands.length ?? '-'}</p>
+                </div>
+
+                {/* Row 3: plugin / broker association */}
+                {(device.plugin_name || device.adapter_id) && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">{t('devices:detailPage.association', { defaultValue: 'Associated Broker' })}</p>
+                    <p className="text-sm font-medium truncate">{device.plugin_name || device.adapter_id}</p>
+                  </div>
+                )}
+
+                {/* Row 4: topics */}
                 {device.connection_config?.telemetry_topic && (
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">{t('devices:detailPage.telemetryTopicLabel')}</p>
                     <p className="text-sm font-mono text-muted-foreground truncate">
                       {device.connection_config.telemetry_topic}
+                    </p>
+                  </div>
+                )}
+                {device.connection_config?.command_topic && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">{t('devices:detailPage.commandTopic', { defaultValue: 'Command Topic' })}</p>
+                    <p className="text-sm font-mono text-muted-foreground truncate">
+                      {device.connection_config.command_topic}
                     </p>
                   </div>
                 )}
