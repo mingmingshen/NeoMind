@@ -691,7 +691,7 @@ function getBackgroundStyle(
 
   switch (type) {
     case 'color':
-      backgroundStyle.backgroundColor = color || 'hsl(var(--muted) / 0.3)'
+      backgroundStyle.backgroundColor = color || 'color-mix(in oklch, var(--muted) 30%, transparent)'
       backgroundStyle.backgroundImage = 'none'
       break
     case 'image':
@@ -702,19 +702,19 @@ function getBackgroundStyle(
     case 'transparent':
       // Chessboard pattern for transparency
       backgroundStyle.backgroundImage = `
-        linear-gradient(45deg, hsl(var(--muted) / 0.1) 25%, transparent 25%),
-        linear-gradient(-45deg, hsl(var(--muted) / 0.1) 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, hsl(var(--muted) / 0.1) 75%),
-        linear-gradient(-45deg, transparent 75%, hsl(var(--muted) / 0.1) 75%)
+        linear-gradient(45deg, color-mix(in oklch, var(--muted) 10%, transparent) 25%, transparent 25%),
+        linear-gradient(-45deg, color-mix(in oklch, var(--muted) 10%, transparent) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, color-mix(in oklch, var(--muted) 10%, transparent) 75%),
+        linear-gradient(-45deg, transparent 75%, color-mix(in oklch, var(--muted) 10%, transparent) 75%)
       `
       backgroundStyle.backgroundSize = '20px 20px'
       backgroundStyle.backgroundPosition = '0 0, 0 10px, 10px -10px, -10px 0px'
       break
     case 'grid':
-      backgroundStyle.backgroundColor = color || 'hsl(var(--background))'
+      backgroundStyle.backgroundColor = color || 'var(--background)'
       backgroundStyle.backgroundImage = `
-        linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
-        linear-gradient(to bottom, hsl(var(--border) / 0.3) 1px, transparent 1px)
+        linear-gradient(to right, color-mix(in oklch, var(--border) 30%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in oklch, var(--border) 30%, transparent) 1px, transparent 1px)
       `
       backgroundStyle.backgroundSize = `${gridSize}px ${gridSize}px`
       break

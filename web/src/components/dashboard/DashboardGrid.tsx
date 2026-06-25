@@ -212,13 +212,13 @@ export function DashboardGrid({
         .react-resizable-handle::after {
           content: ''; position: absolute; right: 2px; bottom: 2px;
           width: 6px; height: 6px;
-          border-right: 2px solid hsl(var(--muted-foreground) / 0.5);
-          border-bottom: 2px solid hsl(var(--muted-foreground) / 0.5);
+          border-right: 2px solid color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+          border-bottom: 2px solid color-mix(in oklch, var(--muted-foreground) 50%, transparent);
           border-radius: 0 0 1px 0;
         }
         .react-grid-layout.edit-mode > .react-grid-item:hover .react-resizable-handle::after {
-          border-right-color: hsl(var(--primary));
-          border-bottom-color: hsl(var(--primary));
+          border-right-color: var(--primary);
+          border-bottom-color: var(--primary);
           width: 8px; height: 8px;
         }
         .react-grid-layout:not(.edit-mode) .react-resizable-handle { display: none; }
