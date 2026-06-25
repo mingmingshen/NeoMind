@@ -64,6 +64,7 @@ export default {
         },
         error: {
           DEFAULT: "var(--color-error)",
+          foreground: "var(--error-foreground)",
           light: "var(--color-error-bg)",
         },
         info: {
