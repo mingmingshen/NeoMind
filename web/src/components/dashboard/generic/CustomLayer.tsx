@@ -522,9 +522,7 @@ function LayerItemComponent({
             className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
             onClick={() => setShowDetails(false)}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="h-4 w-4" />
           </button>
 
           {/* Header with icon and type */}
@@ -656,9 +654,7 @@ function LayerItemComponent({
               className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-overlay-medium text-white/70 hover:text-white hover:bg-overlay-heavy"
               onClick={() => setShowDetails(false)}
             >
-              <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="h-2 w-2" />
             </button>
           )}
         </div>

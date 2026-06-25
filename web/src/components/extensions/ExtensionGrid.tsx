@@ -291,7 +291,7 @@ export function ExtensionGrid({
           </span>
           {!hasActiveFilters && stats.active > 0 && (
             <span className="flex items-center gap-1 text-success whitespace-nowrap">
-              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <div className="w-2 h-2 rounded-full bg-success" />
               {stats.active} {t("active", { defaultValue: "active" })}
             </span>
           )}

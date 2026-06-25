@@ -122,9 +122,7 @@ export function AgentCard({
             <StatusIcon className={cn(
               "h-4 w-4 shrink-0",
               statusConfig.color,
-              agent.status === 'Active' && "animate-pulse",
-              agent.status === 'Executing' && "animate-spin",
-              agent.status === 'Error' && "animate-pulse"
+              agent.status === 'Executing' && "animate-spin"
             )} />
           </div>
           <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">

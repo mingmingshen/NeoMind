@@ -72,7 +72,10 @@
     "reconnecting": "Reconnecting",
     "error": "Connection error",
     "disconnected": "Disconnected",
-    "retryAttempt": "Attempt {{count}}"
+    "retryAttempt": "Attempt {{count}}",
+    "retryProgress": "Attempt {{retry}}/{{max}}{{seconds, string}}",
+    "retrySeconds": " · {{seconds}}s",
+    "reconnect": "Reconnect"
   },
   "quickActions": {
     "refreshDevices": "Refresh devices",

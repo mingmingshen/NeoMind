@@ -7,6 +7,7 @@
  */
 
 import { lazy, Suspense, memo, useMemo, useState, useEffect, useCallback, useRef } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -157,11 +158,7 @@ function ComponentErrorFallback({ className }: ComponentErrorFallbackProps) {
     <Card className={cn('border-error-light', className)}>
       <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center">
         <div className="w-8 h-8 rounded-full bg-destructive-light flex items-center justify-center mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-error">
-            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
+          <AlertTriangle className="h-4 w-4 text-error" />
         </div>
         <p className="text-xs font-medium text-error">Component Error</p>
         <p className="text-[10px] text-muted-foreground mt-1">Check config or remove this component</p>

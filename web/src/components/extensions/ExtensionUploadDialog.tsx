@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { useStore } from "@/store"
-import { Loader2, Package } from "lucide-react"
+import { Loader2, Package, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 
@@ -265,9 +265,7 @@ export function ExtensionUploadDialog({
               // Error state - show error with retry option
               <>
                 <div className="flex items-center justify-center gap-2 text-error">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <AlertCircle className="h-5 w-5" />
                   <span className="text-sm font-medium">{t('extensions:installFailed')}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{progress.filename}</p>
