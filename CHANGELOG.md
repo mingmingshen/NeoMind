@@ -9,6 +9,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.23] - 2026-06-25
+
+### Overview
+
+A focused **visual polish & frontend hardening** release. No new backend
+features; the bulk of the work is a multi-pass audit of the web layer that
+enforces the design-system rules in `web/DESIGN_SPEC.md`, iterates the chat
+composer's look-and-feel, and tightens agent cloud-LLM timeouts so thinking
+models stop timing out mid-tool-loop.
+
+Themes: (1) **chat composer redesign** — a single unified input container
+with iterated model-selector, capability badges, and send/cancel button
+states; (2) **light-mode chrome unification** — buttons, inputs, and overlay
+surfaces now sit on solid `bg-card` rather than the translucent page
+background, killing the "everything-fuses-into-the-page" effect; (3) **design
+hard-rule enforcement** — `/opacity` on CSS-variable colors, raw Tailwind
+palette, emoji, and inline SVGs all swept out (20+ sites); (4) **agent
+runtime** — `reasoning_content` field support and 60s → 300s cloud LLM
+timeout for thinking models; (5) **share-proxy** whitelist expansion with
+regression tests; (6) **animations** — page-enter transition, overlay popup
+depth, and ambient `animate-pulse` removal from steady states.
+
+### Chat composer redesign
+
+- **Single unified input box** (`pages/chat.tsx`, `components/chat/`).
+  Replaced the old split layout with one container that holds both the
+  textarea and the toolbar row (model selector + image upload + send /
+  cancel). Removed focus-within `border-primary` ring in favor of a calmer
+  solid-`bg-card` surface.
+- **Send / cancel buttons — circular, clearer states.** Swapped the old
+  two-row rectangle buttons for a single circular primary action that flips
+  between send (paper-plane) and cancel (square) states. Eliminated the
+  ambiguous "two-button row" UX.
+- **Model selector — single-line inline layout** with capability text
+  labels (`Vision` / `Tools` / `Thinking`) instead of icons. Iterated
+  through five variations (two-row, badge-style, filled icons, muted-bg
+  icons) before landing on the compact text-label form. Removed the `Zap`
+  indicator and other visual noise.
+- **Image delete button** — shrank to a 12px circle (`h-3 w-3`, icon
+  `h-1.5`), placed inline top-right, hover-only on the button itself
+  rather than the whole thumbnail. Deepened background for contrast.
+- **Image upload icon** `h-4.5 → h-4` to better match the toolbar's visual
+  weight.
+- **Dead code**: deleted `components/chat/ChatInput.tsx` — unused orphan
+  file after the unified-container refactor.
+
+### Light-mode chrome unification
+
+- **Buttons / inputs**: `bg-background → bg-card` across the design-system
+  primitives so form controls visually separate from the page background.
+- **Light-mode chrome → solid white.** Killed the translucent layered
+  backgrounds that made cards, popovers, and dropdowns melt into the page
+  on light mode. Dashboard empty state rewritten to match.
+- **Overlay surfaces — removed border.** All popovers, dropdowns, and
+  hover-cards now rely on shadow + tone contrast instead of a hairline
+  border, eliminating the "stacked rectangles" look.
+- **Code editor token-ized** (`components/ui/code-editor.tsx`). Refactored
+  raw hex values to design tokens; removed unintended gray fills that
+  appeared on light theme.
+- **Dashboard empty state** — replaced the ad-hoc gray card with the
+  proper `EmptyState` component used elsewhere.
+
+### Design-spec hard-rule enforcement
+
+- **`/opacity` on CSS-variable colors** (silent failure). Tailwind's `/N`
+  modifier silently produces no style when applied to a `var()` color
+  reference. Swept **20+ sites** across `BuildCard`, `ToolCallVisualization`,
+  `PushTargetDialog`, `AddDeviceGlobalDialog`, `TaskProgress`,
+  `InstallComponentDialog`, `BleProvisionTab`, `AgentDetailPanel`,
+  `PanelChatView`, `GlobalChatFab`, `DeviceTransformsDialog`, `DeviceDetail`.
+  Each fix either drops the modifier or reworks the style with
+  `hover:opacity-N` over a solid color.
+- **Emoji → `lucide-react`**. Replaced inline custom SVGs with `lucide`
+  imports in `ConnectionStatus.tsx` (4 SVGs), `ChatContainer.tsx`
+  (checkmark), `ExtensionUploadDialog.tsx` (alert), `ComponentRenderer.tsx`
+  (alert-triangle), `CustomLayer.tsx` (2 X icons). All icons now route
+  through `@/design-system/icons` mapping.
+- **`animate-pulse` removed from steady states** (`AgentCard.tsx`,
+  `ExtensionGrid.tsx`). `animate-pulse` is reserved for transient
+  placeholders; on Active/Error status icons and "running" extension dots
+  it produced a christmas-tree effect in grids. Kept `animate-spin` for
+  the genuine Executing / loading state.
+- **i18n gaps** — `ConnectionStatus.tsx` had two hardcoded Chinese strings
+  (`尝试 {retryCount}/10 · {nextRetryIn}s` and `重新连接`). Added
+  `retryProgress`, `retrySeconds`, `reconnect` keys to both `zh/chat.json`
+  and `en/chat.json`.
+
+### Agent runtime
+
+- **Cloud LLM timeout 60s → 300s** (`crates/neomind-agent/src/llm_backends/`).
+  Thinking models (qwen3.7-plus, deepseek-r1, etc.) emit a long
+  `reasoning_content` phase before the final reply; the previous 60s
+  ceiling aborted mid-thought on the scheduled-execution tool-loop path,
+  surfacing as `error sending request for url`. 300s aligns with the
+  existing 5-minute wall-clock execution cap.
+- **`reasoning_content` field support** (`openai.rs::ApiMessageResponse`).
+  Alibaba / DashScope "视觉推理" hybrid thinking models return both
+  `delta.reasoning_content` (chain-of-thought) and `delta.content` (final
+  reply) in OpenAI-compatible mode. The response struct only had `content`
+  + `tool_calls`, so tool-loop decisions emitted during the reasoning phase
+  were silently dropped, triggering `malformed_output` false positives.
+  Added `reasoning_content: Option<String>` and surface it ahead of
+  `content`.
+- **Orphan-tag malformed-output false positive** — relaxed the malformed
+  detector so a trailing `<tool_call>` fragment left over from
+  reasoning-mode streaming doesn't trip the validation.
+
+### Notifications & login polish
+
+- **Notification dropdown redesign** (`components/topnav/`). Removed the
+  severity left-bar from each item (the colored dot already conveys
+  severity), tightened density, fixed badge color contrast.
+- **Login background simplification** (`pages/login.tsx`, `pages/setup/`).
+  Eight stacked gradient layers → four, restoring legibility on low-end
+  displays and fixing the muddy look in dark mode. Language switcher
+  selected state moved from `bg-muted` → `bg-primary-light` for proper
+  accent contrast.
+
+### Animations & micro-interactions
+
+- **Page-enter transition** for route changes. New `animate-fade-in` on
+  the routed page wrapper — opacity-only, **no `translateY`**, so drawer
+  and side-sheet layouts don't visually jump on mount.
+- **Overlay popup depth** — refined the open animation on popovers /
+  dropdowns so the shadow grows instead of fading, conveying elevation.
+- **Dropdown item spacing** — added `my-0.5` between sibling dropdown
+  items so the hover background doesn't fuse adjacent rows into one
+  colored block. Item corners `rounded-sm → rounded-md` for clearer
+  separation.
+
+### Devices
+
+- **List column rename** (`pages/devices.tsx`). The "Last Activity"
+  column was misleading for customers whose devices use MQTT LWT rather
+  than data publishes. Renamed to **最近上报 / Last Report** (zh / en) to
+  match what the column actually shows (last telemetry publish time).
+
+### API — share-proxy hardening
+
+- **Whitelist expansion + regression tests** (`handlers/share_proxy.rs`).
+  Expanded the share-dashboard proxy whitelist to cover the additional
+  endpoints surfaced by recent frontend additions, and added table-driven
+  regression tests so a future endpoint-add doesn't silently regress the
+  security boundary.
+
 ## [0.8.22] - 2026-06-23
 
 ### Overview
