@@ -1259,20 +1259,15 @@ html {
   }
 }
 
-/* Page transition — a subtle rise+fade for route changes. Dedicated keyframes
-   so the plain fade-in (used by overlays/modals) stays opacity-only. */
+/* Page transition — opacity-only fade for route changes. No transform
+   (translateY/scale) because some pages use left-drawer layouts where
+   vertical movement looks jarring. */
 @keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .animate-page-enter {
-  animation: page-enter 250ms var(--ease-out);
+  animation: page-enter 150ms ease-out;
 }
 
 .animate-fade-in {
