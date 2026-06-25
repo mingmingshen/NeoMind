@@ -1859,8 +1859,20 @@ impl DeviceService {
     }
 
     /// Get the last seen timestamp for a device
+    ///
+    /// Falls back to the registry's persisted `last_seen` when the in-memory
+    /// status map has no entry for this device (e.g. right after a server
+    /// restart, before any new telemetry arrives). Without this fallback,
+    /// `last_seen` reads as 0 for previously-seen devices, which breaks
+    /// `__last_seen_age_secs` rule tests and offline detection until the
+    /// device publishes again.
     pub async fn get_device_last_seen(&self, device_id: &str) -> i64 {
-        self.get_device_status(device_id).await.last_seen
+        let in_memory = self.get_device_status(device_id).await.last_seen;
+        if in_memory > 0 {
+            return in_memory;
+        }
+        // Fallback to persisted registry value (survives restarts)
+        self.registry.get_device(device_id).map(|c| c.last_seen).unwrap_or(0)
     }
 
     /// Update device status (called by event listeners or adapters)
