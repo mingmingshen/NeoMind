@@ -36,6 +36,7 @@ import { DeviceOfflineTemplateDialog } from "@/components/automation/dialog/Devi
 
 // Import list components
 import { RulesList, ITEMS_PER_PAGE as RULES_ITEMS_PER_PAGE } from "./automation-components/RulesList"
+import { RuleDetailDialog } from "./automation-components/RuleDetailDialog"
 import { TransformsList, ITEMS_PER_PAGE as TRANSFORMS_ITEMS_PER_PAGE } from "./automation-components/TransformsList"
 
 type AutomationTab = 'rules' | 'transforms'
@@ -232,7 +233,16 @@ export function AutomationPage() {
     }
   }
 
+  // Rule detail dialog state
+  const [detailRule, setDetailRule] = useState<Rule | null>(null)
+  const [detailRuleOpen, setDetailRuleOpen] = useState(false)
+
   // Rule handlers
+  const handleViewRule = (rule: Rule) => {
+    setDetailRule(rule)
+    setDetailRuleOpen(true)
+  }
+
   const handleEditRule = async (rule: Rule) => {
     try {
       const detail = await api.getRule(rule.id)
@@ -640,14 +650,21 @@ export function AutomationPage() {
             paginatedRules={paginatedRules}
             page={rulesPage}
             onPageChange={setRulesPage}
+            onView={handleViewRule}
             onEdit={handleEditRule}
             onDelete={handleDeleteRule}
             onToggleStatus={handleToggleRule}
             onExecute={handleExecuteRule}
           />
-        </PageTabsContent>
 
-        {/* Transforms Tab */}
+          {/* Rule detail dialog (click-to-view) */}
+          <RuleDetailDialog
+            rule={detailRule}
+            open={detailRuleOpen}
+            onOpenChange={setDetailRuleOpen}
+            onEdit={handleEditRule}
+          />
+        </PageTabsContent>
         <PageTabsContent value="transforms" activeTab={activeTab}>
           <TransformsList
             transforms={transforms}

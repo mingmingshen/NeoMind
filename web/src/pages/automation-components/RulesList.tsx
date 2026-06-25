@@ -31,6 +31,7 @@ interface RulesListProps {
   paginatedRules?: Rule[]
   page?: number
   onPageChange?: (page: number) => void
+  onView: (rule: Rule) => void
   onEdit: (rule: Rule) => void
   onDelete: (rule: Rule) => void
   onToggleStatus: (rule: Rule) => void
@@ -267,6 +268,7 @@ export function RulesList({
   paginatedRules: propsPaginatedRules,
   page: propsPage,
   onPageChange,
+  onView,
   onEdit,
   onDelete,
   onToggleStatus,
@@ -340,7 +342,7 @@ export function RulesList({
                 "overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all",
                 !rule.enabled && "opacity-50"
               )}
-              onClick={() => onEdit(rule)}
+              onClick={() => onView(rule)}
             >
               <div className="px-3 py-2.5">
                 {/* Row 1: icon + name + switch + actions */}
