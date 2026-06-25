@@ -147,7 +147,7 @@ impl AgentExecutor {
                                 .endpoint
                                 .clone()
                                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-                            let timeout = Self::env_timeout_secs("OPENAI_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("OPENAI_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::custom(&api_key, &endpoint)
                                     .with_model(&backend.model)
@@ -157,7 +157,7 @@ impl AgentExecutor {
                         }
                         LlmBackendType::Anthropic => {
                             let api_key = backend.api_key.clone().unwrap_or_default();
-                            let timeout = Self::env_timeout_secs("ANTHROPIC_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("ANTHROPIC_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::anthropic(&api_key)
                                     .with_model(&backend.model)
@@ -167,7 +167,7 @@ impl AgentExecutor {
                         }
                         LlmBackendType::Google => {
                             let api_key = backend.api_key.clone().unwrap_or_default();
-                            let timeout = Self::env_timeout_secs("GOOGLE_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("GOOGLE_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::google(&api_key)
                                     .with_model(&backend.model)
@@ -177,7 +177,7 @@ impl AgentExecutor {
                         }
                         LlmBackendType::XAi => {
                             let api_key = backend.api_key.clone().unwrap_or_default();
-                            let timeout = Self::env_timeout_secs("XAI_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("XAI_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::grok(&api_key)
                                     .with_model(&backend.model)
@@ -190,7 +190,7 @@ impl AgentExecutor {
                             let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
                                 "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()
                             });
-                            let timeout = Self::env_timeout_secs("QWEN_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("QWEN_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::custom(&api_key, &endpoint)
                                     .with_model(&backend.model)
@@ -204,7 +204,7 @@ impl AgentExecutor {
                                 .endpoint
                                 .clone()
                                 .unwrap_or_else(|| "https://api.deepseek.com".to_string());
-                            let timeout = Self::env_timeout_secs("DEEPSEEK_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("DEEPSEEK_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::custom(&api_key, &endpoint)
                                     .with_model(&backend.model)
@@ -217,7 +217,7 @@ impl AgentExecutor {
                             let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
                                 "https://open.bigmodel.cn/api/paas/v4".to_string()
                             });
-                            let timeout = Self::env_timeout_secs("GLM_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("GLM_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::custom(&api_key, &endpoint)
                                     .with_model(&backend.model)
@@ -231,7 +231,7 @@ impl AgentExecutor {
                                 .endpoint
                                 .clone()
                                 .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
-                            let timeout = Self::env_timeout_secs("MINIMAX_TIMEOUT_SECS", 60);
+                            let timeout = Self::env_timeout_secs("MINIMAX_TIMEOUT_SECS", 300);
                             Self::create_cloud_runtime(
                                 CloudConfig::custom(&api_key, &endpoint)
                                     .with_model(&backend.model)
