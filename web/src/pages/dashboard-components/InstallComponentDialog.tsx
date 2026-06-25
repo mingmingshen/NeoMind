@@ -89,7 +89,7 @@ export function InstallComponentDialog({ open, onOpenChange }: InstallComponentD
             border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
             transition-colors
             ${zipFile
-              ? 'border-success bg-success-light/20'
+              ? 'border-success bg-success-light'
               : 'border-border hover:border-primary-foreground hover:bg-muted-30'
             }
           `}

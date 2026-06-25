@@ -9,7 +9,12 @@ import {
   FileText,
   HelpCircle,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Cpu,
+  MapPin,
+  Hash,
+  Clock,
+  Play
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTranslation } from "react-i18next"
@@ -106,13 +111,13 @@ function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => str
 
 // Helper function to get entity config
 function getEntityConfig(entityType: EntityType, t: (key: string) => string) {
-  const configs: Record<EntityType, { key: string; icon: string; color: string }> = {
-    device: { key: "intent.entity.device", icon: "🔌", color: "bg-info-light text-info" },
-    location: { key: "intent.entity.location", icon: "📍", color: "bg-success-light text-success" },
-    value: { key: "intent.entity.value", icon: "🔢", color: "bg-accent-purple-light text-accent-purple" },
-    time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-accent-orange-light text-accent-orange" },
-    action: { key: "intent.entity.action", icon: "▶️", color: "bg-error-light text-error" },
-    unknown: { key: "intent.entity.unknown", icon: "❓", color: "bg-muted text-muted-foreground" }
+  const configs: Record<EntityType, { key: string; icon: typeof Cpu; color: string }> = {
+    device: { key: "intent.entity.device", icon: Cpu, color: "bg-info-light text-info" },
+    location: { key: "intent.entity.location", icon: MapPin, color: "bg-success-light text-success" },
+    value: { key: "intent.entity.value", icon: Hash, color: "bg-accent-purple-light text-accent-purple" },
+    time_range: { key: "intent.entity.time", icon: Clock, color: "bg-accent-orange-light text-accent-orange" },
+    action: { key: "intent.entity.action", icon: Play, color: "bg-error-light text-error" },
+    unknown: { key: "intent.entity.unknown", icon: HelpCircle, color: "bg-muted text-muted-foreground" }
   }
   const config = configs[entityType]
   return {
@@ -209,7 +214,7 @@ export function IntentIndicator({
                 className={cn("text-xs", entityConfig.color)}
                 title={`${entityConfig.label}: ${entity.value} (${Math.round(entity.confidence * 100)}%)`}
               >
-                <span className="mr-1">{entityConfig.icon}</span>
+                <entityConfig.icon className="h-3 w-3 mr-1 inline-block" />
                 {entity.value}
               </Badge>
             )

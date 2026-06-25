@@ -475,7 +475,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
         {/* Mobile: Scrollable text tab bar with underline indicator */}
         {isMobile && (
           <div
-            className="relative border-b border-border/50"
+            className="relative border-b border-glass-border"
             onTouchStart={handleTabTouchStart}
             onTouchEnd={handleTabTouchEnd}
           >

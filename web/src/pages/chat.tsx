@@ -1273,7 +1273,7 @@ export function ChatPage() {
             {attachedImages.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-1">
                 {attachedImages.map((image, index) => (
-                  <div key={index} className="relative group">
+                  <div key={index} className="relative">
                     <img
                       src={image.data}
                       alt={`Attached ${index + 1}`}
@@ -1281,7 +1281,7 @@ export function ChatPage() {
                     />
                     <button
                       type="button"
-                      className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-0"
+                      className="absolute top-0.5 right-0.5 h-3 w-3 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity p-0"
                       onClick={() => removeAttachedImage(index)}
                     >
                       <X className="h-1.5 w-1.5" />

@@ -154,10 +154,7 @@ export function AddDeviceGlobalDialog({
                   </div>
                   <div className="min-w-0">
                     <span className="truncate block">{t(tab.labelKey)}</span>
-                    <span className={cn(
-                      textMini, 'leading-tight block mt-0.5 truncate',
-                      isActive ? 'text-primary/70' : 'text-muted-foreground'
-                    )}>
+                    <span className={cn(textMini, 'leading-tight block mt-0.5 truncate text-muted-foreground')}>
                       {t(tab.descKey)}
                     </span>
                   </div>
@@ -875,7 +872,7 @@ function ManualAddForm({
         {adapterType === 'mqtt' && (
           <div className="space-y-3 pt-1">
             {/* Broker connection guide */}
-            <div className="rounded-lg border bg-muted-30/50 p-4 space-y-3">
+            <div className="rounded-lg border bg-muted-30 p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Radio className="h-4 w-4 text-accent-orange" />
                 {t('devices:add.connectionGuide')}

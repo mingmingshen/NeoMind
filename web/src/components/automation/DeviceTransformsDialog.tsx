@@ -252,7 +252,7 @@ export function DeviceTransformsDialog({
             <div className="text-sm text-muted-foreground">
               {transforms.length} {t('automation:transforms', { defaultValue: 'transforms' })}
             </div>
-            <Button onClick={handleCreateNew} size="sm" className="bg-accent-purple hover:bg-accent-purple/80">
+            <Button onClick={handleCreateNew} size="sm" className="bg-accent-purple hover:opacity-90">
               <Sparkles className="mr-2 h-4 w-4" />
               {t('automation:createTransform', { defaultValue: 'Create Transform' })}
             </Button>

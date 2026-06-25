@@ -305,7 +305,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
   if (phase === 'done') {
     return (
       <div className="min-h-[480px] flex flex-col items-center justify-center gap-4 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-success-light/50 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl bg-success-light flex items-center justify-center">
           <CheckCircle2 className="w-8 h-8 text-success" />
         </div>
         <div className="text-center">
@@ -328,7 +328,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
   if (phase === 'failed') {
     return (
       <div className="min-h-[480px] flex flex-col items-center justify-center gap-6 px-4">
-        <div className="w-16 h-16 rounded-2xl bg-error-light/50 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl bg-error-light flex items-center justify-center">
           <XCircle className="w-8 h-8 text-error" />
         </div>
         <div className="text-center">
@@ -346,7 +346,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
       {/* Device info header — show connection status */}
       <div className="rounded-xl border bg-card p-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-success-light/50 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-success-light flex items-center justify-center shrink-0">
             <Bluetooth className="w-5 h-5 text-success" />
           </div>
           <div className="flex-1 min-w-0">

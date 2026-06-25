@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { LoadingState } from "@/components/shared/LoadingState"
+import { EmptyStateCompact } from "@/components/shared/EmptyState"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
@@ -45,6 +46,7 @@ import {
   Github,
   Download,
   Loader2,
+  FileJson,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { cardPadded } from "@/design-system/tokens/size"
@@ -2667,9 +2669,10 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
           {loading ? (
             <LoadingState size="lg" className="h-64" />
           ) : deviceTypes.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              {t('devices:cloud.noDeviceTypes', "暂无可用设备类型")}
-            </div>
+            <EmptyStateCompact
+              icon={<FileJson className="h-5 w-5" />}
+              title={t('devices:cloud.noDeviceTypes', "暂无可用设备类型")}
+            />
           ) : (
             <div className="space-y-4">
               {/* Select All / Clear */}

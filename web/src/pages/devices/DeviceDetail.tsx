@@ -530,7 +530,7 @@ export function DeviceDetail({
                             </div>
                           </div>
                           {isVirtual ? (
-                            <Zap className="h-5 w-5 text-accent-purple/60 group-hover:text-accent-purple transition-colors shrink-0 ml-2" />
+                            <Zap className="h-5 w-5 text-muted-foreground group-hover:text-accent-purple transition-colors shrink-0 ml-2" />
                           ) : hasImage ? (
                             <ImageIcon className="h-5 w-5 text-muted-foreground group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
                           ) : (

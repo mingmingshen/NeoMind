@@ -7,7 +7,7 @@
 
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical, Tag } from 'lucide-react'
 import { chartColorsHex } from '@/design-system/tokens/color'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -214,8 +214,8 @@ export function LEDStateRulesConfig({
                   {/* State indicator with custom label/color indicators */}
                   <div className="flex items-center gap-2">
                     {rule.label && (
-                      <span className="text-xs text-muted-foreground" title={t('stateMapping.customLabel')}>
-                        🏷️
+                      <span title={t('stateMapping.customLabel')}>
+                        <Tag className="h-3 w-3 text-muted-foreground" />
                       </span>
                     )}
                     {rule.color && (

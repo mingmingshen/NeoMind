@@ -787,7 +787,7 @@ export function VideoDisplay({
 
   // Fullscreen overlay
   const fullscreenOverlay = isFullscreen && createPortal(
-    <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
+    <div className="fixed inset-0 z-[110] bg-black flex flex-col">
       {/* Header with close button */}
       <div className="flex items-center justify-between px-4 py-3 bg-bg-95 border-b">
         <div className="flex items-center gap-2">

@@ -72,12 +72,12 @@ export function GlobalChatFab() {
           "safe-bottom",
           // Glass background with brand orange
           "bg-accent-orange-bg backdrop-blur-xl",
-          "border border-accent-orange/30",
+          "border border-accent-orange",
           "text-accent-orange",
           // Glow ring
           "shadow-[0_0_24px_var(--accent-orange-bg),0_0_48px_var(--accent-orange-bg)]",
           "hover:shadow-[0_0_32px_var(--accent-orange),0_0_64px_var(--accent-orange-bg)]",
-          "hover:border-accent-orange/50",
+          "hover:border-accent-orange",
           isOpen
             ? "scale-0 opacity-0 pointer-events-none"
             : "scale-100 opacity-100 hover:scale-105"

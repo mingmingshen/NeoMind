@@ -213,10 +213,10 @@ export function BuildCard({ response }: BuildCardProps) {
 
       {/* Key-value data summary (collapsible) */}
       {dataEntries.length > 0 && (
-        <div className="border-t border-border/50">
+        <div className="border-t border-glass-border">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-muted-30/50 transition-colors"
+            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-muted-30 transition-colors"
           >
             <ChevronDown className={cn(
               "h-3 w-3 text-muted-foreground transition-transform",

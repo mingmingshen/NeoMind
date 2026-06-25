@@ -400,9 +400,9 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/60 flex-shrink-0">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-glass-border flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-info/15 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-info-light flex items-center justify-center">
             <Bot className="h-4.5 w-4.5 text-info" />
           </div>
           <div>
@@ -555,7 +555,7 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
           <button
             onClick={handleSend}
             disabled={!input.trim() || streamState.isStreaming}
-            className="h-[44px] w-[44px] rounded-2xl flex-shrink-0 bg-accent-orange hover:bg-accent-orange/90 text-white flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-[44px] w-[44px] rounded-2xl flex-shrink-0 bg-accent-orange hover:opacity-90 text-white flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="h-5 w-5" />
           </button>

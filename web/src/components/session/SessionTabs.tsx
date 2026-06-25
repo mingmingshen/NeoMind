@@ -281,7 +281,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="flex flex-col">
+        <DialogContent className="flex flex-col z-[200]">
           <DialogHeader>
             <DialogTitle>{t('session.deleteTitle')}</DialogTitle>
             <DialogDescription>

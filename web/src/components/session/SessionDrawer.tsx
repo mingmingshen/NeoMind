@@ -256,7 +256,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
                 "w-full pl-10 pr-4 py-2.5 rounded-lg",
                 "border border-input bg-background",
                 "text-sm text-foreground placeholder:text-muted-foreground",
-                "focus-visible:outline-none"
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
             />
           </div>

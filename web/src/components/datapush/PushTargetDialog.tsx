@@ -811,7 +811,7 @@ export function PushTargetDialog() {
                           {/* Type header - collapsible */}
                           <button
                             onClick={() => toggleGroupExpand(sourceType)}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted-30/50 transition-colors"
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted-30 transition-colors"
                           >
                             {typeExpanded
                               ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -848,7 +848,7 @@ export function PushTargetDialog() {
                                       <button
                                         onClick={(e) => { e.stopPropagation(); toggleGroup(sourceKey) }}
                                         className={cn(
-                                          'flex items-center gap-2 px-3 py-2 text-left hover:bg-muted-30/50 transition-colors flex-1 min-w-0',
+                                          'flex items-center gap-2 px-3 py-2 text-left hover:bg-muted-30 transition-colors flex-1 min-w-0',
                                           someSelected && !allSelected && 'bg-primary-light'
                                         )}
                                       >
@@ -862,7 +862,7 @@ export function PushTargetDialog() {
                                       </button>
                                       <button
                                         onClick={() => toggleGroupExpand(sourceKey)}
-                                        className="px-3 py-2 hover:bg-muted-30/50 transition-colors shrink-0"
+                                        className="px-3 py-2 hover:bg-muted-30 transition-colors shrink-0"
                                         aria-label={subExpanded ? 'Collapse' : 'Expand'}
                                       >
                                         {subExpanded
@@ -880,7 +880,7 @@ export function PushTargetDialog() {
                                             key={src.id}
                                             onClick={() => toggleSource(src.id)}
                                             className={cn(
-                                              'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-muted-30/50 transition-colors',
+                                              'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-muted-30 transition-colors',
                                               selectedSources.has(src.id) && 'bg-primary-light'
                                             )}
                                           >

@@ -31,20 +31,17 @@ interface TaskProgressProps {
 
 // Helper function to get step type config
 function getStepTypeConfig(stepType: TaskStepType, t: (key: string) => string) {
-  const configs: Record<TaskStepType, { label: string; icon: string; color: string }> = {
+  const configs: Record<TaskStepType, { label: string; color: string }> = {
     gather_info: {
       label: t("taskProgress.steps.collecting"),
-      icon: "📝",
       color: "text-info"
     },
     confirm: {
       label: t("taskProgress.steps.confirming"),
-      icon: "✓",
       color: "text-warning"
     },
     execute: {
       label: t("taskProgress.steps.executing"),
-      icon: "⚡",
       color: "text-success"
     }
   }
@@ -121,7 +118,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
               className={cn(
                 "flex items-start gap-3 p-3 rounded-md border transition-colors",
                 status === "active" && "bg-info-light border-info",
-                status === "completed" && "bg-success-light/50 border-success-light/50",
+                status === "completed" && "bg-success-light border-success-light",
                 status === "pending" && "bg-muted-30 border-border"
               )}
             >

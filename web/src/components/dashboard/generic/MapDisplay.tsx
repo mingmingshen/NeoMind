@@ -1171,7 +1171,7 @@ export function MapDisplay({
 
   // Fullscreen overlay (rendered via Portal — single instance only)
   const fullscreenOverlay = isFullscreen ? createPortal(
-    <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
+    <div className="fixed inset-0 z-[110] flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-bg-95">
         <div className="flex items-center gap-2">

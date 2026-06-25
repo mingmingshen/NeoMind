@@ -559,7 +559,7 @@ function KnowledgeFileCard({ file, formatTime }: { file: KnowledgeFileRef; forma
         </div>
       </button>
       {expanded && (
-        <div className="px-3 pb-3 pt-0 border-t border-accent-purple-light/50">
+        <div className="px-3 pb-3 pt-0 border-t border-accent-purple-light">
           {hasContent ? (
             <div className="mt-2 prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-p:my-1 prose-headings:font-semibold prose-headings:my-2 prose-h1:text-base prose-h2:text-sm prose-h3:text-xs prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono prose-pre:bg-muted prose-pre:p-2 prose-pre:rounded-md prose-ul:my-1 prose-ul:pl-4 prose-ol:my-1 prose-ol:pl-4 prose-li:my-0 prose-li:text-xs">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>

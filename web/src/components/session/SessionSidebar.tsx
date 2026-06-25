@@ -349,7 +349,7 @@ export function SessionSidebar({
           >
             <Plus className="h-4 w-4" />
           </Button>
-          <div className="w-6 h-px bg-border/50 my-1" />
+          <div className="w-6 h-px bg-glass-border my-1" />
           <ScrollArea className="flex-1 w-full min-h-0">
             <div className="flex flex-col items-center gap-1 py-1">
               {sortedSessions.map((session) => {

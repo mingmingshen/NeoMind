@@ -136,7 +136,7 @@ function MemoryGauge({
         {[25, 50, 75].map((p) => (
           <div
             key={p}
-            className="absolute top-0 bottom-0 w-px bg-background/60"
+            className="absolute top-0 bottom-0 w-px bg-glass-border"
             style={{ left: `${p}%` }}
           />
         ))}

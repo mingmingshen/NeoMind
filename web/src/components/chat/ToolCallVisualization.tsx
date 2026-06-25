@@ -176,7 +176,7 @@ export function ToolProcessBlock({
             const stepStreaming = isStreaming && isLastStep
             const roundContent = roundContents[step]
             // Alternate subtle background per round
-            const roundBg = idx % 2 === 1 ? "bg-muted-30/50" : ""
+            const roundBg = idx % 2 === 1 ? "bg-muted-30" : ""
 
             return (
               <div key={step} className={cn("rounded-lg mx-1 mb-1", roundBg)}>
@@ -286,7 +286,7 @@ function ToolCallItem({
             <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
           )}
         </div>
-        <span className={cn(textBody, "truncate text-foreground/70")}>{getToolDisplayName(toolCall.name, toolCall.arguments)}</span>
+        <span className={cn(textBody, "truncate text-muted-foreground")}>{getToolDisplayName(toolCall.name, toolCall.arguments)}</span>
         {status === "running" && (
           <span className={cn(textMini, "px-1.5 py-0.5 rounded bg-warning-light text-warning shrink-0")}>
             {statusLabels[status]}

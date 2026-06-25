@@ -316,7 +316,7 @@ export const CompactMobileEditBar = memo(function CompactMobileEditBar({
           label={t('mobileEditBar.copy')}
           onPress={onCopy}
         />
-        <div className="w-px h-8 bg-border/50" />
+        <div className="w-px h-8 bg-glass-border" />
         <CompactButton
           icon={Trash2}
           label={t('mobileEditBar.delete')}
