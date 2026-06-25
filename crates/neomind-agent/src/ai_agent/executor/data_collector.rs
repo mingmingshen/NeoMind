@@ -154,10 +154,28 @@ impl AgentExecutor {
             "[COLLECT] Extension metric data collected"
         );
 
-        // Combine all data
-        let mut data = metric_data;
-        data.extend(device_data);
-        data.extend(extension_data);
+        // Combine all data, deduplicating across channels.
+        //
+        // The metric channel and device channel can both collect the same
+        // (device_id, metric_name) when an agent has overlapping Metric +
+        // Device resources. Metric-channel entries take priority (they carry
+        // richer config: time_range, history, trend). We dedup by (source,
+        // data_type) which is identical across both channels for the same
+        // device+metric pair.
+        let mut seen: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+        let mut data: Vec<DataCollected> = Vec::new();
+        for item in metric_data
+            .into_iter()
+            .chain(device_data.into_iter())
+            .chain(extension_data.into_iter())
+        {
+            let key = (item.source.clone(), item.data_type.clone());
+            if seen.insert(key) {
+                data.push(item);
+            }
+        }
+        let deduped_count = data.len();
 
         // Add condensed memory context
         let memory_data = self.collect_memory_summary(agent, timestamp)?;
@@ -167,6 +185,7 @@ impl AgentExecutor {
         tracing::info!(
             agent_id = %agent.id,
             total_collected = data.len(),
+            deduped_after = deduped_count,
             data_sources = ?data.iter().map(|d| format!("{}:{}", d.source, d.data_type)).collect::<Vec<_>>(),
             "[COLLECT] Data collection summary"
         );
