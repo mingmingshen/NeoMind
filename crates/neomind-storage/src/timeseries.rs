@@ -1378,6 +1378,38 @@ impl TimeSeriesStore {
         Ok(latest)
     }
 
+    /// Read the latest data point WITHOUT touching the LRU cache or read stats.
+    ///
+    /// Used by `apply_retention()` to peek at the most recent value for
+    /// content-based image detection. Bypassing the cache is important:
+    /// apply_retention walks every metric pair, and if each lookup populated
+    /// `latest_cache` (capacity 1000), a single cleanup pass would evict
+    /// the hot entries users are actively querying, causing a flurry of
+    /// cache misses for ~60s after each hourly cleanup run.
+    async fn query_latest_uncached(
+        &self,
+        source_id: &str,
+        metric: &str,
+    ) -> Result<Option<DataPoint>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
+        let start_key = (source_id, metric, i64::MIN);
+        let end_key = (source_id, metric, i64::MAX);
+        let latest = table
+            .range(start_key..=end_key)?
+            .next_back()
+            .map(|result| -> Result<DataPoint, Error> {
+                let (_key, value) = result?;
+                Ok(serde_json::from_slice(value.value())?)
+            })
+            .transpose()?;
+        Ok(latest)
+    }
+
     /// Batch query the latest data point for multiple metrics of a source.
     ///
     /// Shares a single read transaction across all metrics, avoiding N separate
@@ -1849,7 +1881,7 @@ impl TimeSeriesStore {
                 // so, apply image_retention instead.
                 let use_image = match policy.image_retention_hours {
                     Some(img_hours) if Some(img_hours) != explicit_hours => {
-                        match self.query_latest(source_id, metric).await {
+                        match self.query_latest_uncached(source_id, metric).await {
                             Ok(Some(latest)) => value_looks_like_image(&latest.value),
                             _ => false, // no sample → don't risk misclassifying
                         }
