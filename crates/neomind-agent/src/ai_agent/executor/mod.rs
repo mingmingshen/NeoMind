@@ -976,11 +976,26 @@ impl AgentExecutor {
             "Execution and conversation turn saved successfully"
         );
 
-        // Reset agent status based on result
+        // Reset agent status based on result.
+        //
+        // For *transient* failures (network, timeout, rate-limit, the global
+        // 300s timeout), keep the agent Active so the scheduler will retry it
+        // on the next trigger. Only *permanent* failures (malformed output,
+        // auth errors, model not found) demote the agent to Error, requiring
+        // manual intervention to re-enable.
+        //
         // Disarm the RAII guard — normal completion handles status reset
         status_guard.armed.set(false);
 
         let new_status = if record.status == ExecutionStatus::Completed {
+            neomind_storage::AgentStatus::Active
+        } else if is_transient_failure(record.error.as_deref()) {
+            tracing::info!(
+                agent_id = %agent_id,
+                execution_id = %execution_id,
+                error = ?record.error,
+                "Transient execution failure — keeping agent Active for retry"
+            );
             neomind_storage::AgentStatus::Active
         } else {
             neomind_storage::AgentStatus::Error
@@ -1561,6 +1576,39 @@ pub(super) fn classify_tool_call_text(text: &str) -> ToolCallTextClassification 
         has_orphan_closing_tags,
         cleaned_text,
     }
+}
+
+/// Heuristic: detect transient (retryable) failures from the error message.
+///
+/// These are failures where the agent itself is fine — the LLM provider had
+/// a temporary hiccup (network, timeout, rate-limit). Keeping the agent in
+/// Active status lets the scheduler retry on the next trigger.
+///
+/// Permanent failures (malformed output, auth/model errors, panics) return
+/// false so the agent is demoted to Error and needs manual re-enable.
+fn is_transient_failure(error: Option<&str>) -> bool {
+    let msg = match error {
+        Some(m) => m,
+        None => return false, // unknown error → treat as permanent (safe)
+    };
+    let lower = msg.to_lowercase();
+    // Network errors
+    lower.contains("network")
+        || lower.contains("connection")
+        || lower.contains("dns")
+        || lower.contains("error sending request")
+        // Timeouts (per-request and global 300s)
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        // Rate limiting
+        || lower.contains("rate limit")
+        || lower.contains("rate limited")
+        || lower.contains("429")
+        || lower.contains("too many requests")
+        // IO errors (usually transient)
+        || lower.contains("connection reset")
+        || lower.contains("broken pipe")
+        || lower.contains("eof")
 }
 
 #[cfg(test)]

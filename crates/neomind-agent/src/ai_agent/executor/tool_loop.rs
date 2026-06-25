@@ -109,28 +109,67 @@ impl AgentExecutor {
             .await;
             step_num += 1;
 
-            let output = match llm_runtime.generate(input).await {
-                Ok(o) => o,
-                Err(e) => {
-                    let round_num = round + 1;
-                    let msg_count = messages.len();
-                    let has_images = messages.iter().any(|m| {
-                        matches!(&m.content, Content::Parts(parts) if parts.iter().any(|p| matches!(p, ContentPart::ImageBase64 { .. } | ContentPart::ImageUrl { .. })))
-                    });
-                    tracing::warn!(
-                        agent_id = %agent.id,
-                        error = %e,
-                        permanent = e.is_permanent(),
-                        round = round_num,
-                        msg_count,
-                        has_images,
-                        model = %llm_runtime.model_name(),
-                        "LLM generation failed in tool loop"
-                    );
-                    last_llm_error = Some(e);
-                    final_text = "LLM generation failed during tool execution.".to_string();
-                    break;
+            // Retry transient LLM errors (network, timeout, 429) before giving up.
+            // Permanent errors (404/403/model-not-found) fail immediately.
+            const MAX_TRANSIENT_RETRIES: u32 = 2;
+            let output = {
+                let mut retries = 0u32;
+                let mut result: Option<neomind_core::llm::backend::LlmOutput> = None;
+                loop {
+                    match llm_runtime.generate(input.clone()).await {
+                        Ok(o) => {
+                            result = Some(o);
+                            break;
+                        }
+                        Err(e) => {
+                            let is_transient = !e.is_permanent();
+                            let round_num = round + 1;
+                            let msg_count = messages.len();
+                            let has_images = messages.iter().any(|m| {
+                                matches!(&m.content, Content::Parts(parts) if parts.iter().any(|p| matches!(p, ContentPart::ImageBase64 { .. } | ContentPart::ImageUrl { .. })))
+                            });
+
+                            if is_transient && retries < MAX_TRANSIENT_RETRIES {
+                                retries += 1;
+                                let delay_ms = 500u64 * 2u64.pow(retries); // 1s, then 2s
+                                tracing::warn!(
+                                    agent_id = %agent.id,
+                                    error = %e,
+                                    permanent = false,
+                                    retry = retries,
+                                    max_retries = MAX_TRANSIENT_RETRIES,
+                                    delay_ms,
+                                    round = round_num,
+                                    "Transient LLM error, retrying after delay"
+                                );
+                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                                continue;
+                            }
+
+                            tracing::warn!(
+                                agent_id = %agent.id,
+                                error = %e,
+                                permanent = e.is_permanent(),
+                                round = round_num,
+                                msg_count,
+                                has_images,
+                                model = %llm_runtime.model_name(),
+                                retries_exhausted = retries,
+                                "LLM generation failed in tool loop (retries exhausted or permanent error)"
+                            );
+                            last_llm_error = Some(e);
+                            final_text = "LLM generation failed during tool execution.".to_string();
+                            break;
+                        }
+                    }
                 }
+                result
+            };
+
+            // If the inner break (failure) fired, bail out of the tool loop.
+            let output = match output {
+                Some(o) => o,
+                None => break, // LLM generation failed
             };
 
             // Priority: native tool_calls from API → parse from text → thinking field fallback
