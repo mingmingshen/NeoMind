@@ -291,11 +291,11 @@ html {
 
 @layer base {
   :root {
-    /* Cool neutral-gray base (~#F4F5F7). A whisper of blue (hue 264) ties it
-       to the primary's blue-purple and gives the surface a calm, professional
-       tone — the Linear/GitHub/shadcn approach for tool/data UIs. Pure-white
-       cards sit clearly above it without harsh contrast. */
-    --background: oklch(0.97 0.003 264);
+    /* Cool neutral-gray base (~#F1F2F6). A whisper of blue (hue 264) ties it
+       to the primary's blue-purple. Slightly deeper than before (0.965) so
+       cards (1.0) and muted surfaces (0.94) have clear separation — the
+       Linear/GitHub approach for tool/data UIs. */
+    --background: oklch(0.965 0.003 264);
     /* Solid white for stable chrome layers (TopNav, tab strips, toolbars,
        page headers). These anchor the layout — they should NOT float with
        the aurora the way the scrollable content area does. In dark mode
@@ -310,11 +310,11 @@ html {
        harmonizes with the brand orange instead of feeling disconnected. */
     --primary: oklch(0.22 0.03 265);
     --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(0.95 0.003 264);
+    --secondary: oklch(0.94 0.003 264);
     --secondary-foreground: oklch(0.21 0.01 264);
-    --muted: oklch(0.95 0.003 264);
+    --muted: oklch(0.94 0.003 264);
     --muted-foreground: oklch(0.48 0.012 264);
-    --accent: oklch(0.95 0.003 264);
+    --accent: oklch(0.94 0.003 264);
     --accent-foreground: oklch(0.21 0.01 264);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(1 0 0);
