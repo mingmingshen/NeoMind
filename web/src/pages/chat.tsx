@@ -1284,7 +1284,7 @@ export function ChatPage() {
                       className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-0"
                       onClick={() => removeAttachedImage(index)}
                     >
-                      <X className="h-1.5 w-1.5" />
+                      <X className="h-2 w-2" />
                     </button>
                   </div>
                 ))}
