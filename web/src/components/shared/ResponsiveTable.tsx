@@ -100,12 +100,12 @@ export function ResponsiveTable({
         <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
           <table className={cn("w-full caption-bottom text-sm", className)}>
             <thead className="[&_tr]:border-b">
-              <tr className="bg-muted-50 rounded-t-lg">
+              <tr className="bg-muted rounded-t-lg">
                 {columns.map((column) => (
                   <th
                     key={column.key}
                     className={cn(
-                      "h-12 px-4 align-middle text-xs font-semibold text-muted-foreground",
+                      "h-12 px-4 align-middle text-[11px] font-semibold uppercase tracking-wider text-foreground",
                       column.align === 'center' && 'text-center',
                       column.align === 'right' && 'text-right',
                       !column.align && 'text-left',
@@ -142,7 +142,7 @@ export function ResponsiveTable({
         <div className="md:hidden space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="rounded-lg border bg-card overflow-hidden">
-              <div className="bg-muted-30 px-4 py-3 border-b">
+              <div className="bg-muted px-4 py-3 border-b">
                 <Skeleton className="h-4 w-1/3" />
               </div>
               <div className="p-4 space-y-3">
@@ -169,12 +169,12 @@ export function ResponsiveTable({
             "[&_tr]:border-b",
             stickyHeader && "sticky top-0 z-10 bg-card"
           )}>
-            <tr className="bg-muted-50 rounded-t-xl">
+            <tr className="bg-muted rounded-t-xl">
               {columns.map((column) => (
                 <th
                   key={column.key}
                   className={cn(
-                    "h-12 px-4 align-middle text-xs font-semibold text-muted-foreground",
+                    "h-12 px-4 align-middle text-[11px] font-semibold uppercase tracking-wider text-foreground",
                     column.align === 'center' && 'text-center',
                     column.align === 'right' && 'text-right',
                     !column.align && 'text-left',
@@ -303,7 +303,7 @@ export function ResponsiveTable({
                 onClick={() => onRowClick?.(rowData)}
               >
                 {/* Card Header - First column as title */}
-                <div className="bg-muted-30 px-3 py-2.5 border-b border-border rounded-t-xl">
+                <div className="bg-muted px-3 py-2.5 border-b border-border rounded-t-xl">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                       <div className="min-w-0 flex-1 truncate">
@@ -395,7 +395,7 @@ export function MobileCard({ title, subtitle, icon, actions, children, className
   return (
     <Card className={cn('overflow-hidden border-border rounded-lg shadow-sm', onClick && 'cursor-pointer active:scale-[0.99] transition-all', className)}>
       {/* Card Header */}
-      <div className="bg-muted-30 px-3 py-2.5 border-b border-border rounded-t-xl">
+      <div className="bg-muted px-3 py-2.5 border-b border-border rounded-t-xl">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
             {icon && <div className="shrink-0">{icon}</div>}

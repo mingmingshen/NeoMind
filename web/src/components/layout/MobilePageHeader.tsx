@@ -49,9 +49,15 @@ export function MobilePageHeader({
         // columns make the title visually centered regardless of how many
         // action buttons either side has — flex-1 + text-center was offset
         // when the action stack was wider than the hamburger.
-        "safe-top sticky top-0 z-30 grid h-12 grid-cols-[1fr_auto_1fr] items-center gap-1 border-b border-border bg-background px-2",
+        //
+        // bg via inline style using --chrome (solid white in light mode,
+        // solid elevated gray in dark mode) — this is the dedicated token
+        // for stable chrome layers per index.css. Using bg-background would
+        // tint the header gray after the background token was darkened.
+        "safe-top sticky top-0 z-30 grid h-12 grid-cols-[1fr_auto_1fr] items-center gap-1 border-b border-border px-2",
         className,
       )}
+      style={{ backgroundColor: 'var(--chrome)' }}
     >
       {/* Left slot: hamburger + leftExtra (e.g. back chevron) */}
       <div className="flex min-w-0 items-center gap-1 justify-self-start">
@@ -70,7 +76,7 @@ export function MobilePageHeader({
       </div>
       {/* Center title — clamp width so very long titles truncate instead of
           pushing the side columns and breaking centering. */}
-      <span className="min-w-0 max-w-[65vw] truncate text-center text-sm font-semibold text-foreground">
+      <span className="min-w-0 max-w-[65vw] truncate text-center text-base font-semibold text-foreground">
         {title}
       </span>
       {/* Right slot: actions */}

@@ -291,11 +291,10 @@ html {
 
 @layer base {
   :root {
-    /* Cool neutral-gray base (~#F1F2F6). A whisper of blue (hue 264) ties it
-       to the primary's blue-purple. Slightly deeper than before (0.965) so
-       cards (1.0) and muted surfaces (0.94) have clear separation — the
-       Linear/GitHub approach for tool/data UIs. */
-    --background: oklch(0.965 0.003 264);
+    /* Near-white canvas (~#FAFAFA). Pure neutral, Vercel/Linear-style:
+       bg sits just below card white so cards float via a 0.015 lightness
+       gap rather than heavy shadows. Airier than typical gray canvas. */
+    --background: oklch(0.985 0 0);
     /* Solid white for stable chrome layers (TopNav, tab strips, toolbars,
        page headers). These anchor the layout — they should NOT float with
        the aurora the way the scrollable content area does. In dark mode
@@ -310,11 +309,11 @@ html {
        harmonizes with the brand orange instead of feeling disconnected. */
     --primary: oklch(0.22 0.03 265);
     --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(0.94 0.003 264);
+    --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.21 0.01 264);
-    --muted: oklch(0.94 0.003 264);
+    --muted: oklch(0.97 0 0);
     --muted-foreground: oklch(0.48 0.012 264);
-    --accent: oklch(0.94 0.003 264);
+    --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.21 0.01 264);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(1 0 0);
@@ -446,7 +445,7 @@ html {
     --thinking-border: oklch(0.68 0.17 65);
     --thinking-text: oklch(0.40 0.01 270);
 
-    --card-hover-bg: oklch(0.97 0.003 270);
+    --card-hover-bg: oklch(0.995 0 0);
     --input-focus-bg: oklch(1 0 0);
 
     --session-drawer-bg: oklch(0.99 0.002 270);
