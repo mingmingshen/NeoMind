@@ -358,7 +358,7 @@ export function LoginPage() {
                   <DropdownMenuItem
                     key={lang.code}
                     onClick={() => i18n.changeLanguage(lang.code)}
-                    className={i18n.language === lang.code ? 'bg-muted' : ''}
+                    className={i18n.language === lang.code ? 'bg-primary-light text-primary font-medium' : ''}
                   >
                     {lang.name}
                   </DropdownMenuItem>
