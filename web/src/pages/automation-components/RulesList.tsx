@@ -465,6 +465,7 @@ export function RulesList({
       data={paginatedRules as unknown as Record<string, unknown>[]}
       rowKey={(rule) => (rule as unknown as Rule).id}
       loading={loading}
+      onRowClick={(rowData) => onView(rowData as unknown as Rule)}
       getRowClassName={(rowData) => {
         const rule = rowData as unknown as Rule
         return cn(!rule.enabled && "opacity-50")
