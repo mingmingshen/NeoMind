@@ -224,6 +224,12 @@ impl RetentionPolicy {
     }
 
     /// Get retention hours for a specific metric.
+    ///
+    /// NOTE: This does NOT apply the `image_retention_hours` fallback — that
+    /// requires inspecting the actual data value, which is done in
+    /// `apply_retention()` via `value_looks_like_image()`. Callers that
+    /// need image-aware retention should use `apply_retention()` rather
+    /// than calling this directly.
     pub fn get_retention_hours(&self, device_type: &str, metric: &str) -> Option<u64> {
         // Check metric override first
         if let Some(retention) = self.metric_overrides.get(metric) {
@@ -232,20 +238,6 @@ impl RetentionPolicy {
         // Check device type override
         if let Some(retention) = self.device_type_overrides.get(device_type) {
             return *retention;
-        }
-        // Image/binary keyword fallback: matches metrics whose name suggests
-        // they carry image/binary data (camera frames, snapshots, etc.) so
-        // they get the shorter image retention without needing to register
-        // every variant explicitly.
-        if let Some(img_hours) = self.image_retention_hours {
-            const IMAGE_KEYWORDS: &[&str] = &[
-                "image", "snapshot", "frame", "photo", "picture",
-                "jpeg", "jpg", "png", "webp", "gif", "bmp",
-            ];
-            let metric_lower = metric.to_lowercase();
-            if IMAGE_KEYWORDS.iter().any(|k| metric_lower.contains(k)) {
-                return Some(img_hours);
-            }
         }
         // Use default
         self.default_hours
@@ -289,6 +281,54 @@ struct CacheEntry {
     point: DataPoint,
     /// When this entry was cached
     cached_at: Instant,
+}
+/// Heuristic: does this DataPoint value look like image/binary data?
+///
+/// Used by `apply_retention()` to apply the shorter `image_retention` period
+/// to metrics that actually carry image content, **regardless of metric
+/// naming conventions**. This is content-based detection — more reliable
+/// than name-based matching, which misses real-world variants like
+/// `payload`, `data`, `sample` and false-positives on names like `framerate`.
+///
+/// Detects:
+/// - Data URLs: `data:image/<subtype>;base64,...`
+/// - Raw base64 with known image magic bytes (JPEG / PNG / GIF / WebP / BMP)
+///
+/// Only inspects the first 32 chars to avoid decoding huge blobs just to
+/// identify them.
+fn value_looks_like_image(value: &serde_json::Value) -> bool {
+    use base64::Engine as _;
+    let s = match value.as_str() {
+        Some(s) => s,
+        None => return false,
+    };
+    // Fast path: data URL prefix (covers most camera extensions)
+    if s.starts_with("data:image/") {
+        return true;
+    }
+    // Need at least 32 chars to fill a 24-byte magic-byte window.
+    // Shorter strings can't carry a meaningful image payload.
+    if s.len() < 32 {
+        return false;
+    }
+    // Decode only the first 32 chars (24 bytes) — enough for any image
+    // magic signature, avoids touching the full blob.
+    let prefix = &s[..32];
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(prefix)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(prefix))
+        .unwrap_or_default();
+    // Magic byte signatures:
+    //   JPEG: FF D8 FF
+    //   PNG:  89 50 4E 47 0D 0A 1A 0A
+    //   GIF:  47 49 46 38 (ASCII "GIF8")
+    //   WebP: 52 49 46 46 (ASCII "RIFF") + ... + 57 45 42 50 (ASCII "WEBP")
+    //   BMP:  42 4D (ASCII "BM")
+    decoded.starts_with(&[0xFF, 0xD8, 0xFF])
+        || decoded.starts_with(&[0x89, 0x50, 0x4E, 0x47])
+        || decoded.starts_with(b"GIF8")
+        || decoded.starts_with(b"RIFF")
+        || decoded.starts_with(&[0x42, 0x4D])
 }
 
 /// Performance statistics for time series operations.
@@ -1791,7 +1831,42 @@ impl TimeSeriesStore {
             let metric_key = format!("{}:{}", source_id, metric);
             let device_type = ""; // Could be enhanced to look up device type
 
-            if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric) {
+            // Resolve effective retention hours.
+            //
+            // Priority: explicit metric_overrides → device_type_overrides →
+            // image_retention_hours (if the latest sample actually looks
+            // like image data) → default_hours.
+            //
+            // The image-content check is content-based (peeks at the latest
+            // data point's value), NOT name-based, so it works for any
+            // metric name as long as the payload really is image data.
+            let explicit_hours = policy.get_retention_hours(device_type, metric);
+            let effective_hours = if explicit_hours == policy.default_hours
+                && explicit_hours.is_some()
+            {
+                // No explicit override — fell through to default. Check
+                // whether this metric actually carries image data, and if
+                // so, apply image_retention instead.
+                let use_image = match policy.image_retention_hours {
+                    Some(img_hours) if Some(img_hours) != explicit_hours => {
+                        match self.query_latest(source_id, metric).await {
+                            Ok(Some(latest)) => value_looks_like_image(&latest.value),
+                            _ => false, // no sample → don't risk misclassifying
+                        }
+                    }
+                    _ => false,
+                };
+                if use_image {
+                    policy.image_retention_hours
+                } else {
+                    explicit_hours
+                }
+            } else {
+                explicit_hours
+            };
+
+            if let Some(hours) = effective_hours {
+                let cutoff = now - (hours as i64 * 3600);
                 if cutoff < now {
                     let removed = self
                         .delete_range(source_id, metric, i64::MIN, cutoff)
@@ -1801,6 +1876,8 @@ impl TimeSeriesStore {
                         metrics_cleaned.insert(metric_key.clone());
                     }
                 }
+            } else {
+                // effective_hours=None → no retention configured, skip silently
             }
         }
 
@@ -2696,39 +2773,117 @@ mod tests {
     }
 
     #[test]
-    fn test_retention_policy_image_keyword_fallback() {
-        let mut policy = RetentionPolicy::new(Some(720)); // 30 days default
-        policy.set_image_retention(Some(72)); // 3 days for image-like metrics
+    fn test_value_looks_like_image_detection() {
+        // Data URL form (most camera extensions emit this)
+        let data_url = serde_json::json!(
+            "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4wNDHL=="
+        );
+        assert!(value_looks_like_image(&data_url));
 
-        // Explicit override wins over keyword fallback
-        policy.set_metric_retention("image".to_string(), Some(12));
-        assert_eq!(policy.get_retention_hours("", "image"), Some(12));
+        // Raw base64 JPEG (magic FF D8 FF)
+        // Encoded prefix "/9j/4AAQ" decodes to FF D8 FF E0 00 10
+        let raw_jpeg = serde_json::json!(
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4wNDHL=="
+        );
+        assert!(value_looks_like_image(&raw_jpeg));
 
-        // Keyword fallback: image-like names get image_retention
-        assert_eq!(policy.get_retention_hours("", "image_data"), Some(72));
-        assert_eq!(policy.get_retention_hours("", "__webhook_image"), Some(72));
-        assert_eq!(policy.get_retention_hours("", "detection_frame"), Some(72));
-        assert_eq!(policy.get_retention_hours("", "camera_frame"), Some(72));
-        assert_eq!(policy.get_retention_hours("", "snapshot_jpg"), Some(72));
-        assert_eq!(policy.get_retention_hours("", "yolo_frame"), Some(72));
+        // PNG magic: iVBORw0KGgo → 89 50 4E 47 0D 0A 1A 0A
+        let raw_png = serde_json::json!(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        );
+        assert!(value_looks_like_image(&raw_png));
 
-        // Case-insensitive
-        assert_eq!(policy.get_retention_hours("", "IMAGE_DATA"), Some(72));
-        assert_eq!(policy.get_retention_hours("", "Snapshot"), Some(72));
+        // GIF: R0lGOD → 47 49 46 38
+        let raw_gif = serde_json::json!(
+            "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        );
+        assert!(value_looks_like_image(&raw_gif));
 
-        // Non-image metrics fall through to default
-        assert_eq!(policy.get_retention_hours("", "temperature"), Some(720));
-        assert_eq!(policy.get_retention_hours("", "humidity"), Some(720));
-        assert_eq!(policy.get_retention_hours("", "cpu_usage"), Some(720));
+        // Non-image values
+        assert!(!value_looks_like_image(&serde_json::json!(42.5)));
+        assert!(!value_looks_like_image(&serde_json::json!("hello world")));
+        assert!(!value_looks_like_image(&serde_json::json!("temperature: 23.5")));
+        // Short strings even if base64-decodable: not an image
+        assert!(!value_looks_like_image(&serde_json::json!("dGVzdA==")));
+        // Numeric metric value stored as string
+        assert!(!value_looks_like_image(&serde_json::json!("23.5")));
+        // Null
+        assert!(!value_looks_like_image(&serde_json::Value::Null));
     }
 
-    #[test]
-    fn test_retention_policy_no_image_fallback_when_unset() {
-        // When image_retention_hours is None, image-like metric names
-        // fall through to default_hours (no special treatment).
-        let policy = RetentionPolicy::new(Some(720));
-        assert_eq!(policy.get_retention_hours("", "image_data"), Some(720));
-        assert_eq!(policy.get_retention_hours("", "frame"), Some(720));
+    #[tokio::test]
+    async fn test_apply_retention_uses_image_retention_by_value() {
+        // Camera publishes image under a name that has NO image keyword —
+        // the previous name-based classifier would have missed it entirely
+        // (falling through to default 30-day retention). The content-based
+        // detector should catch it via the JPEG magic prefix.
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write a JPEG-data-URL datapoint under a generic metric name
+        let jpeg_data_url = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4wNDHL==";
+        let old_ts = Utc::now().timestamp() - 30 * 24 * 3600; // 30 days ago
+        let recent_ts = Utc::now().timestamp() - 60; // 1 minute ago
+        store
+            .write(
+                "device1",
+                "payload", // intentionally non-image-keyword name
+                DataPoint::new_with_value(old_ts, serde_json::json!(jpeg_data_url)),
+            )
+            .await
+            .unwrap();
+        store
+            .write(
+                "device1",
+                "payload",
+                DataPoint::new_with_value(recent_ts, serde_json::json!(jpeg_data_url)),
+            )
+            .await
+            .unwrap();
+        // write() buffers; flush so apply_retention can see the data.
+        store.flush().unwrap();
+
+        // Image retention = 1 hour; default = 30 days. The 30-day-old
+        // sample MUST be cleaned up under image retention, but would
+        // survive under default retention.
+        let mut policy = RetentionPolicy::new(Some(720)); // 30 days default
+        policy.set_image_retention(Some(1)); // 1 hour for actual image data
+        store.set_retention_policy(policy).await;
+
+        let result = store.apply_retention().await.unwrap();
+        assert_eq!(
+            result.points_removed, 1,
+            "30-day-old image sample should be removed by 1h image retention"
+        );
+
+        // Latest sample survives (within 1h)
+        let latest = store.query_latest("device1", "payload").await.unwrap();
+        assert!(latest.is_some(), "recent image sample should survive");
+    }
+
+    #[tokio::test]
+    async fn test_apply_retention_no_image_misclassification_for_numbers() {
+        // Numeric metric named "framerate" — under the old keyword-based
+        // classifier this would have been wrongly caught by the "frame"
+        // keyword and cleaned at image retention. The value-based check
+        // must NOT classify it as image data.
+        let store = TimeSeriesStore::memory().unwrap();
+        let old_ts = Utc::now().timestamp() - 30 * 24 * 3600;
+        store
+            .write("device1", "framerate", DataPoint::new(old_ts, 30.0))
+            .await
+            .unwrap();
+        store.flush().unwrap();
+
+        // default = 7 days, image = 1 hour
+        let mut policy = RetentionPolicy::new(Some(24 * 7));
+        policy.set_image_retention(Some(1));
+        store.set_retention_policy(policy).await;
+
+        let result = store.apply_retention().await.unwrap();
+        assert_eq!(
+            result.points_removed, 1,
+            "framerate (a number) should be cleaned by DEFAULT retention (7d), not image (1h)"
+        );
     }
 
     #[tokio::test]
