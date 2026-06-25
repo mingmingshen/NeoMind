@@ -4120,6 +4120,7 @@ name = "neomind-storage"
 version = "0.8.23"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "dashmap 6.2.1",

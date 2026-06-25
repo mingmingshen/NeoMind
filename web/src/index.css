@@ -34,6 +34,16 @@ body,
 }
 
 /* iOS safe area support for iPhone X+ notches (2025 spec with fallbacks) */
+/* Layout-critical CSS variables MUST live on :root, not bare inside @supports
+   blocks — bare custom-property declarations have no selector and silently
+   never apply, which causes downstream var() fallbacks to kick in. This was
+   the root cause of PWA content overflowing the top safe area on iOS. */
+:root {
+  /* TopNav height including safe area (4rem chrome + safe-area-inset-top) */
+  --topnav-height: calc(4rem + env(safe-area-inset-top, 0px));
+  /* Chat page top padding: TopNav + Mobile Header + safe area */
+  --chat-content-padding-top: calc(6.5rem + env(safe-area-inset-top, 0px));
+}
 @supports (padding: env(safe-area-inset-top)) {
   .safe-top {
     padding-top: env(safe-area-inset-top, 0px);
@@ -49,10 +59,6 @@ body,
   .pt-safe {
     padding-top: env(safe-area-inset-top, 12px);
   }
-  /* TopNav height including safe area */
-  --topnav-height: calc(4rem + env(safe-area-inset-top, 0px));
-  /* Chat page top padding: TopNav + Mobile Header + safe area */
-  --chat-content-padding-top: calc(6.5rem + env(safe-area-inset-top, 0px));
 }
 .safe-bottom {
   padding-bottom: 0px;

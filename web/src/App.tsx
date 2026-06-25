@@ -439,7 +439,7 @@ function App() {
                   <div className="aurora-bg" />
                   {!isMobile && <TopNav />}
                   <MobileNav />
-                  <main className="relative z-10 flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>
+                  <main className="relative z-10 flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, calc(4rem + env(safe-area-inset-top, 0px)))'}}>
                     <div className="w-full h-full overflow-hidden" id="main-scroll-container">
                     <ErrorBoundary>
                     <div key={location.pathname.split('/')[1] || 'root'} className="animate-page-enter w-full h-full overflow-hidden">
