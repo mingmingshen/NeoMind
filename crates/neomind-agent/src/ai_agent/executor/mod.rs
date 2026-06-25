@@ -1592,28 +1592,72 @@ fn is_transient_failure(error: Option<&str>) -> bool {
         None => return false, // unknown error → treat as permanent (safe)
     };
     let lower = msg.to_lowercase();
-    // Network errors
+    // Network errors (reqwest::Error display)
     lower.contains("network")
-        || lower.contains("connection")
-        || lower.contains("dns")
         || lower.contains("error sending request")
+        || lower.contains("dns")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("broken pipe")
         // Timeouts (per-request and global 300s)
         || lower.contains("timed out")
         || lower.contains("timeout")
-        // Rate limiting
+        // Rate limiting — match the actual strings our backends produce
         || lower.contains("rate limit")
-        || lower.contains("rate limited")
-        || lower.contains("429")
         || lower.contains("too many requests")
-        // IO errors (usually transient)
-        || lower.contains("connection reset")
-        || lower.contains("broken pipe")
-        || lower.contains("eof")
+        // Note: "429" alone is intentionally NOT matched — it's too generic
+        // and could appear in device IDs / ports. Backends emit "Rate limited"
+        // or "too many requests" as the human-readable message instead.
 }
 
 #[cfg(test)]
 mod tests {
-    use super::classify_tool_call_text;
+    use super::{classify_tool_call_text, is_transient_failure};
+
+    #[test]
+    fn transient_network_error_is_detected() {
+        assert!(is_transient_failure(Some("LLM error: Network error: error sending request for url (https://dashscope.aliyuncs.com/...)")));
+    }
+
+    #[test]
+    fn transient_timeout_is_detected() {
+        assert!(is_transient_failure(Some("Execution timed out after 300s")));
+        assert!(is_transient_failure(Some("LLM error: request timeout")));
+    }
+
+    #[test]
+    fn transient_rate_limit_is_detected() {
+        assert!(is_transient_failure(Some("LLM error: Rate limited by API")));
+        assert!(is_transient_failure(Some("429 Too Many Requests")));
+    }
+
+    #[test]
+    fn transient_connection_reset_is_detected() {
+        assert!(is_transient_failure(Some("connection reset by peer")));
+        assert!(is_transient_failure(Some("connection refused")));
+    }
+
+    #[test]
+    fn permanent_malformed_output_is_not_transient() {
+        assert!(!is_transient_failure(Some("LLM error: LLM tool-calling produced malformed output")));
+    }
+
+    #[test]
+    fn permanent_panic_is_not_transient() {
+        assert!(!is_transient_failure(Some("Execution panic: index out of bounds")));
+    }
+
+    #[test]
+    fn number_429_alone_does_not_trigger_false_positive() {
+        // "429" should NOT match by itself — it could be a device id / port
+        assert!(!is_transient_failure(Some("Device 429 not found")));
+        assert!(!is_transient_failure(Some("port 4429 unavailable")));
+    }
+
+    #[test]
+    fn none_error_is_not_transient() {
+        assert!(!is_transient_failure(None));
+    }
 
     #[test]
     fn normal_text_is_not_malformed() {
