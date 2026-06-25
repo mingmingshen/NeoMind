@@ -553,6 +553,14 @@ pub struct TimeSeriesStore {
     write_buffer: WriteBuffer,
     /// Whether metrics_info has been populated at least once (prevents cold-start full scan).
     metrics_initialized: AtomicBool,
+    /// Guards concurrent apply_retention() invocations.
+    ///
+    /// Both the hourly background task and the PUT /settings/retention HTTP
+    /// handler can trigger apply_retention(); without this flag they would
+    /// race, doing duplicate work (full metric scan + N range queries) and
+    /// piling up on redb's single-writer lock. The flag is set on entry and
+    /// cleared on exit (including error paths via the RAII guard).
+    retention_in_progress: AtomicBool,
 }
 
 /// Global time series store singleton (thread-safe).
@@ -603,6 +611,7 @@ impl TimeSeriesStore {
             path: path_str,
             write_buffer: WriteBuffer::new(config.write_buffer_size),
             metrics_initialized: AtomicBool::new(false),
+            retention_in_progress: AtomicBool::new(false),
         });
 
         // Start background flush task
@@ -1528,6 +1537,16 @@ impl TimeSeriesStore {
     }
 
     /// Delete data points in a time range.
+    ///
+    /// Deletes in batches of `DELETE_BATCH_SIZE` per write transaction so a
+    /// huge backlog (e.g. first time enabling image_retention on a metric
+    /// with millions of historical points) doesn't:
+    ///   - hold a single write_txn open for minutes, starving other writers
+    ///   - load every key into a Vec at once (~100 bytes/key → OOM risk)
+    ///   - balloon redb's WAL
+    /// Partial failure leaves an inconsistent state (some batches committed,
+    /// some not), but deletion is idempotent — the next apply_retention pass
+    /// picks up where this one left off.
     pub async fn delete_range(
         &self,
         source_id: &str,
@@ -1535,33 +1554,58 @@ impl TimeSeriesStore {
         start: i64,
         end: i64,
     ) -> Result<usize, Error> {
-        let write_txn = self.db.begin_write()?;
-        let mut count = 0;
+        const DELETE_BATCH_SIZE: usize = 1000;
+        let mut total_count = 0usize;
 
-        {
-            let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
-            let start_key = (source_id, metric, start);
-            let end_key = (source_id, metric, end);
+        loop {
+            // Each iteration: fresh txn, scan up to DELETE_BATCH_SIZE keys,
+            // remove them, commit. Re-scanning from `start` each loop is
+            // correct because already-deleted keys no longer appear in the
+            // range iterator (redb collapses empty B-tree nodes on commit).
+            let write_txn = self.db.begin_write()?;
+            let mut batch_count = 0usize;
 
-            // Collect keys as owned tuples
-            let mut keys_to_delete: Vec<(String, String, i64)> = Vec::new();
-            let mut range = table.range(start_key..=end_key)?;
-            for result in range.by_ref() {
-                let (key_ref, _val_ref) = result?;
-                let did: &str = key_ref.value().0;
-                let met: &str = key_ref.value().1;
-                let ts: i64 = key_ref.value().2;
-                keys_to_delete.push((did.to_string(), met.to_string(), ts));
+            {
+                let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
+                let start_key = (source_id, metric, start);
+                let end_key = (source_id, metric, end);
+
+                let mut keys_batch: Vec<(String, String, i64)> =
+                    Vec::with_capacity(DELETE_BATCH_SIZE);
+                for result in table.range(start_key..=end_key)? {
+                    let (key_ref, _val_ref) = result?;
+                    let did: &str = key_ref.value().0;
+                    let met: &str = key_ref.value().1;
+                    let ts: i64 = key_ref.value().2;
+                    keys_batch.push((did.to_string(), met.to_string(), ts));
+                    if keys_batch.len() >= DELETE_BATCH_SIZE {
+                        break;
+                    }
+                }
+
+                if keys_batch.is_empty() {
+                    // Range exhausted — nothing left to delete in this txn.
+                    // Drop the table handle & commit the empty txn before
+                    // breaking, to avoid leaking the write lock.
+                    drop(table);
+                    drop(write_txn);
+                    break;
+                }
+
+                for key in &keys_batch {
+                    table.remove((key.0.as_str(), key.1.as_str(), key.2))?;
+                    batch_count += 1;
+                }
             }
-            drop(range);
 
-            for key in &keys_to_delete {
-                table.remove((key.0.as_str(), key.1.as_str(), key.2))?;
-                count += 1;
+            write_txn.commit()?;
+            total_count += batch_count;
+
+            // If this batch was under capacity, the range is exhausted.
+            if batch_count < DELETE_BATCH_SIZE {
+                break;
             }
         }
-
-        write_txn.commit()?;
 
         // Invalidate caches for this metric
         let cache_key = (source_id.to_string(), metric.to_string());
@@ -1573,7 +1617,7 @@ impl TimeSeriesStore {
             self.metrics_info.remove(&metric_key);
         }
 
-        Ok(count)
+        Ok(total_count)
     }
 
     /// Flush all buffered writes to disk, then sync redb.
@@ -1815,7 +1859,44 @@ impl TimeSeriesStore {
     }
 
     /// Apply retention policy and clean up old data.
+    ///
+    /// Concurrency: guarded by `retention_in_progress`. If another invocation
+    /// is already running (e.g. the hourly background task while the user
+    /// also hits PUT /settings/retention), this call returns a zero-result
+    /// immediately rather than piling on. redb's single-writer lock would
+    /// otherwise serialize them, but each would still pay the upfront
+    /// full-table scan and per-metric query_latest_uncached cost.
     pub async fn apply_retention(&self) -> Result<RetentionPolicyCleanupResult, Error> {
+        // Try to acquire the retention lock. compare_exchange returns Ok
+        // if we flipped false→true; Err means someone else holds it.
+        if self
+            .retention_in_progress
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::Acquire,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            tracing::debug!("apply_retention: another run is in progress, skipping");
+            return Ok(RetentionPolicyCleanupResult {
+                points_removed: 0,
+                metrics_cleaned: Vec::new(),
+            });
+        }
+
+        // RAII guard: ensures the flag is cleared on every exit path
+        // (success, error, panic). Drop is sync; the only await points are
+        // inside the wrapped block, and a panic would unwind through them.
+        struct RetentionGuard<'a>(&'a AtomicBool);
+        impl Drop for RetentionGuard<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let _guard = RetentionGuard(&self.retention_in_progress);
+
         // DashMap and RwLock access - no async needed for DashMap
         let policy = self.retention_policy.read().await;
         // metrics_info is now DashMap, iterate directly when needed
@@ -2388,6 +2469,75 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.points.len(), 6);
+    }
+
+    #[tokio::test]
+    async fn test_delete_range_batched_large_dataset() {
+        // Verify delete_range works correctly when the dataset spans
+        // multiple batches (DELETE_BATCH_SIZE = 1000). Writes 2500 points,
+        // deletes all of them, then confirms zero remain and the returned
+        // count matches. This catches: off-by-one in batch boundary, early
+        // exit when batch_count == BATCH_SIZE, and re-scan correctness
+        // after partial commit.
+        let store = TimeSeriesStore::memory().unwrap();
+
+        for i in 0..2500 {
+            let point = DataPoint::new(i, i as f64);
+            store.write("dev", "metric", point).await.unwrap();
+        }
+        store.flush().unwrap();
+
+        let removed = store
+            .delete_range("dev", "metric", i64::MIN, i64::MAX)
+            .await
+            .unwrap();
+        assert_eq!(removed, 2500, "all 2500 points should be deleted");
+
+        let result = store
+            .query_range("dev", "metric", i64::MIN, i64::MAX, None)
+            .await
+            .unwrap();
+        assert_eq!(result.points.len(), 0, "no points should remain");
+    }
+
+    #[tokio::test]
+    async fn test_apply_retention_concurrent_dedup() {
+        // Two concurrent apply_retention() calls: the second must observe
+        // the in-progress flag and return a zero-result immediately,
+        // rather than piling on. We can't easily test true concurrency,
+        // but we can verify the flag semantics directly.
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Manually set the flag as if another run is in progress
+        store
+            .retention_in_progress
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let result = store.apply_retention().await.unwrap();
+        assert_eq!(result.points_removed, 0);
+        assert!(result.metrics_cleaned.is_empty());
+
+        // Flag should NOT be cleared by the skipped call (the holder owns it)
+        assert!(
+            store
+                .retention_in_progress
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "skipped call must not clobber the existing holder's flag"
+        );
+
+        // Now clear it and verify a real run can proceed
+        store
+            .retention_in_progress
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let result2 = store.apply_retention().await.unwrap();
+        // Empty store → 0 removed, but the call must succeed (not skip)
+        assert_eq!(result2.points_removed, 0);
+        assert!(
+            !store
+                .retention_in_progress
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "flag must be cleared after a real run completes"
+        );
     }
 
     #[tokio::test]

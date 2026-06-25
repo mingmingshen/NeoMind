@@ -353,23 +353,36 @@ pub async fn trigger_retention_cleanup(
     let ts_store = TimeSeriesStore::open(TELEMETRY_DB_PATH)
         .map_err(|e| ErrorResponse::internal(format!("Failed to open telemetry store: {}", e)))?;
 
-    // Apply the policy
+    // Apply the policy synchronously (cheap) so the config is live before
+    // we trigger cleanup.
     ts_store.set_retention_policy(policy).await;
-    let result = ts_store
-        .apply_retention()
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Retention cleanup failed: {}", e)))?;
 
-    tracing::info!(
-        points_removed = result.points_removed,
-        metrics_cleaned = result.metrics_cleaned.len(),
-        "Manual retention cleanup completed"
-    );
+    // Spawn the actual cleanup in the background so the HTTP request
+    // doesn't block on what could be minutes of deletion work (large
+    // backlogs with millions of expired points). The in-progress flag
+    // on TimeSeriesStore dedupes against the hourly background task.
+    let ts_store_clone = ts_store.clone();
+    tokio::spawn(async move {
+        match ts_store_clone.apply_retention().await {
+            Ok(result) => {
+                if result.points_removed > 0 {
+                    tracing::info!(
+                        points_removed = result.points_removed,
+                        metrics_cleaned = result.metrics_cleaned.len(),
+                        "Manual retention cleanup completed (background)"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Manual retention cleanup failed (background)");
+            }
+        }
+    });
 
     ok(json!({
         "success": true,
-        "points_removed": result.points_removed,
-        "metrics_cleaned": result.metrics_cleaned.len(),
+        "triggered": true,
+        "message": "Retention cleanup scheduled in background",
     }))
 }
 
