@@ -51,15 +51,18 @@ fn convert_status(status: AdapterConnectionStatus) -> MdlConnectionStatus {
     }
 }
 
-/// Map adapter_id to plugin display name
+/// Map adapter_id to (stable adapter_id, plugin_display_name).
+/// Display name is a stable English string; the frontend does i18n via adapter_id.
+/// DO NOT hardcode localized strings here — they leak into the API response and
+/// ignore the caller's locale.
 fn get_plugin_info(adapter_id: &Option<String>) -> (Option<String>, Option<String>) {
     match adapter_id {
         None => (
             Some("internal-mqtt".to_string()),
-            Some("内置MQTT".to_string()),
+            Some("Internal MQTT".to_string()),
         ),
         Some(id) if id.starts_with("external-mqtt") => {
-            (Some(id.clone()), Some(format!("外部MQTT: {}", id)))
+            (Some(id.clone()), Some(format!("External MQTT: {}", id)))
         }
         Some(id) => (Some(id.clone()), Some(id.clone())),
     }

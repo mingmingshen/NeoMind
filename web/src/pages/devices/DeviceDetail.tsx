@@ -28,6 +28,21 @@ import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, Devi
 import { isBase64Image, getImageDataUrl } from "./utils"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/useMobile"
+import type { TFunction } from "i18next"
+
+/** Map adapter_id to a localized broker display name.
+ *  Avoids rendering backend-hardcoded Chinese (`内置MQTT`/`外部MQTT`) directly. */
+function formatBrokerName(t: TFunction, device: Device): string {
+  const aid = device.adapter_id
+  if (aid === "internal-mqtt" || !aid) {
+    return t('devices:detailPage.brokerInternalMqtt', { defaultValue: 'Internal MQTT' })
+  }
+  if (aid.startsWith("external-mqtt")) {
+    return t('devices:detailPage.brokerExternalMqtt', { defaultValue: 'External MQTT ({{id}})', id: aid })
+  }
+  // Real plugin — show id as-is (plugin metadata is the source of truth)
+  return aid
+}
 
 // Pagination constants
 const PAGE_SIZE = 10
@@ -457,7 +472,7 @@ export function DeviceDetail({
                 {(device.plugin_name || device.adapter_id) && (
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">{t('devices:detailPage.association', { defaultValue: 'Associated Broker' })}</p>
-                    <p className="text-sm font-medium truncate">{device.plugin_name || device.adapter_id}</p>
+                    <p className="text-sm font-medium truncate">{formatBrokerName(t, device)}</p>
                   </div>
                 )}
 
