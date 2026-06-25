@@ -203,6 +203,13 @@ pub struct RetentionPolicy {
     pub metric_overrides: std::collections::HashMap<String, Option<u64>>,
     /// Per-device-type retention overrides
     pub device_type_overrides: std::collections::HashMap<String, Option<u64>>,
+    /// Fallback retention for metrics whose name looks image/binary-like
+    /// (contains "image", "frame", "snapshot", etc., case-insensitive).
+    /// Checked after explicit metric_overrides but before the global
+    /// default_hours. Lets camera extensions that publish under names
+    /// like `image_data`, `__webhook_image`, `detection_frame` automatically
+    /// pick up the shorter image retention without registering every alias.
+    pub image_retention_hours: Option<u64>,
 }
 
 impl RetentionPolicy {
@@ -212,6 +219,7 @@ impl RetentionPolicy {
             default_hours,
             metric_overrides: std::collections::HashMap::with_capacity(16), // Pre-allocate for typical use
             device_type_overrides: std::collections::HashMap::with_capacity(8), // Pre-allocate for typical use
+            image_retention_hours: None,
         }
     }
 
@@ -225,6 +233,20 @@ impl RetentionPolicy {
         if let Some(retention) = self.device_type_overrides.get(device_type) {
             return *retention;
         }
+        // Image/binary keyword fallback: matches metrics whose name suggests
+        // they carry image/binary data (camera frames, snapshots, etc.) so
+        // they get the shorter image retention without needing to register
+        // every variant explicitly.
+        if let Some(img_hours) = self.image_retention_hours {
+            const IMAGE_KEYWORDS: &[&str] = &[
+                "image", "snapshot", "frame", "photo", "picture",
+                "jpeg", "jpg", "png", "webp", "gif", "bmp",
+            ];
+            let metric_lower = metric.to_lowercase();
+            if IMAGE_KEYWORDS.iter().any(|k| metric_lower.contains(k)) {
+                return Some(img_hours);
+            }
+        }
         // Use default
         self.default_hours
     }
@@ -237,6 +259,13 @@ impl RetentionPolicy {
     /// Set retention for a device type.
     pub fn set_device_type_retention(&mut self, device_type: String, hours: Option<u64>) {
         self.device_type_overrides.insert(device_type, hours);
+    }
+
+    /// Set the image/binary fallback retention (hours). Applied to any
+    /// metric whose name contains an image-related keyword and isn't
+    /// explicitly overridden via `set_metric_retention`.
+    pub fn set_image_retention(&mut self, hours: Option<u64>) {
+        self.image_retention_hours = hours;
     }
 
     /// Calculate the cutoff timestamp for data retention.
@@ -2664,6 +2693,42 @@ mod tests {
         let retrieved_policy = store.get_retention_policy().await;
         assert_eq!(retrieved_policy.default_hours, Some(24));
         assert_eq!(retrieved_policy.get_retention_hours("", "temp"), Some(1));
+    }
+
+    #[test]
+    fn test_retention_policy_image_keyword_fallback() {
+        let mut policy = RetentionPolicy::new(Some(720)); // 30 days default
+        policy.set_image_retention(Some(72)); // 3 days for image-like metrics
+
+        // Explicit override wins over keyword fallback
+        policy.set_metric_retention("image".to_string(), Some(12));
+        assert_eq!(policy.get_retention_hours("", "image"), Some(12));
+
+        // Keyword fallback: image-like names get image_retention
+        assert_eq!(policy.get_retention_hours("", "image_data"), Some(72));
+        assert_eq!(policy.get_retention_hours("", "__webhook_image"), Some(72));
+        assert_eq!(policy.get_retention_hours("", "detection_frame"), Some(72));
+        assert_eq!(policy.get_retention_hours("", "camera_frame"), Some(72));
+        assert_eq!(policy.get_retention_hours("", "snapshot_jpg"), Some(72));
+        assert_eq!(policy.get_retention_hours("", "yolo_frame"), Some(72));
+
+        // Case-insensitive
+        assert_eq!(policy.get_retention_hours("", "IMAGE_DATA"), Some(72));
+        assert_eq!(policy.get_retention_hours("", "Snapshot"), Some(72));
+
+        // Non-image metrics fall through to default
+        assert_eq!(policy.get_retention_hours("", "temperature"), Some(720));
+        assert_eq!(policy.get_retention_hours("", "humidity"), Some(720));
+        assert_eq!(policy.get_retention_hours("", "cpu_usage"), Some(720));
+    }
+
+    #[test]
+    fn test_retention_policy_no_image_fallback_when_unset() {
+        // When image_retention_hours is None, image-like metric names
+        // fall through to default_hours (no special treatment).
+        let policy = RetentionPolicy::new(Some(720));
+        assert_eq!(policy.get_retention_hours("", "image_data"), Some(720));
+        assert_eq!(policy.get_retention_hours("", "frame"), Some(720));
     }
 
     #[tokio::test]

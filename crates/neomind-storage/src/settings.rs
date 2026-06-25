@@ -370,12 +370,12 @@ impl RetentionConfig {
     /// Convert to a RetentionPolicy for the time-series store.
     pub fn to_retention_policy(&self) -> super::timeseries::RetentionPolicy {
         let mut policy = super::timeseries::RetentionPolicy::new(self.default_retention);
-        // Apply shorter retention for common image/binary metric names
-        if let Some(img_hours) = self.image_retention {
-            for metric in &["image", "snapshot", "frame", "photo", "picture"] {
-                policy.set_metric_retention(metric.to_string(), Some(img_hours));
-            }
-        }
+        // Image/binary fallback: any metric whose name contains an image
+        // keyword (image/frame/snapshot/jpg/png/…) picks up the shorter
+        // image retention automatically. Covers `image_data`,
+        // `__webhook_image`, `detection_frame`, etc. without registering
+        // every alias explicitly.
+        policy.set_image_retention(self.image_retention);
         policy
     }
 }
