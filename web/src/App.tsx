@@ -442,7 +442,7 @@ function App() {
                   <main className="relative z-10 flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>
                     <div className="w-full h-full overflow-hidden" id="main-scroll-container">
                     <ErrorBoundary>
-                    <div key={location.pathname.split('/')[1] || 'root'} className="animate-fade-in w-full h-full overflow-hidden">
+                    <div key={location.pathname.split('/')[1] || 'root'} className="animate-page-enter w-full h-full overflow-hidden">
                     <Routes>
                       <Route path="/" element={<ChatPage />} />
                       <Route path="/chat" element={<ChatPage />} />
