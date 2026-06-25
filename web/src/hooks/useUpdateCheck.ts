@@ -179,13 +179,31 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       setUpdateStatus('downloading')
       setError(null)
 
-      await invoke('download_and_install')
-
-      // Persist the installed version so next restart won't re-show the dialog
-      // Read from store directly to avoid stale closure over updateInfo
+      // Pre-write the "installed" marker BEFORE invoking download_and_install.
+      //
+      // Tauri's updater may trigger a process restart or webview reload the
+      // moment download_and_install resolves (platform-dependent: macOS can
+      // replace the .app bundle mid-flight, Windows NSIS may auto-restart).
+      // Writing the marker AFTER the await is a race — if the process dies
+      // between invoke() resolving and localStorage.setItem() running, the
+      // next launch finds no marker, falls through to check_update, and the
+      // dialog pops up again on the version we just installed.
+      //
+      // We already know the target version from check_update; persist it now
+      // and clear it on error so a failed install doesn't poison the next
+      // launch.
       const latestInfo = useAppStore.getState().updateInfo
       if (latestInfo?.version) {
         localStorage.setItem('neomind_installed_version', latestInfo.version)
+      }
+
+      try {
+        await invoke('download_and_install')
+      } catch (invokeError) {
+        // Install failed — clear the pre-written marker so next launch
+        // doesn't skip a legitimate update check.
+        localStorage.removeItem('neomind_installed_version')
+        throw invokeError
       }
 
       setUpdateStatus('done')

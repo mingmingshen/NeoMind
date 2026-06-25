@@ -78,9 +78,23 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     }
 
     if let Some(update) = response {
-        // Defensive check: if remote version matches current version, skip
+        // Defensive check: if remote version matches current version, skip.
+        // normalize strips: leading 'v', surrounding whitespace, and any
+        // build metadata after '+' or pre-release after '-' (e.g.
+        // "0.8.24+build.1" or "0.8.24-beta" → "0.8.24"). This is the
+        // last-resort safety net so the update dialog doesn't re-appear on
+        // the very version we just installed (the primary guard is the
+        // frontend's localStorage marker — see useUpdateCheck.ts).
         let current_version = app.config().version.clone().unwrap_or_default();
-        let normalize = |v: &str| v.trim_start_matches('v').trim().to_string();
+        let normalize = |v: &str| {
+            v.trim_start_matches('v')
+                .trim()
+                .split(['+', '-'])
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        };
         if normalize(&update.version) == normalize(&current_version) {
             return Ok(UpdateInfo::none());
         }
@@ -124,9 +138,17 @@ pub async fn download_and_install(
                 .map_err(|e| format!("Failed to check for updates: {}", e))?;
             match check_response {
                 Some(update) => {
-                    // Defensive: skip if remote version matches current (already up-to-date)
+                    // Defensive: skip if remote version matches current
                     let current_version = app.config().version.clone().unwrap_or_default();
-                    let normalize = |v: &str| v.trim_start_matches('v').trim().to_string();
+                    let normalize = |v: &str| {
+                        v.trim_start_matches('v')
+                            .trim()
+                            .split(['+', '-'])
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string()
+                    };
                     if normalize(&update.version) == normalize(&current_version) {
                         return Err("Already on the latest version".to_string());
                     }
