@@ -2,7 +2,7 @@
  * Rules List - Using ResponsiveTable for consistent styling
  */
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -14,7 +14,7 @@ import {
   FullScreenDialogContent,
   FullScreenDialogMain,
 } from "@/components/automation/dialog"
-import { ResponsiveTable, EmptyState } from "@/components/shared"
+import { ResponsiveTable, EmptyState, Pagination } from "@/components/shared"
 import { Edit, Play, Trash2, Bell, Sparkles, Zap, MoreVertical, Timer, History, CheckCircle2, XCircle, Clock, Download } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction, RuleExecutionResult } from "@/types"
@@ -57,8 +57,11 @@ function RuleHistoryDialog({ rule, open, onOpenChange }: {
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation(['automation', 'common'])
+  const isMobile = useIsMobile()
   const [history, setHistory] = useState<RuleExecutionResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const pageSize = ITEMS_PER_PAGE
 
   const loadHistory = async () => {
     if (!rule) return
@@ -73,10 +76,32 @@ function RuleHistoryDialog({ rule, open, onOpenChange }: {
     }
   }
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen && rule) {
+  // Load history whenever the dialog opens or the selected rule changes.
+  // FullScreenDialog only fires onOpenChange on close events (escape/backdrop),
+  // so relying on handleOpenChange to trigger the load would never fire when
+  // the parent flips `open` from false → true — the dialog would render with
+  // an empty history list indefinitely.
+  useEffect(() => {
+    if (open && rule) {
+      setPage(1) // Reset to first page on open / rule switch
       loadHistory()
     }
+    if (!open) {
+      // Reset on close so next open doesn't flash stale data
+      setHistory([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, rule?.id])
+
+  // Slice for current page
+  const totalPages = Math.ceil(history.length / pageSize) || 1
+  const safePage = Math.min(page, totalPages)
+  const pagedHistory = history.slice(
+    (safePage - 1) * pageSize,
+    safePage * pageSize,
+  )
+
+  const handleOpenChange = (nextOpen: boolean) => {
     onOpenChange(nextOpen)
   }
 
@@ -145,10 +170,10 @@ function RuleHistoryDialog({ rule, open, onOpenChange }: {
       <FullScreenDialogContent>
         <FullScreenDialogMain className="overflow-hidden">
           <div className="h-full flex flex-col">
-            <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className={cn("flex-1 overflow-y-auto", isMobile ? "px-3 py-3" : "px-4 py-4")}>
               <ResponsiveTable
                 columns={columns}
-                data={history as unknown as Record<string, unknown>[]}
+                data={pagedHistory as unknown as Record<string, unknown>[]}
                 renderCell={renderCell}
                 rowKey={(rowData) => {
                   const entry = rowData as unknown as RuleExecutionResult
@@ -164,6 +189,17 @@ function RuleHistoryDialog({ rule, open, onOpenChange }: {
                 }
               />
             </div>
+            {history.length > pageSize && (
+              <div className={cn("border-t", isMobile ? "px-3 py-2" : "px-4 py-3")}>
+                <Pagination
+                  total={history.length}
+                  pageSize={pageSize}
+                  currentPage={safePage}
+                  onPageChange={setPage}
+                  hideOnMobile={false}
+                />
+              </div>
+            )}
           </div>
         </FullScreenDialogMain>
       </FullScreenDialogContent>
