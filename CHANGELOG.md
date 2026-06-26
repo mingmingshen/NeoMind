@@ -9,6 +9,140 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.25] - 2026-06-26
+
+### Overview
+
+A **mobile-only PWA hardening + UI polish** release, all frontend /
+desktop-app side. No backend changes. The headline work closes two
+long-standing iOS PWA standalone bugs (header offset under the notch
+when the keyboard opened, chat input floating mid-screen instead of
+sitting on the keyboard) and redesigns the pending-devices mobile card
+to be flat, single-action (tap the card to approve), and visually
+balanced. Around that: ResponsiveTable gains three new opt-in props so
+other list pages can adopt the same flat-card style, and the button
+focus ring is dropped (it was firing on every WebKit tap-to-focus and
+reading as random orange edges).
+
+Themes: (1) **iOS PWA viewport** — drive layout from `visualViewport`
+instead of `innerHeight`/`100dvh` (which PWA standalone ignores when
+the keyboard opens), lock `html { overflow: hidden }` to stop
+document-level keyboard-avoidance scroll; (2) **pending device card
+redesign** — drop the 3-dot menu (single approve action → tap card
+directly), flatten the header, move status to the top-right slot,
+collapse bottom meta into one line; (3) **ResponsiveTable extensions**
+— `renderMobileBody` / `mobileFlatHeader` / `renderMobileHeaderExtra`
+props for per-table mobile card customization without forking the
+shared chrome; (4) **button focus ring** — removed; form inputs keep
+their focus ring.
+
+### iOS PWA viewport / keyboard
+
+- **`html { overflow: hidden }`** (`web/src/index.css`). The layout
+  viewport in iOS PWA standalone does NOT honor
+  `interactive-widget=resizes-content` like Safari does — it stays
+  full-screen when the soft keyboard opens, so iOS silently scrolls
+  the document root scroller by ~status-bar height for keyboard
+  avoidance. `position: fixed; top: 0` headers rode along with that
+  scroll and ended up under the notch. `body` already had
+  `overflow: hidden`; locking `html` the same way is a no-op for
+  Safari / Android and blocks the PWA-only offset.
+- **`--app-height` driven from `visualViewport.height`**
+  (`web/src/hooks/useVisualViewport.ts`). `innerHeight` and `100dvh`
+  don't shrink on PWA keyboard open; `visualViewport.height` always
+  does. The `.viewport-full` utility now resolves to
+  `var(--app-height, 100dvh)`, bringing keyboard-aware sizing to
+  login / full-screen pages without per-page changes.
+- **`--visual-viewport-offset-top`** (same hook). Once document scroll
+  was blocked, iOS PWA fell back to scrolling the visual viewport
+  itself, so `position: fixed; top: 0` no longer meant "top of the
+  visible area." Exposed `visualViewport.offsetTop` as a CSS variable
+  and bound the chat root's `top` to it — the input now sticks to the
+  top of the keyboard instead of floating mid-screen.
+- **Chat root** (`web/src/pages/chat.tsx`) uses
+  `top: var(--visual-viewport-offset-top, 0px)` and
+  `height: var(--app-height, 100dvh)`. Unmount cleanup blurs any
+  focused textarea so the keyboard is gone before the next page
+  mounts.
+- **MobileNav drawer** (`web/src/components/layout/MobileNav.tsx`)
+  blurs the active element on drawer open — gives the keyboard the
+  drawer's open animation to dismiss before navigation, otherwise the
+  next page would render in the shrunk viewport with content under
+  the notch. Also: removed the `startTransition` wrapper around
+  `navigate` (the deferred route change made taps feel non-responsive
+  and prompted a second tap that interrupted the first), switched the
+  nav list from Radix `ScrollArea` to native `overflow-y-auto`
+  (Radix's pointer-event handling swallowed taps during momentum-scroll
+  settle on iOS).
+- **Defensive route-change reset** (`web/src/App.tsx`) keeps
+  `window.scrollTo(0, 0)` + body / documentElement transform clears
+  on every route change. Redundant with `html { overflow: hidden }`
+  but cheap.
+
+### Pending devices card redesign
+
+- **Single-action card** (`web/src/pages/devices/PendingDevicesList.tsx`).
+  The 3-dot menu was the only action surface but there was only one
+  action ("approve"). Replaced with `onRowClick` — tap the card, the
+  approve dialog opens directly. Removes the menu trigger chrome and
+  the tap-target tax of "open menu → tap item."
+- **Flat header** via the new `mobileFlatHeader` prop. The card used
+  to be split into a `bg-muted` header band (title) + bordered body,
+  which read as two stacked surfaces and felt heavy on a list of
+  similar items. With `mobileFlatHeader`, the header band / border /
+  rounded-top go away — title and body share one continuous surface.
+- **Status badge in top-right slot** via the new
+  `renderMobileHeaderExtra` prop. The empty space where the 3-dot menu
+  used to live is now occupied by the status badge, balancing the
+  card's visual weight. Body's bottom row drops from "status +
+  source · time" to just one secondary line.
+- **Single bottom meta line**. `device_type` code (when analysis is
+  done) and `source · time` are now on one row: code pinned left,
+  source/time pinned right with `ml-auto`. Reads as one context
+  strip rather than two stacked muted lines.
+- **Toned-down confidence**. Changed from a `bg-success-light` pill
+  badge to plain `text-success` text so the status badge remains the
+  only strong color signal on the card.
+
+### ResponsiveTable extensions
+
+`web/src/components/shared/ResponsiveTable.tsx` gains three opt-in
+props so individual tables can tailor their mobile cards without
+forking the shared Card chrome, header, or actions menu:
+
+- **`renderMobileBody`** — replaces the default key-value list with
+  a caller-supplied layout. Use this when the default produces
+  asymmetric content (multi-line cells, centered badges, mixed cell
+  shapes in one row).
+- **`mobileFlatHeader`** — drops the `bg-muted` band and the border
+  under the header so the header and body read as one continuous
+  surface. Use when the body already provides enough visual structure.
+- **`renderMobileHeaderExtra`** — extra content in the top-right of
+  the card header, in the same slot as the actions menu (hidden when
+  actions are present). Useful for surfacing a status badge or
+  chevron when the table has no row actions but the right side would
+  otherwise be empty.
+
+### UI polish
+
+- **Button focus ring removed** (`web/src/components/ui/button.tsx`).
+  The previous `focus-visible:ring-2 ring-ring ring-offset-2` rendered
+  a bright brand-orange halo whenever a button held keyboard focus or
+  matched WebKit's tap-to-focus heuristics on mobile, which read as
+  random orange edges on icon / ghost buttons. Buttons already
+  communicate state via `hover:bg-*` and `active:scale-[0.97]`,
+  matching native mobile patterns where buttons don't have focus
+  rings. Form inputs (input / textarea / select) keep their focus
+  ring — that's where keyboard focus indication is genuinely needed.
+- **Global `--ring` token neutralized** (`web/src/index.css`).
+  Replaced `--ring: var(--brand)` with a 35% foreground tint in both
+  light and dark themes. The brand-orange ring made every focused
+  input / tab / button flash a bright orange halo — even after the
+  button-level ring removal above, the global token still drove ring
+  color for inputs, tabs, and any component using `ring-ring`. The
+  neutral tint preserves WCAG focus-indicator contrast for keyboard
+  a11y without the brand-color noise.
+
 ## [0.8.24] - 2026-06-26
 
 ### Overview
