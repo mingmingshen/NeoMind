@@ -5,7 +5,14 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97]",
+  // Focus indicator: previously `focus-visible:ring-2 ring-ring ring-offset-2`
+  // rendered a bright brand-ORANGE halo (because --ring = --brand) whenever a
+  // button held keyboard focus OR matched WebKit's tap-to-focus heuristics on
+  // mobile — users reported "random orange edges" on icons / ghost buttons.
+  // Now we use a thin (1px) neutral foreground-tinted ring with NO offset,
+  // which is visible enough for keyboard a11y but doesn't read as a brand
+  // accent. Per-variant hover:bg-* + active:scale still handle pointer feedback.
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97]",
   {
     variants: {
       variant: {
