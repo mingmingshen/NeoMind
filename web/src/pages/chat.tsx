@@ -856,9 +856,16 @@ export function ChatPage() {
 
   return (
     <>
-    <div className="fixed top-0 left-0 right-0 flex flex-row overflow-hidden" style={{
-      paddingTop: 'var(--topnav-height, calc(4rem + env(safe-area-inset-top, 0px)))',
-      height: 'calc(100dvh - var(--keyboard-offset, 0px))',
+    <div className="fixed top-0 left-0 right-0 flex flex-row overflow-hidden safe-top" style={{
+      // Desktop: TopNav height (set by useVisualViewport via --topnav-height).
+      // Mobile: --topnav-height is 0 (no global nav); safe-top class handles
+      // the notch via env(safe-area-inset-top). Don't combine them in a
+      // `var()` fallback — when the variable is explicitly "0px" the fallback
+      // is ignored and chat content ends up under the notch.
+      paddingTop: 'var(--topnav-height, 0px)',
+      // 100dvh shrinks naturally with `interactive-widget=resizes-content`
+      // (iOS 16.4+ / Android Chrome). No --keyboard-offset needed.
+      height: '100dvh',
     }}>
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && createPortal(
@@ -1264,14 +1271,12 @@ export function ChatPage() {
         )}
         </div>
 
-        {/* Input Area - flex child of chat column (was: fixed bottom-offset).
-            Previous mobile `position: fixed` caused iOS Safari to mis-position
-            the input when the soft keyboard opened — iOS fixed elements bind
-            to layoutViewport, which doesn't shrink, so the input would float
-            in the wrong place. Letting the parent container shrink via
-            `height: calc(100dvh - var(--keyboard-offset))` and rendering the
-            input as a flex child makes it naturally sit at the bottom of the
-            visible area on every platform. */}
+        {/* Input Area - flex child of chat column. With
+            `interactive-widget=resizes-content` in the viewport meta, the
+            chat root's `height: 100dvh` shrinks naturally on keyboard open
+            (iOS 16.4+ / Android Chrome), and `shrink-0` keeps the input
+            pinned to the bottom of the visible area — no fixed-position
+            hacks needed. */}
         <div className={cn(
           "shrink-0 px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
           isDesktop ? "border-0" : "bg-background/95 backdrop-blur-xl"

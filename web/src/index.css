@@ -161,48 +161,13 @@ body,
     min-height: 100dvh;
   }
 
-  /* iOS PWA standalone ONLY: when keyboard opens, window.innerHeight and
-     100dvh do NOT shrink — only visualViewport does. If body stays at
-     full-screen height, iOS scrolls the whole layout upward to reveal the
-     focused input, pushing the safe-area-padded header under the notch.
-     Fix: shrink body to the visible area. --keyboard-offset is set to the
-     real keyboard height only on iOS PWA standalone (see useVisualViewport.ts);
-     it is 0 on Android / iOS Safari browser, where 100dvh already shrinks
-     and subtracting again would collapse body. */
-  html.ios-pwa-standalone body.keyboard-open {
-    min-height: 0;
-    height: calc(100dvh - var(--keyboard-offset, 0px));
-    overflow: hidden;
-  }
-
-  /* Same reasoning applied to .viewport-full roots (login page uses this).
-     Without this rule, body shrinks but the login page inside it stays at
-     100dvh, overflowing the new body height; iOS then scroll-shifts the
-     layout upward to reveal the focused password input, pushing the
-     `absolute top-0` header under the notch. Shrinking viewport-full in
-     lockstep with body keeps the centered flex form in the visible area
-     so iOS has nothing to scroll. */
-  html.ios-pwa-standalone body.keyboard-open .viewport-full,
-  html.ios-pwa-standalone body.keyboard-open .h-screen,
-  html.ios-pwa-standalone body.keyboard-open .min-h-screen {
-    height: calc(100dvh - var(--keyboard-offset, 0px)) !important;
-    min-height: 0 !important;
-  }
-
-  /* Mobile full-screen Dialog (web/src/components/ui/dialog.tsx mobile branch):
-     uses `fixed !top-0 !bottom-0 !h-full`, so on iOS PWA the dialog stays
-     full-screen tall and its `sticky bottom-0` footer sinks behind the
-     keyboard — users can't see the submit button while typing in a form.
-     Attribute selector [style*="safe-area-inset-top"] matches ONLY the
-     mobile branch (it sets safe-area padding inline; the desktop centered
-     branch has no inline style), so desktop dialogs are untouched.
-     Specificity (0,3,0) beats Tailwind's `.h-full` (0,1,0) even with
-     `!important`, so the calc height wins and the footer rises above
-     the keyboard. */
-  html.ios-pwa-standalone body.keyboard-open
-    [role="dialog"][data-state="open"][style*="safe-area-inset-top"] {
-    height: calc(100dvh - var(--keyboard-offset, 0px)) !important;
-  }
+  /* Note: With `interactive-widget=resizes-content` in the viewport meta,
+     the layout viewport itself shrinks when the soft keyboard opens on
+     iOS 16.4+ (Safari + PWA standalone) and Android Chrome. `100dvh`,
+     `position: fixed; bottom: 0`, and `window.innerHeight` all reflect
+     the visible area automatically. No platform-specific keyboard CSS
+     hacks are needed. The previous `body.keyboard-open` overrides were
+     removed to avoid double-subtracting the keyboard height. */
 }
 
 /* Touch devices: `group-hover:` never fires (no hover state), so any element

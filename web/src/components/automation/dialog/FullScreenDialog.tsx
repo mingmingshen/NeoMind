@@ -74,16 +74,17 @@ export function FullScreenDialog({
       <div
         className={cn(
           "flex flex-col flex-1 overflow-hidden",
-          // Glass card effect
-          "bg-bg-95",
-          "backdrop-blur-xl",
-          isMobile ? "rounded-none" : "m-3 md:m-4 border border-border rounded-2xl shadow-2xl shadow-black/10",
+          // Mobile: solid bg (no translucency) so the safe-area edges match
+          // the body — translucency (bg-bg-95) lets the aurora gradient bleed
+          // through and creates a visible color split at the notch / home
+          // indicator. Desktop keeps the glass effect.
+          isMobile ? "bg-background" : "bg-bg-95 backdrop-blur-xl m-3 md:m-4 border border-border rounded-2xl shadow-2xl shadow-black/10",
           className
         )}
         onClick={(e) => e.stopPropagation()}
         style={isMobile ? {
-          // Extend edge-to-edge; safe-area insets become INTERNAL padding so the
-          // solid `bg-bg-95` background covers the full viewport (no backdrop
+          // Extend edge-to-edge; safe-area insets become INTERNAL padding so
+          // the solid bg-background covers the full viewport (no backdrop
           // color stripes showing through at top/bottom on PWA / iOS Safari).
           paddingTop: 'env(safe-area-inset-top, 0px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
