@@ -406,7 +406,6 @@ pub async fn get_device_current_handler(
 
     // Build metrics response with current values
     let mut metrics_data = serde_json::Map::new();
-    let now = chrono::Utc::now().timestamp();
 
     // Unified source_id for telemetry storage queries
     let device_source_id = format!("device:{}", device_id);
@@ -489,48 +488,31 @@ pub async fn get_device_current_handler(
             )
         };
 
-        // Get latest value - try time_series_storage directly for auto-extracted metrics
-        let value = if is_template {
-            // Use device_service.query_telemetry for template metrics
-            match state
-                .devices
-                .service
-                .query_telemetry(&device_id, &metric_name, Some(now - 3600), Some(now), None)
-                .await
-            {
-                Ok(points) => points.last().map(|(_, v)| super::metrics::value_to_json(v)),
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to query telemetry for {}/{}: {:?}",
-                        device_id,
-                        metric_name,
-                        e
-                    );
-                    None
-                }
+        // Get latest value from storage — no time window.
+        // Previously template metrics used query_telemetry with a 1h lookback, which caused
+        // image-bearing metrics (e.g., NE101 values.image) to disappear from the UI after
+        // 1h of no uploads, even though storage still held the last capture. The batch
+        // endpoint (getDevicesCurrentBatch_handler) already uses latest() without a window;
+        // keeping this path consistent.
+        let value = match state
+            .devices
+            .telemetry
+            .latest(&device_source_id, &metric_name)
+            .await
+        {
+            Ok(Some(point)) => Some(super::metrics::value_to_json(&point.value)),
+            Ok(None) => {
+                tracing::debug!("No data found in storage for {}/{}", device_id, metric_name);
+                None
             }
-        } else {
-            // Use time_series_storage.latest for storage metrics
-            match state
-                .devices
-                .telemetry
-                .latest(&device_source_id, &metric_name)
-                .await
-            {
-                Ok(Some(point)) => Some(super::metrics::value_to_json(&point.value)),
-                Ok(None) => {
-                    tracing::debug!("No data found in storage for {}/{}", device_id, metric_name);
-                    None
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to query latest for {}/{}: {:?}",
-                        device_id,
-                        metric_name,
-                        e
-                    );
-                    None
-                }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to query latest for {}/{}: {:?}",
+                    device_id,
+                    metric_name,
+                    e
+                );
+                None
             }
         };
 
