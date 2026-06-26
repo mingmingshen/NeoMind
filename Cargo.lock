@@ -3251,7 +3251,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-cli-ops"
-version = "0.8.23"
+version = "0.8.24"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3352,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-extension-runner"
-version = "0.8.23"
+version = "0.8.24"
 dependencies = [
  "base64 0.22.1",
  "chrono",
