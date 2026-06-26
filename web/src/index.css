@@ -319,8 +319,12 @@ html {
     --error-foreground: oklch(1 0 0);
     --border: oklch(0.21 0.01 264 / 9%);
     --input: oklch(0.21 0.01 264 / 10%);
-    /* Focus ring uses the brand orange — makes brand the interaction anchor */
-    --ring: var(--brand);
+    /* Focus ring — neutral foreground tint, NOT brand orange. The previous
+     * `--ring: var(--brand)` made every focused input/tab/button flash a
+     * bright orange halo, which users read as "random orange edges". A
+     * subtle foreground-tinted ring still satisfies WCAG focus-indicator
+     * contrast for keyboard a11y without screaming brand color everywhere. */
+    --ring: color-mix(in oklch, var(--foreground) 35%, transparent);
     /* Base radius — slightly larger (12px) for a softer, more modern feel.
        Tailwind's rounded-lg/md/sm all derive from this via calc(). */
     --radius: 0.75rem;
@@ -503,8 +507,8 @@ html {
     --error-foreground: oklch(0.95 0.006 270);
     --border: oklch(1 0 0 / 9%);
     --input: oklch(1 0 0 / 11%);
-    /* Brand orange ring — consistent with light mode interaction anchor */
-    --ring: var(--brand);
+    /* Neutral focus ring (see light-mode --ring rationale). */
+    --ring: color-mix(in oklch, var(--foreground) 35%, transparent);
 
     --color-success: oklch(0.72 0.19 155);
     --color-success-bg: oklch(0.72 0.19 155 / 10%);
