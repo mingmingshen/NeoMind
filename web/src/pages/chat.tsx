@@ -252,6 +252,20 @@ export function ChatPage() {
     }
   }, [loadBackends, loadSessions])
 
+  // Cleanup on unmount: blur any still-focused input so the soft keyboard is
+  // fully dismissed before the next page mounts. The document-scroll resets
+  // that used to live here are no longer needed now that `html { overflow:
+  // hidden }` prevents iOS PWA from scrolling the root scroller (see
+  // index.css) and the chat root tracks `--visual-viewport-offset-top` (see
+  // useVisualViewport.ts).
+  useEffect(() => {
+    return () => {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur()
+      }
+    }
+  }, [])
+
   // Onboarding auto-detect: show getting-started dialog for new installations
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const hasShownOnboarding = useRef(false)
@@ -856,16 +870,29 @@ export function ChatPage() {
 
   return (
     <>
-    <div className="fixed top-0 left-0 right-0 flex flex-row overflow-hidden safe-top" style={{
+    <div className="fixed left-0 right-0 flex flex-row overflow-hidden safe-top" style={{
+      // Anchor to the top of the VISIBLE area, not the layout viewport. iOS
+      // PWA standalone doesn't honor `interactive-widget=resizes-content`, so
+      // when the soft keyboard opens iOS scrolls the visualViewport
+      // (visualViewport.offsetTop becomes > 0) instead of shrinking the
+      // layout viewport. position:fixed `top:0` is relative to the LAYOUT
+      // viewport, which would leave the chat container stranded above the
+      // visible area. Use --visual-viewport-offset-top to follow the visible
+      // area. Always 0 in Safari (where the layout viewport itself shrinks).
+      top: 'var(--visual-viewport-offset-top, 0px)',
       // Desktop: TopNav height (set by useVisualViewport via --topnav-height).
       // Mobile: --topnav-height is 0 (no global nav); safe-top class handles
       // the notch via env(safe-area-inset-top). Don't combine them in a
       // `var()` fallback — when the variable is explicitly "0px" the fallback
       // is ignored and chat content ends up under the notch.
       paddingTop: 'var(--topnav-height, 0px)',
-      // 100dvh shrinks naturally with `interactive-widget=resizes-content`
-      // (iOS 16.4+ / Android Chrome). No --keyboard-offset needed.
-      height: '100dvh',
+      // Drive height from `--app-height` (visualViewport.height) so the chat
+      // page shrinks with the soft keyboard on iOS PWA standalone, where
+      // `interactive-widget=resizes-content` is NOT honored and 100dvh stays
+      // full-screen. Without this, focusing the chat input lets iOS PWA
+      // scroll/transform the whole document and the header ends up under the
+      // notch. Falls back to 100dvh when --app-height is unset.
+      height: 'var(--app-height, 100dvh)',
     }}>
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && createPortal(

@@ -336,7 +336,11 @@ export function DashboardListSidebar({
     return (
       <div
         className={cn(
-          "h-full w-64 bg-bg-50 border-r border-border flex flex-col",
+          // bg-popover: opaque, unified with SessionSidebar and all other
+          // popups/drawers. Previously bg-bg-50 (translucent) which let
+          // aurora bleed through and produced a color split vs the opaque
+          // dashboard canvas to the right.
+          "h-full w-64 bg-popover border-r border-border flex flex-col",
           className
         )}
       >
@@ -371,7 +375,10 @@ export function DashboardListSidebar({
       <div
         className={cn(
           'fixed left-0 bottom-0 w-72 z-[60] lg:hidden safe-top',
-          'bg-background shadow-xl flex flex-col',
+          // bg-popover matches desktop persistent sidebar and all other
+          // drawers. Previously bg-background (dark-mode /97% alpha) which
+          // produced a visible dark tint vs the topnav chrome above.
+          'bg-popover shadow-xl flex flex-col',
           'transform transition-transform duration-300 ease-out',
           open ? 'translate-x-0' : '-translate-x-full',
           className

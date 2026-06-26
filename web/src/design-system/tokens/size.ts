@@ -338,11 +338,17 @@ export const sectionHeader = [
 ].join(' ')
 
 /**
- * Dialog header — larger padding variant for full-screen dialogs
+ * Dialog header — larger padding variant for full-screen dialogs.
+ *
+ * Uses bg-popover (not bg-background) so the header matches the dialog body:
+ * in light mode --background is oklch(0.985) (slightly off-white) while
+ * --popover is pure white, so a bg-background header reads as a dirty gray
+ * strip on top of a pure-white dialog body. bg-popover is opaque in both
+ * themes and matches the surrounding dialog Content (which is also bg-popover).
  */
 export const dialogHeader = [
   'flex items-center justify-between',
-  'px-4 py-4 border-b shrink-0 bg-background',
+  'px-4 py-4 border-b shrink-0 bg-popover',
 ].join(' ')
 
 /**

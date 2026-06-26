@@ -63,6 +63,16 @@ export function initVisualViewport() {
     document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
     document.documentElement.style.setProperty('--keyboard-offset', '0px')
 
+    // Expose visualViewport.offsetTop as a CSS variable. iOS PWA standalone
+    // (where `interactive-widget=resizes-content` is NOT honored) uses
+    // visualViewport scroll instead of document scroll to bring focused
+    // inputs into view. position:fixed containers anchored to `top:0` of
+    // the layout viewport end up offset from the visible area when this
+    // is non-zero — reading this var lets those containers follow the
+    // visible area. Always 0 in Safari (where the layout viewport itself
+    // shrinks).
+    document.documentElement.style.setProperty('--visual-viewport-offset-top', `${window.visualViewport.offsetTop}px`)
+
     // Update app height
     updateAppHeight()
 
@@ -115,15 +125,26 @@ export function initVisualViewport() {
 /**
  * Update the app height CSS variable.
  *
- * With `interactive-widget=resizes-content` in the viewport meta tag,
- * window.innerHeight already reflects the visible area on every platform
- * (iOS 16.4+ Safari + PWA, Android Chrome, desktop). No platform-specific
- * branching needed.
+ * We drive `--app-height` from `window.visualViewport.height` instead of
+ * `window.innerHeight`. The visual viewport ALWAYS shrinks when the soft
+ * keyboard opens — it does not depend on the `interactive-widget` viewport
+ * meta flag, which iOS PWA standalone historically does NOT honor (PWA
+ * behaves like `overlays-content`: layout viewport stays full-screen,
+ * `innerHeight` and `100dvh` don't shrink). Without this, focusing an input
+ * in PWA makes iOS scroll/transform the whole document to bring the input
+ * into view, which pushes `position: absolute/fixed top-0` headers under
+ * the notch ("顶部溢出").
+ *
+ * In Safari (where `interactive-widget=resizes-content` works),
+ * `innerHeight` and `visualViewport.height` shrink together, so this change
+ * is a no-op for non-PWA contexts.
  */
 function updateAppHeight() {
   if (typeof window === 'undefined') return
 
-  document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+  const visualHeight = window.visualViewport?.height
+  const effectiveHeight = visualHeight ?? window.innerHeight
+  document.documentElement.style.setProperty('--app-height', `${effectiveHeight}px`)
 
   // Mobile layout: no global TopNav. Each page renders its own MobilePageHeader
   // (with hamburger + page title + actions) as the first child of its content.

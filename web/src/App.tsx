@@ -248,9 +248,20 @@ function App() {
     document.body.style.position = ''
     document.body.style.top = ''
     document.body.style.width = ''
+    // Defensive: clear any stray transforms that iOS PWA may have applied to
+    // ancestors during input focus inside position:fixed containers.
+    document.body.style.transform = ''
+    document.documentElement.style.transform = ''
 
-    // Force scroll to top
+    // Force scroll to top across every channel iOS PWA might use. html has
+    // `overflow: hidden` (see index.css) so the document never scrolls, but
+    // keep this as a defensive reset for older browsers / edge cases.
     window.scrollTo(0, 0)
+    document.body.scrollTop = 0
+    document.documentElement.scrollTop = 0
+    if (document.scrollingElement) {
+      ;(document.scrollingElement as HTMLElement).scrollTop = 0
+    }
 
     // Force layout recalculation
     void document.body.offsetHeight

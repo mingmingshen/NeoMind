@@ -74,7 +74,7 @@ const DialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            "fixed !left-0 !top-0 !right-0 !bottom-0 !w-full !h-full !max-w-full !translate-x-0 !translate-y-0 !rounded-none z-50 bg-background flex flex-col",
+            "fixed !left-0 !top-0 !right-0 !bottom-0 !w-full !h-full !max-w-full !translate-x-0 !translate-y-0 !rounded-none z-50 bg-popover flex flex-col",
             "data-[state=open]:animate-in data-[state=closed]:animate-out",
             "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
             className
@@ -113,7 +113,7 @@ const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed left-[50%] top-[50%] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 border bg-background shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg sm:rounded-xl",
+          "fixed left-[50%] top-[50%] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 border bg-popover shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg sm:rounded-xl",
           "z-50",
           "m-0 p-4 sm:p-6",
           !className?.includes("max-h-") && "max-h-[calc(100dvh-2rem)] sm:max-h-[85dvh]",
@@ -154,7 +154,7 @@ const DialogHeader = function DialogHeader({
         // Header container with title and close button side by side
         "flex items-center justify-between gap-2",
         // Mobile styling
-        isMobile && "px-4 py-4 border-b shrink-0 bg-background",
+        isMobile && "px-4 py-4 border-b shrink-0 bg-popover",
         className
       )}
       {...props}
@@ -192,7 +192,7 @@ const DialogFooter = ({
       className={cn(
         "flex flex-row justify-end gap-2 sm:gap-3",
         "mt-4 sm:mt-0",
-        isMobile && "px-4 py-3 border-t shrink-0 bg-background sticky bottom-0",
+        isMobile && "px-4 py-3 border-t shrink-0 bg-popover sticky bottom-0",
         className
       )}
       {...props}

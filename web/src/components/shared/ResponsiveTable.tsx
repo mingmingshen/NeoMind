@@ -51,6 +51,24 @@ export interface ResponsiveTableProps {
   maxHeight?: string
   /** Use flex mode to fill parent container height (disables maxHeight) */
   flexHeight?: boolean
+  /** Custom mobile card body renderer. When provided, replaces the default
+   *  key-value list rendering for mobile cards. The card header (first
+   *  column + actions menu) and outer Card chrome remain unchanged.
+   *  Use this when the default key-value layout produces asymmetric or
+   *  truncated content (e.g., multi-line cells, centered badges, mixed
+   *  cell shapes in one row). */
+  renderMobileBody?: (rowData: Record<string, unknown>) => ReactNode
+  /** Extra content rendered in the top-right of the mobile card header.
+   *  Occupies the same slot as the actions menu (and is hidden if actions
+   *  are present). Useful for surfacing a status badge or chevron when
+   *  the table has no row actions but the right side of the header would
+   *  otherwise be empty. */
+  renderMobileHeaderExtra?: (rowData: Record<string, unknown>) => ReactNode
+  /** Flatten the mobile card header — drop the `bg-muted` band and the
+   *  border under it so the header and body read as one continuous
+   *  surface. Use when the body already provides enough visual structure
+   *  (e.g., via renderMobileBody) and the gray header band feels heavy. */
+  mobileFlatHeader?: boolean
 }
 
 /**
@@ -79,6 +97,9 @@ export function ResponsiveTable({
   stickyHeader = true,
   maxHeight = 'calc(100vh - 280px)',
   flexHeight = false,
+  renderMobileBody,
+  renderMobileHeaderExtra,
+  mobileFlatHeader = false,
 }: ResponsiveTableProps) {
   const { t } = useTranslation('common')
   // Show empty state only on mobile when no data
@@ -303,14 +324,19 @@ export function ResponsiveTable({
                 onClick={() => onRowClick?.(rowData)}
               >
                 {/* Card Header - First column as title */}
-                <div className="bg-muted px-3 py-2.5 border-b border-border rounded-t-xl">
+                <div className={cn(
+                  "px-3 py-2.5",
+                  mobileFlatHeader
+                    ? "pb-1"
+                    : "bg-muted border-b border-border rounded-t-xl",
+                )}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                       <div className="min-w-0 flex-1 truncate">
                         {renderCell(columns[0].key, rowData)}
                       </div>
                     </div>
-                    {visibleActions && visibleActions.length > 0 && (
+                    {visibleActions && visibleActions.length > 0 ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -342,32 +368,48 @@ export function ResponsiveTable({
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
+                    ) : renderMobileHeaderExtra ? (
+                      <div className="shrink-0">
+                        {renderMobileHeaderExtra(rowData)}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
-                {/* Card Body - Other columns as key-value pairs */}
-                <div className="p-3 space-y-1.5">
-                  {columns.slice(1).map((column) => {
-                    const cellContent = renderCell(column.key, rowData)
-                    // Skip if content is empty
-                    if (!cellContent || (typeof cellContent === 'object' && 'props' in cellContent && (cellContent as any).props.children === '')) {
-                      return null
-                    }
+                {/* Card Body - Other columns as key-value pairs, OR a custom
+                    layout when renderMobileBody is provided. The default
+                    key-value list breaks for tables that mix multi-line
+                    cells, centered badges, or asymmetric value shapes —
+                    callers can pass renderMobileBody to swap in a tailored
+                    layout without losing the shared Card chrome, header,
+                    and actions menu. */}
+                <div className="p-3">
+                  {renderMobileBody ? (
+                    renderMobileBody(rowData)
+                  ) : (
+                    <div className="space-y-1.5">
+                      {columns.slice(1).map((column) => {
+                        const cellContent = renderCell(column.key, rowData)
+                        // Skip if content is empty
+                        if (!cellContent || (typeof cellContent === 'object' && 'props' in cellContent && (cellContent as any).props.children === '')) {
+                          return null
+                        }
 
-                    return (
-                      <div key={column.key} className="flex items-start gap-2 py-0.5 min-w-0">
-                        <span className={cn(textMini, "text-muted-foreground shrink-0 w-20 pt-0.5 font-medium truncate")}>
-                          {typeof column.label === 'string' ? column.label : column.key}
-                        </span>
-                        <div className="text-sm flex-1 text-left min-w-0 overflow-hidden">
-                          <div className="truncate">
-                            {cellContent}
+                        return (
+                          <div key={column.key} className="flex items-start gap-2 py-0.5 min-w-0">
+                            <span className={cn(textMini, "text-muted-foreground shrink-0 w-20 pt-0.5 font-medium truncate")}>
+                              {typeof column.label === 'string' ? column.label : column.key}
+                            </span>
+                            <div className="text-sm flex-1 text-left min-w-0 overflow-hidden">
+                              <div className="truncate">
+                                {cellContent}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    )
-                  })}
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               </Card>
             )

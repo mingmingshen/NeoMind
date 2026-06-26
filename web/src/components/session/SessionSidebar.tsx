@@ -554,7 +554,13 @@ export function SessionSidebar({
       <>
         <div
           className={cn(
-            "h-full bg-bg-50 border-r border-border flex flex-col transition-[width] duration-200 overflow-hidden",
+            // bg-popover (opaque, semantic "floating layer" token) unifies
+            // the persistent chat list with all other side drawers / popups.
+            // Previously bg-bg-50 (50% white) was a frosted layer that let
+            // the aurora gradient bleed through; it created a visible color
+            // gap against the opaque chat content area and the bg-popover
+            // dialogs opened on top of it.
+            "h-full bg-popover border-r border-border flex flex-col transition-[width] duration-200 overflow-hidden",
             collapsed ? "w-12" : "w-64"
           )}
         >
@@ -602,7 +608,12 @@ export function SessionSidebar({
       <div
         className={cn(
           "fixed top-0 left-0 h-full w-72 z-[70] lg:hidden safe-top",
-          "bg-background shadow-xl flex flex-col",
+          // bg-popover matches the desktop persistent sidebar and every
+          // other drawer / popup in the app. Previously bg-background,
+          // which is /97% alpha in dark mode and let the page + backdrop
+          // bleed through, making the drawer read darker than the chrome
+          // layer it slides out from.
+          "bg-popover shadow-xl flex flex-col",
           "transform transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "-translate-x-full"
         )}

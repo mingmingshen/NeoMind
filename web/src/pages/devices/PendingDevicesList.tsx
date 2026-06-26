@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveTable, EmptyState } from "@/components/shared"
-import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X, Loader2, Search as SearchIcon, Hourglass, CheckCircle2, XCircle, AlertTriangle, BarChart3, CircleDot } from "lucide-react"
+import { Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X, Loader2, Search as SearchIcon, Hourglass, CheckCircle2, XCircle, AlertTriangle, BarChart3, CircleDot } from "lucide-react"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -580,16 +580,59 @@ export function PendingDevicesList({
               return null
           }
         }}
-        actions={[
-          {
-            label: t('devices:pending.process'),
-            icon: <Eye className="h-4 w-4" />,
-            onClick: (rowData) => {
-              const draft = rowData as unknown as DraftDevice
-              handleApproveClick(draft)
-            },
-          },
-        ]}
+        mobileFlatHeader
+        renderMobileHeaderExtra={(rowData) =>
+          getStatusBadge((rowData as unknown as DraftDevice).status)
+        }
+        renderMobileBody={(rowData) => {
+          const draft = rowData as unknown as DraftDevice
+          const hasGeneratedType = draft.generated_type && draft.status === 'waiting_processing'
+          const confidence = draft.generated_type?.confidence
+          const sourceLabel = draft.source.includes(':') ? draft.source.split(':')[0] : draft.source
+
+          return (
+            <div className="space-y-1.5">
+              {/* Type section — only shown when analysis is done and the
+                  draft is ready for review. Confidence is plain muted text
+                  (no colored badge) so the status badge in the header is the
+                  only strong color signal on the card. */}
+              {hasGeneratedType && (
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {draft.generated_type?.name}
+                  </span>
+                  {confidence !== undefined && (
+                    <span className={cn(
+                      "shrink-0 text-xs",
+                      confidence >= 80 ? "text-success" : "text-warning"
+                    )}>
+                      {confidence}%
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Secondary meta line — device_type code (when available) and
+                  source · time on a single row so the bottom of the card
+                  reads as one context strip rather than two stacked lines.
+                  Status badge lives in the header's top-right slot. */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+                {hasGeneratedType && (
+                  <code className="font-mono truncate shrink-0">
+                    {draft.generated_type?.device_type}
+                  </code>
+                )}
+                <span className="truncate ml-auto">
+                  {sourceLabel} · {formatTimestamp(draft.discovered_at, false)}
+                </span>
+              </div>
+            </div>
+          )
+        }}
+        onRowClick={(rowData) => {
+          const draft = rowData as unknown as DraftDevice
+          handleApproveClick(draft)
+        }}
       />
 
       {/* Summary footer showing registered count */}

@@ -65,11 +65,15 @@ export function MobilePageHeader({
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 shrink-0"
+            // 44×44 = Apple HIG / Material minimum touch target. The previous
+            // h-9 w-9 (36px) was below the recommended minimum and small
+            // finger drift would miss the tap, making it feel like the menu
+            // "didn't open" on first try.
+            className="-ml-1 h-11 w-11 shrink-0"
             onClick={() => setOpen(true)}
             aria-label={t("system.menu")}
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-6 w-6" />
           </Button>
         )}
         {leftExtra}

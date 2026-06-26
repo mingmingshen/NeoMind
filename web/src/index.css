@@ -16,6 +16,17 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
+/* Stabilize password masking glyph: the project font stack ("Plus Jakarta Sans"
+ * → "Noto Sans SC" → ...) does not include U+25CF (●), so the browser falls
+ * back to CJK / emoji fonts that render the dot taller, wider, or colored.
+ * Pin a glyph-stable system font + explicit -webkit-text-security so the mask
+ * character stays consistent across IME activation and macOS emoji fallback. */
+input[type="password"] {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-text-security: disc;
+  font-variant-emoji: text;
+}
+
 /* Radix SelectTrigger now renders as <div> via asChild — no appearance reset needed */
 
 /* ============================================================================
@@ -25,6 +36,15 @@ input[type="number"] {
 /* Height chain for flex layout - body/root fill viewport */
 html {
   height: 100%;
+  /* iOS PWA standalone silently scrolls the root scroller (documentElement)
+     by ~status-bar height after certain interactions (focusing an input
+     inside a position:fixed container, navigating away from chat, etc.),
+     which pushes `position: absolute/fixed top:0` headers under the
+     notch / status bar ("顶部溢出"). body is already overflow:hidden +
+     full-viewport, so html never NEEDS to scroll — lock it explicitly so
+     iOS PWA cannot introduce the offset. Safe in Safari (no-op) and
+     Android (no-op). */
+  overflow: hidden;
 }
 
 body,
@@ -128,10 +148,16 @@ body,
   --chat-page-height: 100dvh;
 }
 
-/* Dynamic viewport height - primary approach (2025 best practice) */
+/* Dynamic viewport height — keyboard-aware on every platform.
+   `--app-height` is driven from `window.visualViewport.height` by
+   useVisualViewport.ts. The visual viewport ALWAYS shrinks when the soft
+   keyboard opens, even in iOS PWA standalone where `interactive-widget=
+   resizes-content` is not honored and `100dvh` / `100vh` stay full-screen.
+   Falling back through dvh → vh keeps the rule safe on older browsers. */
 .viewport-full {
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
 }
 
 /* Override Tailwind's h-screen / min-h-screen to include dvh fallback.

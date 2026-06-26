@@ -32,7 +32,12 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+  // bg-popover instead of bg-background: in light mode --background is
+  // oklch(0.985) (slightly off-white) while --popover is pure white, so
+  // a bg-background sheet reads as a dirty gray next to the pure-white
+  // cards on the page. --popover is opaque in both themes and is the
+  // semantic "floating surface" token.
+  "fixed z-50 gap-4 bg-popover shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
   {
     variants: {
       side: {

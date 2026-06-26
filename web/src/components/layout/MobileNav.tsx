@@ -16,10 +16,9 @@
  * Desktop layout is unchanged.
  */
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { startTransition } from "react"
 import {
   Bell,
   MessageSquare,
@@ -47,7 +46,6 @@ import { useTheme } from "@/components/ui/theme"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Sheet,
   SheetContent,
@@ -92,6 +90,21 @@ export function MobileNav() {
   const alerts = useStore((s) => s.alerts)
   const { open, setOpen } = useMobileNav()
 
+  // When the nav drawer opens, blur any focused input so the soft keyboard
+  // starts dismissing immediately. iOS PWA's `interactive-widget=resizes-
+  // content` only resizes the layout viewport once the keyboard is fully
+  // gone (300ms animation); if the user taps a menu item while the keyboard
+  // is still mid-dismiss, the new page renders in the shrunk viewport and
+  // ends up with content under the notch. Blurring on drawer-open gives
+  // the keyboard the full drawer-appearance animation to dismiss before
+  // any navigation can happen.
+  useEffect(() => {
+    if (!open) return
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+  }, [open])
+
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const { status: onboardingStatus, dismiss: dismissOnboarding, fetchStatus: fetchOnboardingStatus } = useOnboarding()
 
@@ -113,7 +126,14 @@ export function MobileNav() {
 
   const go = (path: string) => {
     setOpen(false)
-    startTransition(() => navigate(path))
+    // NOTE: previously wrapped in startTransition(), which marked the route
+    // change as low-priority. Combined with the immediate setOpen(false),
+    // the drawer would close but the page could lag behind by a tick —
+    // users reported "taps don't navigate" because the visual close didn't
+    // line up with the (deferred) route change, prompting a second tap that
+    // interrupted the first. Navigation from a menu item is an explicit
+    // user action and should fire at full priority.
+    navigate(path)
   }
 
   const onboardingIncomplete =
@@ -129,13 +149,16 @@ export function MobileNav() {
         key={entry.id}
         type="button"
         onClick={() => go(entry.path)}
+        // p-3 (12px) + 20px content = ~44px, Apple HIG minimum touch target.
+        // Previously p-2 → 36px which missed taps when the finger drifted even
+        // a few pixels, especially near the rounded-lg corners.
         className={cn(
-          "group relative flex w-full items-center gap-2 rounded-lg p-2 text-left transition-all",
-          active ? "bg-muted" : "hover:bg-muted-50",
+          "group relative flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors",
+          active ? "bg-muted" : "hover:bg-muted-50 active:bg-muted",
         )}
       >
         <Icon
-          className={cn("h-4 w-4 shrink-0", active ? "text-foreground" : "text-muted-foreground")}
+          className={cn("h-5 w-5 shrink-0", active ? "text-foreground" : "text-muted-foreground")}
         />
         <span
           className={cn(
@@ -183,6 +206,13 @@ export function MobileNav() {
       <SheetContent
         side="left"
         className="mobile-nav-sheet flex w-72 flex-col gap-0 p-0"
+        // Use --chrome (opaque in both light & dark) instead of the default
+        // bg-background (dark mode has /97% alpha → slightly see-through,
+        // which lets the SheetOverlay tint bleed through and makes the drawer
+        // read as a darker/different layer than the page). --chrome matches
+        // MobilePageHeader so the drawer visually belongs to the same chrome
+        // layer as the top bar — no color split on mobile.
+        style={{ backgroundColor: "var(--chrome)" }}
       >
         <SheetTitle className="sr-only">{t("system.menu")}</SheetTitle>
 
@@ -202,9 +232,13 @@ export function MobileNav() {
           </div>
         </div>
 
-        {/* Nav list */}
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="space-y-0.5 overflow-x-hidden px-2 pb-2 pt-1">
+        {/* Nav list — native overflow-y-auto instead of Radix ScrollArea.
+            Radix ScrollArea's pointer-event handling on iOS swallows tap
+            events that land during momentum-scroll settle, which made menu
+            items feel unresponsive ("tap doesn't navigate"). Native scroll
+            has no such interception. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <div className="space-y-1 px-2 pb-2 pt-1">
             {PRIMARY.map(renderItem)}
 
             {SYSTEM_ENTRIES.map(renderItem)}
@@ -276,44 +310,47 @@ export function MobileNav() {
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
               )}
             </button>
-
-            {/* User card + Logout — anchored at the bottom of the drawer */}
-            <div className="mt-3 border-t border-border pt-2">
-              {user && (
-                <button
-                  type="button"
-                  onClick={() => go("/settings?tab=preferences")}
-                  className={cn(
-                    "mb-1 flex w-full items-center gap-3 rounded-lg p-2 text-left transition-all hover:bg-muted-50",
-                  )}
-                >
-                  <Avatar className="h-9 w-9 shrink-0 rounded-lg">
-                    <AvatarFallback className="bg-muted text-xs font-medium text-foreground">
-                      {getUserInitials(user.username)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{user.username}</p>
-                    {user.role && (
-                      <p className="truncate text-xs text-muted-foreground">{user.role}</p>
-                    )}
-                  </div>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false)
-                  logout()
-                }}
-                className="group relative flex w-full items-center gap-2 rounded-lg p-2 text-left text-error transition-all hover:bg-muted-50"
-              >
-                <LogOut className="h-4 w-4 shrink-0" />
-                <span className="flex-1 truncate text-sm font-medium">{t("logout")}</span>
-              </button>
-            </div>
           </div>
-        </ScrollArea>
+        </div>
+
+        {/* User card + Logout — anchored at the bottom of the drawer,
+            outside the scroll container so they never ride up next to the
+            menu items on short lists. The drawer is a flex-col, so this
+            shrink-0 footer always sits above safe-bottom. */}
+        <div className="shrink-0 border-t border-border px-2 pt-2">
+          {user && (
+            <button
+              type="button"
+              onClick={() => go("/settings?tab=preferences")}
+              className={cn(
+                "mb-1 flex w-full items-center gap-3 rounded-lg p-2 text-left transition-all hover:bg-muted-50",
+              )}
+            >
+              <Avatar className="h-9 w-9 shrink-0 rounded-lg">
+                <AvatarFallback className="bg-muted text-xs font-medium text-foreground">
+                  {getUserInitials(user.username)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-foreground">{user.username}</p>
+                {user.role && (
+                  <p className="truncate text-xs text-muted-foreground">{user.role}</p>
+                )}
+              </div>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              logout()
+            }}
+            className="group relative flex w-full items-center gap-2 rounded-lg p-2 text-left text-error transition-all hover:bg-muted-50"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span className="flex-1 truncate text-sm font-medium">{t("logout")}</span>
+          </button>
+        </div>
 
         {/* Safe-bottom spacer */}
         <div className="safe-bottom shrink-0" />

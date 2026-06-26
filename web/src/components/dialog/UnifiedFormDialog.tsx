@@ -234,7 +234,13 @@ export function UnifiedFormDialog({
   if (isMobile && fullScreenOnMobile) {
     return createPortal(
       open ? (
-        <div className={cn("fixed inset-0 bg-background animate-in fade-in duration-200", overlayZIndex)}>
+        <div
+          className={cn("fixed inset-0 animate-in fade-in duration-200", overlayZIndex)}
+          // Use opaque --chrome (matches MobilePageHeader) instead of
+          // bg-background which has /97% alpha in dark mode and lets the
+          // previous layer bleed through, creating a visible color split.
+          style={{ backgroundColor: 'var(--chrome)' }}
+        >
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
@@ -290,7 +296,13 @@ export function UnifiedFormDialog({
             {/* Footer */}
             {footerContent && (
               <div
-                className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
+                // No bg class — footer inherits the container's chrome bg
+                // (set on the outer mobile portal). Adding bg-background here
+                // re-introduces the dark-mode /97% alpha see-through that
+                // makes the footer read as a different color from the body
+                // of the dialog. The border-t alone provides enough visual
+                // separation between content and actions.
+                className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0"
                 style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
               >
                 {footerContent}
@@ -327,7 +339,7 @@ export function UnifiedFormDialog({
             'fixed left-1/2 top-1/2',
             dialogZIndex,
             'grid w-full gap-0',
-            'bg-background border shadow-lg',
+            'bg-popover border shadow-lg',
             'duration-200',
             'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
             'rounded-lg sm:rounded-xl',

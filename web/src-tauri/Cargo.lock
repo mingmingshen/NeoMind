@@ -3955,7 +3955,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-cli-ops"
-version = "0.8.23"
+version = "0.8.24"
 dependencies = [
  "aes-gcm",
  "anyhow",

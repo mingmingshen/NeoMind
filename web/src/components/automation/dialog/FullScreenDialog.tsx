@@ -74,18 +74,20 @@ export function FullScreenDialog({
       <div
         className={cn(
           "flex flex-col flex-1 overflow-hidden",
-          // Mobile: solid bg (no translucency) so the safe-area edges match
-          // the body — translucency (bg-bg-95) lets the aurora gradient bleed
-          // through and creates a visible color split at the notch / home
-          // indicator. Desktop keeps the glass effect.
-          isMobile ? "bg-background" : "bg-bg-95 backdrop-blur-xl m-3 md:m-4 border border-border rounded-2xl shadow-2xl shadow-black/10",
+          // Both mobile and desktop now use an opaque bg-popover surface
+          // (the semantic "floating layer" token), unified with all other
+          // dialogs / sheets / popovers. Mobile additionally uses --chrome
+          // via inline style to match the MobilePageHeader top bar; desktop
+          // keeps the floating rounded panel shape with shadow.
+          isMobile ? "" : "bg-popover m-3 md:m-4 border border-border rounded-2xl shadow-2xl shadow-black/10",
           className
         )}
         onClick={(e) => e.stopPropagation()}
         style={isMobile ? {
+          backgroundColor: 'var(--chrome)',
           // Extend edge-to-edge; safe-area insets become INTERNAL padding so
-          // the solid bg-background covers the full viewport (no backdrop
-          // color stripes showing through at top/bottom on PWA / iOS Safari).
+          // the solid chrome covers the full viewport (no backdrop color
+          // stripes showing through at top/bottom on PWA / iOS Safari).
           paddingTop: 'env(safe-area-inset-top, 0px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         } : undefined}
@@ -213,7 +215,12 @@ export function FullScreenDialogFooter({
         "shrink-0 flex items-center justify-end gap-2 md:gap-3",
         "px-3 md:px-5 lg:px-6 py-3 md:py-4",
         "border-t border-border",
-        "bg-black/[0.02] dark:bg-white/[0.02]",
+        // Tint only on desktop where the container has the glassmorphism
+        // bg-bg-95 treatment. On mobile the container is opaque --chrome,
+        // and any alpha tint over it produces a visible color mismatch vs
+        // the body of the dialog. Mobile relies on border-t alone for
+        // content/footer separation (iOS sheet pattern).
+        "md:bg-black/[0.02] md:dark:bg-white/[0.02]",
         className
       )}
     >
@@ -246,7 +253,8 @@ export function FullScreenDialogSidebar({
     <aside className={cn(
       "shrink-0 w-[180px] md:w-[220px]",
       "border-r border-border",
-      "bg-black/[0.02] dark:bg-white/[0.02]",
+      // Desktop-only tint (see FullScreenDialogFooter for rationale).
+      "md:bg-black/[0.02] md:dark:bg-white/[0.02]",
       className
     )}>
       {children}
