@@ -16,8 +16,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use neomind_core::llm::backend::{
-    BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput, LlmRuntime,
-    StreamChunk, TokenUsage,
+    BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmInput, LlmOutput,
+    LlmRuntime, StreamChunk, TokenUsage,
 };
 use neomind_core::message::{Content, ContentPart, ImageDetail, Message, MessageRole};
 
@@ -593,19 +593,17 @@ impl CloudRuntime {
         (request, url)
     }
 
-    /// OpenAI-compatible non-streaming generation path.
-    async fn generate_openai(
-        &self,
-        input: neomind_core::llm::backend::LlmInput,
-        start_time: Instant,
-    ) -> Result<LlmOutput, LlmError> {
+    /// Build the OpenAI-compatible `ChatCompletionRequest` from `LlmInput`.
+    ///
+    /// Extracted from `generate_openai` / `generate_stream_openai` so the
+    /// request body is constructable without performing HTTP — enables unit
+    /// tests on the serialized payload (notably `enable_thinking` wiring).
+    ///
+    /// `stream` controls both the `stream` flag and whether `stream_options`
+    /// is populated (OpenAI requires `include_usage: true` to receive token
+    /// counts in the final chunk).
+    fn build_chat_request(&self, input: LlmInput, stream: bool) -> ChatCompletionRequest {
         let model = input.model.unwrap_or_else(|| self.model.clone());
-
-        let url = format!(
-            "{}{}",
-            self.config.get_base_url(),
-            self.config.provider.chat_path()
-        );
 
         // Handle max_tokens for cloud APIs.
         // MUST set explicitly — many providers (DeepSeek, GLM) default to only ~4096
@@ -617,8 +615,20 @@ impl CloudRuntime {
             None => Some(MAX_TOKENS_CAP),
         };
 
-        let request = ChatCompletionRequest {
-            model: model.clone(),
+        // DashScope (Qwen) documents `enable_thinking: bool` for hybrid
+        // thinking models (qwen3.x-plus). Without this knob, thinking defaults
+        // ON — `thinking_enabled: Some(false)` set by analyzer.rs / intent.rs /
+        // tool_result.rs (gotcha #7) was silently dropped on cloud, while the
+        // Ollama path (ollama.rs:826-844) honored it. Other OpenAI-compatible
+        // providers may reject unknown fields, so emit ONLY for Qwen.
+        let enable_thinking = if matches!(self.config.provider, CloudProvider::Qwen) {
+            input.params.thinking_enabled
+        } else {
+            None
+        };
+
+        ChatCompletionRequest {
+            model,
             messages: self.messages_to_api(&input.messages),
             temperature: input.params.temperature,
             top_p: input.params.top_p,
@@ -626,12 +636,34 @@ impl CloudRuntime {
             stop: input.params.stop.clone(),
             frequency_penalty: input.params.frequency_penalty,
             presence_penalty: input.params.presence_penalty,
-            stream: false,
+            stream,
             tools: input
                 .tools
                 .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
-            stream_options: None,
-        };
+            stream_options: if stream {
+                Some(StreamOptions {
+                    include_usage: true,
+                })
+            } else {
+                None
+            },
+            enable_thinking,
+        }
+    }
+
+    /// OpenAI-compatible non-streaming generation path.
+    async fn generate_openai(
+        &self,
+        input: neomind_core::llm::backend::LlmInput,
+        start_time: Instant,
+    ) -> Result<LlmOutput, LlmError> {
+        let url = format!(
+            "{}{}",
+            self.config.get_base_url(),
+            self.config.provider.chat_path()
+        );
+
+        let request = self.build_chat_request(input, false);
 
         // Create rate limit key based on provider and API key hash
         let rate_limit_key = format!(
@@ -934,7 +966,6 @@ impl CloudRuntime {
 
         let (tx, rx) = mpsc::channel(64);
 
-        let model = input.model.unwrap_or_else(|| self.model.clone());
         let url = format!(
             "{}{}",
             self.config.get_base_url(),
@@ -945,33 +976,7 @@ impl CloudRuntime {
         let inner_client = self.client.inner().clone();
         let provider = self.config.provider;
 
-        // Handle max_tokens for cloud APIs.
-        // MUST set explicitly — many providers (DeepSeek, GLM) default to only ~4096
-        // when this field is omitted, which silently truncates tool call JSON mid-output.
-        const MAX_TOKENS_CAP: u32 = 32768; // 32k — sufficient for agent reasoning + tool call JSON
-        let max_tokens = match input.params.max_tokens {
-            Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
-            Some(v) => Some((v as u32).min(MAX_TOKENS_CAP)),
-            None => Some(MAX_TOKENS_CAP),
-        };
-
-        let request = ChatCompletionRequest {
-            model: model.clone(),
-            messages: self.messages_to_api(&input.messages),
-            temperature: input.params.temperature,
-            top_p: input.params.top_p,
-            max_tokens,
-            stop: input.params.stop.clone(),
-            frequency_penalty: input.params.frequency_penalty,
-            presence_penalty: input.params.presence_penalty,
-            stream: true,
-            tools: input
-                .tools
-                .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
-            stream_options: Some(StreamOptions {
-                include_usage: true,
-            }),
-        };
+        let request = self.build_chat_request(input, true);
 
         tokio::spawn(async move {
             // Create rate limit key
@@ -1617,6 +1622,16 @@ struct ChatCompletionRequest {
     /// Request usage data in streaming response (OpenAI stream_options)
     #[serde(skip_serializing_if = "Option::is_none")]
     stream_options: Option<StreamOptions>,
+    /// DashScope (Qwen) hybrid-thinking toggle. qwen3.x-plus defaults to
+    /// thinking ON; without this knob the model burns tokens on hidden CoT
+    /// during non-chat LLM calls (memory extraction, intent parsing, Phase 2
+    /// fallback — gotcha #7) and risks gateway idle timeouts on long
+    /// reasoning under non-streaming mode. Only emitted for
+    /// `CloudProvider::Qwen`; other OpenAI-compatible servers may reject
+    /// unknown fields. Mirrors the Ollama path's `thinking_enabled` handling
+    /// (ollama.rs:826-844).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_thinking: Option<bool>,
 }
 
 /// Stream options to request usage data in final chunk
@@ -2002,6 +2017,7 @@ fn known_vision_family(model_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neomind_core::llm::backend::GenerationParams;
 
     #[test]
     fn test_cloud_config_openai() {
@@ -2255,6 +2271,100 @@ mod tests {
         assert!(
             saw_image,
             "vision model must retain image parts in serialized output"
+        );
+    }
+
+    // ── enable_thinking wiring for DashScope (Qwen) ──────────────────────
+    //
+    // Regression test for the silent-drop bug: `LlmInput.params.thinking_enabled`
+    // was honored by the Ollama path (ollama.rs:826-844) but completely ignored
+    // by the cloud OpenAI-compatible path. For qwen3.x-plus backends this meant
+    // `thinking_enabled: Some(false)` set by analyzer.rs / intent.rs /
+    // tool_result.rs (per gotcha #7) was silently discarded — the model kept
+    // thinking on, burning tokens and risking DashScope gateway idle timeouts
+    // on long reasoning under non-streaming mode.
+    //
+    // Fix: `ChatCompletionRequest` gained an `enable_thinking: Option<bool>`
+    // field, populated ONLY for `CloudProvider::Qwen` (DashScope documents
+    // this field for qwen3 hybrid thinking models). Other providers don't
+    // accept it; sending it could break strict validators.
+
+    #[test]
+    fn test_qwen_request_emits_enable_thinking_when_disabled() {
+        let runtime = CloudRuntime::new(
+            CloudConfig::qwen("sk-test").with_model("qwen3.7-plus"),
+        )
+        .expect("runtime builds");
+
+        let input = LlmInput {
+            messages: vec![Message::new(MessageRole::User, Content::text("hi"))],
+            params: GenerationParams {
+                thinking_enabled: Some(false),
+                ..Default::default()
+            },
+            model: None,
+            stream: false,
+            tools: None,
+        };
+
+        let request = runtime.build_chat_request(input, false);
+        let json = serde_json::to_value(&request).expect("serialize");
+        assert_eq!(json["enable_thinking"], serde_json::Value::Bool(false),
+            "qwen backend must serialize enable_thinking:false when thinking_enabled is Some(false)");
+    }
+
+    #[test]
+    fn test_qwen_request_omits_enable_thinking_when_default() {
+        // When thinking_enabled is None, the field MUST be skipped — letting
+        // the model use its default. Hard-coding enable_thinking:false would
+        // silently turn off vision reasoning for qwen3.7-plus dashboards.
+        let runtime = CloudRuntime::new(
+            CloudConfig::qwen("sk-test").with_model("qwen3.7-plus"),
+        )
+        .expect("runtime builds");
+
+        let input = LlmInput {
+            messages: vec![Message::new(MessageRole::User, Content::text("hi"))],
+            params: GenerationParams::default(),
+            model: None,
+            stream: false,
+            tools: None,
+        };
+
+        let request = runtime.build_chat_request(input, false);
+        let json = serde_json::to_value(&request).expect("serialize");
+        assert!(
+            json.get("enable_thinking").map(|v| v.is_null()).unwrap_or(true),
+            "enable_thinking must be absent when thinking_enabled is None"
+        );
+    }
+
+    #[test]
+    fn test_non_qwen_request_never_emits_enable_thinking() {
+        // DeepSeek / GLM / OpenAI / etc. don't accept `enable_thinking`.
+        // Sending it could break strict validators on custom OpenAI-compatible
+        // servers. The field is DashScope-specific.
+        let runtime = CloudRuntime::new(
+            CloudConfig::deepseek("sk-test").with_model("deepseek-chat"),
+        )
+        .expect("runtime builds");
+
+        let input = LlmInput {
+            messages: vec![Message::new(MessageRole::User, Content::text("hi"))],
+            params: GenerationParams {
+                thinking_enabled: Some(false),
+                ..Default::default()
+            },
+            model: None,
+            stream: false,
+            tools: None,
+        };
+
+        let request = runtime.build_chat_request(input, false);
+        let json = serde_json::to_value(&request).expect("serialize");
+        assert!(
+            json.get("enable_thinking").map(|v| v.is_null()).unwrap_or(true),
+            "non-Qwen providers must not receive enable_thinking field"
         );
     }
 }
