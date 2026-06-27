@@ -1610,6 +1610,58 @@ impl MqttAdapter {
 
                 let now = chrono::Utc::now();
 
+                // External-broker `$SYS` presence synthesis.
+                //
+                // External MQTT brokers don't run our embedded rmqtt
+                // `DevicePresenceHook`, so devices registered on them never
+                // fire `DeviceTransportOnline/Offline` events via the hook
+                // path. To keep the 4-state UI ("online/connectedIdle/offline/
+                // disconnected") working, we subscribe to the broker's `$SYS`
+                // client-presence broadcasts (see `create_and_connect_broker`,
+                // which appends `$SYS/brokers/+/clients/+/{connected,disconnected}`
+                // to the subscribe list) and synthesize transport events here.
+                //
+                // Skip internal NeoMind clients (e.g. `neomind-external-{id}` —
+                // the adapter's own bridge connection) to avoid firing phantom
+                // transport events for our own session.
+                if topic.starts_with("$SYS/brokers/") {
+                    if let Some((sys_client_id, is_online)) =
+                        parse_sys_presence_topic(&topic)
+                    {
+                        if sys_client_id.starts_with("neomind-") {
+                            debug!(
+                                "Skipping $SYS presence for internal client '{}'",
+                                sys_client_id
+                            );
+                        } else if let Some(bus) = event_bus {
+                            let ts = now.timestamp();
+                            debug!(
+                                "Synthesizing transport event from $SYS: client_id='{}', online={}",
+                                sys_client_id, is_online
+                            );
+                            if is_online {
+                                bus.publish(NeoMindEvent::DeviceTransportOnline {
+                                    device_id: sys_client_id.clone(),
+                                    client_id: sys_client_id.clone(),
+                                    timestamp: ts,
+                                })
+                                .await;
+                            } else {
+                                bus.publish(NeoMindEvent::DeviceTransportOffline {
+                                    device_id: sys_client_id.clone(),
+                                    client_id: sys_client_id.clone(),
+                                    reason: None,
+                                    timestamp: ts,
+                                })
+                                .await;
+                            }
+                        }
+                    }
+                    // $SYS topics must NEVER flow into telemetry or
+                    // auto-onboarding paths — short-circuit here.
+                    return;
+                }
+
                 // Check if this is a standard uplink format first
                 let parts: Vec<&str> = topic.split('/').collect();
                 let mut is_standard_uplink =
@@ -2125,6 +2177,38 @@ impl MqttAdapter {
     }
 }
 
+/// Parse an MQTT `$SYS` client-presence topic into `(client_id, is_online)`.
+///
+/// Supports the EMQX / verneMQ / NanoMQ convention used by `create_and_connect_broker`:
+///
+/// ```text
+/// $SYS/brokers/{node}/clients/{client_id}/connected      → Some((client_id, true))
+/// $SYS/brokers/{node}/clients/{client_id}/disconnected   → Some((client_id, false))
+/// ```
+///
+/// Returns `None` for any other shape — including aggregate `$SYS` topics
+/// (`$SYS/broker/clients/connected`, `$SYS/brokers/+/metrics/...`, etc.) —
+/// so they fall through to the early-return guard without firing a
+/// synthesized transport event.
+fn parse_sys_presence_topic(topic: &str) -> Option<(String, bool)> {
+    let parts: Vec<&str> = topic.split('/').collect();
+    if parts.len() != 6 {
+        return None;
+    }
+    if parts[0] != "$SYS" || parts[1] != "brokers" || parts[3] != "clients" {
+        return None;
+    }
+    let client_id = parts[4];
+    if client_id.is_empty() {
+        return None;
+    }
+    match parts[5] {
+        "connected" => Some((client_id.to_string(), true)),
+        "disconnected" => Some((client_id.to_string(), false)),
+        _ => None,
+    }
+}
+
 /// Helper function to extract device ID from topic.
 fn extract_device_id_from_topic(topic: &str, config: &MqttAdapterConfig) -> Option<String> {
     let parts: Vec<&str> = topic.split('/').collect();
@@ -2410,6 +2494,73 @@ mod tests {
             _ => panic!("Expected String value"),
         }
     }
+
+    /// `$SYS` presence topics are the ONLY `$SYS` shape we synthesize
+    /// transport events from. The parser must:
+    /// - accept EMQX-style `$SYS/brokers/{node}/clients/{cid}/connected|disconnected`
+    /// - reject aggregate / metrics / malformed `$SYS` topics
+    /// - reject empty client_ids (defensive — never observed in the wild)
+    #[test]
+    fn test_parse_sys_presence_topic_emqx_style() {
+        // connected → online=true
+        let (cid, online) = parse_sys_presence_topic(
+            "$SYS/brokers/emqx@10.0.0.1/clients/sensor-001/connected",
+        )
+        .expect("EMQX connected topic must parse");
+        assert_eq!(cid, "sensor-001");
+        assert!(online);
+
+        // disconnected → online=false
+        let (cid, online) = parse_sys_presence_topic(
+            "$SYS/brokers/emqx@10.0.0.1/clients/sensor-001/disconnected",
+        )
+        .expect("EMQX disconnected topic must parse");
+        assert_eq!(cid, "sensor-001");
+        assert!(!online);
+    }
+
+    #[test]
+    fn test_parse_sys_presence_topic_rejects_non_presence_sys() {
+        // Aggregate stats topic (Mosquitto-style) — not per-client
+        assert!(parse_sys_presence_topic("$SYS/broker/clients/connected").is_none());
+        // Metrics topic
+        assert!(parse_sys_presence_topic(
+            "$SYS/brokers/emqx@node/metrics/bytes.sent"
+        )
+        .is_none());
+        // Unknown suffix
+        assert!(parse_sys_presence_topic(
+            "$SYS/brokers/emqx@node/clients/cid/kicked"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_parse_sys_presence_topic_rejects_malformed() {
+        // Too few segments
+        assert!(parse_sys_presence_topic("$SYS/brokers").is_none());
+        // Wrong root prefix
+        assert!(parse_sys_presence_topic(
+            "devices/brokers/n/clients/c/connected"
+        )
+        .is_none());
+        // Missing `clients` segment
+        assert!(parse_sys_presence_topic("$SYS/brokers/n/sessions/c/connected").is_none());
+    }
+
+    #[test]
+    fn test_parse_sys_presence_topic_handles_internal_client_id() {
+        // The parser returns the id verbatim; the caller is responsible for
+        // filtering `neomind-` prefixed ids (this mirrors the embedded-broker
+        // `is_internal_client` convention).
+        let (cid, _) = parse_sys_presence_topic(
+            "$SYS/brokers/n/clients/neomind-external-b1/connected",
+        )
+        .expect("Internal client id still parses; caller filters");
+        assert_eq!(cid, "neomind-external-b1");
+    }
+
+
 
     /// Regression: LWT/status broadcast topics must NOT trigger
     /// auto-onboarding. Real-world example from NE301 field deployment:

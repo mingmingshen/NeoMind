@@ -236,6 +236,19 @@ pub async fn create_and_connect_broker(
                 mqtt.set_shared_device_registry(context.device_service.get_registry())
                     .await;
 
+                // Build the effective subscribe list. In addition to the
+                // user-configured `subscribe_topics`, we transparently
+                // subscribe to the EMQX-style `$SYS` client-presence topics
+                // so we can synthesize `DeviceTransportOnline/Offline` events
+                // for external brokers (which don't fire the embedded
+                // `DevicePresenceHook`). MQTT spec excludes `$`-prefixed
+                // topics from `#` / `+` wildcards, so an explicit filter is
+                // required. Subscribing is harmless on brokers that don't
+                // publish these topics — they simply never arrive.
+                let mut effective_topics = broker.subscribe_topics.clone();
+                effective_topics.push("$SYS/brokers/+/clients/+/connected".to_string());
+                effective_topics.push("$SYS/brokers/+/clients/+/disconnected".to_string());
+
                 // Use add_broker_with_tls for proper TLS support
                 match mqtt
                     .add_broker_with_tls(
@@ -249,7 +262,7 @@ pub async fn create_and_connect_broker(
                         broker.client_cert.clone(),
                         broker.client_key.clone(),
                         broker.client_id.clone(),
-                        broker.subscribe_topics.clone(),
+                        effective_topics,
                     )
                     .await
                 {
