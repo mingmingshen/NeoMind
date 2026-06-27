@@ -699,33 +699,32 @@ pub async fn test_rule_handler(
     if current_value.is_none()
         && query_source.source_type == neomind_core::datasource::DataSourceType::Device
         && neomind_rules::VIRTUAL_METRICS.contains(&query_source.field_path.as_str())
+        && query_source.field_path == "__last_seen_age_secs"
     {
-        if query_source.field_path == "__last_seen_age_secs" {
-            let last_seen = state.devices.service.get_device_last_seen(&query_source.source_id).await;
-            if last_seen > 0 {
-                let age = (chrono::Utc::now().timestamp() - last_seen).max(0) as f64;
-                let offline_timeout = state.devices.service.effective_offline_timeout(&query_source.source_id) as f64;
-                let metric_value = if age >= offline_timeout { age } else { 0.0 };
-                tracing::debug!(
-                    device_id = %query_source.source_id,
-                    age,
-                    offline_timeout,
-                    metric_value,
-                    "Virtual metric computed on-demand for rule test"
-                );
-                current_value = Some(neomind_rules::RuleValue::Number(metric_value));
-            } else {
-                return Err(ErrorResponse::bad_request(format!(
-                    "Cannot test rule: device '{}' has never reported data (last_seen=0), \
-                     so `__last_seen_age_secs` is undefined. Wait for the device to publish \
-                     at least one telemetry point, then retry.",
-                    query_source.source_id
-                )).with_hint(
-                    "1. Verify the device is online and publishing: neomind device get <ID>\n\
-                     2. Send a test data point: neomind device write-metric <ID> --metric <METRIC> --value <VALUE>\n\
-                     3. Then retry the rule test."
-                ));
-            }
+        let last_seen = state.devices.service.get_device_last_seen(&query_source.source_id).await;
+        if last_seen > 0 {
+            let age = (chrono::Utc::now().timestamp() - last_seen).max(0) as f64;
+            let offline_timeout = state.devices.service.effective_offline_timeout(&query_source.source_id) as f64;
+            let metric_value = if age >= offline_timeout { age } else { 0.0 };
+            tracing::debug!(
+                device_id = %query_source.source_id,
+                age,
+                offline_timeout,
+                metric_value,
+                "Virtual metric computed on-demand for rule test"
+            );
+            current_value = Some(neomind_rules::RuleValue::Number(metric_value));
+        } else {
+            return Err(ErrorResponse::bad_request(format!(
+                "Cannot test rule: device '{}' has never reported data (last_seen=0), \
+                 so `__last_seen_age_secs` is undefined. Wait for the device to publish \
+                 at least one telemetry point, then retry.",
+                query_source.source_id
+            )).with_hint(
+                "1. Verify the device is online and publishing: neomind device get <ID>\n\
+                 2. Send a test data point: neomind device write-metric <ID> --metric <METRIC> --value <VALUE>\n\
+                 3. Then retry the rule test."
+            ));
         }
     }
 

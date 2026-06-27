@@ -359,6 +359,7 @@ fn extract_event_data(
 /// in-flight retry loop aborts and the function returns `Err`. This lets
 /// `PushScheduler::stop` interrupt a target stuck in a long backoff tail
 /// instead of blocking the stop call for the full backoff sum.
+#[allow(clippy::too_many_arguments)]
 async fn deliver_with_retry(
     target: &PushTarget,
     store: &DataPushStore,

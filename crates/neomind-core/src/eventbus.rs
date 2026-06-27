@@ -164,7 +164,7 @@ impl EventBusReceiver {
                     // Drain any immediately available event; if buffer is empty,
                     // loop back to recv().await instead of returning None —
                     // returning None terminates the caller's while-let loop permanently.
-                    if let Some(event) = self.rx.try_recv().ok() {
+                    if let Ok(event) = self.rx.try_recv() {
                         return Some(event);
                     }
                     tokio::task::yield_now().await;

@@ -2315,7 +2315,7 @@ fn looks_like_non_telemetry_topic(topic: &str) -> bool {
     // LWT-style: any segment is `status`, or topic ends with
     // `online`/`offline`/`connected`/`disconnected`. These are
     // near-universal LWT signatures across IoT firmware.
-    if segments.iter().any(|s| *s == "status") {
+    if segments.contains(&"status") {
         return true;
     }
     if let Some(last) = segments.last() {

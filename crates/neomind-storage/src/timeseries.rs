@@ -1544,6 +1544,7 @@ impl TimeSeriesStore {
     ///   - hold a single write_txn open for minutes, starving other writers
     ///   - load every key into a Vec at once (~100 bytes/key → OOM risk)
     ///   - balloon redb's WAL
+    ///
     /// Partial failure leaves an inconsistent state (some batches committed,
     /// some not), but deletion is idempotent — the next apply_retention pass
     /// picks up where this one left off.
