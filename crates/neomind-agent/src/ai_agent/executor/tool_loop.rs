@@ -112,11 +112,25 @@ impl AgentExecutor {
             // Retry transient LLM errors (network, timeout, 429) before giving up.
             // Permanent errors (404/403/model-not-found) fail immediately.
             const MAX_TRANSIENT_RETRIES: u32 = 2;
+            // Thinking-capable cloud backends (DashScope qwen3.x-plus et al.)
+            // can sit silent for 30+ seconds during the reasoning phase under
+            // non-streaming mode, hitting gateway idle timeouts (TCP reset /
+            // "error sending request for url"). Route through streaming so
+            // bytes flow during reasoning — the default `generate_to_completion`
+            // consumes the stream and aggregates into the same `LlmOutput`
+            // shape this loop expects. Complements commit c6385169's
+            // `enable_thinking` manual knob.
+            let use_streaming = llm_runtime.capabilities().thinking_display;
             let output = {
                 let mut retries = 0u32;
                 let mut result: Option<neomind_core::llm::backend::LlmOutput> = None;
                 loop {
-                    match llm_runtime.generate(input.clone()).await {
+                    let generate_result = if use_streaming {
+                        llm_runtime.generate_to_completion(input.clone()).await
+                    } else {
+                        llm_runtime.generate(input.clone()).await
+                    };
+                    match generate_result {
                         Ok(o) => {
                             result = Some(o);
                             break;

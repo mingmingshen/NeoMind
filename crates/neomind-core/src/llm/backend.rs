@@ -553,6 +553,81 @@ pub trait LlmRuntime: Send + Sync {
         input: LlmInput,
     ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError>;
 
+    /// Generate a response by consuming the stream to completion and
+    /// aggregating into a single `LlmOutput`.
+    ///
+    /// Default implementation consumes `generate_stream` and accumulates:
+    /// - `text`: concatenation of all content chunks (`is_thinking = false`)
+    /// - `thinking`: concatenation of all thinking chunks (`is_thinking = true`)
+    /// - token-usage markers (`\n__NEOMIND_TOKEN_PROMPT:N__`) are filtered
+    ///   out as metadata, not content
+    ///
+    /// `tool_calls` is left as `None` — backends that emit tool calls via
+    /// the stream embed them as JSON in content chunks (same shape as the
+    /// non-streaming path's text+JSON concatenation), so `tool_loop`'s
+    /// existing fallback parser extracts them from `text`. `usage` is `None`
+    /// because streaming backends only surface `prompt_tokens` via markers,
+    /// not `completion_tokens`; the non-streaming `generate()` remains the
+    /// canonical source for usage stats.
+    ///
+    /// Why this exists: thinking-capable cloud backends (DashScope qwen3.x-plus)
+    /// can sit silent for 30+ seconds during the reasoning phase under
+    /// non-streaming mode, hitting gateway idle timeouts. Routing through
+    /// streaming keeps bytes flowing so the connection survives.
+    async fn generate_to_completion(
+        &self,
+        input: LlmInput,
+    ) -> Result<LlmOutput, LlmError> {
+        use futures::StreamExt;
+
+        let mut stream = self.generate_stream(input).await?;
+        let mut text_parts: Vec<String> = Vec::new();
+        let mut thinking_parts: Vec<String> = Vec::new();
+        let mut stream_error: Option<LlmError> = None;
+
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok((text, is_thinking)) => {
+                    // Streaming backends inject `\n__NEOMIND_TOKEN_PROMPT:N__`
+                    // markers to surface prompt-token counts. These are
+                    // metadata, not model output — strip them so they don't
+                    // corrupt the visible text or thinking field.
+                    if text.starts_with("\n__NEOMIND_TOKEN_PROMPT:") {
+                        continue;
+                    }
+                    if is_thinking {
+                        thinking_parts.push(text);
+                    } else {
+                        text_parts.push(text);
+                    }
+                }
+                Err(e) => {
+                    stream_error = Some(e);
+                    break;
+                }
+            }
+        }
+
+        if let Some(e) = stream_error {
+            return Err(e);
+        }
+
+        let text = text_parts.concat();
+        let thinking = if thinking_parts.is_empty() {
+            None
+        } else {
+            Some(thinking_parts.concat())
+        };
+
+        Ok(LlmOutput {
+            text,
+            finish_reason: FinishReason::Stop,
+            usage: None,
+            thinking,
+            tool_calls: None,
+        })
+    }
+
     /// Get max context length.
     fn max_context_length(&self) -> usize;
 
@@ -711,6 +786,141 @@ mod tests {
         assert_eq!(input.messages.len(), 1);
         assert_eq!(input.model.as_deref(), Some("qwen2"));
         assert!(input.stream);
+    }
+
+    // ── generate_to_completion default impl ──────────────────────────────
+    //
+    // The default trait method consumes `generate_stream` and aggregates it
+    // into an `LlmOutput`. This is what `tool_loop` uses for thinking-capable
+    // cloud backends to avoid gateway idle timeouts (see commit c6385169 +
+    // follow-up). The tests below verify the default impl handles:
+    //   1. Plain content chunks → text field
+    //   2. Thinking chunks → thinking field
+    //   3. Token-usage markers → filtered out (not content)
+    //   4. Mid-stream errors → propagated as Err
+    //   5. Tool-call JSON chunks → preserved in text (tool_loop's fallback
+    //      parser extracts them; we don't need structured tool_calls here)
+
+    /// Clone-friendly chunk spec — `LlmError` itself isn't `Clone`, so the
+    /// mock stores a serializable spec and rebuilds fresh `StreamChunk`s on
+    /// each `generate_stream` call.
+    #[derive(Clone)]
+    enum MockChunk {
+        Content(String),
+        Thinking(String),
+        TokenMarker(u32),
+        Error(String),
+    }
+
+    struct MockStreamRuntime {
+        chunks: Vec<MockChunk>,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmRuntime for MockStreamRuntime {
+        fn backend_id(&self) -> BackendId {
+            BackendId::new("mock")
+        }
+        fn model_name(&self) -> &str {
+            "mock-model"
+        }
+        async fn generate(&self, _input: LlmInput) -> Result<LlmOutput, LlmError> {
+            unreachable!("generate_to_completion must use generate_stream, not generate")
+        }
+        async fn generate_stream(
+            &self,
+            _input: LlmInput,
+        ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
+            let chunks: Vec<StreamChunk> = self
+                .chunks
+                .iter()
+                .map(|c| match c {
+                    MockChunk::Content(s) => Ok((s.clone(), false)),
+                    MockChunk::Thinking(s) => Ok((s.clone(), true)),
+                    MockChunk::TokenMarker(n) => {
+                        Ok((format!("\n__NEOMIND_TOKEN_PROMPT:{}__", n), false))
+                    }
+                    MockChunk::Error(msg) => Err(LlmError::Network(msg.clone())),
+                })
+                .collect();
+            Ok(Box::pin(futures::stream::iter(chunks)))
+        }
+        fn max_context_length(&self) -> usize {
+            4096
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_to_completion_aggregates_content_chunks() {
+        let runtime = MockStreamRuntime {
+            chunks: vec![
+                MockChunk::Content("Hello, ".into()),
+                MockChunk::Content("world!".into()),
+            ],
+        };
+        let out = runtime
+            .generate_to_completion(LlmInput::new("hi"))
+            .await
+            .unwrap();
+        assert_eq!(out.text, "Hello, world!");
+        assert!(out.thinking.is_none());
+        assert!(out.tool_calls.is_none());
+    }
+
+    #[tokio::test]
+    async fn generate_to_completion_separates_thinking_from_content() {
+        let runtime = MockStreamRuntime {
+            chunks: vec![
+                MockChunk::Thinking("Let me think...".into()),
+                MockChunk::Thinking("First, ".into()),
+                MockChunk::Thinking("I'll do X".into()),
+                MockChunk::Content("Doing X now".into()),
+            ],
+        };
+        let out = runtime
+            .generate_to_completion(LlmInput::new("hi"))
+            .await
+            .unwrap();
+        assert_eq!(out.text, "Doing X now");
+        assert_eq!(
+            out.thinking.as_deref(),
+            Some("Let me think...First, I'll do X")
+        );
+    }
+
+    #[tokio::test]
+    async fn generate_to_completion_filters_token_usage_markers() {
+        // Streaming backends inject `\n__NEOMIND_TOKEN_PROMPT:N__` markers to
+        // surface token counts. The default impl must strip these — they're
+        // metadata, not content. tool_loop doesn't consume usage from this
+        // path (non-streaming generate() is canonical for usage stats).
+        let runtime = MockStreamRuntime {
+            chunks: vec![
+                MockChunk::Content("Hello".into()),
+                MockChunk::TokenMarker(42),
+                MockChunk::Content(" world".into()),
+            ],
+        };
+        let out = runtime
+            .generate_to_completion(LlmInput::new("hi"))
+            .await
+            .unwrap();
+        assert_eq!(out.text, "Hello world");
+    }
+
+    #[tokio::test]
+    async fn generate_to_completion_propagates_stream_errors() {
+        let runtime = MockStreamRuntime {
+            chunks: vec![
+                MockChunk::Content("partial...".into()),
+                MockChunk::Error("connection reset".into()),
+            ],
+        };
+        let result = runtime.generate_to_completion(LlmInput::new("hi")).await;
+        match result {
+            Err(LlmError::Network(msg)) => assert!(msg.contains("connection reset")),
+            other => panic!("expected Network error, got {:?}", other),
+        }
     }
 }
 
