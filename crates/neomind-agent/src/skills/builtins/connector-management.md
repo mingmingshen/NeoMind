@@ -66,6 +66,13 @@ neomind connector delete <ID>                              # Delete connector
 
 Update flags: `--name`, `--host`, `--port`, `--tls`, `--username`, `--password`, `--topics`, `--disable`
 
+### Enable / Disable (unified form, preferred over `update --disable`)
+
+```bash
+neomind connector enable <ID>     # Re-enable a disabled connector
+neomind connector disable <ID>    # Stop connection without deleting
+```
+
 ### Subscription Management
 
 ```bash
@@ -122,8 +129,11 @@ neomind connector unsubscribe --topic 'home/temperature'
 # Change host/port
 neomind connector update <ID> --host new-broker.local --port 1883
 
-# Disable connector
-neomind connector update <ID> --disable
+# Disable connector (preferred unified form)
+neomind connector disable <ID>
+
+# Re-enable
+neomind connector enable <ID>
 ```
 
 ## Common Errors & Solutions

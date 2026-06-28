@@ -57,6 +57,8 @@ neomind push create --name <NAME> --type <TYPE> --config '<JSON>' [--schedule <S
 ```bash
 neomind push start <ID>                          # Start a stopped target
 neomind push stop <ID>                           # Stop a running target
+neomind push enable <ID>                         # Alias for start (unified form)
+neomind push disable <ID>                        # Alias for stop (unified form)
 neomind push test <ID>                           # Test delivery (sends sample data)
 neomind push update <ID> [--name <N>] [--config '<JSON>'] [--enabled true|false]
 neomind push delete <ID>                         # Delete a target

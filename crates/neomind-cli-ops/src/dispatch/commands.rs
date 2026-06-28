@@ -1185,6 +1185,28 @@ pub enum TransformCommand {
         #[arg(long)]
         enabled: Option<bool>,
     },
+    /// Enable a transform.
+    ///
+    /// Reactivates a paused transform. Virtual metrics resume immediately.
+    /// Equivalent to `transform update <ID> --enabled true`.
+    ///
+    /// Example: `neomind transform enable transform-001`
+    Enable {
+        /// Transform ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Disable a transform.
+    ///
+    /// Pauses transformation without deleting it. Virtual metrics stop updating.
+    /// Prefer this over deleting for temporary pauses.
+    ///
+    /// Example: `neomind transform disable transform-001`
+    Disable {
+        /// Transform ID.
+        #[arg(required = true)]
+        id: String,
+    },
     /// Delete transform.
     ///
     /// Removes the transform and its virtual metrics permanently. This is irreversible.
@@ -1780,6 +1802,26 @@ pub enum PushCommand {
         #[arg(required = true)]
         id: String,
     },
+    /// Enable a push target (alias for `push start`).
+    ///
+    /// Unified form across all domains. Same effect as `push start <ID>`.
+    ///
+    /// Example: `neomind push enable <ID>`
+    Enable {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Disable a push target (alias for `push stop`).
+    ///
+    /// Unified form across all domains. Same effect as `push stop <ID>`.
+    ///
+    /// Example: `neomind push disable <ID>`
+    Disable {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
     /// Test a push target.
     ///
     /// Sends a test payload to verify the target works.
@@ -2082,6 +2124,28 @@ pub enum ConnectorCommand {
         #[arg(required = true)]
         id: String,
     },
+    /// Enable a connector.
+    ///
+    /// Reactivates a disabled connector. Subscriptions resume.
+    /// Prefer this over `connector update <ID>` (without `--disable`) for clarity.
+    ///
+    /// Example: `neomind connector enable connector-001`
+    Enable {
+        /// Connector ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Disable a connector.
+    ///
+    /// Stops the connection without deleting the connector.
+    /// Prefer this over `connector update <ID> --disable`.
+    ///
+    /// Example: `neomind connector disable connector-001`
+    Disable {
+        /// Connector ID.
+        #[arg(required = true)]
+        id: String,
+    },
     /// Test connector connectivity with real MQTT handshake.
     ///
     /// Attempts to connect, subscribe, and publish a test message.
@@ -2139,5 +2203,81 @@ pub fn parse_duration(s: &str) -> u64 {
         num.parse::<u64>().unwrap_or(1) * 86400
     } else {
         s.parse::<u64>().unwrap_or(300)
+    }
+}
+
+#[cfg(test)]
+mod unify_enable_disable_tests {
+    //! Smoke tests for the unified `<domain> enable|disable <id>` subcommand pattern.
+    //! Each domain (transform/push/connector) should parse identically.
+
+    use super::{Args, Command};
+    use clap::Parser;
+
+    fn parse(argv: &str) -> Command {
+        // try_parse_from treats the first item as the program name (bin_name)
+        Args::try_parse_from(["neomind"].into_iter().chain(argv.split_whitespace()))
+            .unwrap()
+            .command
+    }
+
+    #[test]
+    fn transform_enable_disable_parse() {
+        let cmd = parse("transform enable transform-001");
+        let Command::Transform { transform_cmd } = cmd else {
+            panic!("expected Transform, got {cmd:?}");
+        };
+        match transform_cmd {
+            super::TransformCommand::Enable { id } => assert_eq!(id, "transform-001"),
+            other => panic!("expected Transform::Enable, got {other:?}"),
+        }
+        let cmd = parse("transform disable transform-001");
+        let Command::Transform { transform_cmd } = cmd else {
+            panic!("expected Transform, got {cmd:?}");
+        };
+        match transform_cmd {
+            super::TransformCommand::Disable { id } => assert_eq!(id, "transform-001"),
+            other => panic!("expected Transform::Disable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn push_enable_disable_parse() {
+        let cmd = parse("push enable push-001");
+        let Command::Push { push_cmd } = cmd else {
+            panic!("expected Push, got {cmd:?}");
+        };
+        match push_cmd {
+            super::PushCommand::Enable { id } => assert_eq!(id, "push-001"),
+            other => panic!("expected Push::Enable, got {other:?}"),
+        }
+        let cmd = parse("push disable push-001");
+        let Command::Push { push_cmd } = cmd else {
+            panic!("expected Push, got {cmd:?}");
+        };
+        match push_cmd {
+            super::PushCommand::Disable { id } => assert_eq!(id, "push-001"),
+            other => panic!("expected Push::Disable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn connector_enable_disable_parse() {
+        let cmd = parse("connector enable conn-001");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Enable { id } => assert_eq!(id, "conn-001"),
+            other => panic!("expected Connector::Enable, got {other:?}"),
+        }
+        let cmd = parse("connector disable conn-001");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Disable { id } => assert_eq!(id, "conn-001"),
+            other => panic!("expected Connector::Disable, got {other:?}"),
+        }
     }
 }

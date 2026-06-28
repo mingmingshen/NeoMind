@@ -653,6 +653,8 @@ pub async fn run_transform_cmd(cmd: TransformCommand) -> Result<(CliResponse, Ou
             .await?
         }
         TransformCommand::Delete { id } => delete_transform(&client, &id).await?,
+        TransformCommand::Enable { id } => enable_transform(&client, &id).await?,
+        TransformCommand::Disable { id } => disable_transform(&client, &id).await?,
         TransformCommand::Metrics => list_virtual_metrics(&client).await?,
         TransformCommand::TestCode { code, input } => {
             let input_json = serde_json::from_str(&input)?;
@@ -901,6 +903,8 @@ pub async fn run_push_cmd(cmd: PushCommand) -> Result<(CliResponse, OutputFormat
         PushCommand::Delete { id } => delete_target(&client, &id).await?,
         PushCommand::Start { id } => start_target(&client, &id).await?,
         PushCommand::Stop { id } => stop_target(&client, &id).await?,
+        PushCommand::Enable { id } => start_target(&client, &id).await?,
+        PushCommand::Disable { id } => stop_target(&client, &id).await?,
         PushCommand::Test { id } => test_target(&client, &id).await?,
         PushCommand::Logs { id, limit } => list_logs(&client, &id, Some(limit)).await?,
         PushCommand::Stats => get_stats(&client).await?,
@@ -1160,6 +1164,20 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
         }
         ConnectorCommand::Delete { id } => {
             let resp = crate::connector::delete_connector(&client, &id).await?;
+            (resp, base_format)
+        }
+        ConnectorCommand::Enable { id } => {
+            let resp = crate::connector::update_connector(
+                &client, &id, None, None, None, None, None, None, None, Some(true),
+            )
+            .await?;
+            (resp, base_format)
+        }
+        ConnectorCommand::Disable { id } => {
+            let resp = crate::connector::update_connector(
+                &client, &id, None, None, None, None, None, None, None, Some(false),
+            )
+            .await?;
             (resp, base_format)
         }
         ConnectorCommand::Test { id } => {

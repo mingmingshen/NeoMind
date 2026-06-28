@@ -167,6 +167,20 @@ pub async fn delete_transform(client: &ApiClient, id: &str) -> Result<CliRespons
     ))
 }
 
+/// Enable a transform (unified form, equivalent to `update <id> --enabled true`).
+pub async fn enable_transform(client: &ApiClient, id: &str) -> Result<CliResponse> {
+    let body = json!({ "enabled": true });
+    let data = client.put(&format!("/automations/{}", id), &body).await?;
+    Ok(CliResponse::success(data, "Transform enabled"))
+}
+
+/// Disable a transform (unified form, equivalent to `update <id> --enabled false`).
+pub async fn disable_transform(client: &ApiClient, id: &str) -> Result<CliResponse> {
+    let body = json!({ "enabled": false });
+    let data = client.put(&format!("/automations/{}", id), &body).await?;
+    Ok(CliResponse::success(data, "Transform disabled"))
+}
+
 /// List virtual metrics from transforms
 pub async fn list_virtual_metrics(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/automations/transforms/metrics").await?;

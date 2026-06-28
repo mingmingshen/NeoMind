@@ -156,7 +156,8 @@ neomind transform data-sources          # List available data sources for transf
 
 ```bash
 neomind transform update <ID> --code '<NEW_JS>'    # Update code
-neomind transform update <ID> --enabled true        # Enable/disable
+neomind transform enable <ID>                       # Enable (unified form)
+neomind transform disable <ID>                      # Disable (unified form)
 neomind transform delete <ID>                       # Delete transform
 ```
 
