@@ -4,7 +4,7 @@ name: Rule Management Guide
 category: rule
 origin: builtin
 priority: 85
-token_budget: 12000
+token_budget: 5000
 triggers:
   keywords: [rule, 规则, 创建规则, create rule, alert, 告警, 报警, trigger, 触发, automation, 自动化, condition, 条件, action, 动作, threshold, 阈值, notification, 通知, 规则管理, rule create, rule update, rule enable, rule disable, 阈值判断, 超过, 低于, 大于, 小于, temperature, 温度, humidity, 湿度, battery, 电池]
   tool_target:
@@ -14,339 +14,180 @@ anti_triggers:
   keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, device connect, 设备连接]
 ---
 
-# Rule Management Guide
+# Rule Management
 
-Rules are event-driven automations that trigger actions when device or extension metrics meet conditions.
+Create, update, diagnose, or delete event-driven rules over device / extension / transform metrics. Skipped discovery is the #1 cause of silent rule failures.
 
-## MANDATORY: 3-Step Rule Creation Flow
+## When to Load This Skill
 
-You MUST follow these 3 steps in order. Skipping Step 1 or 2 will result in wrong device IDs or metric names, causing rules to silently fail.
+| User intent | Section to follow |
+|---|---|
+| "create / set up / add a rule" | Phase 1 → 2 → 3 → 4 below |
+| "why didn't rule X fire / 排查 / 没触发" | Jump to **Diagnosis Flow** |
+| "delete / disable / enable rule X" | **Quick Command Reference** |
+| "update an existing rule" | Run diagnosis first, then **Phase 2** with new JSON |
 
-### Step 1: Discover Device IDs and Metric Names
+## HARD GATE
 
-```bash
-neomind device list
+```
+NO RULE JSON CONSTRUCTION WITHOUT PRIOR DEVICE/METRIC DISCOVERY
 ```
 
-This returns devices grouped by type. Each type group includes:
-- **`metric_fields`**: array of actual metric field names (e.g., `["temperature", "humidity", "battery"]`)
-- **`example`**: one online device's current values (e.g., `{"id": "sensor-001", "temperature": 25.3, "humidity": 60}`)
-- **`devices`**: list of devices with `id`, `name`, `status`
+**You MUST complete Phase 1 before Phase 2.** Violating this is the single most common failure mode: rules silently never fire because the device_id or metric name was guessed.
 
-**IMPORTANT**: If `metric_fields` is empty (device offline or >50 devices), you MUST run Step 2 for each target device.
+## Phase 1: Discovery — Completion Checklist
 
-### Step 2: Get Exact Metrics for Target Device (if needed)
+Every item must be ticked. Re-run if any is unchecked.
 
-```bash
-neomind device get <DEVICE_ID>
+- [ ] Ran `neomind device list` (or `neomind extension get <id>` for extension metrics)
+- [ ] Identified the EXACT `device_id` (case-sensitive, hyphens matter) for each target
+- [ ] Confirmed the EXACT metric name appears in `metric_fields` (NOT a guessed translation)
+- [ ] If `metric_fields` is empty OR device offline OR >50 devices: ran `neomind device get <id>` per target
+- [ ] Noted current value range (to pick a sensible threshold, not a magic number)
+
+**Output of Phase 1** (write it down before Phase 2):
+```
+device_id: <string>
+metric_name: <string from metric_fields>
+current_value: <number from device get>
+operator + threshold: <chosen based on current_value>
 ```
 
-This returns:
-- All metric names with current values
-- Available commands
-- Device metadata
+## Phase 2: Construct Rule JSON
 
-Use this when:
-- `device list` showed empty `metric_fields` for the device type
-- You need to confirm exact metric key names
-- You need to know the current value range to set a reasonable threshold
-
-### Step 3: Create Rule with Discovered Names
-
-Only NOW can you create the rule, using the exact `device_id` and `metric` name discovered above.
-
-## Rule JSON Format
-
-Rules use JSON format. The `--json` flag is required for `rule create`.
-
-### Basic Structure
+Minimal canonical shape (only `name`, `condition.source`, `condition.operator`, `condition.threshold`, `actions` are required):
 
 ```json
 {
-  "name": "Rule Name",
-  "description": "Optional description",
-  "trigger": {"trigger_type": "data_change"},
+  "name": "High Temperature Alert",
   "condition": {
     "condition_type": "comparison",
-    "source": "device:SENSOR_ID:METRIC",
+    "source": "device:living-room-sensor:temperature",
     "operator": "greater_than",
     "threshold": 30
   },
-  "for_duration": 60000,
-  "cooldown": 60000,
-  "actions": [
-    {"type": "notify", "message": "Alert: {value}", "severity": "critical"}
-  ]
-}
-```
-
-**Optional fields**: `trigger` (default: `data_change`), `for_duration` (ms, condition must hold before triggering), `cooldown` (ms, default 60000, min time between triggers), `enabled` (default: true)
-
-### `for_duration` — Sustained Condition
-
-By default, a rule fires the instant its condition is met. Use `for_duration` to require the condition to hold for a sustained period (in milliseconds) before triggering:
-
-```json
-{
-  "name": "Sustained High Temp",
-  "condition": {"condition_type": "comparison", "source": "device:sensor-001:temperature", "operator": "greater_than", "threshold": 30},
-  "for_duration": 60000,
   "cooldown": 300000,
-  "actions": [{"type": "notify", "message": "Temperature above 30°C for over 1 minute: {value}°C", "severity": "warning"}]
-}
-```
-- `for_duration: 60000` = condition must hold for 60 seconds before firing
-- `for_duration: 0` or omitted = fires immediately when condition is met
-- Combine with `cooldown` to avoid repeat alerts
-
-### How Notifications Are Delivered
-
-Rule `notify` actions create messages that are sent to **all configured channels** (Telegram, email, webhook, etc.). Channels receive all messages by default — no per-channel routing setup needed.
-
-**Typical alert setup** (see `message-management` skill for channel creation):
-```bash
-# 1. Create a channel first (e.g., Telegram)
-neomind message channel-create --name tg-alerts --type telegram --config '{"token":"...","chat_id":"..."}'
-
-# 2. Create the rule — notifications auto-deliver to tg-alerts
-neomind rule create --json '{"name":"High Temp","condition":{"condition_type":"comparison","source":"device:sensor-001:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"Temp: {value}°C","severity":"critical"}]}'
-```
-
-### Condition Types
-
-**1. Comparison** — metric compared to threshold:
-```json
-{
-  "condition_type": "comparison",
-  "source": "device:sensor-001:temperature",
-  "operator": "greater_than",
-  "threshold": 30
+  "actions": [{"type": "notify", "message": "Temp: {value}°C", "severity": "warning"}]
 }
 ```
 
-**2. Range** — metric within min/max (inclusive):
-```json
-{
-  "condition_type": "range",
-  "source": "device:sensor-001:temperature",
-  "min": 18,
-  "max": 28
-}
+### Condition Types — Pick One via Decision Tree
+
+```
+What does the user want?
+├── One metric vs a number
+│   → comparison  (operators: greater_than | less_than | greater_equal | less_equal | equal | not_equal)
+├── One metric in a band (min..max inclusive)
+│   → range        { "min": 18, "max": 28 }
+├── Multiple metrics all must match
+│   → logical AND  { "conditions": [...] }
+├── Multiple devices, same metric, any triggers
+│   → logical OR   { "conditions": [...] }
+├── Negate any sub-condition
+│   → logical NOT  { "conditions": [<single>] }
+└── String metric (text matching)
+    → string ops   (contains | starts_with | ends_with | regex), threshold is a string
 ```
 
-**3. Logical** — AND/OR/NOT combining sub-conditions:
-```json
-{
-  "condition_type": "logical",
-  "operator": "and",
-  "conditions": [
-    {"condition_type": "comparison", "source": "device:sensor-001:temperature", "operator": "greater_than", "threshold": 30},
-    {"condition_type": "comparison", "source": "device:sensor-001:humidity", "operator": "greater_than", "threshold": 70}
-  ]
-}
-```
+### Source Format (3 forms only)
 
-### Source Format
-
-| Type | Format | Example |
-|------|--------|---------|
-| Device metric | `device:DEVICE_ID:METRIC` | `device:sensor-001:temperature` |
-| Extension metric | `extension:EXT_ID:METRIC` | `extension:weather:temperature_c` |
-| Transform output | `transform:OUTPUT_PREFIX:FIELD` | `transform:battery:health` |
-
-### Operators
-
-**Numeric** (threshold is a number):
-
-| Operator | JSON value |
-|----------|-----------|
-| > | `greater_than` |
-| < | `less_than` |
-| >= | `greater_equal` |
-| <= | `less_equal` |
-| == | `equal` |
-| != | `not_equal` |
-
-**String** (threshold is a string, for text-based metrics):
-
-| Operator | JSON value |
-|----------|-----------|
-| Contains | `contains` |
-| Starts with | `starts_with` |
-| Ends with | `ends_with` |
-| Regex match | `regex` |
+- `device:<device_id>:<metric>` — most common
+- `extension:<ext_id>:<metric>` — needs `neomind extension get <id>` first
+- `transform:<output_prefix>:<field>` — needs `neomind transform list` first
 
 ### Action Types
 
-**1. Notify** — send notification:
-```json
-{"type": "notify", "message": "Temperature too high: {value}°C", "severity": "critical"}
-```
-Severities: `info`, `warning`, `critical`, `emergency`
+| Type | When to use | Key fields |
+|---|---|---|
+| `notify` | Send alert to all configured channels | `message` (supports `{value}`, `{source_id}`), `severity` (info\|warning\|critical\|emergency) |
+| `execute` | Trigger a device/extension command | `target`, `target_type`, `command`, `params` |
+| `trigger_agent` | Hand off to AI for complex response | `agent_id`, `input` |
 
-**2. Execute** — run device/extension command:
-```json
-{"type": "execute", "target": "ac-unit", "target_type": "device", "command": "turn_on", "params": {"mode": "cool", "target": 25}}
-```
+### Optional Tuning Fields
 
-**3. TriggerAgent** — hand off to AI agent:
-```json
-{"type": "trigger_agent", "agent_id": "agent-001", "input": "Check temperature anomaly"}
-```
+- `for_duration` (ms): condition must hold this long before firing. Use 30000–60000 for noisy signals to avoid flapping. Default 0 = fire instantly.
+- `cooldown` (ms): minimum gap between triggers. Default 60000. **Always set explicitly for `notify` actions** — alert storms happen without it.
+- `trigger`: `data_change` (default, sources auto-extracted from condition) | `schedule` (cron) | `manual`
 
-**Message placeholders:** `{value}`, `{source_id}`
+## Phase 3: Validate — Pre-Flight Checklist
 
-### Trigger Types
+Before running `neomind rule create`, tick every box:
 
-| Type | JSON | Description |
-|------|------|-------------|
-| Data Change | `{"trigger_type": "data_change"}` | Default. Fires when subscribed metric changes. Sources auto-extracted from condition. |
-| Schedule | `{"trigger_type": "schedule", "cron": "0 */5 * * *"}` | Fires on cron schedule. No condition needed. |
-| Manual | `{"trigger_type": "manual"}` | Fires only via API/CLI `rule test`. No condition needed. |
+- [ ] `device_id` in JSON matches Phase 1 output character-for-character
+- [ ] metric name in JSON matches Phase 1 output character-for-character
+- [ ] operator matches metric data type (numeric vs string)
+- [ ] threshold is realistic vs `current_value` from Phase 1 (not magic number)
+- [ ] If action is `notify`: at least one message channel exists — run `neomind message channel-list`. If empty, load **message-management** skill first.
+- [ ] If action is `execute`: target device exists in `neomind device list` and has the command listed under `command_fields`
+- [ ] `cooldown` is set explicitly when `notify` is the action
 
-## Complete Workflow Examples
-
-### Example 1: Temperature Threshold Alert
-
-User says: "创建一个规则，温度超过30度时通知我"
-
-**Correct flow:**
-```bash
-# Step 1: Discover devices and metrics
-neomind device list
-# → See type "sensor" with metric_fields: ["temperature", "humidity", "battery"]
-# → See device id: "living-room-sensor", status: online
-
-# Step 2 (optional): Confirm exact metric name
-neomind device get living-room-sensor
-# → metrics: {"temperature": {"value": 24.5, "unit": "°C"}, ...}
-
-# Step 3: Create rule with REAL device ID and REAL metric name
-neomind rule create --json '{"name":"High Temperature Alert","condition":{"condition_type":"comparison","source":"device:living-room-sensor:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"Temperature too high: {value}°C","severity":"critical"}]}'
-
-# Rule is enabled by default — no need to run enable
-```
-
-### Example 2: Low Battery Warning
+## Phase 4: Activate & Verify
 
 ```bash
-neomind device list
-# → device id: "outdoor-sensor", metric_fields includes "battery"
+# Rule is ENABLED by default on creation — no separate enable step needed.
+neomind rule create --json '<your_json>'
+# Note the returned rule ID.
 
-neomind rule create --json '{"name":"Low Battery Warning","condition":{"condition_type":"comparison","source":"device:outdoor-sensor:battery","operator":"less_than","threshold":20},"actions":[{"type":"notify","message":"Sensor battery at {value}%","severity":"warning"}]}'
-```
+# For threshold rules: inject a test value to confirm it fires end-to-end.
+neomind rule test <ID> --input '{"<metric>": <value_above_threshold>}'
 
-### Example 3: Multi-Condition Rule (AND)
-
-```bash
-neomind device list
-neomind device get living-room-sensor
-
-neomind rule create --json '{"name":"Heat Index Alert","condition":{"condition_type":"logical","operator":"and","conditions":[{"condition_type":"comparison","source":"device:living-room-sensor:temperature","operator":"greater_than","threshold":30},{"condition_type":"comparison","source":"device:living-room-sensor:humidity","operator":"greater_than","threshold":70}]},"actions":[{"type":"notify","message":"High heat index: temp > 30, humidity > 70","severity":"warning"}]}'
-```
-
-### Example 4: Auto Control Rule
-
-```bash
-neomind device list
-# → sensor: "temp-probe", metric_fields: ["temperature"]
-# → actuator: "ac-unit", command_fields: ["turn_on"]
-
-neomind rule create --json '{"name":"Auto Cool Down","condition":{"condition_type":"comparison","source":"device:temp-probe:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"execute","target":"ac-unit","target_type":"device","command":"turn_on","params":{"mode":"cool","target":25}}]}'
-```
-
-### Example 5: Extension-Based Rule
-
-```bash
-neomind extension get weather
-# → output_fields include: "temperature_c", "humidity_pct"
-
-neomind rule create --json '{"name":"Extreme Weather","condition":{"condition_type":"comparison","source":"extension:weather:temperature_c","operator":"greater_than","threshold":38},"actions":[{"type":"notify","message":"Extreme heat: {value}°C","severity":"critical"}]}'
-```
-
-### Example 6: Multi-Device Alert (OR)
-
-```bash
-neomind device list
-# → 3 sensors: sensor-a, sensor-b, sensor-c, all have "battery" metric
-
-neomind rule create --json '{"name":"Multi Battery Alert","condition":{"condition_type":"logical","operator":"or","conditions":[{"condition_type":"comparison","source":"device:sensor-a:battery","operator":"less_than","threshold":15},{"condition_type":"comparison","source":"device:sensor-b:battery","operator":"less_than","threshold":15},{"condition_type":"comparison","source":"device:sensor-c:battery","operator":"less_than","threshold":15}]},"actions":[{"type":"notify","message":"Critical battery on sensors","severity":"critical"}]}'
-```
-
-## Command Reference
-
-### Create Rule
-```bash
-neomind rule create --json '<JSON_BODY>'
-```
-Required: `--json` (rule definition in JSON format)
-
-### List & Get
-```bash
-neomind rule list                    # List all rules
-neomind rule get <ID>                # Get rule details
-```
-
-### Update Rule
-```bash
-neomind rule update <ID> --json '<NEW_JSON>'
-```
-
-### Enable / Disable
-```bash
-neomind rule enable <ID>             # Re-enable a disabled rule
-neomind rule disable <ID>            # Disable rule (keeps config)
-```
-
-### Delete Rule
-```bash
-neomind rule delete <ID>             # Permanently delete
-```
-
-### Test Rule
-```bash
-neomind rule test <ID> --input '{"temperature": 35}'
-```
-
-### View Execution History
-```bash
+# For ongoing monitoring of when/how it fires.
 neomind rule history <ID>
 ```
 
-## Rule Lifecycle
+## Diagnosis Flow — "Why didn't my rule fire?"
 
-1. **Create** — Rule is created and **enabled by default**
-2. **Monitor** — Check execution history: `neomind rule history <ID>`
-3. **Disable** — Temporarily stop without deleting
-4. **Update** — Modify conditions or actions
-5. **Delete** — Permanently remove
+Run these in order. Stop at the first failure.
+
+1. **Rule enabled?** `neomind rule get <ID>` → check `enabled: true`. If false: `neomind rule enable <ID>`.
+2. **Device actually online?** `neomind device list` → device status. If offline, rule has no data to evaluate.
+3. **Data fresh?** `neomind device get <ID>` → last metric value. If stale (older than `offline_timeout`), no recent evaluations.
+4. **Condition match at least once?** `neomind rule history <ID>` → look for `evaluated: true, matched: false`. If `matched: true` but no notification → channel problem (jump to message-management).
+5. **Cooldown blocking?** History shows `evaluated: true, matched: true` but `skipped: cooldown`. Raise `cooldown` only if false-positives are flooding; otherwise wait it out.
+6. **`for_duration` not yet satisfied?** Condition must hold continuously for `for_duration` ms. History shows recent `matched: true` but no fire → wait longer.
+7. **Source ID correct?** Verify `source` string in the rule JSON exactly matches `device:<id>:<metric>` from `device get`. Typos are silent.
+
+## Red Flags — Stop If You See These
+
+| Sign | Why it's wrong | Fix |
+|---|---|---|
+| Constructing JSON before running `device list` | Guessed IDs → rule never fires | Back to Phase 1 |
+| Threshold pulled from user request verbatim with no sanity check | Often wrong unit/range | Cross-check vs `current_value` |
+| `notify` action but haven't run `channel-list` | Alerts vanish silently | Verify ≥1 channel, or load message-management |
+| `cooldown: 0` or unset on `notify` rule | Alert storms | Set ≥300000 (5 min) |
+| String operator (`contains`) on numeric metric | Always errors or never matches | Use numeric operator |
+| Skipping `rule test` after creation | "Works on paper" but real flow broken | Always run with synthetic input |
+
+## Quick Command Reference
+
+```bash
+neomind rule list                         # all rules
+neomind rule get <ID>                     # inspect one
+neomind rule create --json '<JSON>'       # create (enabled by default)
+neomind rule update <ID> --json '<JSON>'  # modify fields
+neomind rule enable <ID>                  # re-enable a paused rule
+neomind rule disable <ID>                 # pause without deleting
+neomind rule delete <ID>                  # permanent removal
+neomind rule test <ID> --input '<JSON>'   # inject synthetic metric
+neomind rule history <ID>                 # evaluation log
+```
 
 ## Common Errors & Solutions
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "Missing 'name' field" | JSON body missing name | Add `"name": "Rule Name"` |
-| "Invalid DataSourceId" | Wrong source format | Use `device:ID:METRIC` or `extension:ID:METRIC` |
-| "Device not found in condition" | Wrong device ID (guessed) | Run `neomind device list` for real IDs |
-| "Unknown metric" | Wrong metric name (guessed) | Run `neomind device list` (check `metric_fields`) or `neomind device get <ID>` |
-| Rule not triggering | Rule is disabled | Run `neomind rule enable <ID>` |
-| Rule triggers too often | No cooldown / threshold too tight | Add `"cooldown": 300000` (ms) |
-| Invalid JSON | Malformed JSON body | Check JSON syntax: quotes, brackets, commas |
+| "Missing 'name' field" | JSON body missing name | Add `"name": "..."` |
+| "Invalid DataSourceId" | Wrong source format | Use `device:ID:METRIC` / `extension:ID:METRIC` / `transform:PREFIX:FIELD` |
+| "Device not found in condition" | Wrong device ID (guessed) | Run Phase 1 discovery |
+| "Unknown metric" | Wrong metric name (guessed) | Run `device list` (check `metric_fields`) or `device get <ID>` |
+| Rule not triggering | Disabled | `neomind rule enable <ID>` |
+| Rule triggers too often | No cooldown / threshold too tight | Add `"cooldown": 300000` |
+| Rule matches but no notification | No channels configured | Load **message-management** skill |
+| Invalid JSON | Quotes/brackets/commas | Validate JSON syntax |
 
-## Decision Tree: How to Choose the Right Condition
+## Related Skills
 
-```
-User request
-├── Single device, single metric threshold
-│   → condition_type: "comparison"
-├── Single device, multiple metrics (all must be true)
-│   → condition_type: "logical", operator: "and"
-├── Multiple devices, same metric (any triggers)
-│   → condition_type: "logical", operator: "or"
-├── Extension data
-│   → source: "extension:EXT_ID:METRIC"
-├── Value in range
-│   → condition_type: "range"
-└── Negation (alert when NOT something)
-    → condition_type: "logical", operator: "not"
-```
+- **message-management** — create Telegram / email / webhook channels for `notify` actions. **Load before completing Phase 3 if channels list is empty.**
+- **transform-management** — pre-process metrics (rolling avg, unit conversion) before rule condition
+- **agent-management** — when using `trigger_agent` action; agent must exist first
+- **device-onboarding** — if `device list` is empty or target device missing, the device isn't registered yet

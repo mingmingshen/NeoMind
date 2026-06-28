@@ -234,6 +234,11 @@ impl AiAgentManager {
             .execute_agent(agent.clone(), synthetic_event, invocation_input)
             .await;
 
+        // Cool the event-dedup window for this agent's bound sources so a
+        // real event arriving within the 60 s window doesn't fire a
+        // duplicate execution. No-op for non-event agents.
+        self.executor.mark_manual_execution(&agent.id).await;
+
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
         // Build summary
@@ -459,6 +464,15 @@ impl AiAgentManager {
     /// Resets to `Active` (not `Error`) because the failure was environmental
     /// (process died), not a flaw in the agent itself — the user expects the
     /// agent to keep running on its schedule after a restart.
+    ///
+    /// Also reactivates agents in `Error` status. Without this, any agent
+    /// that landed in `Error` before the restart (transient failure, config
+    /// bug, OOM, etc.) is permanently dropped from the scheduler — the user
+    /// has to manually reactivate each one from the UI, with no log clue
+    /// about why it stopped. After restart, all `Active` + `Error` agents
+    /// are re-scheduled; if the failure condition still exists the agent
+    /// will fail again and land back in `Error`, surfacing the problem in
+    /// logs/UI rather than silently disappearing.
     async fn reset_stale_executing_agents(&self) {
         use neomind_storage::{AgentFilter, AgentStatus};
 
@@ -480,17 +494,69 @@ impl AiAgentManager {
             }
         };
 
-        if stuck.is_empty() {
+        if !stuck.is_empty() {
+            let count = stuck.len();
+            tracing::info!(
+                stuck_count = count,
+                "Resetting agents stuck in Executing status from previous run"
+            );
+
+            for agent in &stuck {
+                let id = agent.id.clone();
+                if let Err(e) = self
+                    .executor
+                    .store()
+                    .update_agent_status(&id, AgentStatus::Active, None)
+                    .await
+                {
+                    tracing::warn!(
+                        agent_id = %id,
+                        error = %e,
+                        "Failed to reset stale Executing agent"
+                    );
+                } else {
+                    tracing::info!(
+                        agent_id = %id,
+                        name = %agent.name,
+                        "Reset stale Executing agent to Active"
+                    );
+                }
+            }
+
+            tracing::info!(reset_count = count, "Stale Executing agents reset to Active");
+        }
+
+        // Reactivate agents in Error status so they get rescheduled.
+        // See function docstring for rationale.
+        let errored = match self
+            .list_agents(AgentFilter {
+                status: Some(AgentStatus::Error),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(agents) => agents,
+            Err(e) => {
+                tracing::warn!(
+                    category = "agent",
+                    error = %e,
+                    "Failed to scan for Error agents; skipping reactivation"
+                );
+                return;
+            }
+        };
+
+        if errored.is_empty() {
             return;
         }
 
-        let count = stuck.len();
+        let count = errored.len();
         tracing::info!(
-            stuck_count = count,
-            "Resetting agents stuck in Executing status from previous run"
+            error_count = count,
+            "Reactivating agents in Error status at startup (will re-fail if condition persists)"
         );
 
-        for agent in &stuck {
+        for agent in &errored {
             let id = agent.id.clone();
             if let Err(e) = self
                 .executor
@@ -501,18 +567,18 @@ impl AiAgentManager {
                 tracing::warn!(
                     agent_id = %id,
                     error = %e,
-                    "Failed to reset stale Executing agent"
+                    "Failed to reactivate Error agent"
                 );
             } else {
                 tracing::info!(
                     agent_id = %id,
                     name = %agent.name,
-                    "Reset stale Executing agent to Active"
+                    "Reactivated Error agent to Active"
                 );
             }
         }
 
-        tracing::info!(reset_count = count, "Stale Executing agents reset to Active");
+        tracing::info!(reactivated_count = count, "Error agents reactivated to Active");
     }
 
     /// Stop the scheduler.

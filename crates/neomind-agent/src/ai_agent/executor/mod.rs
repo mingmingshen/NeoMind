@@ -1316,6 +1316,26 @@ impl AgentExecutor {
                     overall_success,
                 );
 
+                // Cap knowledge_files FIFO. The MemoryTool can append
+                // arbitrary new files; without a cap a runaway agent
+                // (or a long-lived one accumulating one file per execution)
+                // bloats both storage and the system prompt —
+                // `prefetch_knowledge_files` injects ALL file contents
+                // into context. Same trim pattern as `journal.records`
+                // (memory.rs:49-51) and `user_messages` (storage
+                // MAX_USER_MESSAGES=50).
+                while updated_memory.knowledge_files.len()
+                    > memory::MAX_KNOWLEDGE_FILES
+                {
+                    let dropped = updated_memory.knowledge_files.remove(0);
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        dropped_file = %dropped.name,
+                        remaining = updated_memory.knowledge_files.len(),
+                        "Trimmed knowledge file exceeding MAX_KNOWLEDGE_FILES (FIFO)"
+                    );
+                }
+
                 self.store
                     .update_agent_memory(&agent.id, updated_memory.clone())
                     .await

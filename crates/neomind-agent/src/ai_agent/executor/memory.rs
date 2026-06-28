@@ -2,6 +2,16 @@ use super::*;
 
 use neomind_storage::{AgentMemory, ExecutionRecord};
 
+/// Hard cap on the number of knowledge files an agent may accumulate.
+///
+/// The MemoryTool can append arbitrary new files; without a cap a
+/// runaway or long-lived agent bloats both storage and the system
+/// prompt — `prefetch_knowledge_files` injects ALL file contents
+/// into context on every execution. Same FIFO-trim pattern as
+/// `journal.records` and `user_messages` (storage
+/// `MAX_USER_MESSAGES=50`).
+pub(crate) const MAX_KNOWLEDGE_FILES: usize = 20;
+
 impl AgentExecutor {
     /// Update agent memory with a new execution record.
     /// Simple FIFO journal — no complex filtering or LLM reflection.

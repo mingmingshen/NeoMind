@@ -14,6 +14,68 @@ impl AgentExecutor {
         recent.retain(|_, &mut ts| now - ts < 360);
     }
 
+    /// Mark a manual execution of an event-type agent in the dedup map.
+    ///
+    /// Without this, `execute_agent_now` runs without registering in
+    /// `recent_executions`, so the next real event for any of the agent's
+    /// bound sources can fire within the 60 s cooldown window — yielding a
+    /// duplicate execution (duplicate journal entry, potential duplicate
+    /// notification, wasted LLM tokens). Manual execution should cool the
+    /// same window.
+    ///
+    /// For non-event agents this is a no-op (the dedup key is only
+    /// consulted by the event-trigger path).
+    pub async fn mark_manual_execution(&self, agent_id: &str) {
+        use neomind_storage::ScheduleType;
+
+        // Only event-type agents participate in the event-dedup window.
+        let agent = match self.store.get_agent(agent_id).await {
+            Ok(Some(a)) => a,
+            _ => return,
+        };
+        if agent.schedule.schedule_type != ScheduleType::Event {
+            return;
+        }
+
+        // Cool every bound source so any incoming event for one of them
+        // is deduped. The event-trigger path keys on
+        // `{agent_id}:{source_type}:{source_id}` (line 265), so we
+        // pre-insert entries for each candidate the agent would match.
+        // This is symmetric with how the event path itself behaves after
+        // a successful firing.
+        let candidates = Self::extract_trigger_candidates(&agent);
+        let now = chrono::Utc::now().timestamp();
+        let mut recent = self.recent_executions.write().await;
+
+        // If the agent has no concrete candidates (e.g. only `"all"` wildcards
+        // in its event_filter), fall back to a synthetic agent-scoped key.
+        // This doesn't prevent a real event from firing (no matching key to
+        // consult), but at least records that a manual run happened — useful
+        // for debugging and gives the cleanup pass something to prune.
+        if candidates.is_empty() {
+            let key = format!("{}:manual:wildcard", agent_id);
+            recent.insert(key, now);
+        } else {
+            for (s_type, s_id, _field) in &candidates {
+                // Field is intentionally NOT in the dedup key — matches
+                // the event-trigger path's keying convention, so a real
+                // event firing on the same `(agent, source)` is properly
+                // deduped regardless of which specific field triggered it.
+                let key = format!("{}:{}:{}", agent_id, s_type, s_id);
+                recent.insert(key, now);
+            }
+        }
+
+        // Opportunistic cleanup — mirrors the event-trigger entry path.
+        recent.retain(|_, &mut ts| now - ts < 360);
+
+        tracing::debug!(
+            agent_id = %agent_id,
+            candidate_count = candidates.len(),
+            "Marked manual execution in event dedup map"
+        );
+    }
+
     /// Check if an event should trigger any agent and execute it (legacy device-only entry point).
     pub async fn check_and_trigger_event(
         &self,

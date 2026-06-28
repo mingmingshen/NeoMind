@@ -174,6 +174,42 @@ Two related fixes for the same failure mode on DashScope
   faster (single-point lookup vs range scan), and the semantic all
   consumers already expect.
 
+- **Error-status agents silently dropped on restart**
+  (`crates/neomind-agent/src/ai_agent/mod.rs`). After a server
+  restart, `reload_active_agents` only loaded agents in `Active`
+  status. `reset_stale_executing_agents` swept `Executing → Active`
+  but never touched `Error` — so any agent that landed in `Error`
+  before the restart was permanently dropped from the scheduler,
+  requiring manual reactivation per agent with no log clue about
+  why it stopped. The startup sweep now also reactivates `Error →
+  Active`. If the failure condition still exists the agent will
+  fail again and land back in `Error`, surfacing the problem in
+  logs/UI rather than silently disappearing.
+
+- **Manual agent execution bypassed event-trigger dedup**
+  (`crates/neomind-agent/src/ai_agent/executor/event_trigger.rs` +
+  `mod.rs`). `execute_agent_now` ran without registering in
+  `recent_executions`, so the next real event for any of the
+  event-type agent's bound sources could fire within the 60 s
+  cooldown window — yielding a duplicate execution (duplicate
+  journal entry, potential duplicate notification, wasted LLM
+  tokens). Added `mark_manual_execution` which pre-inserts a dedup
+  entry for every candidate source derived from `event_filter` /
+  resource bindings, so any incoming event for one of those sources
+  is properly cooled. No-op for non-event agents.
+
+- **Unbounded `knowledge_files` growth**
+  (`crates/neomind-agent/src/ai_agent/executor/memory.rs` +
+  `mod.rs`). The MemoryTool could append arbitrary new knowledge
+  files; `AgentMemory.knowledge_files` had no FIFO cap, so a
+  long-lived or runaway agent accumulated dozens of files. Since
+  `prefetch_knowledge_files` injects ALL file contents into the
+  system prompt on every execution, this silently bloated both
+  storage and the LLM context. Added `MAX_KNOWLEDGE_FILES = 20`
+  with the same FIFO trim pattern used by `journal.records`
+  (max 10) and `user_messages` (max 50). Dropped file names are
+  logged.
+
 - **Workspace clippy cleanup** (commit `cbdfd960`). Six clippy
   warnings fixed across five crates: redundant `.ok()` on
   `try_recv()` match in `neomind-core/eventbus.rs`; `contains(&x)`
@@ -199,6 +235,20 @@ Two related fixes for the same failure mode on DashScope
   expose EMQX-style `$SYS/brokers/+/clients/+/{connected,disconnected}`
   topics (Mosquitto, RabbitMQ-MQTT, etc.) the subscriptions simply
   never match — no errors, no behavioral change.
+- **Operators with agents in Error state**: on first startup after
+  this release, every agent previously in `Error` status is
+  automatically reactivated (`Error → Active`) and rescheduled. If
+  the underlying failure condition still exists the agent will land
+  back in `Error` and stay there until the condition is fixed, but
+  it will no longer be silently dropped from the scheduler across
+  restarts. Check the server logs for `Reactivating agents in Error
+  status at startup` to see how many were reactivated.
+- **Knowledge file trim**: agents with more than 20 knowledge files
+  will have the oldest entries dropped FIFO on the next execution.
+  The actual markdown files on disk under `data/memory/agent-{id}/`
+  are NOT auto-deleted by the trim (only the in-memory index is
+  bounded) — operators who want to reclaim disk space should remove
+  the orphaned files manually after upgrading.
 
 ## [0.8.25] - 2026-06-26
 
