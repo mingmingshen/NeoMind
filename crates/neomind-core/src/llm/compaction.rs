@@ -122,15 +122,18 @@ impl CompactionConfig {
 
     /// Create a compaction config adapted to the model's context capacity.
     ///
-    /// Larger contexts preserve more history (gentler compaction),
-    /// smaller contexts use aggressive compaction to stay within limits.
+    /// Large-context models follow the modern coding-agent convention (Claude
+    /// Code, Cursor, Aider): use up to 95-96% of the window for history and
+    /// compact only when actually at the boundary. Smaller-context models
+    /// stay conservative because they genuinely need more output room for
+    /// reasoning + tool-call JSON.
     pub fn for_context_size(context_window: usize) -> Self {
-        // 128K+ context models (GPT-4o-128k, Qwen3-128K, etc.):
-        // generous limits — compaction rarely needed within normal agent runs.
+        // 128K+ context models (GPT-4o-128k, Qwen3-128K, Claude 200K, etc.):
+        // generous limits — trust long-context handling, compact at the edge.
         if context_window > 100_000 {
             Self {
                 reserve_tokens_floor: 2048,
-                max_history_share: 0.93,
+                max_history_share: 0.96,
                 min_recent_messages: 12,
                 max_message_length: 65536,
                 compact_tool_results: true,
@@ -140,7 +143,7 @@ impl CompactionConfig {
         } else if context_window > 16000 {
             Self {
                 reserve_tokens_floor: 1024,
-                max_history_share: 0.92,
+                max_history_share: 0.94,
                 min_recent_messages: 8,
                 max_message_length: 32768,
                 compact_tool_results: true,
@@ -149,7 +152,7 @@ impl CompactionConfig {
         } else if context_window > 8000 {
             Self {
                 reserve_tokens_floor: 1024,
-                max_history_share: 0.88,
+                max_history_share: 0.90,
                 min_recent_messages: 6,
                 max_message_length: 16384,
                 compact_tool_results: true,
