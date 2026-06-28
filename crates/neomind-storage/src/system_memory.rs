@@ -37,6 +37,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
+use crate::atomic_write;
 use crate::error::{Error, Result};
 use crate::memory_config::MemoryConfig;
 
@@ -343,13 +344,15 @@ pub struct MemoryFileInfo {
 // New Types (2-file layout)
 // ============================================================================
 
-/// Memory statistics for the new 2-file layout
+/// Memory statistics for the persistent-file memory layout
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryStats {
     /// User file stats
     pub user: FileStats,
     /// Knowledge file stats
     pub knowledge: FileStats,
+    /// Procedures file stats
+    pub procedures: FileStats,
     /// Agent file stats
     pub agents: Vec<AgentFileStats>,
     /// Session stats
@@ -404,9 +407,10 @@ pub struct CustomFileStats {
 ///
 /// ## Architecture
 ///
-/// **Persistent files (2):**
+/// **Persistent files (3):**
 /// - `USER.md` - User profile (max `user_char_limit` chars, default 2000)
 /// - `KNOWLEDGE.md` - System knowledge (max `knowledge_char_limit` chars, default 3000)
+/// - `PROCEDURES.md` - Procedural memory: SOPs, playbooks, how-tos (max `procedures_char_limit` chars, default 3000)
 ///
 /// **Session temp files (unlimited):**
 /// - `sessions/{session_id}/notes.md` - Session notes (7-day TTL)
@@ -424,7 +428,7 @@ pub struct MarkdownMemoryStore {
     config: MemoryConfig,
     /// In-memory cache (legacy, for backward compatibility)
     cache: Arc<RwLock<HashMap<String, Vec<MemoryEntry>>>>,
-    /// Serializes writers to shared files (USER.md / KNOWLEDGE.md).
+    /// Serializes writers to shared files (USER.md / KNOWLEDGE.md / PROCEDURES.md).
     ///
     /// Multiple call sites concurrently read-modify-write these files:
     /// the system-context background task, the agent-summary background
@@ -468,7 +472,7 @@ impl MarkdownMemoryStore {
         let user_path = self.base_path.join("USER.md");
         if !user_path.exists() {
             let content = "# User Profile\n\n> Last updated: \n\n";
-            fs::write(&user_path, content)?;
+            atomic_write::write(&user_path, content)?;
             info!(path = %user_path.display(), "Created USER.md");
         }
 
@@ -479,8 +483,18 @@ impl MarkdownMemoryStore {
                 ## System Resources\n\n<!-- auto-generated -->\n\n\
                 ## Domain Knowledge\n\n<!-- AI-managed -->\n\n\
                 ## Agent Experiences\n\n<!-- auto-generated -->\n\n";
-            fs::write(&knowledge_path, content)?;
+            atomic_write::write(&knowledge_path, content)?;
             info!(path = %knowledge_path.display(), "Created KNOWLEDGE.md");
+        }
+
+        // Create PROCEDURES.md if it doesn't exist
+        let procedures_path = self.base_path.join("PROCEDURES.md");
+        if !procedures_path.exists() {
+            let content = "# Procedures\n\n\
+                > SOPs, playbooks, and how-tos learned across sessions.\n\
+                > Add step-by-step procedures that future conversations should follow.\n\n";
+            atomic_write::write(&procedures_path, content)?;
+            info!(path = %procedures_path.display(), "Created PROCEDURES.md");
         }
 
         // Create legacy directories for backward compatibility
@@ -490,7 +504,7 @@ impl MarkdownMemoryStore {
         let system_path = self.base_path.join("system.md");
         if !system_path.exists() {
             let content = "# System Memory\n\n## User Profile\n\n## Domain Knowledge\n\n## Task Patterns\n\n## System Evolution\n";
-            fs::write(&system_path, content)?;
+            atomic_write::write(&system_path, content)?;
             info!(path = %system_path.display(), "Created legacy system.md");
         }
 
@@ -501,22 +515,23 @@ impl MarkdownMemoryStore {
     // New API: Persistent file operations (2-file layout)
     // ========================================================================
 
-    /// Write to a persistent file (user or knowledge). Enforces char limits.
+    /// Write to a persistent file (user, knowledge, or procedures). Enforces char limits.
     ///
     /// # Arguments
-    /// * `target` - Either "user" or "knowledge"
+    /// * `target` - One of "user", "knowledge", or "procedures"
     /// * `content` - Markdown content to write
     ///
     /// # Errors
     /// - Returns error if content exceeds char limit
-    /// - Returns error if target is not "user" or "knowledge"
+    /// - Returns error if target is not recognized
     pub async fn write_file(&self, target: &str, content: &str) -> Result<()> {
         let limit = match target {
             "user" => self.config.user_char_limit,
             "knowledge" => self.config.knowledge_char_limit,
+            "procedures" => self.config.procedures_char_limit,
             _ => {
                 return Err(Error::InvalidInput(format!(
-                    "Invalid target: {}. Must be 'user' or 'knowledge'",
+                    "Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'",
                     target
                 )))
             }
@@ -534,6 +549,7 @@ impl MarkdownMemoryStore {
         let path = match target {
             "user" => self.base_path.join("USER.md"),
             "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            "procedures" => self.base_path.join("PROCEDURES.md"),
             _ => unreachable!(), // Already checked above
         };
 
@@ -542,7 +558,7 @@ impl MarkdownMemoryStore {
         // cannot lose this update. See `write_lock` doc on the struct.
         let _lock = self.write_lock.lock().await;
 
-        fs::write(&path, content)
+        atomic_write::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write {}.md: {}", target, e)))?;
 
         info!(target = %target, chars = content.chars().count(), "Wrote persistent file");
@@ -552,14 +568,15 @@ impl MarkdownMemoryStore {
     /// Read a persistent file. Returns empty string if not found.
     ///
     /// # Arguments
-    /// * `target` - Either "user" or "knowledge"
+    /// * `target` - One of "user", "knowledge", or "procedures"
     pub async fn read_file(&self, target: &str) -> Result<String> {
         let path = match target {
             "user" => self.base_path.join("USER.md"),
             "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            "procedures" => self.base_path.join("PROCEDURES.md"),
             _ => {
                 return Err(Error::InvalidInput(format!(
-                    "Invalid target: {}. Must be 'user' or 'knowledge'",
+                    "Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'",
                     target
                 )))
             }
@@ -580,6 +597,7 @@ impl MarkdownMemoryStore {
         let path = match target {
             "user" => self.base_path.join("USER.md"),
             "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            "procedures" => self.base_path.join("PROCEDURES.md"),
             _ => return String::new(),
         };
         std::fs::read_to_string(&path).unwrap_or_default()
@@ -623,7 +641,7 @@ impl MarkdownMemoryStore {
             )));
         }
 
-        fs::write(&path, new_content)
+        atomic_write::write(&path, new_content)
             .map_err(|e| Error::Storage(format!("Failed to write KNOWLEDGE.md: {}", e)))?;
 
         info!(heading = %heading, "Replaced section in KNOWLEDGE.md");
@@ -652,6 +670,7 @@ impl MarkdownMemoryStore {
         let path = match target {
             "user" => self.base_path.join("USER.md"),
             "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            "procedures" => self.base_path.join("PROCEDURES.md"),
             _ => return Err(Error::InvalidInput(format!("Invalid target: {}", target))),
         };
 
@@ -716,7 +735,7 @@ impl MarkdownMemoryStore {
             return Ok(false);
         }
 
-        fs::write(&path, &new_text)
+        atomic_write::write(&path, &new_text)
             .map_err(|e| Error::Storage(format!("Failed to write {}.md: {}", target, e)))?;
 
         info!(target = %target, marker = %marker, "Replaced marker section");
@@ -737,6 +756,14 @@ impl MarkdownMemoryStore {
         let knowledge_path = self.base_path.join("KNOWLEDGE.md");
         let knowledge_chars = if knowledge_path.exists() {
             fs::read_to_string(&knowledge_path)?.chars().count()
+        } else {
+            0
+        };
+
+        // Read PROCEDURES.md
+        let procedures_path = self.base_path.join("PROCEDURES.md");
+        let procedures_chars = if procedures_path.exists() {
+            fs::read_to_string(&procedures_path)?.chars().count()
         } else {
             0
         };
@@ -803,6 +830,10 @@ impl MarkdownMemoryStore {
                 chars: knowledge_chars,
                 limit: self.config.knowledge_char_limit,
             },
+            procedures: FileStats {
+                chars: procedures_chars,
+                limit: self.config.procedures_char_limit,
+            },
             agents,
             sessions: SessionStats {
                 active_count,
@@ -843,7 +874,7 @@ impl MarkdownMemoryStore {
             .map_err(|e| Error::Storage(format!("Failed to create session directory: {}", e)))?;
 
         let path = session_dir.join(&filename);
-        fs::write(&path, content).map_err(|e| {
+        atomic_write::write(&path, content).map_err(|e| {
             Error::Storage(format!("Failed to write session file {}: {}", filename, e))
         })?;
 
@@ -992,7 +1023,7 @@ impl MarkdownMemoryStore {
         let dir = self.base_path.join("custom");
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{}.md", name));
-        fs::write(&path, content)
+        atomic_write::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write custom file {}: {}", name, e)))?;
         info!(name = %name, chars = char_count, "Wrote custom memory file");
         Ok(())
@@ -1075,7 +1106,7 @@ impl MarkdownMemoryStore {
         let dir = self.base_path.join("agents").join(agent_id).join("custom");
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{}.md", name));
-        fs::write(&path, content).map_err(|e| {
+        atomic_write::write(&path, content).map_err(|e| {
             Error::Storage(format!(
                 "Failed to write agent custom file {}/{}: {}",
                 agent_id, name, e
@@ -1156,7 +1187,7 @@ impl MarkdownMemoryStore {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&path, content)
+        atomic_write::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write {:?}: {}", category, e)))?;
 
         info!(category = ?category, size = content.len(), "Wrote category memory file (deprecated)");
@@ -1323,7 +1354,7 @@ impl MarkdownMemoryStore {
         }
 
         // Write back
-        fs::write(&file_path, content)?;
+        atomic_write::write(&file_path, content)?;
 
         // Invalidate cache
         {
@@ -1387,7 +1418,7 @@ impl MarkdownMemoryStore {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&file_path, content)?;
+        atomic_write::write(&file_path, content)?;
 
         // Invalidate cache
         {
@@ -1529,7 +1560,7 @@ impl MarkdownMemoryStore {
         if file_path.exists() {
             // Write empty file with headers
             let content = self.create_empty_markdown(source);
-            fs::write(&file_path, content)?;
+            atomic_write::write(&file_path, content)?;
         }
 
         // Invalidate cache
@@ -1711,7 +1742,7 @@ impl MarkdownMemoryStore {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&path, content)?;
+        atomic_write::write(&path, content)?;
 
         // Invalidate cache
         let source = match source_type {
@@ -1892,6 +1923,7 @@ mod tests_new_layout {
             storage_path: temp_dir.path().to_str().unwrap().to_string(),
             user_char_limit: 2000,
             knowledge_char_limit: 3000,
+            procedures_char_limit: 3000,
             agent_char_limit: 5000,
             temp_file_ttl_days: 7,
             system_context_interval_secs: 600,

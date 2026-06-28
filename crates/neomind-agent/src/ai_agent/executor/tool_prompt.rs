@@ -128,16 +128,27 @@ pub(crate) fn build_tool_system_prompt(
 
     // Combined guidelines + exit guidance (one section, no redundancy)
     let memory_guidance = "\
-         - Use the `memory` tool to persist important discoveries. Create a knowledge file when you:\n\
-           * Discover stable thresholds or normal ranges (e.g., 'temp normal: 22-28°C')\n\
-           * Identify recurring patterns across executions\n\
-           * Learn device quirks or environment-specific behaviors\n\
-           * Derive alert rules from accumulated observations\n\
-         - Knowledge file format: one topic per file, bullet points, concise. Example:\n\
-           `memory(action='create', target='custom:thresholds', content='# Thresholds\\n- CPU alert: >85%\\n- Temp normal: 22-28°C\\n- Temp alert: >40°C')`\n\
-         - Do NOT store temporary data, raw metrics, or information that changes every execution.\n\
-         - When appending (`add`) to an existing file, append ONLY the new data point — never re-list previous entries or resend the full section. For time-series notes, add just the new timestamp line.\n\
-         - Update existing files with `add`/`replace` rather than creating duplicates.";
+         - Use the `memory` tool to persist important discoveries. **Rule of three**: only write when a pattern has been observed across at least 3 executions (stable, not noise). Single observations stay in your analysis output, not in permanent files.\n\
+         - **Three standard targets first**:\n\
+           * `user` (2000 chars) — operator identity, preferences, environment (e.g., 'Factory floor A', 'Operator: Wang')\n\
+           * `knowledge` (3000 chars) — stable cross-device facts about the deployment (e.g., 'Production line A has 5 sensors')\n\
+           * `procedures` (3000 chars) — step-by-step SOPs, playbooks, how-tos future executions should follow (e.g., '## Coolant Refill\\n1. Stop pump\\n2. Open valve\\n3. Fill to mark')\n\
+           * `session` — scratch notes for the current multi-step task (auto-deleted 7d)\n\
+           * `custom:{name}` (1000+ chars) — ADVANCED escape hatch, persist across ALL future executions; only when content doesn't fit user/knowledge/procedures\n\
+         - **Most content fits one of the 3 standard targets.** Procedural 'how-to' knowledge goes in `procedures`; declarative facts in `knowledge`; user-specific info in `user`. Global custom files are a last-resort escape hatch.\n\
+         - Knowledge/procedures format: bullet points or numbered steps, concise. Example:\n\
+           `memory(action='add', target='procedures', content='## Coolant Refill\\n1. Stop pump\\n2. Open valve\\n3. Fill to mark')`\n\
+         - **When to create a new global custom file** — only `create` when ALL are true:\n\
+           1. Pattern observed across 3+ executions (Rule of Three).\n\
+           2. No existing custom file covers this topic (verify via `memory(action='list')`).\n\
+           3. The content does NOT fit `user`/`knowledge`/`procedures`.\n\
+           4. The content is **reusable** — future executions will genuinely consult it (not a one-off finding).\n\
+           5. The content is **scoped to a specific topic** — general facts go in `user` or `knowledge` instead.\n\
+           Examples of good custom files: stable thresholds/ranges tied to a specific device, recurring event patterns for one resource, environment-specific quirks. Examples of bad ones: today's readings, a single observation, a stream of timestamps, general SOPs (use `procedures`), general facts (use `knowledge`).\n\
+           Otherwise: `add`/`replace` an existing file, or write to `user`/`knowledge`/`procedures`/`session`.\n\
+         - When appending (`add`), append ONLY the new data point — never re-list previous entries or resend the full section. For time-series notes, add just the new timestamp line.\n\
+         - If two custom files overlap significantly, merge them via `replace` + `remove`.\n\
+         - Do NOT store temporary data, raw metrics, or information that changes every execution.";
 
     let action_guidance = "\
          - Send notifications/alerts via the `shell` tool with: `neomind message send --title \"<title>\" --body \"<body>\" --severity <info|warning|error|critical>`. There is NO separate `message` tool — always use `shell`.";

@@ -23,6 +23,7 @@ export interface MemorySystemConfig {
   storage_path: string
   user_char_limit: number
   knowledge_char_limit: number
+  procedures_char_limit: number
   agent_char_limit: number
   temp_file_ttl_days: number
   system_context_interval_secs: number

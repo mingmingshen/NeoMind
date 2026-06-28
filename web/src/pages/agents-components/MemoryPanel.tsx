@@ -17,6 +17,7 @@ import {
   Loader2,
   User,
   BookOpen,
+  ListChecks,
   Clock,
   Save,
   X,
@@ -64,6 +65,7 @@ const defaultConfig: MemorySystemConfig = {
   storage_path: "data/memory",
   user_char_limit: 2000,
   knowledge_char_limit: 3000,
+  procedures_char_limit: 3000,
   agent_char_limit: 1000,
   temp_file_ttl_days: 7,
   system_context_interval_secs: 600,
@@ -96,6 +98,15 @@ const fileConfig = [
     description: "System resources, domain knowledge, and agent experiences",
     color: "bg-success-light text-success border-success-light",
     charLimitKey: "knowledge_char_limit" as const,
+  },
+  {
+    id: "procedures",
+    labelKey: "systemMemory.files.procedures",
+    defaultLabel: "Procedures",
+    icon: ListChecks,
+    description: "SOPs, playbooks, and how-tos learned across sessions",
+    color: "bg-accent-purple-light text-accent-purple border-accent-purple",
+    charLimitKey: "procedures_char_limit" as const,
   },
 ]
 
@@ -375,6 +386,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     if (!fc) return 0
     if (fc.charLimitKey === "user_char_limit") return config.user_char_limit || 0
     if (fc.charLimitKey === "knowledge_char_limit") return config.knowledge_char_limit || 0
+    if (fc.charLimitKey === "procedures_char_limit") return config.procedures_char_limit || 0
     return 0
   }
 
@@ -839,6 +851,25 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       />
                       <p className="text-xs text-muted-foreground">
                         {t("systemMemory.config.knowledgeCharLimitHint", "Max characters for knowledge memory file")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("systemMemory.config.proceduresCharLimit", "Procedures File Limit")}</Label>
+                      <Input
+                        type="number"
+                        min={500}
+                        max={20000}
+                        step={100}
+                        value={config.procedures_char_limit}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            procedures_char_limit: parseInt(e.target.value) || 3000,
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("systemMemory.config.proceduresCharLimitHint", "Max characters for procedures memory file (SOPs, playbooks, how-tos)")}
                       </p>
                     </div>
                     <div className="space-y-2">

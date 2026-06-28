@@ -20,7 +20,7 @@ type KnowledgeFilesHandle = Arc<RwLock<Vec<KnowledgeFileRef>>>;
 /// Tool for managing persistent memory across sessions.
 ///
 /// Supports:
-/// - Persistent: USER.md (user profile), KNOWLEDGE.md (domain knowledge)
+/// - Persistent: USER.md (user profile), KNOWLEDGE.md (domain facts), PROCEDURES.md (SOPs/how-tos)
 /// - Agent-scoped custom files: `custom:{name}` → `agents/{agent_id}/custom/{name}.md`
 /// - Session: `sessions/{id}/notes.md` (multi-step task tracking, 7-day TTL)
 ///
@@ -402,16 +402,23 @@ Actions:
 - create: Create a new custom memory file (requires content; target must be custom:{name})
 
 Targets:
-- user: Persistent user profile and preferences (USER.md)
-- knowledge: System knowledge and domain info (KNOWLEDGE.md)
+- user: Persistent user profile and preferences (USER.md, ~2000 chars)
+- knowledge: System knowledge and domain facts (KNOWLEDGE.md, ~3000 chars)
+- procedures: Procedural memory — SOPs, playbooks, how-tos (PROCEDURES.md, ~3000 chars)
 - session: Session-scoped notes for multi-step task tracking (cleared after 7 days)
-- custom:{name}: Domain-specific custom file (e.g., custom:device-patterns, custom:thresholds). Created with action='create'.
+- custom:{name}: Domain-specific custom file (escape hatch — see below)
+
+PREFER the 3 standard targets (user / knowledge / procedures) wherever the content fits.
+Global `custom:{name}` is an ADVANCED escape hatch — only when content is genuinely scoped to a
+specific topic AND does not fit any of the 3 standard targets. Global custom files persist across
+ALL future conversations, so writing one is a high-bar decision. When in doubt, use the standard targets.
 
 Limits: every target enforces a per-file char limit (custom files ~20000 chars). `content` is REQUIRED for add/replace/create. If a write is rejected for exceeding the limit, the error reports the exact limit — TRUNCATE your content and retry. Keep entries concise (bullet points).
 
 Examples:
 - Add user preference: action='add', target='user', content='Prefers dark mode'
 - Replace in knowledge: action='replace', target='knowledge', old_text='old info', content='new info'
+- Add a procedure: action='add', target='procedures', content='## Reset Camera\n1. Power off\n2. Hold reset 10s'
 - Read session notes: action='read', target='session'
 - Create custom file: action='create', target='custom:device-patterns', content='- temp normal: 22-28°C\n- alert threshold: 40°C'
 - List all targets: action='list'"##
@@ -428,7 +435,7 @@ Examples:
                 },
                 "target": {
                     "type": "string",
-                    "description": "Which memory target to operate on: 'user', 'knowledge', 'session', or 'custom:{name}'"
+                    "description": "Which memory target to operate on: 'user', 'knowledge', 'procedures', 'session', or 'custom:{name}'"
                 },
                 "content": {
                     "type": "string",
@@ -502,6 +509,17 @@ Examples:
                 })?;
 
                 let store = self.store.write().await;
+                // Stricter bar for GLOBAL custom files (chat scope, agent_id=None):
+                // these leak across all agents and accumulate noise. Log a warn so
+                // operators can audit; agent-scoped custom writes are unrestricted.
+                if agent_id.is_none() {
+                    tracing::warn!(
+                        custom = %custom_name,
+                        chars = content.chars().count(),
+                        "Global custom memory file write — chat scope. Prefer user/knowledge/procedures targets \
+                         unless content is genuinely scoped and reusable across all future conversations."
+                    );
+                }
                 self.write_custom(&store, agent_id.as_deref(), custom_name, content)?;
 
                 // Extract description from first line of content
@@ -551,7 +569,7 @@ Examples:
                     )
                 } else {
                     match target {
-                        "user" | "knowledge" => {
+                        "user" | "knowledge" | "procedures" => {
                             let existing = store.read_file(target).await?;
                             let existing_lines: Vec<String> = existing
                                 .lines()
@@ -592,7 +610,7 @@ Examples:
                         }
                         _ => {
                             return Err(ToolError::InvalidArguments(format!(
-                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                "Invalid target '{}'. Must be one of: user, knowledge, procedures, session, custom:{{name}}",
                                 target
                             )))
                         }
@@ -624,7 +642,7 @@ Examples:
                     )
                 } else {
                     match target {
-                        "user" | "knowledge" => {
+                        "user" | "knowledge" | "procedures" => {
                             let existing = store.read_file(target).await?;
                             let new_content = Self::replace_in_content(&existing, old_text, content)?;
                             store.write_file(target, &new_content).await?;
@@ -644,7 +662,7 @@ Examples:
                         }
                         _ => {
                             return Err(ToolError::InvalidArguments(format!(
-                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                "Invalid target '{}'. Must be one of: user, knowledge, procedures, session, custom:{{name}}",
                                 target
                             )))
                         }
@@ -673,7 +691,7 @@ Examples:
                     )
                 } else {
                     match target {
-                        "user" | "knowledge" => {
+                        "user" | "knowledge" | "procedures" => {
                             let existing = store.read_file(target).await?;
                             let new_content = Self::remove_from_content(&existing, old_text)?;
                             store.write_file(target, &new_content).await?;
@@ -693,7 +711,7 @@ Examples:
                         }
                         _ => {
                             return Err(ToolError::InvalidArguments(format!(
-                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                "Invalid target '{}'. Must be one of: user, knowledge, procedures, session, custom:{{name}}",
                                 target
                             )))
                         }
@@ -716,7 +734,7 @@ Examples:
                     })
                 } else {
                     match target {
-                        "user" | "knowledge" => {
+                        "user" | "knowledge" | "procedures" => {
                             let content = store.read_file(target).await?;
                             serde_json::json!({
                                 "target": target,
@@ -735,7 +753,7 @@ Examples:
                         }
                         _ => {
                             return Err(ToolError::InvalidArguments(format!(
-                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                "Invalid target '{}'. Must be one of: user, knowledge, procedures, session, custom:{{name}}",
                                 target
                             )))
                         }
@@ -749,6 +767,7 @@ Examples:
 
                 let user_content = store.read_file("user").await?;
                 let knowledge_content = store.read_file("knowledge").await?;
+                let procedures_content = store.read_file("procedures").await?;
 
                 let mut result = serde_json::json!({
                     "user": {
@@ -758,6 +777,10 @@ Examples:
                     "knowledge": {
                         "chars": knowledge_content.chars().count(),
                         "preview": Self::get_preview(&knowledge_content)
+                    },
+                    "procedures": {
+                        "chars": procedures_content.chars().count(),
+                        "preview": Self::get_preview(&procedures_content)
                     }
                 });
 

@@ -19,6 +19,9 @@ pub struct MemoryConfig {
     /// Max chars for KNOWLEDGE.md
     #[serde(default = "default_knowledge_limit")]
     pub knowledge_char_limit: usize,
+    /// Max chars for PROCEDURES.md (SOPs / playbooks / how-tos)
+    #[serde(default = "default_procedures_limit")]
+    pub procedures_char_limit: usize,
     /// Max chars per agent/custom memory file
     #[serde(default = "default_agent_limit")]
     pub agent_char_limit: usize,
@@ -48,6 +51,9 @@ fn default_user_limit() -> usize {
 fn default_knowledge_limit() -> usize {
     3000
 }
+fn default_procedures_limit() -> usize {
+    3000
+}
 fn default_agent_limit() -> usize {
     20000
 }
@@ -68,6 +74,7 @@ impl Default for MemoryConfig {
             storage_path: default_storage_path(),
             user_char_limit: default_user_limit(),
             knowledge_char_limit: default_knowledge_limit(),
+            procedures_char_limit: default_procedures_limit(),
             agent_char_limit: default_agent_limit(),
             temp_file_ttl_days: default_ttl(),
             system_context_interval_secs: default_context_interval(),
@@ -96,7 +103,7 @@ impl MemoryConfig {
     /// Save configuration to file
     pub fn save(&self) -> std::io::Result<()> {
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(Self::CONFIG_FILE, content)
+        crate::atomic_write::write(std::path::Path::new(Self::CONFIG_FILE), content)
     }
 }
 
@@ -110,6 +117,7 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.user_char_limit, 2000);
         assert_eq!(config.knowledge_char_limit, 3000);
+        assert_eq!(config.procedures_char_limit, 3000);
         assert_eq!(config.agent_char_limit, 20000);
         assert_eq!(config.temp_file_ttl_days, 7);
         assert_eq!(config.system_context_interval_secs, 600);

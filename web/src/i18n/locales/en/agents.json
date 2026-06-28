@@ -590,11 +590,13 @@
     "title": "System Memory",
     "files": {
       "user": "User Profile",
-      "knowledge": "System Knowledge"
+      "knowledge": "System Knowledge",
+      "procedures": "Procedures"
     },
     "fileDescriptions": {
       "user": "User preferences, habits and personal settings",
-      "knowledge": "System resources, domain knowledge, and agent experiences"
+      "knowledge": "System resources, domain knowledge, and agent experiences",
+      "procedures": "SOPs, playbooks, and how-tos learned across sessions"
     },
     "headers": {
       "file": "Memory File",
@@ -613,6 +615,8 @@
       "userCharLimitHint": "Max characters for user memory file",
       "knowledgeCharLimit": "Knowledge File Limit",
       "knowledgeCharLimitHint": "Max characters for knowledge memory file",
+      "proceduresCharLimit": "Procedures File Limit",
+      "proceduresCharLimitHint": "Max characters for procedures memory file (SOPs, playbooks, how-tos)",
       "agentCharLimit": "Agent Memory Limit",
       "agentCharLimitHint": "Max characters per agent memory",
       "tempFileTtl": "Temp File TTL (Days)",

@@ -6,17 +6,18 @@
 //! ## Hard-loaded (always in system prompt)
 //! - `USER.md` (max 2000 chars) — user profile
 //! - `KNOWLEDGE.md` (max 3000 chars) — system knowledge
+//! - `PROCEDURES.md` (max 3000 chars) — SOPs, playbooks, how-tos
 //!
 //! ## On-demand (AI reads via memory tool when needed)
 //! - `agents/{agent_id}.md` — agent experiences
 //! - `custom/{name}.md` — domain-specific files
 //!
-//! Total budget: 5000 chars (user + knowledge)
+//! Total budget: 8000 chars (user + knowledge + procedures)
 
 use neomind_storage::MarkdownMemoryStore;
 
-/// Hard character budget for memory context in prompts (user + knowledge only).
-const CHAR_BUDGET: usize = 5000;
+/// Hard character budget for memory context in prompts (user + knowledge + procedures).
+const CHAR_BUDGET: usize = 8000;
 
 /// Frozen memory snapshot loaded once per session.
 #[derive(Debug, Clone)]
@@ -28,20 +29,23 @@ pub struct MemorySnapshot {
 impl MemorySnapshot {
     /// Load a snapshot from the markdown memory store.
     ///
-    /// Only hard-loads USER.md and KNOWLEDGE.md.
+    /// Hard-loads USER.md, KNOWLEDGE.md, and PROCEDURES.md.
     /// Agent summaries and custom files are available on-demand via the memory tool.
     pub fn load(store: &MarkdownMemoryStore) -> Self {
         // Read persistent files using sync I/O (safe on any runtime flavor;
         // block_in_place panics on current_thread/single-threaded runtimes)
         let user = store.read_file_sync("user");
         let knowledge = store.read_file_sync("knowledge");
+        let procedures = store.read_file_sync("procedures");
 
-        let combined = format!("## User\n{user}\n\n## Knowledge\n{knowledge}");
+        let combined = format!(
+            "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Procedures\n{procedures}"
+        );
 
         let content = if combined.chars().count() <= CHAR_BUDGET {
             combined
         } else {
-            // Truncate knowledge to fit, but if even user alone exceeds budget,
+            // Truncate knowledge/procedures to fit, but if even user alone exceeds budget,
             // truncate user as a last resort
             let truncated = truncate_with_priority(&combined, CHAR_BUDGET);
             if truncated.chars().count() > CHAR_BUDGET {
@@ -96,11 +100,13 @@ impl MemorySnapshot {
 /// Priority order:
 /// 1. User section (never truncated)
 /// 2. Knowledge section (truncated only if User exceeds budget)
+/// 3. Procedures section (truncated after Knowledge)
 fn truncate_with_priority(content: &str, max_chars: usize) -> String {
     let sections = parse_sections(content);
 
     let user_len = sections.get("User").map_or(0, |s| s.chars().count());
     let knowledge_len = sections.get("Knowledge").map_or(0, |s| s.chars().count());
+    let procedures_len = sections.get("Procedures").map_or(0, |s| s.chars().count());
 
     let mut result = String::new();
     let mut remaining = max_chars;
@@ -115,12 +121,29 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
     // Add Knowledge section (truncate if needed)
     if remaining > 0 {
         if let Some(knowledge) = sections.get("Knowledge") {
+            let alloc = remaining.min(knowledge_len);
             if knowledge_len <= remaining {
                 result.push_str("\n\n## Knowledge\n");
                 result.push_str(knowledge);
+                remaining = remaining.saturating_sub("\n\n## Knowledge\n".chars().count() + knowledge_len);
             } else {
-                let truncated = truncate_chars(knowledge, remaining.saturating_sub(20));
+                let truncated = truncate_chars(knowledge, alloc.saturating_sub(20));
                 result.push_str("\n\n## Knowledge\n");
+                result.push_str(&truncated);
+                remaining = 0;
+            }
+        }
+    }
+
+    // Add Procedures section with whatever budget remains
+    if remaining > 0 {
+        if let Some(procedures) = sections.get("Procedures") {
+            if procedures_len <= remaining {
+                result.push_str("\n\n## Procedures\n");
+                result.push_str(procedures);
+            } else {
+                let truncated = truncate_chars(procedures, remaining.saturating_sub(20));
+                result.push_str("\n\n## Procedures\n");
                 result.push_str(&truncated);
             }
         }
@@ -188,8 +211,8 @@ mod tests {
     }
 
     #[test]
-    fn test_char_budget_is_5000() {
-        assert_eq!(CHAR_BUDGET, 5000);
+    fn test_char_budget_is_8000() {
+        assert_eq!(CHAR_BUDGET, 8000);
     }
 
     #[tokio::test(flavor = "multi_thread")]

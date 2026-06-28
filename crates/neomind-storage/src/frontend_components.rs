@@ -189,8 +189,8 @@ impl FrontendComponentStore {
         fs::create_dir_all(&dir)?;
 
         let manifest_json = serde_json::to_string_pretty(manifest)?;
-        fs::write(dir.join(MANIFEST_FILE), manifest_json)?;
-        fs::write(dir.join(BUNDLE_FILE), bundle_bytes)?;
+        crate::atomic_write::write(&dir.join(MANIFEST_FILE), manifest_json)?;
+        crate::atomic_write::write(&dir.join(BUNDLE_FILE), bundle_bytes)?;
 
         Ok(())
     }

@@ -590,11 +590,13 @@
     "title": "系统记忆",
     "files": {
       "user": "用户画像",
-      "knowledge": "系统知识"
+      "knowledge": "系统知识",
+      "procedures": "操作流程"
     },
     "fileDescriptions": {
       "user": "用户偏好、习惯和个人设置",
-      "knowledge": "系统资源、领域知识和智能体经验"
+      "knowledge": "系统资源、领域知识和智能体经验",
+      "procedures": "跨会话沉淀的 SOP、操作手册和how-to"
     },
     "headers": {
       "file": "记忆文件",
@@ -613,6 +615,8 @@
       "userCharLimitHint": "用户记忆文件的最大字符数",
       "knowledgeCharLimit": "知识文件限制",
       "knowledgeCharLimitHint": "知识记忆文件的最大字符数",
+      "proceduresCharLimit": "操作流程文件限制",
+      "proceduresCharLimitHint": "操作流程记忆文件的最大字符数（SOP、操作手册、how-to）",
       "agentCharLimit": "智能体记忆限制",
       "agentCharLimitHint": "每个智能体记忆的最大字符数",
       "tempFileTtl": "临时文件保留天数",

@@ -210,6 +210,13 @@ pub async fn get_stats(State(state): State<ServerState>) -> Response {
                     "modified_at": 0,
                 }),
             );
+            files.insert(
+                "procedures".to_string(),
+                serde_json::json!({
+                    "chars": mem_stats.procedures.chars,
+                    "modified_at": 0,
+                }),
+            );
 
             let custom_files: Vec<serde_json::Value> = mem_stats
                 .custom_files
@@ -351,6 +358,20 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
             tracing::warn!(error = %e, "Failed to write evicted knowledge content");
         } else {
             total_evicted += knowledge_result.lines_removed;
+        }
+    }
+
+    // Evict procedures file to limit
+    let procedures_content = store.read_file("procedures").await.unwrap_or_default();
+    let procedures_result = evict_to_limit(&procedures_content, config.procedures_char_limit);
+    if procedures_result.evicted {
+        if let Err(e) = store
+            .write_file("procedures", &procedures_result.content)
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to write evicted procedures content");
+        } else {
+            total_evicted += procedures_result.lines_removed;
         }
     }
 
@@ -496,15 +517,15 @@ pub async fn export_memory(State(state): State<ServerState>) -> Response {
     export_all(State(state)).await
 }
 
-/// GET /api/memory/file/:target - Get memory file content (user or knowledge)
+/// GET /api/memory/file/:target - Get memory file content (user, knowledge, or procedures)
 pub async fn get_memory_file(
     State(state): State<ServerState>,
     Path(target): Path<String>,
 ) -> Response {
-    if target != "user" && target != "knowledge" {
+    if !matches!(target.as_str(), "user" | "knowledge" | "procedures") {
         return error_response(
             StatusCode::BAD_REQUEST,
-            format!("Invalid target: {}. Must be 'user' or 'knowledge'", target),
+            format!("Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'", target),
         );
     }
 
@@ -531,16 +552,16 @@ pub async fn get_memory_file(
     }
 }
 
-/// PUT /api/memory/file/:target - Update memory file content (user or knowledge)
+/// PUT /api/memory/file/:target - Update memory file content (user, knowledge, or procedures)
 pub async fn update_memory_file(
     State(state): State<ServerState>,
     Path(target): Path<String>,
     Json(req): Json<UpdateMemoryRequest>,
 ) -> Response {
-    if target != "user" && target != "knowledge" {
+    if !matches!(target.as_str(), "user" | "knowledge" | "procedures") {
         return error_response(
             StatusCode::BAD_REQUEST,
-            format!("Invalid target: {}. Must be 'user' or 'knowledge'", target),
+            format!("Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'", target),
         );
     }
 
