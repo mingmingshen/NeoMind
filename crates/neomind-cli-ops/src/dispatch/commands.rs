@@ -1566,7 +1566,7 @@ pub enum MessageCommand {
     ///
     /// Workflow: `message list` → `message get <ID>` → `message read <ID>` (acknowledge).
     ///
-    /// Example: `neomind message list --severity error --limit 50`
+    /// Example: `neomind message list --severity critical --limit 50`
     List {
         /// Limit number of results.
         #[arg(short, long)]
@@ -1595,7 +1595,7 @@ pub enum MessageCommand {
     /// Send a new message.
     ///
     /// Creates a system message with severity level. Supports markdown content.
-    /// Severity levels: info, warning, error, critical.
+    /// Severity levels: info, warning, critical, emergency.
     ///
     /// Workflow: `message send --title "Alert" --body "Check sensor #3" --severity warning`
     /// Messages appear in the UI notification center and can trigger rules.

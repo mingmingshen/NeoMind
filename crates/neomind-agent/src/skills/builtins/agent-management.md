@@ -113,6 +113,22 @@ neomind agent create \
   --llm-backend <multimodal_backend_id>
 ```
 
+### Vision Tool (Image Analysis)
+
+Agents have access to a `vision` tool that can analyze images:
+- **Data URLs**: `data:image/jpeg;base64,...` (preferred for inline images)
+- **HTTP URLs**: any publicly accessible image URL (10s fetch timeout)
+
+The tool uses the agent's bound LLM backend — the backend MUST have `capabilities.multimodal: true`. The tool returns structured text descriptions suitable for downstream reasoning, alerting, or reporting.
+
+Typical use cases:
+- Analyze device camera snapshots (via webhook/metric attachment)
+- Inspect uploaded screenshots or diagnostic photos
+- Verify visual state changes detected by sensors
+
+For backend selection and multimodal capability overrides, see the **llm-management** skill.
+
+
 ## Command Reference
 
 ### Create Agent
