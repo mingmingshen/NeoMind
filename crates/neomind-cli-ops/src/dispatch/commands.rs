@@ -2096,9 +2096,9 @@ pub enum ConnectorCommand {
         /// Connector port.
         #[arg(long)]
         port: Option<u16>,
-        /// Enable TLS.
+        /// Enable/disable TLS (use --tls=true or --tls=false).
         #[arg(long)]
-        tls: bool,
+        tls: Option<bool>,
         /// Username for authentication.
         #[arg(long)]
         username: Option<String>,
@@ -2108,9 +2108,9 @@ pub enum ConnectorCommand {
         /// Comma-separated topic subscriptions.
         #[arg(long)]
         topics: Option<String>,
-        /// Disable the connector (stop connection).
+        /// Disable the connector (use --disable=true or --disable=false). Prefer `connector enable/disable` subcommands.
         #[arg(long)]
-        disable: bool,
+        disable: Option<bool>,
         /// Output as JSON.
         #[arg(long)]
         json: bool,
@@ -2278,6 +2278,34 @@ mod unify_enable_disable_tests {
         match connector_cmd {
             super::ConnectorCommand::Disable { id } => assert_eq!(id, "conn-001"),
             other => panic!("expected Connector::Disable, got {other:?}"),
+        }
+    }
+
+    /// P1.1: connector update --tls=false and --disable=true must work
+    /// (previously plain `bool` rejected value form, only accepted flag presence).
+    #[test]
+    fn connector_update_bool_flags_accept_false_value() {
+        let cmd = parse("connector update conn-001 --tls=false");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Update { tls, id, .. } => {
+                assert_eq!(id, "conn-001");
+                assert_eq!(tls, Some(false));
+            }
+            other => panic!("expected Connector::Update, got {other:?}"),
+        }
+        let cmd = parse("connector update conn-001 --disable=true");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Update { disable, id, .. } => {
+                assert_eq!(id, "conn-001");
+                assert_eq!(disable, Some(true));
+            }
+            other => panic!("expected Connector::Update, got {other:?}"),
         }
     }
 }

@@ -1145,8 +1145,8 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
             } else {
                 base_format
             };
-            let enabled = if disable { Some(false) } else { None };
-            let tls_val = if tls { Some(true) } else { None };
+            let enabled = disable.map(|d| !d);
+            let tls_val = tls;
             let resp = crate::connector::update_connector(
                 &client,
                 &id,

@@ -64,7 +64,7 @@ neomind connector update <ID> [--host <H>] [--port <P>]  # Update connector
 neomind connector delete <ID>                              # Delete connector
 ```
 
-Update flags: `--name`, `--host`, `--port`, `--tls`, `--username`, `--password`, `--topics`, `--disable`
+Update flags: `--name`, `--host`, `--port`, `--tls=true|false`, `--username`, `--password`, `--topics`, `--disable=true|false`
 
 ### Enable / Disable (unified form, preferred over `update --disable`)
 
