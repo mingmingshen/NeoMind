@@ -29,7 +29,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use parking_lot::RwLock;
 
@@ -438,6 +438,13 @@ pub struct MarkdownMemoryStore {
     /// only across a single file operation (microseconds for typical
     /// memory-file sizes), so it has no measurable impact on throughput.
     write_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes sync writers to custom memory files (`custom/{name}.md`,
+    /// `agents/{id}/custom/{name}.md`). The custom-file write path is sync
+    /// (called from sync tool/init paths), so it cannot share the async
+    /// `write_lock`. Without this, concurrent writes to the same custom
+    /// file from multiple chat sessions would lose updates — `atomic_write`
+    /// prevents corruption but not lost-write races.
+    custom_write_lock: Arc<Mutex<()>>,
 }
 
 impl MarkdownMemoryStore {
@@ -448,6 +455,7 @@ impl MarkdownMemoryStore {
             config: MemoryConfig::default(),
             cache: Arc::new(RwLock::new(HashMap::new())),
             write_lock: Arc::new(tokio::sync::Mutex::new(())),
+            custom_write_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -458,6 +466,7 @@ impl MarkdownMemoryStore {
             config,
             cache: Arc::new(RwLock::new(HashMap::new())),
             write_lock: Arc::new(tokio::sync::Mutex::new(())),
+            custom_write_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -1038,6 +1047,10 @@ impl MarkdownMemoryStore {
         let dir = self.base_path.join("custom");
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{}.md", name));
+        // Serialize against concurrent writers to the same custom file.
+        let _lock = self.custom_write_lock.lock().map_err(|e| {
+            Error::Storage(format!("Custom write lock poisoned: {}", e))
+        })?;
         atomic_write::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write custom file {}: {}", name, e)))?;
         info!(name = %name, chars = char_count, "Wrote custom memory file");
@@ -1121,6 +1134,10 @@ impl MarkdownMemoryStore {
         let dir = self.base_path.join("agents").join(agent_id).join("custom");
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{}.md", name));
+        // Serialize against concurrent writers to the same agent custom file.
+        let _lock = self.custom_write_lock.lock().map_err(|e| {
+            Error::Storage(format!("Custom write lock poisoned: {}", e))
+        })?;
         atomic_write::write(&path, content).map_err(|e| {
             Error::Storage(format!(
                 "Failed to write agent custom file {}/{}: {}",
