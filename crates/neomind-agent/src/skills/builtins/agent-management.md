@@ -27,10 +27,10 @@ neomind agent create --name 'Monitor' --prompt 'Check battery levels'
 # → Returns agent ID (e.g., agent-abc123), already active and running
 
 # To pause later:
-neomind agent control agent-abc123 --status paused
+neomind agent control agent-abc123 paused
 
 # To resume:
-neomind agent control agent-abc123 --status active
+neomind agent control agent-abc123 active
 ```
 
 ## Schedule Types
@@ -136,14 +136,14 @@ neomind agent create \
 ### Control Agent
 
 ```bash
-neomind agent control <ID> active    # Start
+neomind agent control <ID> active    # Start (positional status)
 neomind agent control <ID> paused    # Stop
 ```
 
 ### Invoke (One-shot Execution)
 
 ```bash
-neomind agent invoke <ID> --input 'Analyze current temperature sensors'
+neomind agent invoke <ID> 'Analyze current temperature sensors'    # Positional input
 ```
 
 ### Get Details & Status
@@ -173,8 +173,8 @@ neomind agent memory <ID>                     # Execution journal + knowledge fi
 ### Send Message
 
 ```bash
-neomind agent send-message <ID> --body 'Focus on building A sensors'
-neomind agent send-message <ID> --body 'Directive' --type instruction
+neomind agent send-message <ID> 'Focus on building A sensors'    # Positional message
+neomind agent send-message <ID> 'Directive' --message-type instruction
 ```
 
 ## Workflows
@@ -212,7 +212,7 @@ neomind agent create \
   --prompt 'Analyze the provided input and generate a detailed report.'
 
 # Run whenever needed
-neomind agent invoke <AGENT_ID> --input 'Analyze temperature trends for sensor-001'
+neomind agent invoke <AGENT_ID> 'Analyze temperature trends for sensor-001'
 ```
 
 ### Event-Driven Agent (Triggered by Device Data)
@@ -281,11 +281,11 @@ neomind agent update <ID> --llm-backend <available_backend>
 neomind agent memory <ID>
 
 # 6. If agent is stuck in a loop, pause and review
-neomind agent control <ID> --status paused
+neomind agent control <ID> paused
 neomind agent conversation <ID> --limit 50
 
 # 7. After fixing, re-activate
-neomind agent control <ID> --status active
+neomind agent control <ID> active
 ```
 
 ### Full Lifecycle
@@ -294,7 +294,7 @@ neomind agent control <ID> --status active
 neomind agent create --name 'Health Check' --prompt 'Check all devices' --every 10m
 # ... agent starts immediately, check results ...
 neomind agent latest-execution <ID>
-neomind agent control <ID> --status paused    # Stop when done
+neomind agent control <ID> paused    # Stop when done
 neomind agent delete <ID>                      # Remove when no longer needed
 ```
 
@@ -304,7 +304,7 @@ neomind agent delete <ID>                      # Remove when no longer needed
 |-------|-------|----------|
 | "Agent not found" | Wrong ID | Run `neomind agent list` for valid IDs |
 | Create fails | Missing `--name` or `--prompt` | Both are required flags |
-| Agent not running on schedule | Status is `paused` or wrong schedule config | Run `agent get <ID>` to check status and schedule, then `agent control <ID> --status active` if paused |
+| Agent not running on schedule | Status is `paused` or wrong schedule config | Run `agent get <ID>` to check status and schedule, then `agent control <ID> active` if paused |
 | Control fails | Invalid status value | Only `active` and `paused` are valid |
 | Focused mode error | No resources bound | Add `--device-ids` or `--resources` |
 | Execution shows error | LLM or tool failure | Check `agent conversation <ID>` for details |

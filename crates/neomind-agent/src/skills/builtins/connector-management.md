@@ -38,7 +38,7 @@ neomind connector create --name <NAME> --host <HOST> [--port <PORT>] [options]
 | `--name` | Yes | — | Connector display name |
 | `--host` | Yes | — | Broker hostname or IP |
 | `--port` | No | 1883 | Broker port |
-| `--type` / `--connector-type` | No | mqtt | Connector type |
+| `--connector-type` | No | mqtt | Connector type (mqtt, webhook, http) |
 | `--tls` | No | false | Enable TLS (flag, no value) |
 | `--username` | No | — | Auth username |
 | `--password` | No | — | Auth password |
