@@ -214,7 +214,6 @@ impl From<ErrorResponse> for ApiError {
 /// - 3xxx: Rule errors
 /// - 4xxx: Alert errors
 /// - 5xxx: Authentication/Authorization errors
-/// - 6xxx: Workflow errors
 /// - 7xxx: LLM/Agent errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {

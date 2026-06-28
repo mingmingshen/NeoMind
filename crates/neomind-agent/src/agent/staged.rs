@@ -13,8 +13,6 @@ pub enum IntentCategory {
     Device,
     /// Rule-related queries (list, create, history)
     Rule,
-    /// Workflow-related queries (list, trigger, status)
-    Workflow,
     /// Data queries (time series, metrics)
     Data,
     /// Alert-related queries (list, acknowledge, status)
@@ -33,7 +31,6 @@ impl IntentCategory {
         match self {
             IntentCategory::Device => "设备管理",
             IntentCategory::Rule => "自动化规则",
-            IntentCategory::Workflow => "工作流",
             IntentCategory::Data => "数据查询",
             IntentCategory::Alert => "告警管理",
             IntentCategory::System => "系统管理",
@@ -100,17 +97,6 @@ impl IntentCategory {
                 "conversion",
                 "parse data",
                 "process data",
-            ],
-            IntentCategory::Workflow => &[
-                "工作流",
-                "workflow",
-                "流程",
-                "场景",
-                "scenario",
-                "list_workflows",
-                "trigger_workflow",
-                "执行",
-                "execute",
             ],
             IntentCategory::Data => &[
                 "数据",
@@ -226,7 +212,6 @@ impl IntentCategory {
         vec![
             IntentCategory::Device,
             IntentCategory::Rule,
-            IntentCategory::Workflow,
             IntentCategory::Data,
             IntentCategory::Alert,
             IntentCategory::System,
@@ -357,14 +342,6 @@ mod tests {
     }
 
     #[test]
-    fn test_intent_classification_workflow() {
-        let classifier = IntentClassifier::default();
-
-        let result = classifier.classify("执行工作流");
-        assert_eq!(result.category, IntentCategory::Workflow);
-    }
-
-    #[test]
     fn test_intent_classification_general() {
         let classifier = IntentClassifier::default();
 
@@ -384,7 +361,6 @@ mod tests {
     fn test_intent_keywords() {
         assert!(IntentCategory::Device.keywords().contains(&"设备"));
         assert!(IntentCategory::Rule.keywords().contains(&"规则"));
-        assert!(IntentCategory::Workflow.keywords().contains(&"工作流"));
         assert!(IntentCategory::Data.keywords().contains(&"数据"));
     }
 }

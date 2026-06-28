@@ -70,10 +70,6 @@ pub enum Error {
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
-    /// Workflow-related errors.
-    #[error("Workflow error: {0}")]
-    Workflow(String),
-
     /// Timeout errors.
     #[error("Timeout: {0}")]
     Timeout(String),
@@ -224,16 +220,6 @@ impl Error {
 }
 
 // Additional convenience macros
-#[macro_export]
-macro_rules! workflow_err {
-    ($msg:expr) => {
-        $crate::error::Error::Workflow($msg.into())
-    };
-    ($fmt:expr, $($arg:tt)*) => {
-        $crate::error::Error::Workflow(format!($fmt, $($arg)*))
-    };
-}
-
 #[macro_export]
 macro_rules! validation_err {
     ($msg:expr) => {

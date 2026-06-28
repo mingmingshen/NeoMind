@@ -17,8 +17,6 @@ pub enum ConversationTopic {
     DataQuery,
     /// 规则创建
     RuleCreation,
-    /// 工作流设计
-    WorkflowDesign,
     /// 通用对话
     General,
 }
@@ -45,8 +43,6 @@ pub enum EntityType {
     Location,
     /// 规则
     Rule,
-    /// 工作流
-    Workflow,
     /// 传感器/指标
     Sensor,
 }
@@ -338,8 +334,6 @@ impl ConversationContext {
             "rule",
             "automation",
         ];
-        // 工作流关键词
-        let workflow_keywords = ["工作流", "流程", "workflow"];
 
         let control_count = control_keywords
             .iter()
@@ -347,16 +341,10 @@ impl ConversationContext {
             .count();
         let query_count = query_keywords.iter().filter(|k| lower.contains(*k)).count();
         let rule_count = rule_keywords.iter().filter(|k| lower.contains(*k)).count();
-        let workflow_count = workflow_keywords
-            .iter()
-            .filter(|k| lower.contains(*k))
-            .count();
 
         // 根据关键词数量判断主题
         if rule_count > 0 {
             ConversationTopic::RuleCreation
-        } else if workflow_count > 0 {
-            ConversationTopic::WorkflowDesign
         } else if control_count > query_count {
             ConversationTopic::DeviceControl
         } else if query_count > 0 {

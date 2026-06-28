@@ -65,7 +65,7 @@ pub enum AgentEvent {
     IntermediateEnd,
     /// Intent classification result
     Intent {
-        /// Intent category (e.g., "Device", "Rule", "Workflow")
+        /// Intent category (e.g., "Device", "Rule", "Data")
         category: String,
         /// Display name (e.g., "设备管理", "自动化规则")
         display_name: String,

@@ -154,11 +154,6 @@ pub async fn process_stream_events_with_safeguards(
             ("获取规则列表", "Execution"),
             ("返回规则信息", "Response"),
         ],
-        IntentCategory::Workflow => vec![
-            ("识别工作流查询意图", "Intent"),
-            ("获取工作流列表", "Execution"),
-            ("返回工作流信息", "Response"),
-        ],
         IntentCategory::Data => vec![
             ("识别数据查询意图", "Intent"),
             ("查询设备数据", "Execution"),

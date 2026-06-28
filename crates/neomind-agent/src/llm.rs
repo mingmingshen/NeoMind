@@ -902,7 +902,6 @@ impl LlmInterface {
                 crate::agent::staged::IntentCategory::Device => "device",
                 crate::agent::staged::IntentCategory::Data => "data",
                 crate::agent::staged::IntentCategory::Rule => "rule",
-                crate::agent::staged::IntentCategory::Workflow => "workflow",
                 _ => "general",
             };
 

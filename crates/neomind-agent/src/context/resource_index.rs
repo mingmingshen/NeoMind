@@ -92,8 +92,6 @@ pub enum ResourceData {
     DeviceType(DeviceTypeResourceData),
     /// Alert channel resource
     AlertChannel(AlertChannelResourceData),
-    /// Workflow resource
-    Workflow(WorkflowResourceData),
     /// Generic resource
     Generic(HashMap<String, serde_json::Value>),
 }
@@ -134,17 +132,6 @@ pub struct AlertChannelResourceData {
     /// Supported severity levels
     pub supported_severities: Vec<String>,
     /// Whether the channel is enabled
-    pub enabled: bool,
-}
-
-/// Workflow resource data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowResourceData {
-    /// Workflow category (automation, scene, schedule, etc.)
-    pub category: String,
-    /// Trigger types
-    pub triggers: Vec<String>,
-    /// Whether the workflow is enabled
     pub enabled: bool,
 }
 
@@ -514,11 +501,6 @@ impl ResourceIndex {
             .any(|t| t.contains("通道") || t.contains("channel") || t.contains("告警"))
         {
             Some("channel".to_string())
-        } else if terms
-            .iter()
-            .any(|t| t.contains("工作流") || t.contains("workflow"))
-        {
-            Some("workflow".to_string())
         } else {
             None
         };
@@ -700,7 +682,6 @@ impl ResourceDataHelper for ResourceData {
             ResourceData::Device(d) => d.location.clone(),
             ResourceData::DeviceType(_) => None,
             ResourceData::AlertChannel(_) => None,
-            ResourceData::Workflow(_) => None,
             ResourceData::Generic(_) => None,
         }
     }
@@ -714,7 +695,6 @@ impl ResourceDataHelper for ResourceData {
                 .map(|c| c.name.clone())
                 .collect(),
             ResourceData::AlertChannel(_) => vec![],
-            ResourceData::Workflow(_) => vec![],
             ResourceData::Generic(_) => vec![],
         }
     }

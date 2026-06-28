@@ -26,9 +26,6 @@ pub struct ConfigExport {
     /// Alert configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alerts: Option<AlertsExport>,
-    /// Workflow configurations
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflows: Option<WorkflowsExport>,
 }
 
 /// LLM settings for export.
@@ -96,24 +93,6 @@ pub struct AlertRuleExport {
     pub notification_channels: Option<Vec<String>>,
 }
 
-/// Workflow configurations for export.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowsExport {
-    pub workflows: Vec<WorkflowConfigExport>,
-}
-
-/// Workflow configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowConfigExport {
-    pub id: String,
-    pub name: String,
-    pub enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<serde_json::Value>,
-}
-
 /// Import options.
 #[derive(Debug, Deserialize)]
 pub struct ConfigImportOptions {
@@ -136,8 +115,6 @@ pub struct ImportSections {
     pub rules: bool,
     #[serde(default)]
     pub alerts: bool,
-    #[serde(default)]
-    pub workflows: bool,
 }
 
 /// Import result.
@@ -164,7 +141,6 @@ impl Default for ConfigImportOptions {
                 devices: true,
                 rules: true,
                 alerts: false,
-                workflows: false,
             },
             overwrite: false,
         }
@@ -184,7 +160,6 @@ pub async fn export_config_handler(
         devices: None,
         rules: None,
         alerts: None,
-        workflows: None,
     };
 
     // Export LLM settings
@@ -250,7 +225,6 @@ pub async fn import_config_handler(
             devices: None,
             rules: None,
             alerts: None,
-            workflows: None,
         },
         skipped: vec![],
         errors: vec![],
@@ -450,7 +424,6 @@ mod tests {
             devices: None,
             rules: None,
             alerts: None,
-            workflows: None,
         };
 
         let json = serde_json::to_string(&export).unwrap();
@@ -477,8 +450,7 @@ mod tests {
                     "llm_settings": true,
                     "devices": false,
                     "rules": false,
-                    "alerts": false,
-                    "workflows": false
+                    "alerts": false
                 },
                 "overwrite": false
             }

@@ -139,11 +139,7 @@ impl ToolNameMapper {
         self.register_alias("create_alert", "message");
         self.register_alias("acknowledge_alert", "message");
 
-        // ===== Workflow / scenario aliases → rule domain =====
-        self.register_alias("list_workflows", "rule");
-        self.register_alias("create_workflow", "rule");
-        self.register_alias("trigger_workflow", "rule");
-
+        // ===== Scenario aliases → rule domain =====
         self.register_alias("list_scenarios", "rule"); // 场景暂用rule
         self.register_alias("create_scenario", "rule");
         self.register_alias("execute_scenario", "rule");

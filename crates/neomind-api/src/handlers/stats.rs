@@ -64,17 +64,6 @@ pub struct AlertStats {
     pub alerts_today: usize,
 }
 
-/// Workflow statistics (placeholder - workflow module removed).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowStats {
-    /// Total workflows
-    pub total_workflows: usize,
-    /// Active workflows
-    pub active_workflows: usize,
-    /// Executions today
-    pub executions_today: usize,
-}
-
 /// GPU information.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GpuInfo {

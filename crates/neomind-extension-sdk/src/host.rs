@@ -928,6 +928,8 @@ pub struct EventFilter {
     pub extension_id: Option<String>,
     pub agent_id: Option<String>,
     pub rule_id: Option<String>,
+    /// Deprecated: workflow engine was removed; field is retained for serde compatibility.
+    #[deprecated(note = "NeoMind no longer ships a workflow engine; this field is unused.", since = "0.8.26")]
     pub workflow_id: Option<String>,
     pub expression: Option<String>,
 }
