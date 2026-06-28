@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 
 use neomind_core::tools::ToolCategory;
 
@@ -101,13 +102,11 @@ impl ShellTool {
     /// server's own key, not a credential file that may have been written by
     /// `neomind login` against a different server instance.
     fn resolve_api_key() -> Option<String> {
-        std::env::var("NEOMIND_API_KEY")
-            .ok()
-            .or_else(|| {
-                neomind_cli_ops::auto_auth::read_default_api_key_from(
-                    &neomind_cli_ops::auto_auth::resolve_data_dir(),
-                )
-            })
+        std::env::var("NEOMIND_API_KEY").ok().or_else(|| {
+            neomind_cli_ops::auto_auth::read_default_api_key_from(
+                &neomind_cli_ops::auto_auth::resolve_data_dir(),
+            )
+        })
     }
 
     /// Attempt in-process dispatch for `neomind` data commands.
@@ -120,7 +119,11 @@ impl ShellTool {
     ///
     /// Non-`neomind` commands and malformed input (unbalanced quotes) also
     /// yield `None` so they hit the subprocess path unchanged.
-    async fn try_in_process_dispatch(&self, command: &str, timeout: Duration) -> Option<CommandOutput> {
+    async fn try_in_process_dispatch(
+        &self,
+        command: &str,
+        timeout: Duration,
+    ) -> Option<CommandOutput> {
         let trimmed = command.trim();
         // Only intercept commands that start with `neomind ` (or are exactly
         // `neomind`). Anything else goes to the subprocess path.
@@ -179,7 +182,10 @@ impl ShellTool {
             Ok(Ok(resp)) => {
                 let exit_code = if resp.success { 0 } else { 1 };
                 let stdout = serde_json::to_string_pretty(&resp).unwrap_or_else(|e| {
-                    format!("{{\"success\":false,\"error\":\"serialize failed: {}\"}}", e)
+                    format!(
+                        "{{\"success\":false,\"error\":\"serialize failed: {}\"}}",
+                        e
+                    )
                 });
                 Some(CommandOutput {
                     exit_code: Some(exit_code),
@@ -255,26 +261,95 @@ impl ShellTool {
             cmd.current_dir(dir);
         }
 
-        let child = tokio::process::Command::from(cmd)
+        let mut child = tokio::process::Command::from(cmd)
             .spawn()
             .map_err(|e| ToolError::Execution(format!("Failed to spawn: {}", e)))?;
 
-        // Capture child PID before moving child into the timeout future
-        let child_pid = child.id();
+        // Take stdout/stderr pipes BEFORE the timeout race so the guard can
+        // hold the `Child` independently. This is the key change from the
+        // previous `wait_with_output`-based flow: that helper consumed the
+        // Child, forcing the guard to hold only the PID (and exposing us to
+        // PID recycling — kill the wrong process after the kernel reuses the
+        // id). Holding the Child itself makes the kernel track ownership for
+        // us: the PID stays associated with this handle until we drop it.
+        let stdout_handle = child.stdout.take();
+        let stderr_handle = child.stderr.take();
 
-        let result = tokio::time::timeout(timeout, child.wait_with_output()).await;
+        // B3 fix: guard holds the Child (not just PID). Drop fires killpg
+        // on the child's PID, which is guaranteed to still refer to OUR
+        // process because the Child handle owns that PID slot in tokio's
+        // process table.
+        let mut guard = SubprocessGuard {
+            child: Some(child),
+        };
+
+        let result = tokio::time::timeout(
+            timeout,
+            async {
+                // Read stdout/stderr concurrently with wait(). Both pipes
+                // were taken above, so they live independently of the Child.
+                let stdout_fut = async {
+                    if let Some(mut s) = stdout_handle {
+                        let mut buf = Vec::new();
+                        s.read_to_end(&mut buf).await?;
+                        Ok::<_, std::io::Error>(buf)
+                    } else {
+                        Ok(Vec::new())
+                    }
+                };
+                let stderr_fut = async {
+                    if let Some(mut s) = stderr_handle {
+                        let mut buf = Vec::new();
+                        s.read_to_end(&mut buf).await?;
+                        Ok::<_, std::io::Error>(buf)
+                    } else {
+                        Ok(Vec::new())
+                    }
+                };
+                let (out_bytes, err_bytes) =
+                    tokio::try_join!(stdout_fut, stderr_fut)?;
+                let status = guard
+                    .child
+                    .as_mut()
+                    .ok_or_else(|| std::io::Error::other("child disarmed before wait"))?
+                    .wait()
+                    .await?;
+                Ok::<_, std::io::Error>((out_bytes, err_bytes, status))
+            },
+        )
+        .await;
 
         match result {
-            Ok(Ok(output)) => Ok(CommandOutput {
-                exit_code: output.status.code(),
-                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-                timed_out: false,
-            }),
-            Ok(Err(e)) => Err(ToolError::Execution(format!("Execution failed: {}", e))),
+            Ok(Ok((out, err, status))) => {
+                // Clean exit — disarm the guard so its Drop doesn't kill
+                // an already-exited process group (would be a benign ESRCH
+                // but disarming makes the intent obvious).
+                guard.child = None;
+                Ok(CommandOutput {
+                    exit_code: status.code(),
+                    stdout: String::from_utf8_lossy(&out).into_owned(),
+                    stderr: String::from_utf8_lossy(&err).into_owned(),
+                    timed_out: false,
+                })
+            }
+            Ok(Err(e)) => {
+                // Pipe/wait error — let guard's Drop handle cleanup so we
+                // don't try to await a possibly-broken Child.
+                Err(ToolError::Execution(format!("Execution failed: {}", e)))
+            }
             Err(_) => {
-                // Timeout — kill the process
-                kill_process_by_pid(child_pid);
+                // Timeout — explicitly reap so we don't leak a zombie. The
+                // guard's Drop will then be a no-op (child is None).
+                if let Some(child) = guard.child.as_mut() {
+                    // Best-effort kill + reap. kill_process_by_pid sends
+                    // killpg(SIGKILL) which terminates the whole group;
+                    // child.wait() reaps the immediate child.
+                    if let Some(pid) = child.id() {
+                        kill_process_by_pid(Some(pid));
+                    }
+                    let _ = child.wait().await;
+                }
+                guard.child = None;
                 Ok(CommandOutput {
                     exit_code: None,
                     stdout: String::new(),
@@ -282,6 +357,48 @@ impl ShellTool {
                     timed_out: true,
                 })
             }
+        }
+    }
+}
+
+/// RAII guard that kills a subprocess (and its process group on Unix) when
+/// dropped. Used to guarantee cleanup when the future returned by
+/// `ShellTool::execute_command` is dropped before completion — the exact path
+/// taken when a `CancellationToken` fires and the ToolRegistry `select!`
+/// cancels the tool future.
+///
+/// B3 fix: holds the actual `Child` handle, NOT just the PID. This makes the
+/// kernel track PID ownership — the PID cannot be recycled to a different
+/// process until we drop this handle. The earlier PID-only design (used
+/// because `wait_with_output` consumed the Child) had a small but real
+/// risk of killing an unrelated process after PID recycling.
+///
+/// On Drop, kills the entire process group via `kill_process_by_pid` (Unix:
+/// `killpg`, preventing orphaned grandchildren from pipelines). We bypass
+/// `Child::start_kill` because that only kills the immediate child.
+struct SubprocessGuard {
+    /// `None` after clean exit (disarmed) or after explicit reap on timeout.
+    child: Option<tokio::process::Child>,
+}
+
+impl Drop for SubprocessGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.take() {
+            if let Some(pid) = child.id() {
+                // Delegates to the existing platform helper:
+                //   Unix:    killpg(pid, SIGKILL) — whole process group
+                //   Windows: TerminateProcess on the immediate child
+                // Both are best-effort and log on failure; Drop must not panic.
+                kill_process_by_pid(Some(pid));
+            }
+            // We can't `child.wait().await` here (Drop is sync). The
+            // immediate-child zombie may persist until the parent process
+            // exits — Tokio does NOT auto-reap children dropped without an
+            // explicit `wait()`. This is acceptable because:
+            //   (a) cancellation is rare (only fires on `scheduler.stop()`),
+            //   (b) the OS reaps the zombie when this process exits,
+            //   (c) the timeout path explicitly reaps in `execute_command`.
+            drop(child);
         }
     }
 }
@@ -1135,5 +1252,85 @@ mod tests {
         let tool = ShellTool::new(test_config());
         assert_eq!(tool.name(), "shell");
         assert!(matches!(tool.category(), ToolCategory::System));
+    }
+
+    // ====================================================================
+    // Cancellation / kill-on-drop tests
+    // ====================================================================
+
+    /// When the future returned by `ShellTool::execute` is dropped before
+    /// completion (the path taken when a `CancellationToken` fires and the
+    /// ToolRegistry select! aborts the tool future), the underlying subprocess
+    /// MUST be killed — not orphaned.
+    ///
+    /// This test runs `sleep 30`, drops the execute future after 200ms, then
+    /// verifies via `pgrep` that no `sleep` processes remain. If `pgrep` is
+    /// unavailable the assertion is skipped (test still passes as a smoke test).
+    #[tokio::test]
+    async fn test_shell_subprocess_killed_on_future_drop() {
+        // Skip on Windows — process-group semantics differ and pgrep may not exist.
+        if cfg!(windows) {
+            return;
+        }
+
+        let tool = ShellTool::new(ShellConfig {
+            enabled: true,
+            timeout_secs: 30,
+            max_output_chars: 10000,
+        });
+
+        // Use a unique sleep duration so we can identify our own process.
+        // `sleep 30` is the marker.
+        let before = count_sleep_30_processes();
+
+        // Box::pin (not tokio::pin!) so we OWN the future and can drop it
+        // explicitly. `tokio::pin!` only creates a Pin<&mut T> reference,
+        // so `drop()` on it drops the reference, not the underlying future —
+        // leaving the subprocess alive.
+        let mut boxed = Box::pin(tool.execute(serde_json::json!({"command": "sleep 30"})));
+
+        // Poll for 200ms — should not complete (sleep runs 30s).
+        let poll_result =
+            tokio::time::timeout(std::time::Duration::from_millis(200), boxed.as_mut()).await;
+        assert!(
+            poll_result.is_err(),
+            "sleep 30 should not have finished in 200ms"
+        );
+
+        // Drop the boxed future — simulates the ToolRegistry select! cancelling it.
+        // This MUST trigger SubprocessGuard::drop, killing the subprocess.
+        drop(boxed);
+
+        // Give the OS a moment to reap the killed process group.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        let after = count_sleep_30_processes();
+        assert!(
+            after <= before,
+            "sleep 30 process should be killed on future drop; before={}, after={}",
+            before,
+            after
+        );
+    }
+
+    /// Count `sleep 30` processes currently running. Uses `pgrep -f 'sleep 30'`
+    /// (portable across BSD/macOS and Linux — neither supports `-c` consistently).
+    /// Returns 0 if pgrep is unavailable (test assertion becomes permissive).
+    fn count_sleep_30_processes() -> usize {
+        let out = std::process::Command::new("pgrep")
+            .arg("-f")
+            .arg("sleep 30")
+            .output();
+        match out {
+            Ok(o) => {
+                let s = String::from_utf8_lossy(&o.stdout);
+                if s.trim().is_empty() {
+                    0
+                } else {
+                    s.lines().count()
+                }
+            }
+            Err(_) => 0, // pgrep unavailable; assertion becomes permissive
+        }
     }
 }

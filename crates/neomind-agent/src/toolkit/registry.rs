@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
 use super::error::{Result, ToolError};
 use super::tool::{DynTool, MemoryToolHandles, ToolDefinition, ToolOutput};
@@ -18,6 +19,14 @@ pub struct ToolRegistry {
     tools: HashMap<String, DynTool>,
     /// Cached tool definitions (rebuilt on register/unregister).
     cached_definitions: RwLock<Option<Vec<ToolDefinition>>>,
+    /// Optional cancellation token. When set, `execute` / `execute_parallel`
+    /// wrap tool calls in `tokio::select!` against `token.cancelled()`. On
+    /// cancel, returns `ToolError::Canceled`.
+    ///
+    /// Uses `parking_lot::RwLock` (same as `cached_definitions`) for lock-type
+    /// consistency within the struct. Backward-compat: when `None`, behavior is
+    /// bit-identical to pre-cancellation.
+    cancellation_token: Arc<RwLock<Option<CancellationToken>>>,
 }
 
 impl ToolRegistry {
@@ -26,6 +35,7 @@ impl ToolRegistry {
         Self {
             tools: HashMap::new(),
             cached_definitions: RwLock::new(None),
+            cancellation_token: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -95,12 +105,34 @@ impl ToolRegistry {
         defs
     }
 
+    /// Set or clear the cancellation token used by `execute` / `execute_parallel`.
+    ///
+    /// When set, tool execution is wrapped in `tokio::select!` against
+    /// `token.cancelled()`. On cancel, returns `ToolError::Canceled`.
+    ///
+    /// Backward-compat: when `None`, behavior is identical to pre-cancellation.
+    pub fn set_cancellation_token(&self, token: Option<CancellationToken>) {
+        *self.cancellation_token.write() = token;
+    }
+
     /// Execute a tool by name.
     pub async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput> {
         let tool = self
             .get(name)
             .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
-        tool.execute(args).await
+
+        let token_opt = self.cancellation_token.read().clone();
+        match token_opt {
+            None => tool.execute(args).await,
+            Some(token) => {
+                let fut = tool.execute(args);
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => Err(ToolError::Canceled),
+                    res = fut => res,
+                }
+            }
+        }
     }
 
     /// Execute multiple tools in parallel using `JoinSet` for lower overhead
@@ -125,6 +157,11 @@ impl ToolRegistry {
         let names: Vec<String> = calls.iter().map(|c| c.name.clone()).collect();
         let n = calls.len();
 
+        // Snapshot the cancellation token so each spawned task can race its
+        // tool execution against `token.cancelled()`. `None` skips the select!
+        // entirely (identical to pre-cancellation behavior).
+        let cancel_token_snapshot = self.cancellation_token.read().clone();
+
         let mut join_set: JoinSet<(usize, ToolResult)> = JoinSet::new();
 
         for (idx, call) in calls.into_iter().enumerate() {
@@ -132,25 +169,37 @@ impl ToolRegistry {
                 let tool_clone = tool.clone();
                 let args = call.args;
                 let name = call.name;
+                let cancel_for_task = cancel_token_snapshot.clone();
 
                 join_set.spawn(async move {
-                    let result = tool_clone.execute(args).await;
-                    (
-                        idx,
-                        ToolResult {
-                            name,
-                            result,
-                        },
-                    )
+                    let result = match cancel_for_task {
+                        None => tool_clone.execute(args).await,
+                        Some(token) => {
+                            let fut = tool_clone.execute(args);
+                            tokio::select! {
+                                biased;
+                                _ = token.cancelled() => Err(ToolError::Canceled),
+                                res = fut => res,
+                            }
+                        }
+                    };
+                    (idx, ToolResult { name, result })
                 });
             } else {
                 let name = call.name;
+                let cancel_for_nf = cancel_token_snapshot.clone();
                 join_set.spawn(async move {
+                    let result = match cancel_for_nf {
+                        // Already-cancelled short-circuit: report Canceled rather
+                        // than NotFound so callers see a consistent abort reason.
+                        Some(token) if token.is_cancelled() => Err(ToolError::Canceled),
+                        _ => Err(ToolError::NotFound(name.clone())),
+                    };
                     (
                         idx,
                         ToolResult {
                             name: name.clone(),
-                            result: Err(ToolError::NotFound(name)),
+                            result,
                         },
                     )
                 });
@@ -174,10 +223,12 @@ impl ToolRegistry {
         slots
             .into_iter()
             .enumerate()
-            .map(|(idx, opt)| opt.unwrap_or_else(|| ToolResult {
-                name: names.get(idx).cloned().unwrap_or_default(),
-                result: Err(ToolError::Execution("Tool task panicked".to_string())),
-            }))
+            .map(|(idx, opt)| {
+                opt.unwrap_or_else(|| ToolResult {
+                    name: names.get(idx).cloned().unwrap_or_default(),
+                    result: Err(ToolError::Execution("Tool task panicked".to_string())),
+                })
+            })
             .collect()
     }
 
@@ -470,5 +521,134 @@ mod tests {
 
         assert_eq!(call.name, "test_tool");
         assert_eq!(call.id, Some("call_123".to_string()));
+    }
+
+    // ====================================================================
+    // Cancellation tests (Task 2 of agent-cooperative-cancellation plan)
+    //
+    // Reuses existing `TestTool` defined above. Reuses existing
+    // `ToolError::Canceled` variant (American spelling).
+    // ====================================================================
+
+    #[tokio::test]
+    async fn test_cancellation_token_unset_executes_normally() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(TestTool {
+            name: "test_tool".to_string(),
+        }));
+
+        let result = registry.execute("test_tool", serde_json::json!({})).await;
+        assert!(
+            result.is_ok(),
+            "execute should succeed when no token is set"
+        );
+        assert!(result.unwrap().success);
+    }
+
+    #[tokio::test]
+    async fn test_execute_returns_canceled_error_when_token_fires() {
+        use std::time::Duration;
+        use tokio_util::sync::CancellationToken;
+
+        struct SlowTool;
+        #[async_trait]
+        impl Tool for SlowTool {
+            fn name(&self) -> &str {
+                "slow_tool"
+            }
+            fn description(&self) -> &str {
+                "slow"
+            }
+            fn parameters(&self) -> Value {
+                serde_json::json!({"type":"object"})
+            }
+            async fn execute(&self, _args: Value) -> super::Result<ToolOutput> {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Ok(ToolOutput::success("done"))
+            }
+        }
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(SlowTool));
+
+        let token = CancellationToken::new();
+        registry.set_cancellation_token(Some(token.clone()));
+
+        let token_clone = token.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            token_clone.cancel();
+        });
+
+        let result = registry.execute("slow_tool", serde_json::json!({})).await;
+        assert!(result.is_err(), "should be cancelled");
+        assert!(
+            matches!(result.unwrap_err(), super::ToolError::Canceled),
+            "expected Canceled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_parallel_returns_canceled_for_all() {
+        use std::time::Duration;
+        use tokio_util::sync::CancellationToken;
+
+        struct SlowTool;
+        #[async_trait]
+        impl Tool for SlowTool {
+            fn name(&self) -> &str {
+                "slow"
+            }
+            fn description(&self) -> &str {
+                "slow"
+            }
+            fn parameters(&self) -> Value {
+                serde_json::json!({"type":"object"})
+            }
+            async fn execute(&self, _args: Value) -> super::Result<ToolOutput> {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Ok(ToolOutput::success("done"))
+            }
+        }
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(SlowTool));
+
+        let token = CancellationToken::new();
+        registry.set_cancellation_token(Some(token.clone()));
+        token.cancel(); // pre-cancelled
+
+        let calls = vec![
+            ToolCall::new("slow", serde_json::json!({})),
+            ToolCall::new("slow", serde_json::json!({})),
+        ];
+        let results = registry.execute_parallel(calls).await;
+
+        assert_eq!(results.len(), 2);
+        for r in &results {
+            assert!(
+                matches!(r.result, Err(super::ToolError::Canceled)),
+                "expected Canceled, got {:?}",
+                r.result
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_clear_cancellation_token_resumes_normal_execution() {
+        use tokio_util::sync::CancellationToken;
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(TestTool {
+            name: "test_tool".to_string(),
+        }));
+
+        let token = CancellationToken::new();
+        registry.set_cancellation_token(Some(token.clone()));
+        token.cancel();
+        registry.set_cancellation_token(None); // clear
+
+        let result = registry.execute("test_tool", serde_json::json!({})).await;
+        assert!(result.is_ok());
     }
 }

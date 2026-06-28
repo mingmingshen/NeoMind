@@ -248,6 +248,17 @@ pub struct ExecutionContext {
     pub execution_id: String,
     /// Invocation input from API/Rule/Agent caller
     pub invocation_input: Option<super::AgentInput>,
+    /// Optional per-execution cancellation token.
+    ///
+    /// Currently informational — populated for paths that own their own
+    /// `ToolRegistry` (e.g. single-session chat). NOT installed on the
+    /// shared scheduled-execution registry because concurrent agent
+    /// executions would race on the slot. Scheduled executions are
+    /// cancelled via `JoinHandle::abort()` at the scheduler level
+    /// (see `AgentScheduler::stop`); the future-drop cascade triggers
+    /// `PidKillGuard` for shell subprocesses and reqwest abort for
+    /// in-flight LLM HTTP calls.
+    pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 /// AI Agent executor - handles execution of user-defined agents.
@@ -790,6 +801,7 @@ impl AgentExecutor {
             llm_backend: None,
             execution_id: execution_id.clone(),
             invocation_input: invocation_input.clone(),
+            cancellation_token: None,
         };
 
         // Emit agent execution started event
@@ -1570,9 +1582,8 @@ pub(super) struct ToolCallTextClassification {
 /// noise (closing tags only — common on small MoE thinking models under
 /// complex multimodal context).
 pub(super) fn classify_tool_call_text(text: &str) -> ToolCallTextClassification {
-    let has_opening_tag = text.contains("<parameter")
-        || text.contains("<function")
-        || text.contains("<tool_call");
+    let has_opening_tag =
+        text.contains("<parameter") || text.contains("<function") || text.contains("<tool_call");
     let has_closing_tag = text.contains("</parameter>")
         || text.contains("</function>")
         || text.contains("</tool_call");
@@ -1625,9 +1636,9 @@ fn is_transient_failure(error: Option<&str>) -> bool {
         // Rate limiting — match the actual strings our backends produce
         || lower.contains("rate limit")
         || lower.contains("too many requests")
-        // Note: "429" alone is intentionally NOT matched — it's too generic
-        // and could appear in device IDs / ports. Backends emit "Rate limited"
-        // or "too many requests" as the human-readable message instead.
+    // Note: "429" alone is intentionally NOT matched — it's too generic
+    // and could appear in device IDs / ports. Backends emit "Rate limited"
+    // or "too many requests" as the human-readable message instead.
 }
 
 #[cfg(test)]
@@ -1659,12 +1670,16 @@ mod tests {
 
     #[test]
     fn permanent_malformed_output_is_not_transient() {
-        assert!(!is_transient_failure(Some("LLM error: LLM tool-calling produced malformed output")));
+        assert!(!is_transient_failure(Some(
+            "LLM error: LLM tool-calling produced malformed output"
+        )));
     }
 
     #[test]
     fn permanent_panic_is_not_transient() {
-        assert!(!is_transient_failure(Some("Execution panic: index out of bounds")));
+        assert!(!is_transient_failure(Some(
+            "Execution panic: index out of bounds"
+        )));
     }
 
     #[test]

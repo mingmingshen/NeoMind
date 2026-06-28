@@ -51,6 +51,10 @@ impl BackendSemaphores {
     }
 }
 
+/// Map of in-flight execution task handles, keyed by agent_id. Used by
+/// `AgentScheduler::stop` to abort in-flight executions cooperatively.
+type TaskHandleMap = Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>;
+
 /// RAII guard that releases a reserved slot in `running_executions` on drop.
 ///
 /// This MUST cover *every* exit path from the scheduler's spawned task body:
@@ -61,6 +65,9 @@ impl BackendSemaphores {
 /// `max_concurrent` (10) leaks the scheduler silently skips every future
 /// execution until process restart.
 ///
+/// Also removes the entry from `running_task_handles` so that `stop()`'s
+/// abort pass doesn't try to abort already-completed tasks.
+///
 /// `Drop` cannot `.await`, so we spawn the async removal onto the current
 /// tokio runtime. If no runtime is available (process tearing down), the
 /// removal is a no-op — acceptable because the scheduler is dying anyway
@@ -68,16 +75,71 @@ impl BackendSemaphores {
 struct RunningSlotGuard {
     agent_id: String,
     running: Arc<RwLock<std::collections::HashSet<String>>>,
+    /// Optional join-handle map for cooperative cancellation via `stop()`.
+    /// `None` for tests that don't track handles.
+    task_handles: Option<TaskHandleMap>,
 }
 
 impl Drop for RunningSlotGuard {
     fn drop(&mut self) {
         let agent_id = std::mem::take(&mut self.agent_id);
-        let running = self.running.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                running.write().await.remove(&agent_id);
-            });
+        let running_arc = self.running.clone();
+        let handles_arc = self.task_handles.clone();
+
+        // B2 fix: prefer synchronous `try_write` removal over spawning an
+        // async cleanup task. `try_write` succeeds in the uncontended common
+        // case (no other task holds the lock), making cleanup deterministic
+        // — no dependency on the runtime still being alive to poll the
+        // spawned cleanup task. This matters during runtime shutdown where
+        // a spawned task might be dropped before it runs.
+        let mut running_done = false;
+        let mut handles_done = handles_arc.is_none(); // None → nothing to clean
+
+        if let Ok(mut guard) = running_arc.try_write() {
+            guard.remove(&agent_id);
+            running_done = true;
+        }
+        if let Some(map) = &handles_arc {
+            if let Ok(mut guard) = map.try_write() {
+                guard.remove(&agent_id);
+                handles_done = true;
+            }
+        }
+
+        if running_done && handles_done {
+            return;
+        }
+
+        // Slow path: lock was contended — at that point someone is actively
+        // holding the lock, which means the runtime is alive. Spawn an async
+        // cleanup that will run once the lock is released.
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(async move {
+                    if !running_done {
+                        running_arc.write().await.remove(&agent_id);
+                    }
+                    if !handles_done {
+                        if let Some(map) = handles_arc {
+                            map.write().await.remove(&agent_id);
+                        }
+                    }
+                });
+            }
+            Err(_) => {
+                // No runtime available — we can't await the lock. Log so
+                // the leak is observable. This only fires during process
+                // teardown (or Tauri desktop runtime reload), where the
+                // in-memory state is discarded anyway. Slot leak is benign:
+                // maps grow but `stop()` drains them on next call.
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    running_done,
+                    handles_done,
+                    "RunningSlotGuard::drop had no runtime to complete cleanup; \
+                     in-memory slot may leak until process exit or next stop() call"
+                );
+            }
         }
     }
 }
@@ -151,6 +213,10 @@ pub struct AgentScheduler {
     running: Arc<RwLock<bool>>,
     /// Currently running executions
     running_executions: Arc<RwLock<std::collections::HashSet<String>>>,
+    /// JoinHandles for spawned execution tasks, keyed by agent_id.
+    /// Used by `stop()` to abort in-flight executions cooperatively.
+    /// Removed automatically by `RunningSlotGuard` on task completion.
+    running_task_handles: TaskHandleMap,
     /// Default timezone parsed
     default_tz: Arc<RwLock<Option<Tz>>>,
     /// Semaphore for limiting concurrent executions
@@ -189,6 +255,7 @@ impl AgentScheduler {
             config: Arc::new(RwLock::new(config)),
             running: Arc::new(RwLock::new(false)),
             running_executions: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            running_task_handles: Arc::new(RwLock::new(HashMap::new())),
             default_tz: Arc::new(RwLock::new(default_tz)),
             execution_semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent)),
             backend_semaphores: BackendSemaphores::new(max_concurrent_per_backend),
@@ -285,6 +352,7 @@ impl AgentScheduler {
         let tasks = self.tasks.clone();
         let running_flag = self.running.clone();
         let running_executions = self.running_executions.clone();
+        let running_task_handles = self.running_task_handles.clone();
         let executor_ref = executor;
         let semaphore = self.execution_semaphore.clone();
         let backend_semaphores = self.backend_semaphores.clone();
@@ -361,6 +429,7 @@ impl AgentScheduler {
                 for (agent_id, _cron_schedule) in tasks_to_execute {
                     let executor = executor_ref.clone();
                     let running_executions_clone = running_executions.clone();
+                    let task_handles_clone = running_task_handles.clone();
                     let semaphore_clone = semaphore.clone();
                     let backend_sems = backend_semaphores.clone();
 
@@ -370,15 +439,34 @@ impl AgentScheduler {
                         .await
                         .insert(agent_id.clone());
 
-                    tokio::spawn(async move {
+                    // Capture agent_id for the handle map BEFORE the value is
+                    // moved into the spawn closure below.
+                    let agent_id_for_handle_map = agent_id.clone();
+
+                    // B1 fix: hold `running_task_handles.write()` across
+                    // spawn()+insert so `stop()`'s drain can't observe an
+                    // empty map and skip this task. The lock is held only
+                    // briefly — `tokio::spawn` is synchronous (queues the
+                    // task, doesn't poll it), and the spawned task cannot
+                    // start until we release the lock (it needs no locks
+                    // to start, but it can't pre-empt us on the same
+                    // runtime thread). `stop()` blocking on this write
+                    // lock is exactly the synchronization we want.
+                    {
+                        let mut handles_guard = running_task_handles.write().await;
+                        handles_guard.insert(
+                            agent_id_for_handle_map.clone(),
+                            tokio::spawn(async move {
                         // RAII guard: removes the agent_id from running_executions
-                        // on *every* exit path (normal return, early return,
-                        // cancellation, or panic). Placed at the very top so its
-                        // Drop runs last. See RunningSlotGuard docs for why this
-                        // is required instead of a trailing manual remove().
+                        // AND from running_task_handles on *every* exit path
+                        // (normal return, early return, cancellation, or panic).
+                        // Placed at the very top so its Drop runs last. See
+                        // RunningSlotGuard docs for why this is required instead
+                        // of a trailing manual remove().
                         let _slot_guard = RunningSlotGuard {
                             agent_id: agent_id.clone(),
                             running: running_executions_clone.clone(),
+                            task_handles: Some(task_handles_clone.clone()),
                         };
 
                         // Acquire semaphore permit for concurrency control
@@ -537,8 +625,14 @@ impl AgentScheduler {
                         }
 
                         // `_slot_guard` drops here and removes the agent_id
-                        // from running_executions on every exit path.
-                    });
+                        // from running_executions AND running_task_handles on
+                        // every exit path.
+                        }),
+                        );
+                        // Lock released here. Any concurrent `stop()` call
+                        // that blocked on the write lock will now drain the
+                        // map and observe this freshly-inserted handle.
+                    }
                 }
             }
 
@@ -559,13 +653,40 @@ impl AgentScheduler {
         *running = false;
         drop(running);
 
-        // Wait for running executions to complete
+        // Cooperatively abort all in-flight executions. `JoinHandle::abort`
+        // cancels the task at its next `.await` point — for our path this
+        // means:
+        //   - In-flight HTTP request (LLM call): reqwest future drops →
+        //     connection closes, request aborted.
+        //   - In-flight shell tool: SubprocessGuard drops → killpg kills the
+        //     subprocess (whole process group, including grandchildren).
+        //   - Other tools: future drops → cleanup via Drop impls.
+        // The aborted task's future unwind triggers `RunningSlotGuard::drop`,
+        // which removes the agent_id from `running_executions` and from
+        // `running_task_handles`.
+        let handles_to_abort: Vec<tokio::task::JoinHandle<()>> = {
+            let mut map = self.running_task_handles.write().await;
+            map.drain().map(|(_, h)| h).collect()
+        };
+        if !handles_to_abort.is_empty() {
+            tracing::info!(
+                count = handles_to_abort.len(),
+                "Aborting in-flight agent executions"
+            );
+            for handle in &handles_to_abort {
+                handle.abort();
+            }
+        }
+
+        // Wait for running executions to observe the abort and unwind. The
+        // 15s budget (30 × 500ms) matches the prior behavior as a hard upper
+        // bound; in practice abort propagation takes <1s.
         for _ in 0..30 {
             let count = self.running_executions.read().await.len();
             if count == 0 {
                 break;
             }
-            tracing::info!("Waiting for {} running executions to complete", count);
+            tracing::info!(count, "Waiting for aborted agent executions to unwind");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
