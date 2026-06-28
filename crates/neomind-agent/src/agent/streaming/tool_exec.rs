@@ -18,11 +18,11 @@ pub(crate) async fn execute_tool_with_retry(
         {
             let cache_read = cache.read().await;
             if let Some(cached) = cache_read.get(&cache_key) {
-                println!("[streaming.rs] Cache HIT for tool: {}", name);
+                tracing::debug!(tool = %name, "Tool result cache HIT");
                 return Ok(cached);
             }
         }
-        println!("[streaming.rs] Cache MISS for tool: {}", name);
+        tracing::debug!(tool = %name, "Tool result cache MISS");
     }
 
     let max_retries = 2u32;
