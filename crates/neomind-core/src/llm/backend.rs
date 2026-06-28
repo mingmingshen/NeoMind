@@ -285,6 +285,30 @@ impl TokenUsage {
 /// (e.g., qwen3-vl's thinking field vs actual content).
 pub type StreamChunk = Result<(String, bool), LlmError>;
 
+/// Strip a `__NEOMIND_TOKEN_PROMPT:N__` marker from a stream chunk and
+/// return `(clean_text, Some(N))`. Handles both standalone-chunk emission
+/// (markers are typically yielded alone as `Ok((marker, false))`) and the
+/// defensive mid-text case. Returns `(original, None)` if no marker present.
+///
+/// The marker is in-band metadata streaming backends inject to surface
+/// `prompt_tokens` (completion_tokens is not available via streaming).
+fn strip_token_marker(content: &str) -> (String, Option<u32>) {
+    const MARKER: &str = "__NEOMIND_TOKEN_PROMPT:";
+    if let Some(start) = content.find(MARKER) {
+        let after = &content[start + MARKER.len()..];
+        if let Some(end) = after.find("__") {
+            if let Ok(n) = after[..end].parse::<u32>() {
+                let tail_start = start + MARKER.len() + end + 2;
+                let clean = format!("{}{}", &content[..start], &content[tail_start..])
+                    .trim()
+                    .to_string();
+                return (clean, Some(n));
+            }
+        }
+    }
+    (content.to_string(), None)
+}
+
 /// Stream configuration for LLM backends.
 ///
 /// This configuration controls timeouts, thinking limits, and progress reporting
@@ -559,16 +583,23 @@ pub trait LlmRuntime: Send + Sync {
     /// Default implementation consumes `generate_stream` and accumulates:
     /// - `text`: concatenation of all content chunks (`is_thinking = false`)
     /// - `thinking`: concatenation of all thinking chunks (`is_thinking = true`)
-    /// - token-usage markers (`\n__NEOMIND_TOKEN_PROMPT:N__`) are filtered
-    ///   out as metadata, not content
+    /// - token-usage markers (`\n__NEOMIND_TOKEN_PROMPT:N__`) are filtered out
+    ///   as metadata, not content
     ///
     /// `tool_calls` is left as `None` — backends that emit tool calls via
     /// the stream embed them as JSON in content chunks (same shape as the
     /// non-streaming path's text+JSON concatenation), so `tool_loop`'s
-    /// existing fallback parser extracts them from `text`. `usage` is `None`
-    /// because streaming backends only surface `prompt_tokens` via markers,
-    /// not `completion_tokens`; the non-streaming `generate()` remains the
-    /// canonical source for usage stats.
+    /// existing fallback parser extracts them from `text`.
+    ///
+    /// `usage` is populated when any signal is available:
+    /// - `prompt_tokens`: real, extracted from `__NEOMIND_TOKEN_PROMPT:N__`
+    ///   markers emitted by streaming backends (Ollama/OpenAI/llama.cpp).
+    ///   `0` if no marker was emitted.
+    /// - `completion_tokens`: estimated via the trait's `estimate_tokens()`
+    ///   heuristic on `text + thinking` chars. Streaming backends do not
+    ///   surface completion_tokens, so this is necessarily approximate.
+    /// - `usage` is `None` only when the stream produced no content AND no
+    ///   marker (empty response — typically a stream-error case).
     ///
     /// Why this exists: thinking-capable cloud backends (DashScope qwen3.x-plus)
     /// can sit silent for 30+ seconds during the reasoning phase under
@@ -583,22 +614,34 @@ pub trait LlmRuntime: Send + Sync {
         let mut stream = self.generate_stream(input).await?;
         let mut text_parts: Vec<String> = Vec::new();
         let mut thinking_parts: Vec<String> = Vec::new();
+        // prompt_tokens is extracted in-band from `__NEOMIND_TOKEN_PROMPT:N__`
+        // markers emitted by streaming backends (Ollama/OpenAI/llama.cpp).
+        // completion_tokens is not surfaced by streaming backends, so we
+        // estimate from the concatenated output below. Together this lets
+        // tool_loop callers reading `output.usage` get partial-real +
+        // partial-estimated data instead of `None` — important for token
+        // accounting, telemetry, and any per-iteration budgets.
+        let mut prompt_tokens: Option<u32> = None;
         let mut stream_error: Option<LlmError> = None;
 
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok((text, is_thinking)) => {
                     // Streaming backends inject `\n__NEOMIND_TOKEN_PROMPT:N__`
-                    // markers to surface prompt-token counts. These are
-                    // metadata, not model output — strip them so they don't
-                    // corrupt the visible text or thinking field.
-                    if text.starts_with("\n__NEOMIND_TOKEN_PROMPT:") {
+                    // markers to surface prompt-token counts. Strip the marker
+                    // (wherever it appears in the chunk — standalone or
+                    // embedded mid-text) and capture the value.
+                    let (clean, extracted) = strip_token_marker(&text);
+                    if let Some(n) = extracted {
+                        prompt_tokens = Some(n);
+                    }
+                    if clean.is_empty() {
                         continue;
                     }
                     if is_thinking {
-                        thinking_parts.push(text);
+                        thinking_parts.push(clean);
                     } else {
-                        text_parts.push(text);
+                        text_parts.push(clean);
                     }
                 }
                 Err(e) => {
@@ -619,10 +662,21 @@ pub trait LlmRuntime: Send + Sync {
             Some(thinking_parts.concat())
         };
 
+        // Estimate completion_tokens via the trait's heuristic (~4 chars/token).
+        // Includes thinking chars so reasoning-heavy models are accounted for.
+        let usage = if prompt_tokens.is_some() || !text.is_empty() || thinking.is_some() {
+            let completion_chars = text.len()
+                + thinking.as_ref().map(|s| s.len()).unwrap_or(0);
+            let completion_tokens = (completion_chars / 4) as u32;
+            Some(TokenUsage::new(prompt_tokens.unwrap_or(0), completion_tokens))
+        } else {
+            None
+        };
+
         Ok(LlmOutput {
             text,
             finish_reason: FinishReason::Stop,
-            usage: None,
+            usage,
             thinking,
             tool_calls: None,
         })
@@ -865,6 +919,11 @@ mod tests {
         assert_eq!(out.text, "Hello, world!");
         assert!(out.thinking.is_none());
         assert!(out.tool_calls.is_none());
+        // No token marker emitted → prompt_tokens unknown (0), completion
+        // estimated from "Hello, world!" (13 chars / 4 = 3 tokens).
+        let usage = out.usage.expect("usage should be populated when text exists");
+        assert_eq!(usage.prompt_tokens, 0);
+        assert_eq!(usage.completion_tokens, 3);
     }
 
     #[tokio::test]
@@ -886,14 +945,19 @@ mod tests {
             out.thinking.as_deref(),
             Some("Let me think...First, I'll do X")
         );
+        // completion_tokens should include BOTH text + thinking chars.
+        let usage = out.usage.expect("usage populated when text/thinking exists");
+        // text(12) + thinking(31) = 43 chars / 4 = 10 tokens
+        assert_eq!(usage.completion_tokens, 10);
     }
 
     #[tokio::test]
-    async fn generate_to_completion_filters_token_usage_markers() {
+    async fn generate_to_completion_captures_prompt_token_marker() {
         // Streaming backends inject `\n__NEOMIND_TOKEN_PROMPT:N__` markers to
-        // surface token counts. The default impl must strip these — they're
-        // metadata, not content. tool_loop doesn't consume usage from this
-        // path (non-streaming generate() is canonical for usage stats).
+        // surface prompt_tokens. The default impl must:
+        //   (a) strip the marker from the visible text
+        //   (b) capture the value into `usage.prompt_tokens`
+        //   (c) still estimate completion_tokens from concatenated output.
         let runtime = MockStreamRuntime {
             chunks: vec![
                 MockChunk::Content("Hello".into()),
@@ -906,6 +970,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out.text, "Hello world");
+        let usage = out.usage.expect("usage must be populated");
+        assert_eq!(usage.prompt_tokens, 42);
+        // "Hello world" = 11 chars / 4 = 2 tokens
+        assert_eq!(usage.completion_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn generate_to_completion_handles_embedded_token_marker() {
+        // Defensive: if a marker ever arrives mid-text (not as a standalone
+        // chunk), it should still be stripped + captured without corrupting
+        // the surrounding content.
+        let runtime = MockStreamRuntime {
+            chunks: vec![MockChunk::Content(
+                "before __NEOMIND_TOKEN_PROMPT:99__ after".into(),
+            )],
+        };
+        let out = runtime
+            .generate_to_completion(LlmInput::new("hi"))
+            .await
+            .unwrap();
+        assert_eq!(out.text, "before  after");
+        assert!(!out.text.contains("NEOMIND_TOKEN"));
+        let usage = out.usage.expect("usage must be populated");
+        assert_eq!(usage.prompt_tokens, 99);
     }
 
     #[tokio::test]
