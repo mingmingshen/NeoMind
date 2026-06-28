@@ -9,6 +9,197 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-28
+
+### Overview
+
+A **DashScope hybrid-thinking reliability + external broker parity**
+release. The headline work closes a two-week-old production issue
+where qwen3.7-plus cloud agents on prod-01 (Garbage Monitoring) were
+intermittently failing mid-execution with "Network error: error
+sending request for url" or "LLM tool-calling produced malformed
+output". Two complementary fixes land: the cloud OpenAI-compatible
+backend now honors `thinking_enabled=false` on analytical LLM calls
+(gotcha #7 used to be silently ignored), and the agent tool-loop now
+auto-routes thinking-capable backends through streaming so the long
+reasoning phase can no longer hit the gateway's idle timeout.
+
+Alongside: external MQTT brokers (the deployment pattern for shops
+that already run EMQX / Mosquitto) now synthesize
+`DeviceTransportOnline/Offline` events from `$SYS` presence
+broadcasts, closing the gap with the embedded broker's
+`DevicePresenceHook` — devices on external brokers no longer show as
+"never connected" in the 4-state UI. The mobile dashboard gets a
+derived single-column masonry layout so a 12-col desktop grid
+doesn't get squished onto a 360–480px phone viewport. Plus a
+template-metric regression fix and a workspace clippy sweep.
+
+Themes: (1) **DashScope thinking models** — `thinking_enabled` now
+honored on cloud backends + tool-loop streaming for thinking-capable
+models; (2) **external broker transport events** — `$SYS` presence
+bridge brings parity with the embedded broker; (3) **mobile dashboard
+masonry** — every card stacks full-width on phones; (4) **fixes &
+maintenance** — template-metric 1h-lookback bug, workspace clippy
+clean.
+
+### DashScope hybrid-thinking reliability
+
+Two related fixes for the same failure mode on DashScope
+`compatible-mode/v1/chat/completions` with hybrid thinking models
+(qwen3.7-plus, qwen3.6-plus, qwen3-vl-plus).
+
+- **Cloud OpenAI backend now honors `thinking_enabled`**
+  (`crates/neomind-agent/src/llm_backends/backends/openai.rs`,
+  commit `c6385169`). The Ollama path already translated
+  `LlmInput.params.thinking_enabled` into `OllamaThink::Bool`
+  (`ollama.rs:826-844`), but the cloud OpenAI path's
+  `ChatCompletionRequest` struct had no `enable_thinking` field — so
+  `thinking_enabled: Some(false)` set by `analyzer.rs:258`,
+  `intent.rs:62`, and `tool_result.rs:241` (gotcha #7) was silently
+  discarded on qwen3.x-plus backends. The model kept thinking on,
+  burning tokens on hidden chain-of-thought during memory extraction,
+  compression, and other non-chat LLM calls.
+
+  Fix: added `enable_thinking: Option<bool>` field to
+  `ChatCompletionRequest`, gated with
+  `#[serde(skip_serializing_if = "Option::is_none")]`. Translation is
+  scoped to `CloudProvider::Qwen` only — DashScope's doc explicitly
+  documents the field, while other OpenAI-compatible servers may
+  reject unknown fields with HTTP 400. Extracted a `build_chat_request`
+  helper from `generate_openai` and `generate_stream_openai` so the
+  request body is unit-testable in isolation. Three new tests cover
+  Qwen-disabled, Qwen-default-omitted, and the never-emitted-on-non-Qwen
+  invariant.
+
+- **Tool-loop routes through streaming for thinking-capable backends**
+  (`crates/neomind-agent/src/ai_agent/executor/tool_loop.rs` +
+  `crates/neomind-core/src/llm/backend.rs`, commit `c89d32a0`). Even
+  with `thinking_enabled=false` available as a manual override, the
+  default tool-loop was still calling non-streaming `generate()` on
+  thinking models. Under non-streaming + thinking ON, DashScope's
+  compatible-mode gateway can sit silent for 30+ seconds during the
+  reasoning phase before the first byte comes back — long enough to
+  trip the gateway's idle timeout and surface as a "Network error"
+  mid agent execution.
+
+  Fix: added a default `generate_to_completion` method on the
+  `LlmRuntime` trait that drives `generate_stream` to completion,
+  accumulating `text` and `thinking` separately and surfacing the
+  first stream error. `tool_loop.rs` now branches on
+  `capabilities().thinking_display`: thinking-capable backends go
+  through `generate_to_completion` (streaming), everyone else stays
+  on `generate` (no behavior change). The token-usage marker protocol
+  (`\n__NEOMIND_TOKEN_PROMPT:N__`) is filtered out of the assembled
+  text. Four new trait-level tests use a `MockStreamRuntime` with a
+  `MockChunk` enum (Content / Thinking / TokenMarker / Error) to
+  exercise assembly, thinking separation, and error propagation
+  without coupling to a real LlmError (which isn't `Clone`).
+
+### External MQTT broker transport events
+
+- **`$SYS` presence synthesis** (`crates/neomind-api/src/handlers/mqtt/brokers.rs`
+  + `crates/neomind-devices/src/adapters/mqtt.rs`, commit `51c9cf68`).
+  External MQTT brokers don't run our embedded rmqtt
+  `DevicePresenceHook`, so devices registered on them never fired
+  `DeviceTransportOnline/Offline` — they showed as "never connected"
+  in the 4-state UI ("online / connectedIdle / offline / disconnected")
+  even when actively publishing telemetry. The `DeviceTransportOnline`
+  doc string had always promised "$SYS topic subscription when using
+  an external broker" as the fallback path; this release delivers it.
+
+  Two-part bridge. (1) `create_and_connect_broker` (brokers.rs) now
+  appends two EMQX-style presence filters —
+  `$SYS/brokers/+/clients/+/connected` and
+  `$SYS/brokers/+/clients/+/disconnected` — to the effective
+  subscribe list passed to `add_broker_with_tls`. User-facing
+  `broker.subscribe_topics` config is untouched. MQTT spec excludes
+  `$`-prefixed topics from `#` / `+` wildcards, so an explicit filter
+  is required; subscribing is harmless on brokers that don't publish
+  these topics (e.g. Mosquitto's per-client presence shape differs)
+  — they simply never arrive. (2) The MqttAdapter Publish handler
+  (mqtt.rs) short-circuits any topic starting with `$SYS/brokers/` at
+  the top, before standard-uplink detection or auto-onboarding: a new
+  `parse_sys_presence_topic` helper extracts `(client_id, is_online)`
+  from `$SYS/brokers/{node}/clients/{cid}/{connected,disconnected}`
+  and publishes `DeviceTransportOnline` / `DeviceTransportOffline`
+  with `client_id` as `device_id` (matches the embedded-broker
+  passthrough convention). Internal `neomind-` prefixed clients
+  (e.g. `neomind-external-{broker_id}` — the adapter's own bridge
+  session) are skipped to avoid firing phantom transport events for
+  our own connection. `$SYS` topics never flow into telemetry or
+  auto-onboarding paths. Four unit tests cover EMQX-style positive
+  cases, aggregate / metrics / malformed-topic rejection, and
+  internal-client passthrough semantics.
+
+### Mobile dashboard masonry
+
+- **Single-column derived layout for phones**
+  (`web/src/components/dashboard/DashboardGrid.tsx`, commit
+  `08708f3c`). Desktop layouts authored on a 12-col grid were being
+  reused verbatim on phones: the same `layouts` array was fed into
+  every breakpoint, so cards authored at e.g. `x=8 / w=4` landed
+  off-grid on a 4-col mobile layout and react-grid-layout silently
+  wrapped them into unpredictable positions. On a 360–480px viewport
+  the result was cramped, mis-ordered cards with stretched aspect
+  ratios.
+
+  Fix: phones (<768px) now render a derived single-column layout —
+  the Home Assistant / masonry-style pattern. `buildMobileLayout`
+  forces every card to `w = MOBILE_COLS = 1` and stacks them
+  vertically (x/y = 0, RGL's vertical compactor handles packing).
+  `breakpoints.xs` drops to 0 (was 480) so every width below the `sm`
+  floor lands in `xs` and gets the mobile layout — previously narrow
+  phones had no matching breakpoint and fell back to the 12-col
+  desktop layout. `cols.xs` drops to 1 (was 4); the lg/md/sm
+  breakpoints keep 12/10/6 so desktop authoring is unchanged.
+  Authored height is preserved but floored by a per-type
+  `MOBILE_MIN_H` (charts → h≥3 for axis room, value-cards → h≥2,
+  markdown → h≥3, etc.) so a chart the user pinned to h=2 on desktop
+  still gets enough vertical room for its axes when it becomes
+  full-width on mobile. Mobile is non-editable: drag/resize disabled,
+  edit-mode toolbar hidden. Eight unit tests cover width force,
+  per-type height floors, and packing invariants.
+
+### Fixes & maintenance
+
+- **Template-metric 1h-lookback bug** (`crates/neomind-api/src/handlers/devices/crud.rs`,
+  commit `a188ad86`). Template metrics (e.g. NE101 `values.image`)
+  went through `query_telemetry` with a 1h window in
+  `/devices/:id/current`, while the batch endpoint already used
+  `storage.latest()` with no window. After 1h of no uploads the
+  single-device endpoint returned null, wiping the last capture from
+  any UI that relied on it (NE101 widget blank after quiet period,
+  DeviceDetail metric cards showing `-`). Unified both branches to
+  `storage.latest()` — consistent with `getDevicesCurrentBatch_handler`,
+  faster (single-point lookup vs range scan), and the semantic all
+  consumers already expect.
+
+- **Workspace clippy cleanup** (commit `cbdfd960`). Six clippy
+  warnings fixed across five crates: redundant `.ok()` on
+  `try_recv()` match in `neomind-core/eventbus.rs`; `contains(&x)`
+  instead of `.iter().any(|s| *s == x)` in `neomind-devices/mqtt.rs`;
+  collapsed nested `if` into outer condition chain in
+  `neomind-api/rules.rs`; doc-list indent fix in
+  `neomind-storage/timeseries.rs`; and
+  `#[allow(clippy::too_many_arguments)]` on
+  `deliver_with_retry` in `neomind-data-push/scheduler.rs` (8 args,
+  refactor cost > cleanup value). `cargo clippy --workspace` now
+  warning-free; 1248 lib tests still pass.
+
+### Upgrade notes
+
+- **DashScope users**: no action required. Existing `thinking_enabled`
+  overrides in your backend config now take effect on qwen3.x-plus
+  cloud backends (previously silently ignored). Default tool-loop
+  streaming kicks in automatically when the active backend reports
+  `thinking_display = true`.
+- **External MQTT broker users**: no action required. The two
+  `$SYS/...` filters are appended to the subscribe list at adapter
+  creation time; user config is untouched. On brokers that don't
+  expose EMQX-style `$SYS/brokers/+/clients/+/{connected,disconnected}`
+  topics (Mosquitto, RabbitMQ-MQTT, etc.) the subscriptions simply
+  never match — no errors, no behavioral change.
+
 ## [0.8.25] - 2026-06-26
 
 ### Overview
