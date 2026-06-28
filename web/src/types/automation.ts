@@ -77,7 +77,6 @@ export type TransformOperation =
   | { op_type: 'array_aggregation'; json_path: string; aggregation: AggregationFunc; value_path?: string; output_metric: string }
   | { op_type: 'time_series_aggregation'; source_metric: string; window: TimeWindow; output_metric: string }
   | { op_type: 'reference'; source_device: string; source_metric: string; output_metric: string }
-  | { op_type: 'custom'; wasm_module_id: string; function_name: string; parameters: Record<string, unknown>; output_metrics: string[] }
   | { op_type: 'multi_output'; operations: TransformOperation[] }
   // Expression-based operations
   | { op_type: 'extract'; from: string; output: string; as_type?: DataType }

@@ -286,19 +286,6 @@ pub enum TransformOperation {
         output_metric: String,
     },
 
-    /// Custom WASM code execution
-    Custom {
-        /// WASM module ID
-        wasm_module_id: String,
-        /// Function name to call
-        function_name: String,
-        /// Input parameters
-        #[serde(default)]
-        parameters: HashMap<String, serde_json::Value>,
-        /// Output metric name(s) - can be multiple
-        output_metrics: Vec<String>,
-    },
-
     /// Phase 4.2: Extension-based transform
     /// Calls an extension to perform the transformation
     Extension {
@@ -487,7 +474,6 @@ impl TransformOperation {
                 vec![output_metric.clone()]
             }
             TransformOperation::Reference { output_metric, .. } => vec![output_metric.clone()],
-            TransformOperation::Custom { output_metrics, .. } => output_metrics.clone(),
             TransformOperation::Extension { output_metrics, .. } => output_metrics.clone(),
             TransformOperation::MultiOutput { operations } => operations
                 .iter()
@@ -525,7 +511,6 @@ impl TransformOperation {
             TransformOperation::ArrayAggregation { .. } => 2,
             TransformOperation::TimeSeriesAggregation { .. } => 3,
             TransformOperation::Reference { .. } => 1,
-            TransformOperation::Custom { .. } => 4,
             TransformOperation::Extension { .. } => 3,
             TransformOperation::MultiOutput { operations } => operations
                 .iter()

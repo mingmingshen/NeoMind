@@ -1303,26 +1303,6 @@ impl TransformEngine {
                 }])
             }
 
-            TransformOperation::Custom {
-                wasm_module_id: _,
-                function_name: _,
-                parameters: _,
-                output_metrics,
-            } => {
-                // Custom WASM execution - not yet implemented
-                Ok(output_metrics
-                    .iter()
-                    .map(|m| TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
-                        metric: m.clone(),
-                        value: 0.0.into(),
-                        timestamp,
-                        quality: None,
-                    })
-                    .collect())
-            }
-
             TransformOperation::Extension {
                 extension_id,
                 command,
@@ -1508,17 +1488,6 @@ impl TransformEngine {
                             timestamp,
                             quality: None,
                         }]),
-                        TransformOperation::Custom { output_metrics, .. } => Ok(output_metrics
-                            .iter()
-                            .map(|m| TransformedMetric {
-                                device_id: device_id.to_string(),
-                                transform_id: None,
-                                metric: m.clone(),
-                                value: 0.0.into(),
-                                timestamp,
-                                quality: None,
-                            })
-                            .collect()),
                         // Skip nested MultiOutput to avoid deep recursion
                         TransformOperation::MultiOutput { .. } => continue,
                         _ => continue, // Skip other types for now
