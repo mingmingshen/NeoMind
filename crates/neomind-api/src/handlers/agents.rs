@@ -826,7 +826,7 @@ pub async fn create_agent(
     State(state): State<ServerState>,
     Json(request): Json<CreateAgentRequest>,
 ) -> HandlerResult<Value> {
-    use crate::validator::{validate_required_string, validate_string_length};
+    use crate::validator::{validate_required_string, validate_string_length, validate_usize_range};
 
     // Validate required fields
     validate_required_string(&request.name, "name")?;
@@ -842,6 +842,18 @@ pub async fn create_agent(
     // Validate system_prompt if provided
     if let Some(ref sp) = request.system_prompt {
         validate_string_length(sp, "system_prompt", 1, 4000)?;
+    }
+
+    // Validate max_chain_depth (executor clamps to [1,30]; reject values that
+    // would silently disable tool chaining (0) or get silently clamped (>30))
+    if let Some(depth) = request.max_chain_depth {
+        validate_usize_range(depth, "max_chain_depth", 1, 30)?;
+    }
+    // Validate context_window_size (executor clamps scale to [0.5,5.0] which
+    // corresponds to [5,50]; allow up to 100 for forward-compat with larger
+    // context models, reject 0 which would zero out history budget)
+    if let Some(cw) = request.context_window_size {
+        validate_usize_range(cw, "context_window_size", 1, 100)?;
     }
 
     // Validate schedule type
@@ -1471,12 +1483,17 @@ pub async fn update_agent(
         agent.enable_tool_chaining = enable_chaining;
     }
     if let Some(max_depth) = request.max_chain_depth {
+        // Validate BEFORE assigning — same bounds as create_agent. Rejecting
+        // here keeps storage consistent with the create path so consumers can
+        // trust stored values without re-clamping.
+        crate::validator::validate_usize_range(max_depth, "max_chain_depth", 1, 30)?;
         agent.max_chain_depth = max_depth;
     }
     if let Some(priority) = request.priority {
         agent.priority = priority;
     }
     if let Some(context_window) = request.context_window_size {
+        crate::validator::validate_usize_range(context_window, "context_window_size", 1, 100)?;
         agent.context_window_size = context_window;
     }
     if let Some(mode) = request.execution_mode {

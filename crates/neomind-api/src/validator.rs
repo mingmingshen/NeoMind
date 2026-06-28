@@ -261,6 +261,28 @@ pub fn validate_numeric_range(
     Ok(())
 }
 
+/// Validate integer (usize) range for handler-level fields like
+/// `max_chain_depth`, `context_window_size`. Returns ErrorResponse for direct
+/// use in handlers via the `?` operator.
+///
+/// Without this guard, callers can pass 0 (silently degrading behavior —
+/// e.g. zero-depth chain disables tool calling) or absurdly large values
+/// (silently clamped by the executor, hiding the user's mistake).
+pub fn validate_usize_range(
+    value: usize,
+    field: &str,
+    min: usize,
+    max: usize,
+) -> Result<(), ErrorResponse> {
+    if value < min || value > max {
+        return Err(ErrorResponse::validation(format!(
+            "{} must be between {} and {} (got {})",
+            field, min, max, value
+        )));
+    }
+    Ok(())
+}
+
 /// Validate identifier format (alphanumeric, underscore, hyphen, colon) for handlers.
 /// This is useful for validating device IDs, agent names, and other identifiers.
 pub fn validate_identifier(value: &str, field: &str) -> Result<(), ErrorResponse> {
@@ -962,6 +984,27 @@ mod tests {
         // Second validation fails
         let result = validate_string_length("x", "name", 5, 100);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_usize_range() {
+        // Valid cases
+        assert!(validate_usize_range(5, "field", 1, 10).is_ok());
+        assert!(validate_usize_range(1, "field", 1, 10).is_ok()); // exact min
+        assert!(validate_usize_range(10, "field", 1, 10).is_ok()); // exact max
+
+        // Below min — important for catching 0 (which silently disables features)
+        let result = validate_usize_range(0, "field", 1, 10);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("between"));
+        assert!(err.message.contains("got 0"));
+
+        // Above max — important for catching silently-clamped values
+        let result = validate_usize_range(11, "field", 1, 10);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("got 11"));
     }
 
     #[test]

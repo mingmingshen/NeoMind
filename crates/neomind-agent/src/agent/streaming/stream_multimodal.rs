@@ -12,6 +12,7 @@ use futures::{Stream, StreamExt};
 use super::context::{build_context_window_with_summary, ToolExecutionResult};
 use super::dedup::deduplicate_tool_results;
 use super::resolve::resolve_cached_arguments;
+use super::intent::build_list_only_dead_end_prompt;
 use super::result_format::format_tool_results;
 use super::sanitize::sanitize_tool_result_for_prompt;
 use super::stream_core::StreamSafeguards;
@@ -352,6 +353,120 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                     let history_content = state.large_data_cache.store(tool_name, result_str);
                     let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
                     state.push_message(tool_result_msg);
+                }
+            }
+
+            // === "LIST-ONLY DEAD END" DETECTION (multimodal path) ===
+            // Symmetric with stream_core.rs: if the user asked for an action but
+            // only read-only tools executed, fire ONE more tool round with a
+            // forced continuation prompt before falling through to the summary.
+            // Without this, multimodal users silently hit the dead end that the
+            // text path was fixed to handle.
+            let executed_commands: Vec<String> = tool_calls_to_execute
+                .iter()
+                .filter(|tc| tc.name == "shell")
+                .filter_map(|tc| {
+                    tc.arguments.get("command").and_then(|v| v.as_str()).map(String::from)
+                })
+                .collect();
+            let commands_ref: Vec<&str> = executed_commands.iter().map(|s| s.as_str()).collect();
+
+            if let Some(dead_end_prompt) = build_list_only_dead_end_prompt(
+                &user_message,
+                &commands_ref,
+                &tool_call_results,
+            ) {
+                tracing::info!("Multimodal dead-end: invoking one continuation round");
+                yield AgentEvent::progress("Continuing action...", "continuing", 0);
+
+                // Build history for the continuation LLM call (text-only; user image
+                // is already in history as a prior turn)
+                let cont_history: Vec<neomind_core::Message> = {
+                    let state_guard = internal_state.read().await;
+                    let compacted = super::super::compact_tool_results(&state_guard.memory, 2);
+                    compacted.iter().map(|msg| msg.to_core()).collect()
+                };
+
+                let cont_stream_result = llm_interface
+                    .chat_stream_with_history_thinking(&dead_end_prompt, &cont_history, None)
+                    .await;
+
+                if let Ok(cont_stream) = cont_stream_result {
+                    // Collect the continuation response — buffer for tool calls
+                    let mut cont_buffer = String::new();
+                    let mut cont_stream = Box::pin(cont_stream);
+                    while let Some(chunk) = cont_stream.next().await {
+                        match chunk {
+                            Ok((text, _)) => cont_buffer.push_str(&text),
+                            Err(_) => break,
+                        }
+                    }
+
+                    // Parse tool calls from the continuation response
+                    let cont_tool_calls = parse_tool_calls(&cont_buffer)
+                        .map(|(_, calls)| calls)
+                        .unwrap_or_default();
+
+                    if !cont_tool_calls.is_empty() {
+                        // Execute continuation tool calls with the same pattern as above
+                        let (large_cache_cont, cache_cont) = {
+                            let state = internal_state.read().await;
+                            (state.large_data_cache.clone(), state.tool_result_cache.clone())
+                        };
+                        let cont_inputs: Vec<(String, serde_json::Value)> = cont_tool_calls
+                            .iter()
+                            .map(|tc| (tc.name.clone(), resolve_cached_arguments(&tc.arguments, &large_cache_cont)))
+                            .collect();
+                        let cont_futures = futures::stream::iter(cont_inputs.into_iter().map(|(name, arguments)| {
+                            let tools_clone = tools.clone();
+                            let cache_clone = cache_cont.clone();
+                            async move {
+                                (name.clone(), ToolExecutionResult {
+                                    _name: name.clone(),
+                                    arguments: arguments.clone(),
+                                    result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
+                                })
+                            }
+                        })).buffer_unordered(6);
+                        let cont_results: Vec<_> = cont_futures.collect().await;
+
+                        // Save continuation assistant message + tool results to history
+                        let cont_msg = AgentMessage::assistant_with_tools(
+                            "",
+                            cont_tool_calls.iter().map(|tc| ToolCall {
+                                name: tc.name.clone(),
+                                id: String::new(),
+                                arguments: tc.arguments.clone(),
+                                result: None,
+                                round: Some(2),
+                            }).collect(),
+                        );
+                        internal_state.write().await.push_message(cont_msg);
+
+                        for (name, execution) in cont_results {
+                            yield AgentEvent::tool_call_start(&name, execution.arguments.clone());
+                            match execution.result {
+                                Ok(output) => {
+                                    let result_str = if output.success {
+                                        serde_json::to_string(&output.data).unwrap_or_else(|_| "Success".to_string())
+                                    } else {
+                                        output.error.clone().unwrap_or_else(|| "Error".to_string())
+                                    };
+                                    let display_str = sanitize_tool_result_for_prompt(&result_str);
+                                    yield AgentEvent::tool_call_end(&name, &display_str, output.success);
+                                    tool_call_results.push((name.clone(), display_str));
+                                    let mut state = internal_state.write().await;
+                                    let history_content = state.large_data_cache.store(&name, &result_str);
+                                    state.push_message(AgentMessage::tool_result(&name, &history_content));
+                                }
+                                Err(e) => {
+                                    let err_msg = format!("Tool execution failed: {}", e);
+                                    yield AgentEvent::tool_call_end(&name, &err_msg, false);
+                                    tool_call_results.push((name.clone(), err_msg));
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

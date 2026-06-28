@@ -159,6 +159,58 @@ pub struct SessionInfo {
     pub memory_enabled: bool,
 }
 
+/// Type alias for the cancel-sender map shared between manager and stream wrappers.
+type CancelSenderMap = Arc<RwLock<HashMap<String, tokio::sync::watch::Sender<bool>>>>;
+
+/// RAII guard that ensures a registered cancel sender is removed from the
+/// `cancel_senders` map when the stream wrapper is dropped — regardless of
+/// whether the consumer fully drained the stream.
+///
+/// Without this guard, a client disconnect / downstream error that drops the
+/// stream early would leak the sender entry, blocking future cancel attempts
+/// and pinning memory until process exit.
+///
+/// `Drop` cannot await on `tokio::sync::RwLock`, so cleanup is dispatched to
+/// a background task. This is cheap (cleanup runs once per session turn) and
+/// avoids holding the runtime's worker threads.
+struct CancelSenderGuard {
+    senders: CancelSenderMap,
+    session_id: String,
+    /// Set to true once the natural-end cleanup has run, so `Drop` doesn't
+    /// double-spawn a redundant removal.
+    cleaned_up: bool,
+}
+
+impl CancelSenderGuard {
+    fn new(senders: CancelSenderMap, session_id: String) -> Self {
+        Self {
+            senders,
+            session_id,
+            cleaned_up: false,
+        }
+    }
+
+    /// Mark as cleaned up so `Drop` becomes a no-op. Callers that already
+    /// performed the removal explicitly should invoke this before going out
+    /// of scope.
+    fn mark_cleaned_up(&mut self) {
+        self.cleaned_up = true;
+    }
+}
+
+impl Drop for CancelSenderGuard {
+    fn drop(&mut self) {
+        if self.cleaned_up {
+            return;
+        }
+        let senders = self.senders.clone();
+        let session_id = std::mem::take(&mut self.session_id);
+        tokio::spawn(async move {
+            senders.write().await.remove(&session_id);
+        });
+    }
+}
+
 /// Session manager for managing multiple agent sessions with persistence.
 pub struct SessionManager {
     /// Active sessions (in-memory cache)
@@ -664,11 +716,27 @@ impl SessionManager {
             tracing::debug!(session_id = %session_id, count = history.len(), "Restored messages for session");
         }
 
-        // Save to in-memory cache
-        self.sessions
-            .write()
-            .await
-            .insert(session_id.to_string(), agent.clone());
+        // Save to in-memory cache.
+        //
+        // Double-checked locking: between the read-lock check in `get_session`
+        // and this write, a concurrent restore for the same session_id may
+        // have already inserted its own Agent. If we blindly insert, we'd
+        // overwrite the winner — leaving the loser's caller with a stale Arc
+        // whose state updates (memory, history) silently evaporate.
+        //
+        // If a concurrent restore won, return THAT agent and discard ours.
+        let mut sessions = self.sessions.write().await;
+        if let Some(existing) = sessions.get(session_id).cloned() {
+            tracing::debug!(
+                session_id = %session_id,
+                "Concurrent restore won — discarding duplicate agent"
+            );
+            drop(sessions);
+            return Ok(existing);
+        }
+        sessions.insert(session_id.to_string(), agent.clone());
+        drop(sessions);
+
         self.session_messages
             .write()
             .await
@@ -1067,14 +1135,19 @@ impl SessionManager {
             )
             .await?;
 
-        // Wrap the stream to clean up the cancel sender when streaming ends
+        // Wrap the stream with a scopeguard so the cancel sender is removed
+        // even if the consumer drops the stream early (client disconnect,
+        // downstream error). The guard lives inside the async block, so it
+        // drops naturally on both natural-end and early-drop paths.
         let cleanup_stream = Box::pin(async_stream::stream! {
+            let mut guard = CancelSenderGuard::new(cancel_senders.clone(), session_id_owned.clone());
             let mut stream = stream;
             while let Some(event) = stream.next().await {
                 yield event;
             }
-            // Stream ended — remove the cancel sender
+            // Stream ended naturally — remove the cancel sender inline.
             cancel_senders.write().await.remove(&session_id_owned);
+            guard.mark_cleaned_up();
         });
 
         Ok(cleanup_stream)
@@ -1252,13 +1325,16 @@ impl SessionManager {
             .process_multimodal_stream_events_with_safeguards(message, images, safeguards)
             .await?;
 
-        // Wrap to clean up cancel sender on stream end
+        // Wrap with scopeguard so cancel sender is removed on both natural
+        // stream end and early drop (matches the text streaming path above).
         let cleanup_stream = Box::pin(async_stream::stream! {
+            let mut guard = CancelSenderGuard::new(cancel_senders.clone(), session_id_owned.clone());
             let mut stream = stream;
             while let Some(event) = stream.next().await {
                 yield event;
             }
             cancel_senders.write().await.remove(&session_id_owned);
+            guard.mark_cleaned_up();
         });
 
         Ok(cleanup_stream)
@@ -1655,5 +1731,133 @@ mod tests {
         // Now cancel should return false
         let cancelled = manager.cancel_session("stream-session").await;
         assert!(!cancelled, "After removal, cancel should return false");
+    }
+
+    /// Regression: if a stream wrapper is dropped WITHOUT being fully drained
+    /// (client disconnect, downstream error), the cancel sender must still be
+    /// removed from the map so a later `cancel_session` doesn't see a stale
+    /// entry. Before the `CancelSenderGuard` fix, the cleanup code lived at
+    /// the tail of `async_stream::stream! { ... }` and never ran on early drop.
+    /// Regression: two concurrent `get_session` calls for the same session
+    /// that's in the DB but not in memory MUST return the SAME `Arc<Agent>`.
+    ///
+    /// Before the double-checked-locking fix in `restore_session_from_db`,
+    /// both calls would pass the read-lock check (session not present),
+    /// both would build separate Agents, and both would insert. The second
+    /// insert would win — the loser's caller would be left with a stale Arc
+    /// whose subsequent state changes (memory updates, history appends)
+    /// silently never reached the canonical map entry.
+    #[tokio::test]
+    async fn test_get_session_concurrent_restore_returns_same_arc() {
+        let manager = create_temp_manager();
+
+        // 1. Create a session so it's in the DB
+        let session_id = manager.create_session().await.unwrap();
+
+        // 2. Seed the history table (otherwise load_history fails on never-
+        //    used sessions — unrelated to the race we're testing)
+        manager
+            .save_history(&session_id, &[AgentMessage::user("seed")])
+            .unwrap();
+
+        // 3. Evict it from the in-memory cache so the next get_session hits
+        //    the restore path
+        manager.sessions.write().await.remove(&session_id);
+
+        // 3. Spawn N concurrent get_session calls — they'll all race through
+        //    the read-lock miss and into restore_session_from_db
+        let manager_arc = std::sync::Arc::new(manager);
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let m = manager_arc.clone();
+            let sid = session_id.clone();
+            handles.push(tokio::spawn(async move {
+                m.get_session(&sid).await.expect("session must restore")
+            }));
+        }
+
+        let mut agents = Vec::new();
+        for h in handles {
+            agents.push(h.await.unwrap());
+        }
+
+        // 4. All callers MUST have gotten the same Arc — race-condition-free
+        let first_addr = Arc::as_ptr(&agents[0]);
+        for (i, a) in agents.iter().enumerate() {
+            assert_eq!(
+                Arc::as_ptr(a),
+                first_addr,
+                "concurrent get_session caller {i} got a different Arc — TOCTOU regression",
+            );
+        }
+
+        // 5. The map must hold that same Arc as the canonical entry
+        let canonical = manager_arc
+            .sessions
+            .read()
+            .await
+            .get(&session_id)
+            .cloned()
+            .expect("session must be cached after restore");
+        assert_eq!(
+            Arc::as_ptr(&canonical),
+            first_addr,
+            "canonical map entry differs from what callers received",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cancel_sender_guard_removes_on_drop() {
+        let manager = create_temp_manager();
+
+        // Register a sender
+        let (tx, _rx) = tokio::sync::watch::channel(false);
+        manager.register_cancel_sender("dropped-session", tx).await;
+
+        // Drop a guard WITHOUT calling mark_cleaned_up — simulating early drop
+        {
+            let _guard = CancelSenderGuard::new(
+                manager.cancel_senders.clone(),
+                "dropped-session".to_string(),
+            );
+            // _guard goes out of scope here → Drop spawns a removal task
+        }
+
+        // Give the spawned cleanup task a chance to run
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // The sender should have been removed by the Drop handler
+        let cancelled = manager.cancel_session("dropped-session").await;
+        assert!(
+            !cancelled,
+            "After guard drop, sender should be removed (cancel returns false)"
+        );
+    }
+
+    /// Regression: when the stream completes naturally and we call
+    /// `mark_cleaned_up`, the Drop handler must NOT double-spawn a removal.
+    #[tokio::test]
+    async fn test_cancel_sender_guard_mark_cleaned_up_is_noop_on_drop() {
+        let manager = create_temp_manager();
+
+        let (tx, _rx) = tokio::sync::watch::channel(false);
+        manager.register_cancel_sender("clean-session", tx).await;
+
+        // Simulate natural stream end: explicit removal + mark_cleaned_up
+        {
+            let mut guard = CancelSenderGuard::new(
+                manager.cancel_senders.clone(),
+                "clean-session".to_string(),
+            );
+            manager.remove_cancel_sender("clean-session").await;
+            guard.mark_cleaned_up();
+            // guard drops here — Drop should be a no-op
+        }
+
+        // Map should remain empty for this session
+        assert!(
+            !manager.cancel_senders.read().await.contains_key("clean-session"),
+            "mark_cleaned_up should suppress the Drop-spawned removal"
+        );
     }
 }

@@ -14,7 +14,7 @@ use super::context::{
     build_context_window_with_config, build_context_window_with_summary, ToolExecutionResult,
 };
 use super::dedup::deduplicate_tool_results;
-use super::intent::{all_tools_were_read_only, extract_action_hint, user_message_requires_action};
+use super::intent::build_list_only_dead_end_prompt;
 use super::resolve::resolve_cached_arguments;
 use super::result_format::format_tool_results;
 use super::sanitize::sanitize_tool_result_for_prompt;
@@ -355,52 +355,13 @@ pub async fn process_stream_events_with_safeguards(
                     // but all executed tools were read-only (list/get/latest/history),
                     // inject a FORCED continuation prompt to push the LLM to complete the task.
                     let commands_ref: Vec<&str> = recently_executed_commands.iter().map(|s| s.as_str()).collect();
-                    let list_only_dead_end = user_message_requires_action(&user_message)
-                        && all_tools_were_read_only(&commands_ref, &all_round_tool_results);
 
-                    if list_only_dead_end {
-                        let action_hint = extract_action_hint(&user_message);
-                        tracing::warn!(
-                            "List-only dead end detected! User wants action '{}' but only list/query tools were called. Injecting forced continuation.",
-                            action_hint
-                        );
-
-                        let mut msg = format!(
-                            "⚠️ CRITICAL: The user asked you to perform an ACTION, but you ONLY ran list/query commands.\n\
-                            You MUST now execute the actual action command.\n\n\
-                            Previously executed (read-only):\n{}\n\n",
-                            executed_summary
-                        );
-
-                        if !action_hint.is_empty() {
-                            msg.push_str(&format!(
-                                "The user's original request requires: {}\n\
-                                You MUST output a tool call NOW to complete this action.\n\
-                                Use the IDs/data from the list results above to construct the command.\n\n",
-                                action_hint
-                            ));
-
-                            // Rule-specific: if creating a rule, verify device/metric discovery was done
-                            if action_hint.contains("rule") && action_hint.contains("create") {
-                                let has_device_list = commands_ref.iter()
-                                    .any(|c| c.contains("device list") || c.contains("device get"));
-                                if !has_device_list {
-                                    msg.push_str(
-                                        "⚠️ RULE CREATION REQUIRES METRIC DISCOVERY:\n\
-                                        You have NOT run `neomind device list` or `neomind device get <ID>` yet.\n\
-                                        You CANNOT create a rule without knowing the REAL device ID and metric field name.\n\
-                                        Run `neomind device list` FIRST to discover metric_fields, THEN construct the DSL.\n\
-                                        NEVER guess device IDs or metric names — they will silently fail.\n\n"
-                                    );
-                                }
-                            }
-                        }
-
-                        msg.push_str(
-                            "DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
-                            OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action."
-                        );
-                        msg
+                    if let Some(dead_end_msg) = build_list_only_dead_end_prompt(
+                        &user_message,
+                        &commands_ref,
+                        &all_round_tool_results,
+                    ) {
+                        dead_end_msg
                     } else {
                         // Normal context message — no list-only dead end detected
                         format!(

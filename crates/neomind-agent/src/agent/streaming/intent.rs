@@ -110,6 +110,87 @@ pub(crate) fn all_tools_were_read_only(
     true
 }
 
+/// Build the forced-continuation prompt for the "list-only dead end" case.
+///
+/// This is shared between the text-only path (`stream_core.rs`) and the
+/// multimodal path (`stream_multimodal.rs`) so the prompt stays consistent.
+///
+/// Returns `Some(prompt)` if the user asked for an action but only read-only
+/// tools were executed, otherwise `None` (caller proceeds with the normal
+/// continuation prompt).
+///
+/// Arguments:
+/// - `user_message`: original user message text
+/// - `executed_commands`: actual shell command strings from prior tool calls
+///   (used for the "Previously executed" summary AND the read-only check)
+/// - `all_results`: `(tool_name, result_text)` accumulator across rounds
+pub(crate) fn build_list_only_dead_end_prompt(
+    user_message: &str,
+    executed_commands: &[&str],
+    all_results: &[(String, String)],
+) -> Option<String> {
+    if !user_message_requires_action(user_message) {
+        return None;
+    }
+    if !all_tools_were_read_only(executed_commands, all_results) {
+        return None;
+    }
+
+    let action_hint = extract_action_hint(user_message);
+    tracing::warn!(
+        "List-only dead end detected! User wants action '{}' but only list/query tools were called. Injecting forced continuation.",
+        action_hint
+    );
+
+    let executed_summary = if executed_commands.is_empty() {
+        String::from("(no prior commands)")
+    } else {
+        executed_commands
+            .iter()
+            .map(|s| format!("- {}", s))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let mut msg = format!(
+        "⚠️ CRITICAL: The user asked you to perform an ACTION, but you ONLY ran list/query commands.\n\
+        You MUST now execute the actual action command.\n\n\
+        Previously executed (read-only):\n{}\n\n",
+        executed_summary
+    );
+
+    if !action_hint.is_empty() {
+        msg.push_str(&format!(
+            "The user's original request requires: {}\n\
+            You MUST output a tool call NOW to complete this action.\n\
+            Use the IDs/data from the list results above to construct the command.\n\n",
+            action_hint
+        ));
+
+        // Rule-specific: if creating a rule, verify device/metric discovery was done
+        if action_hint.contains("rule") && action_hint.contains("create") {
+            let has_device_list = executed_commands
+                .iter()
+                .any(|c| c.contains("device list") || c.contains("device get"));
+            if !has_device_list {
+                msg.push_str(
+                    "⚠️ RULE CREATION REQUIRES METRIC DISCOVERY:\n\
+                    You have NOT run `neomind device list` or `neomind device get <ID>` yet.\n\
+                    You CANNOT create a rule without knowing the REAL device ID and metric field name.\n\
+                    Run `neomind device list` FIRST to discover metric_fields, THEN construct the DSL.\n\
+                    NEVER guess device IDs or metric names — they will silently fail.\n\n"
+                );
+            }
+        }
+    }
+
+    msg.push_str(
+        "DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
+        OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action."
+    );
+    Some(msg)
+}
+
 /// Extract the domain and expected action from the user message for the forced prompt.
 pub(crate) fn extract_action_hint(msg: &str) -> String {
     let msg_lower = msg.to_lowercase();
