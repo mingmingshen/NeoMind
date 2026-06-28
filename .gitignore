@@ -140,3 +140,7 @@ scripts/__pycache__/ble_simulator.cpython-312.pyc
 docs/superpowers/plans/2026-05-31-memory-system-refactor.md
 docs/superpowers/specs/2026-05-31-memory-system-refactor-design.md
 docs/superpowers/
+
+# Eval runner (auto-created outputs only; cases/fixtures/smoke committed)
+eval/runs/
+eval/reports/

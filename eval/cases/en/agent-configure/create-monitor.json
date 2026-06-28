@@ -1,0 +1,22 @@
+{
+  "id": "agent-create-monitor",
+  "lang": "en",
+  "category": "agent",
+  "workflow": "agent-configure",
+  "scenario_type": "single_turn",
+  "description": "Create a simple interval-based monitoring agent",
+  "setup": { "fixture": "seed-default" },
+  "turns": [
+    { "user": "Create an agent named 'Temp Patrol' that checks all temperature sensors every 5 minutes and alerts on readings above 35." }
+  ],
+  "applies": ["tool_accuracy", "task_completion", "response_quality", "language_adherence"],
+  "expectations": {
+    "per_turn": [
+      "Turn 1: Agent calls `neomind agent create --name Temp Patrol --every 5m --prompt ...`"
+    ],
+    "overall": "Agent should be created and active by default"
+  },
+  "state_queries": [
+    { "type": "agent_exists", "params": { "id": "Temp Patrol" }, "expected": true }
+  ]
+}
