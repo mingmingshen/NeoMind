@@ -194,6 +194,14 @@ impl AgentExecutor {
     /// the system prompt. Avoids wasting a tool-call round reading files the
     /// agent already knows about — especially valuable in Focused+ mode with
     /// only 3 rounds (33% of budget saved).
+    ///
+    /// **Total budget constraint**: in addition to the per-file adaptive cap,
+    /// the cumulative chars across all inlined files are capped at 40% of the
+    /// `context_window_size` (estimated as chars/4 ≈ tokens). Files are loaded
+    /// in order until the budget is exhausted; the remaining files fall back
+    /// to index-only mode (name + description). This prevents a runaway agent
+    /// with 20 knowledge files from consuming 84%+ of the context budget,
+    /// starving journal/recent-messages/tool results.
     pub(crate) fn prefetch_knowledge_files(
         &self,
         agent_id: &str,
@@ -206,21 +214,49 @@ impl AgentExecutor {
 
         let store = self.memory_store.as_ref()?;
 
+        // Per-file cap + total budget cap (see `compute_prefetch_budget`).
+        let (per_file_limit, total_budget_chars) = compute_prefetch_budget(context_window_size);
+
         let mut content_map = std::collections::HashMap::new();
+        let mut accumulated_chars: usize = 0;
+        let mut budget_exhausted = false;
+
         for f in knowledge_files {
+            // Once budget is exhausted, leave remaining files for the index
+            // fallback path (caller's `build_history_context` will render them
+            // as name+description only).
+            if budget_exhausted {
+                tracing::info!(
+                    agent_id = %agent_id,
+                    skipped_file = %f.name,
+                    accumulated_chars,
+                    total_budget_chars,
+                    "Skipping knowledge file prefetch (total budget exhausted)"
+                );
+                continue;
+            }
+
             match store.read_agent_custom_file(agent_id, &f.name) {
                 Ok(content) => {
-                    // Adaptive truncation: large-context models (64K+) can afford
-                    // the full write limit (20000), matching what the agent wrote.
-                    // Smaller models stay conservative to avoid context bloat.
-                    let limit = if context_window_size > 64000 {
-                        20000
-                    } else if context_window_size > 16000 {
-                        16000
-                    } else {
-                        8000
-                    };
-                    content_map.insert(f.name.clone(), truncate_to(&content, limit));
+                    let capped = truncate_to(&content, per_file_limit);
+                    accumulated_chars += capped.chars().count();
+
+                    // If adding this file blew the budget, keep it (already
+                    // truncated) but signal budget exhaustion so subsequent
+                    // files skip prefetch. This avoids partial-file edge cases
+                    // and keeps the most-recently-loaded file complete.
+                    if accumulated_chars > total_budget_chars {
+                        budget_exhausted = true;
+                        tracing::info!(
+                            agent_id = %agent_id,
+                            last_file = %f.name,
+                            accumulated_chars,
+                            total_budget_chars,
+                            "Knowledge prefetch budget reached after this file"
+                        );
+                    }
+
+                    content_map.insert(f.name.clone(), capped);
                 }
                 Err(e) => {
                     tracing::debug!(
@@ -238,5 +274,85 @@ impl AgentExecutor {
         } else {
             Some(content_map)
         }
+    }
+}
+
+/// Compute `(per_file_limit, total_budget_chars)` for `prefetch_knowledge_files`.
+///
+/// Pure function extracted for testability — the budget decision is the only
+/// nontrivial logic in the prefetch path (file IO + HashMap building is
+/// mechanical). Keeping it standalone lets us verify the tier boundaries and
+/// the budget-floor behaviour without spinning up a full `AgentExecutor`.
+///
+/// - `per_file_limit`: per-file char cap. Tiers: >64K context → 20000,
+///   >16K → 16000, else 8000.
+/// - `total_budget_chars`: cumulative char budget across all inlined files.
+///   Computed as `context_window_size * 0.40 * 4` (~4 chars/token), floored
+///   at 16K chars so small-context models still get usable content. Files
+///   past the budget fall back to index-only rendering in `build_history_context`.
+pub(crate) fn compute_prefetch_budget(context_window_size: usize) -> (usize, usize) {
+    let per_file_limit = if context_window_size > 64000 {
+        20000
+    } else if context_window_size > 16000 {
+        16000
+    } else {
+        8000
+    };
+
+    let total_budget_chars = ((context_window_size as f64 * 0.40) * 4.0) as usize;
+    let total_budget_chars = total_budget_chars.max(16_000);
+
+    (per_file_limit, total_budget_chars)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefetch_budget_small_context_uses_floor() {
+        // 4K context → 4K * 0.4 * 4 = 6400 chars, below the 16K floor
+        let (per_file, total) = compute_prefetch_budget(4096);
+        assert_eq!(per_file, 8000);
+        assert_eq!(total, 16_000);
+    }
+
+    #[test]
+    fn prefetch_budget_mid_context() {
+        // 32K context → per_file 16K, total = floor(32768 * 0.4 * 4) = 52428 chars
+        let (per_file, total) = compute_prefetch_budget(32_768);
+        assert_eq!(per_file, 16_000);
+        assert_eq!(total, 52_428);
+    }
+
+    #[test]
+    fn prefetch_budget_large_context() {
+        // 128K context → per_file 20K, total = floor(131072 * 0.4 * 4) = 209715 chars.
+        // For a 128K-token window, ~210K chars ≈ 52K tokens — about 40% of
+        // the context, leaving ~76K tokens for actual conversation. With
+        // MAX_KNOWLEDGE_FILES=20 × 20K chars/file = 400K raw, this cap
+        // cuts off at ~half — preventing knowledge files alone from
+        // consuming the majority of the history budget.
+        let (per_file, total) = compute_prefetch_budget(131_072);
+        assert_eq!(per_file, 20_000);
+        assert_eq!(total, 209_715);
+    }
+
+    #[test]
+    fn prefetch_budget_tier_boundary_16k() {
+        // Exactly 16K is the "small" tier (per_file 8K) — the >16K branch
+        // starts at 16381+
+        let (per_file_at_16k, _) = compute_prefetch_budget(16_000);
+        let (per_file_above, _) = compute_prefetch_budget(16_381);
+        assert_eq!(per_file_at_16k, 8_000);
+        assert_eq!(per_file_above, 16_000);
+    }
+
+    #[test]
+    fn prefetch_budget_tier_boundary_64k() {
+        let (per_file_at_64k, _) = compute_prefetch_budget(64_000);
+        let (per_file_above, _) = compute_prefetch_budget(64_001);
+        assert_eq!(per_file_at_64k, 16_000);
+        assert_eq!(per_file_above, 20_000);
     }
 }

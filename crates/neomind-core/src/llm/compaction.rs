@@ -301,8 +301,13 @@ pub fn compact_messages(
             if is_tool_result {
                 tool_result_count += 1;
                 if tool_result_count > config.keep_recent_tool_results {
-                    // Use smart summarization to preserve key data (IDs, names, status)
-                    let summary = smart_summarize_tool_result(&content_text, 300);
+                    // Use smart summarization to preserve key data (IDs, names, status).
+                    // 500-char cap (was 300) — keeps ~1-2 extra JSON fields per
+                    // result so cross-round analysis (e.g. comparing device
+                    // metric lists, last-seen timestamps) doesn't lose detail
+                    // when the agent needs to revisit older data. Marginal
+                    // token cost vs the operational data preserved.
+                    let summary = smart_summarize_tool_result(&content_text, 500);
                     let summary_msg = Message {
                         role: msg.role,
                         content: crate::message::Content::Text(format!(
