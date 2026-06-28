@@ -368,7 +368,9 @@ pub enum ExtensionCommand {
     /// Show extension information.
     ///
     /// Displays manifest details: version, description, metrics, commands.
+    /// `get` is a visible alias matching every other domain's `get` convention.
     /// Example: `neomind extension info weather-forecast`
+    #[command(visible_alias = "get")]
     Info {
         /// Extension ID or .nep file path.
         #[arg(required = true)]
