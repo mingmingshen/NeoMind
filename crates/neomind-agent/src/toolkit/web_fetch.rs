@@ -3,11 +3,11 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::LazyLock;
-use std::time::Duration;
 
 use neomind_core::tools::ToolCategory;
 
 use super::error::{Result, ToolError};
+use super::timeouts;
 use super::tool::{object_schema, Tool, ToolOutput};
 
 /// Pre-compiled regexes (compiled once, reused across calls).
@@ -32,9 +32,6 @@ const MAX_ALLOWED_LENGTH: usize = 50_000;
 /// Maximum response body size (1 MB).
 const MAX_RESPONSE_BODY: usize = 1024 * 1024;
 
-/// Request timeout in seconds.
-const REQUEST_TIMEOUT_SECS: u64 = 15;
-
 impl WebFetchTool {
     pub fn new() -> Self {
         // Custom redirect policy: validate each redirect target against SSRF rules
@@ -58,7 +55,7 @@ impl WebFetchTool {
         });
 
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .timeout(timeouts::web_fetch())
             .redirect(redirect_policy)
             .no_proxy()
             .build()

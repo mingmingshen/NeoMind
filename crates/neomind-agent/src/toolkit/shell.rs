@@ -32,7 +32,7 @@ pub struct ShellConfig {
 }
 
 fn default_timeout() -> u64 {
-    30
+    crate::toolkit::timeouts::shell_default().as_secs()
 }
 
 fn default_max_output() -> usize {
@@ -891,9 +891,13 @@ On failure, check the "suggestion" field for recovery hints."#
                 .ok_or_else(|| {
                     ToolError::InvalidArguments("timeout must be a positive number".into())
                 })?;
-            Duration::from_secs(secs.min(600))
+            Duration::from_secs(secs.min(crate::toolkit::timeouts::shell_max().as_secs()))
         } else {
-            Duration::from_secs(self.config.timeout_secs.min(600))
+            Duration::from_secs(
+                self.config
+                    .timeout_secs
+                    .min(crate::toolkit::timeouts::shell_max().as_secs()),
+            )
         };
 
         let working_dir = args.get("working_dir").and_then(|v| v.as_str());

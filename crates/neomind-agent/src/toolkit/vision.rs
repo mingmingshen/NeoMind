@@ -55,7 +55,7 @@ impl Default for VisionConfig {
             enabled: true,
             vlm_backend_id: None,
             max_tokens: 1024,
-            capture_timeout_secs: 10,
+            capture_timeout_secs: crate::toolkit::timeouts::vision_capture().as_secs(),
             max_image_dim: 1280,
         }
     }

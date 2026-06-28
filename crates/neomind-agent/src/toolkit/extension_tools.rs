@@ -276,8 +276,10 @@ impl Tool for ExtensionTool {
         // "Invalid base64: Invalid symbol 58" when they receive the data URI prefix.
         let normalized_args = Self::normalize_image_args(&args);
 
-        // Execute with a 300-second timeout for extensions that need longer inference
-        let result = tokio::time::timeout(std::time::Duration::from_secs(300), async {
+        // Execute with the centralized SLOW tier timeout (300s) for extensions that
+        // need longer inference. Routed through `timeouts` so the ceiling is tunable
+        // from a single source of truth.
+        let result = tokio::time::timeout(crate::toolkit::timeouts::extension_invoke(), async {
             let ext = self.extension.read().await;
             ext.execute_command(&self.command.name, &normalized_args)
                 .await

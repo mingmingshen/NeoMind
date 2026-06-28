@@ -12,6 +12,7 @@ pub mod registry;
 pub mod shell;
 pub mod skill_tool;
 pub mod time_utils;
+pub mod timeouts;
 pub mod tool;
 pub mod vision;
 pub mod web_fetch;
