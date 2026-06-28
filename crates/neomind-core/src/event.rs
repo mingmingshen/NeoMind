@@ -50,8 +50,7 @@ pub enum NeoMindEvent {
 
     /// Device metric update (core event!)
     ///
-    /// This is the primary event that drives rule evaluation and
-    /// workflow triggers.
+    /// This is the primary event that drives rule evaluation.
     DeviceMetric {
         device_id: String,
         metric: String,
@@ -113,35 +112,6 @@ pub enum NeoMindEvent {
     RuleExecuted {
         rule_id: String,
         rule_name: String,
-        success: bool,
-        duration_ms: u64,
-        timestamp: i64,
-    },
-
-    // ========== Workflow Events ==========
-    /// Workflow was triggered
-    WorkflowTriggered {
-        workflow_id: String,
-        trigger_type: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        trigger_data: Option<serde_json::Value>,
-        execution_id: String,
-        timestamp: i64,
-    },
-
-    /// Workflow step completed
-    WorkflowStepCompleted {
-        workflow_id: String,
-        execution_id: String,
-        step_id: String,
-        result: serde_json::Value,
-        timestamp: i64,
-    },
-
-    /// Workflow completed
-    WorkflowCompleted {
-        workflow_id: String,
-        execution_id: String,
         success: bool,
         duration_ms: u64,
         timestamp: i64,
@@ -464,9 +434,6 @@ impl NeoMindEvent {
             Self::RuleEvaluated { .. } => "RuleEvaluated",
             Self::RuleTriggered { .. } => "RuleTriggered",
             Self::RuleExecuted { .. } => "RuleExecuted",
-            Self::WorkflowTriggered { .. } => "WorkflowTriggered",
-            Self::WorkflowStepCompleted { .. } => "WorkflowStepCompleted",
-            Self::WorkflowCompleted { .. } => "WorkflowCompleted",
             Self::AlertCreated { .. } => "AlertCreated",
             Self::AlertAcknowledged { .. } => "AlertAcknowledged",
             Self::MessageCreated { .. } => "MessageCreated",
@@ -519,9 +486,6 @@ impl NeoMindEvent {
             | Self::RuleEvaluated { timestamp, .. }
             | Self::RuleTriggered { timestamp, .. }
             | Self::RuleExecuted { timestamp, .. }
-            | Self::WorkflowTriggered { timestamp, .. }
-            | Self::WorkflowStepCompleted { timestamp, .. }
-            | Self::WorkflowCompleted { timestamp, .. }
             | Self::AlertCreated { timestamp, .. }
             | Self::AlertAcknowledged { timestamp, .. }
             | Self::MessageCreated { timestamp, .. }
@@ -595,16 +559,6 @@ impl NeoMindEvent {
         matches!(
             self,
             Self::RuleEvaluated { .. } | Self::RuleTriggered { .. } | Self::RuleExecuted { .. }
-        )
-    }
-
-    /// Check if this is a workflow event.
-    pub fn is_workflow_event(&self) -> bool {
-        matches!(
-            self,
-            Self::WorkflowTriggered { .. }
-                | Self::WorkflowStepCompleted { .. }
-                | Self::WorkflowCompleted { .. }
         )
     }
 

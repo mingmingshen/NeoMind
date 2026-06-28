@@ -685,13 +685,6 @@ async fn test_extension_event_subscription_automatic_conversion() {
             condition_met: true,
             timestamp: 0,
         },
-        NeoMindEvent::WorkflowTriggered {
-            workflow_id: "workflow1".to_string(),
-            trigger_type: "manual".to_string(),
-            trigger_data: None,
-            execution_id: "exec1".to_string(),
-            timestamp: 0,
-        },
         NeoMindEvent::AlertCreated {
             alert_id: "alert1".to_string(),
             title: "Test Alert".to_string(),
@@ -757,12 +750,11 @@ async fn test_extension_event_subscription_automatic_conversion() {
         .as_any()
         .downcast_ref::<AllEventsExtension>()
         .unwrap();
-    assert_eq!(ext_ref.get_event_count(), 10);
+    assert_eq!(ext_ref.get_event_count(), 9);
 
     let received_events = ext_ref.get_received_events().await;
     assert!(received_events.contains(&"DeviceOnline".to_string()));
     assert!(received_events.contains(&"RuleEvaluated".to_string()));
-    assert!(received_events.contains(&"WorkflowTriggered".to_string()));
     assert!(received_events.contains(&"AlertCreated".to_string()));
     assert!(received_events.contains(&"AgentDecision".to_string()));
     assert!(received_events.contains(&"LlmDecisionProposed".to_string()));

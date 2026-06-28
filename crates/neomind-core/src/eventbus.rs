@@ -254,12 +254,6 @@ impl FilterBuilder {
         FilteredReceiver::new(rx, NeoMindEvent::is_rule_event)
     }
 
-    /// Subscribe to workflow events only.
-    pub fn workflow_events(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
-        let rx = self.tx.subscribe();
-        FilteredReceiver::new(rx, NeoMindEvent::is_workflow_event)
-    }
-
     /// Subscribe to agent events only.
     pub fn agent_events(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
         let rx = self.tx.subscribe();
@@ -516,7 +510,6 @@ mod tests {
         // Test each filter type
         let mut device_rx = bus.filter().device_events();
         let mut rule_rx = bus.filter().rule_events();
-        let mut workflow_rx = bus.filter().workflow_events();
         let mut llm_rx = bus.filter().llm_events();
         let mut alert_rx = bus.filter().alert_events();
 
@@ -533,15 +526,6 @@ mod tests {
             rule_name: "Test".to_string(),
             trigger_value: 1.0,
             actions: vec![],
-            timestamp: 0,
-        })
-        .await;
-
-        bus.publish(NeoMindEvent::WorkflowTriggered {
-            workflow_id: "wf1".to_string(),
-            trigger_type: "manual".to_string(),
-            trigger_data: None,
-            execution_id: "exec1".to_string(),
             timestamp: 0,
         })
         .await;
@@ -568,10 +552,6 @@ mod tests {
             "DeviceOnline"
         );
         assert_eq!(rule_rx.recv().await.unwrap().0.type_name(), "RuleTriggered");
-        assert_eq!(
-            workflow_rx.recv().await.unwrap().0.type_name(),
-            "WorkflowTriggered"
-        );
         assert_eq!(
             llm_rx.recv().await.unwrap().0.type_name(),
             "PeriodicReviewTriggered"

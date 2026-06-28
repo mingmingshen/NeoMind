@@ -253,11 +253,6 @@ pub enum ErrorCode {
     InsufficientPermissions = 5003,
     InvalidToken = 5004,
 
-    // Workflow errors (6xxx)
-    WorkflowNotFound = 6001,
-    WorkflowExecutionFailed = 6002,
-    InvalidWorkflowDefinition = 6003,
-
     // LLM/Agent errors (7xxx)
     LlmUnavailable = 7001,
     LlmTimeout = 7002,
@@ -303,11 +298,6 @@ impl ErrorCode {
             Self::ApiKeyExpired => "API_KEY_EXPIRED",
             Self::InsufficientPermissions => "INSUFFICIENT_PERMISSIONS",
             Self::InvalidToken => "INVALID_TOKEN",
-
-            // Workflow errors
-            Self::WorkflowNotFound => "WORKFLOW_NOT_FOUND",
-            Self::WorkflowExecutionFailed => "WORKFLOW_EXECUTION_FAILED",
-            Self::InvalidWorkflowDefinition => "INVALID_WORKFLOW_DEFINITION",
 
             // LLM/Agent errors
             Self::LlmUnavailable => "LLM_UNAVAILABLE",

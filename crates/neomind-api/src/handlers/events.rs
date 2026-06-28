@@ -44,8 +44,6 @@ impl Default for BatchConfig {
                 "AgentExecutionCompleted",
                 "AgentExecutionFailed",
                 "AlertCreated",
-                "WorkflowCompleted",
-                "WorkflowFailed",
             ],
         }
     }
@@ -61,7 +59,6 @@ enum EventBusReceiverWrapper {
     Unfiltered(EventBusReceiver),
     FilteredDevice(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
     FilteredRule(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
-    FilteredWorkflow(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
     FilteredAgent(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
     FilteredLlm(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
     FilteredAlert(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
@@ -74,7 +71,6 @@ impl EventBusReceiverWrapper {
             EventBusReceiverWrapper::Unfiltered(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredDevice(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredRule(rx) => rx.recv().await,
-            EventBusReceiverWrapper::FilteredWorkflow(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredAgent(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredLlm(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredAlert(rx) => rx.recv().await,
@@ -316,7 +312,7 @@ pub struct EventStreamParams {
     /// Filter by event type (can be specified multiple times)
     #[serde(default)]
     pub event_type: Vec<String>,
-    /// Filter by category: device, rule, workflow, llm, alert, tool
+    /// Filter by category: device, rule, llm, alert, tool
     #[serde(default)]
     pub category: Option<String>,
     /// Last event ID to resume from
@@ -477,9 +473,6 @@ fn create_filtered_receiver(
             EventBusReceiverWrapper::FilteredDevice(event_bus.filter().device_events())
         }
         Some("rule") => EventBusReceiverWrapper::FilteredRule(event_bus.filter().rule_events()),
-        Some("workflow") => {
-            EventBusReceiverWrapper::FilteredWorkflow(event_bus.filter().workflow_events())
-        }
         Some("agent") => EventBusReceiverWrapper::FilteredAgent(event_bus.filter().agent_events()),
         Some("llm") => EventBusReceiverWrapper::FilteredLlm(event_bus.filter().llm_events()),
         Some("alert") => EventBusReceiverWrapper::FilteredAlert(event_bus.filter().alert_events()),

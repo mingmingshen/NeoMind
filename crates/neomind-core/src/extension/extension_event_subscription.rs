@@ -188,7 +188,6 @@ impl ExtensionEventSubscriptionService {
     /// This method automatically supports ALL NeoMindEvent types, including:
     /// - Device events (DeviceMetric, DeviceOnline, DeviceOffline, etc.)
     /// - Rule events (RuleEvaluated, RuleTriggered, RuleExecuted)
-    /// - Workflow events (WorkflowTriggered, WorkflowStepCompleted, etc.)
     /// - Alert/Message events (AlertCreated, MessageCreated, etc.)
     /// - Agent events (AgentExecutionStarted, AgentThinking, etc.)
     /// - LLM events (LlmDecisionProposed, LlmDecisionExecuted, etc.)

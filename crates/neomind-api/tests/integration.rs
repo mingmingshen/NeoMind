@@ -96,37 +96,6 @@ async fn test_user_to_llm_to_device_flow() {
     println!("User message flow test completed");
 }
 
-/// Test: Device Event → Workflow → Action flow
-///
-/// 1. Device event is published
-/// 2. Workflow trigger detects event
-/// 3. Workflow executes steps
-/// 4. Action is performed
-#[tokio::test]
-async fn test_device_to_workflow_action_flow() {
-    use neomind_core::event::NeoMindEvent;
-    use neomind_core::eventbus::EventBus;
-
-    let bus = EventBus::new();
-
-    // Subscribe to workflow events
-    let _wf_rx = bus.filter().workflow_events();
-
-    // Publish device event that should trigger workflow
-    bus.publish(NeoMindEvent::DeviceOnline {
-        device_id: "sensor_001".to_string(),
-        device_type: "motion_sensor".to_string(),
-        timestamp: 0,
-    })
-    .await;
-
-    // Wait for event propagation
-    sleep(Duration::from_millis(50)).await;
-
-    // In full integration, workflow engine would trigger here
-    println!("Device to workflow flow test completed");
-}
-
 /// Test: LLM Periodic Review → Decision → Execution flow
 ///
 /// 1. Periodic review is triggered
