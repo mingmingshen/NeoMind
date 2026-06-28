@@ -468,6 +468,21 @@ impl MarkdownMemoryStore {
         fs::create_dir_all(self.base_path.join("sessions"))?;
         fs::create_dir_all(self.base_path.join("custom"))?;
 
+        // Sweep stale `.{name}.tmp` files left by aborted atomic writes
+        // (process killed between write-temp and rename). Best-effort,
+        // non-fatal. Covers the top level + each subdir so a long-running
+        // server doesn't accumulate hidden temp files across crashes.
+        let swept = atomic_write::cleanup_stale_temps(&self.base_path)
+            + atomic_write::cleanup_stale_temps(&self.base_path.join("agents"))
+            + atomic_write::cleanup_stale_temps(&self.base_path.join("sessions"))
+            + atomic_write::cleanup_stale_temps(&self.base_path.join("custom"));
+        if swept > 0 {
+            info!(
+                swept,
+                "Cleaned up stale atomic-write temp files in memory store"
+            );
+        }
+
         // Create USER.md if it doesn't exist
         let user_path = self.base_path.join("USER.md");
         if !user_path.exists() {

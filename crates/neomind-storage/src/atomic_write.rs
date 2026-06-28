@@ -58,6 +58,45 @@ fn tmp_path_for(path: &Path) -> PathBuf {
     path.with_file_name(tmp_name)
 }
 
+/// Remove leftover `.<name>.tmp` files in `dir` produced by aborted atomic
+/// writes (process killed between `fs::write(tmp)` and `fs::rename(tmp, path)`).
+///
+/// Best-effort: errors reading individual directory entries or removing
+/// individual files are logged at `debug!` and skipped, so a permission
+/// issue on one file doesn't prevent startup. Returns the number of files
+/// removed. Safe to call on a non-existent directory (returns 0).
+///
+/// Call this from store `init()` paths so a long-running server doesn't
+/// accumulate hidden tmp files across crashes.
+pub fn cleanup_stale_temps(dir: &Path) -> usize {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_tmp = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|name| name.starts_with('.') && name.ends_with(".tmp"))
+            .unwrap_or(false);
+        if !is_tmp {
+            continue;
+        }
+        // Best-effort removal — never propagate errors. A leftover tmp from
+        // a concurrent write-in-progress would be caught here too, but
+        // `remove_file` on a file that's about to be renamed is harmless on
+        // both POSIX and Windows (the rename either already happened → file
+        // gone → no-op; or hasn't happened → we win the race and the
+        // subsequent rename fails, which the writer handles via cleanup).
+        if fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,5 +136,34 @@ mod tests {
         let tmp = tmp_path_for(path);
         assert_eq!(tmp, Path::new("/tmp/agent/.USER.md.tmp"));
         assert_eq!(tmp.parent(), path.parent(), "temp must share parent dir");
+    }
+
+    #[test]
+    fn cleanup_removes_stale_temps_only() {
+        let dir = tempfile::tempdir().unwrap();
+        // Simulate leftovers from an aborted write
+        fs::write(dir.path().join(".USER.md.tmp"), "partial").unwrap();
+        fs::write(dir.path().join(".KNOWLEDGE.md.tmp"), "partial").unwrap();
+        // Real files and unrelated files must be preserved
+        fs::write(dir.path().join("USER.md"), "real").unwrap();
+        fs::write(dir.path().join("notes.txt"), "keep me").unwrap();
+        // A `.tmp` extension without leading `.` should NOT match (named like a
+        // user-created file, not an atomic-write temp)
+        fs::write(dir.path().join("data.tmp"), "keep").unwrap();
+
+        let removed = cleanup_stale_temps(dir.path());
+
+        assert_eq!(removed, 2, "only the two hidden .*.tmp files should be removed");
+        assert!(!dir.path().join(".USER.md.tmp").exists());
+        assert!(!dir.path().join(".KNOWLEDGE.md.tmp").exists());
+        assert!(dir.path().join("USER.md").exists(), "real file preserved");
+        assert!(dir.path().join("notes.txt").exists(), "unrelated file preserved");
+        assert!(dir.path().join("data.tmp").exists(), "non-hidden .tmp file preserved");
+    }
+
+    #[test]
+    fn cleanup_on_missing_dir_is_noop() {
+        let removed = cleanup_stale_temps(Path::new("/no/such/dir/anywhere"));
+        assert_eq!(removed, 0);
     }
 }

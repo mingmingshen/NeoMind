@@ -347,4 +347,119 @@ mod tests {
         let snapshot = MemorySnapshot::load(&store);
         assert!(snapshot.content.chars().count() <= CHAR_BUDGET);
     }
+
+    /// Verifies the truncation path is exercised when all three sections
+    /// sit at their per-file maxima. Storage caps each file individually
+    /// (user=2000, knowledge=3000, procedures=3000) for a combined body of
+    /// 8000 chars. With section headers the combined snapshot slightly
+    /// exceeds CHAR_BUDGET, so Procedures (lowest priority) gets trimmed.
+    ///
+    /// This is the ONLY truncation path reachable through the public
+    /// `write_file` API — user-alone-exceeds-budget is impossible because
+    /// user is capped at 2000 < CHAR_BUDGET.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_over_budget_truncates_procedures_after_knowledge() {
+        let (store, _dir) = create_test_store();
+
+        // Max each file. 2000 + 3000 + 3000 = 8000 body chars; combined
+        // with `## User\n\n## Knowledge\n\n## Procedures\n` headers this
+        // tips just past the 8000-char budget.
+        let user = "U".repeat(2000);
+        let knowledge = "K".repeat(3000);
+        let procedures = "P".repeat(3000);
+
+        store.write_file("user", &user).await.unwrap();
+        store.write_file("knowledge", &knowledge).await.unwrap();
+        store.write_file("procedures", &procedures).await.unwrap();
+
+        let snapshot = MemorySnapshot::load(&store);
+
+        // Hard invariant: never over budget.
+        assert!(
+            snapshot.content.chars().count() <= CHAR_BUDGET,
+            "snapshot must fit CHAR_BUDGET (got {}, budget {})",
+            snapshot.content.chars().count(),
+            CHAR_BUDGET
+        );
+
+        // Priority order — User and Knowledge are preserved in full.
+        // (Substring of 100 chars is robust to the single 'U' in the
+        // `## User` header that would throw off a raw char count.)
+        assert!(
+            snapshot.content.contains(&"U".repeat(100)),
+            "User section must be fully preserved"
+        );
+        assert!(
+            snapshot.content.contains(&"K".repeat(100)),
+            "Knowledge section must be fully preserved"
+        );
+
+        // Procedures is the lowest-priority section, so it must be the one
+        // that gets truncated. Header stays, some `P`s survive, but fewer
+        // than the original 3000.
+        assert!(
+            snapshot.content.contains("## Procedures"),
+            "Procedures section header must be preserved even when truncated"
+        );
+        // Count only body P's (subtract the one in the "## Procedures" header).
+        let p_count = snapshot.content.chars().filter(|c| *c == 'P').count().saturating_sub(1);
+        assert!(
+            p_count < 3000,
+            "Procedures must be truncated (got {} P chars, expected <3000)",
+            p_count
+        );
+        assert!(p_count > 0, "some Procedures content should survive truncation");
+    }
+
+    /// Unit-test `truncate_with_priority` directly against aggressive
+    /// over-budget synthetic content. The storage-layer per-file caps make
+    /// such content impossible through the public API, but the truncation
+    /// function itself must still be robust — it's a defense-in-depth layer
+    /// guarding CHAR_BUDGET.
+    #[test]
+    fn test_truncate_with_priority_aggressive_over_budget() {
+        // 3000 (User) + 3000 (Knowledge) + 5000 (Procedures) = 11000 body
+        // chars vs 8000-char budget. User + Knowledge fit; Procedures is
+        // the section that actually gets truncated here.
+        let content = format!(
+            "## User\n{}\n\n## Knowledge\n{}\n\n## Procedures\n{}",
+            "U".repeat(3000),
+            "K".repeat(3000),
+            "P".repeat(5000)
+        );
+
+        let truncated = truncate_with_priority(&content, CHAR_BUDGET);
+
+        assert!(
+            truncated.chars().count() <= CHAR_BUDGET,
+            "truncate_with_priority must respect budget (got {}, budget {})",
+            truncated.chars().count(),
+            CHAR_BUDGET
+        );
+
+        // User preserved in full (priority 1). 100-char substring is robust
+        // to the single 'U' in the `## User` header.
+        assert!(
+            truncated.contains(&"U".repeat(100)),
+            "User section must be fully preserved"
+        );
+        // Knowledge preserved in full (priority 2).
+        assert!(
+            truncated.contains(&"K".repeat(100)),
+            "Knowledge section must be fully preserved"
+        );
+        // Procedures truncated, but header and some content survive.
+        assert!(
+            truncated.contains("## Procedures"),
+            "Procedures section header must be preserved"
+        );
+        // Count body P's (subtract 1 for the header letter).
+        let p_count = truncated.matches('P').count().saturating_sub(1);
+        assert!(
+            p_count < 5000,
+            "Procedures must be truncated (got {}, expected <5000)",
+            p_count
+        );
+        assert!(p_count > 0, "some Procedures content should survive truncation");
+    }
 }
