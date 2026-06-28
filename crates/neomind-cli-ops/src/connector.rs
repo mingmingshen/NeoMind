@@ -64,16 +64,18 @@ pub async fn create_connector(
     connector_type: Option<&str>,
     host: &str,
     port: u16,
-    tls: bool,
+    tls: Option<bool>,
     username: Option<&str>,
     password: Option<&str>,
     subscribe_topics: Option<&str>,
 ) -> Result<CliResponse> {
+    // Default to false when --tls is omitted; preserves prior behavior.
+    let tls_val = tls.unwrap_or(false);
     let mut body = json!({
         "name": name,
         "broker": host,
         "port": port,
-        "tls": tls,
+        "tls": tls_val,
     });
     if let Some(u) = username {
         body["username"] = json!(u);

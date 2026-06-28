@@ -23,7 +23,7 @@ Data Push forwards device metrics and extension outputs to external systems (web
 1. **`--name` is required** for creating push targets
 2. **`--type` is required**: `webhook` or `mqtt`
 3. **`--config` must be valid JSON** with type-specific fields
-4. **Targets start in stopped state** — must `push start <ID>` after creation
+4. **Targets start in stopped state** — must `push enable <ID>` after creation
 5. **Always test** with `push test <ID>` before relying on delivery
 6. **Use `--sources`** to filter which data gets forwarded (comma-separated patterns)
 
@@ -55,10 +55,10 @@ neomind push create --name <NAME> --type <TYPE> --config '<JSON>' [--schedule <S
 ### Manage Targets
 
 ```bash
-neomind push start <ID>                          # Start a stopped target
-neomind push stop <ID>                           # Stop a running target
-neomind push enable <ID>                         # Alias for start (unified form)
-neomind push disable <ID>                        # Alias for stop (unified form)
+neomind push enable <ID>                         # Start a stopped target (unified form)
+neomind push disable <ID>                        # Stop a running target (unified form)
+neomind push start <ID>                          # Legacy alias for enable (hidden, backward compat)
+neomind push stop <ID>                           # Legacy alias for disable (hidden, backward compat)
 neomind push test <ID>                           # Test delivery (sends sample data)
 neomind push update <ID> [--name <N>] [--config '<JSON>'] [--enabled true|false]
 neomind push delete <ID>                         # Delete a target
@@ -147,7 +147,7 @@ neomind push create --name sensor-webhook --type webhook \
   --sources "device:sensor-001:temperature"
 
 # Step 2: Start the target
-neomind push start <ID>
+neomind push enable <ID>
 
 # Step 3: Test delivery
 neomind push test <ID>
@@ -165,7 +165,7 @@ neomind push create --name cloud-mqtt --type mqtt \
   --schedule event
 
 # Start and test
-neomind push start <ID>
+neomind push enable <ID>
 neomind push test <ID>
 ```
 
@@ -205,5 +205,5 @@ neomind push update <ID> --enabled false
 | "Target not found" | Wrong ID | Run `push list` for valid IDs |
 | "Connection refused" | Target URL/broker unreachable | Verify URL, check network, use `push test` |
 | "Timeout" | Slow external endpoint | Increase `timeout_secs` in config via `push update` |
-| "Not started" | Target is stopped | Run `push start <ID>` first |
+| "Not started" | Target is stopped | Run `push enable <ID>` first |
 | "No data forwarded" | Source filter too restrictive | Check `--sources` patterns, try without filter |

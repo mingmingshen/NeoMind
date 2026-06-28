@@ -22,7 +22,7 @@ pub fn is_local_extension_command(cmd: &ExtensionCommand) -> bool {
             | ExtensionCommand::Uninstall { .. }
             | ExtensionCommand::Create { .. }
             | ExtensionCommand::Build { .. }
-            | ExtensionCommand::Info { .. }
+            | ExtensionCommand::Get { .. }
     )
 }
 
@@ -275,7 +275,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
                     &id,
                     metric.as_deref(),
                     time_range.as_deref(),
-                    compress,
+                    compress.unwrap_or(false),
                 )
                 .await?,
                 output_format,
@@ -543,7 +543,7 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
             } else {
                 output_format
             };
-            let resp = share_dashboard(&client, &id, public, expires.as_deref()).await?;
+            let resp = share_dashboard(&client, &id, public.unwrap_or(false), expires.as_deref()).await?;
             (resp, fmt)
         }
     };
@@ -1120,7 +1120,7 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
                 Some(&connector_type),
                 &host,
                 port,
-                tls,
+                tls, // Option<bool>; create_connector defaults to false when None
                 username.as_deref(),
                 password.as_deref(),
                 topics.as_deref(),

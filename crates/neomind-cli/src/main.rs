@@ -967,9 +967,9 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
             }
             unreachable!()
         }
-        ExtensionCommand::Info { .. } => {
-            // Info has local fallback logic, handled separately
-            if let ExtensionCommand::Info { id_or_path } = cmd {
+        ExtensionCommand::Get { .. } => {
+            // Get has local fallback logic, handled separately
+            if let ExtensionCommand::Get { id_or_path } = cmd {
                 return show_extension_info(&id_or_path).await;
             }
             unreachable!()

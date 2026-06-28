@@ -368,10 +368,10 @@ pub enum ExtensionCommand {
     /// Show extension information.
     ///
     /// Displays manifest details: version, description, metrics, commands.
-    /// `get` is a visible alias matching every other domain's `get` convention.
-    /// Example: `neomind extension info weather-forecast`
-    #[command(visible_alias = "get")]
-    Info {
+    /// `info` is a visible alias for backward compatibility.
+    /// Example: `neomind extension get weather-forecast`
+    #[command(visible_alias = "info")]
+    Get {
         /// Extension ID or .nep file path.
         #[arg(required = true)]
         id_or_path: String,
@@ -635,8 +635,9 @@ pub enum DeviceCommand {
         time_range: Option<String>,
         /// AI compression mode: lossless adaptive series (kept/fluctuated).
         /// Allows up to 90 days. Designed for AI consumption, not frontend charts.
+        /// Use --compress=true to enable or --compress=false to disable.
         #[arg(long)]
-        compress: bool,
+        compress: Option<bool>,
         /// Output in JSON format.
         #[arg(long)]
         json: bool,
@@ -979,16 +980,16 @@ pub enum DashboardCommand {
     },
     /// Share dashboard.
     ///
-    /// Generates a shareable link for the dashboard. Use --public for open access
-    /// or --expires to set a time-limited link.
-    /// Example: `neomind dashboard share dash-001 --public --expires "2025-12-31"`
+    /// Generates a shareable link for the dashboard. Use --public=true for open access
+    /// or --expires to set a time-limited link. Defaults to private (--public=false).
+    /// Example: `neomind dashboard share dash-001 --public=true --expires "2025-12-31"`
     Share {
         /// Dashboard ID.
         #[arg(required = true)]
         id: String,
-        /// Make public.
+        /// Make public (use --public=true or --public=false). Defaults to false.
         #[arg(short, long)]
-        public: bool,
+        public: Option<bool>,
         /// Expiration date/time.
         #[arg(short, long)]
         expires: Option<String>,
@@ -1620,6 +1621,7 @@ pub enum MessageCommand {
     /// Batch acknowledge: list IDs from `message list`, then read each one.
     ///
     /// Example: `neomind message read msg-001`
+    #[command(visible_alias = "ack")]
     Read {
         /// Message ID.
         #[arg(required = true)]
@@ -1786,19 +1788,23 @@ pub enum PushCommand {
         #[arg(required = true)]
         id: String,
     },
-    /// Start a push target.
+    /// Start a push target (hidden alias for `push enable`).
     ///
     /// Enables real-time or scheduled data forwarding.
-    /// Example: `neomind push start <ID>`
+    /// Prefer `push enable <ID>` for consistency with other domains.
+    /// Kept for backward compatibility.
+    #[command(hide = true)]
     Start {
         /// Target ID.
         #[arg(required = true)]
         id: String,
     },
-    /// Stop a push target.
+    /// Stop a push target (hidden alias for `push disable`).
     ///
     /// Pauses data forwarding without deleting the target.
-    /// Example: `neomind push stop <ID>`
+    /// Prefer `push disable <ID>` for consistency with other domains.
+    /// Kept for backward compatibility.
+    #[command(hide = true)]
     Stop {
         /// Target ID.
         #[arg(required = true)]
@@ -2065,9 +2071,9 @@ pub enum ConnectorCommand {
         /// Connector port (default: 1883).
         #[arg(long, default_value_t = 1883)]
         port: u16,
-        /// Enable TLS.
+        /// Enable/disable TLS (use --tls=true or --tls=false). Defaults to false.
         #[arg(long)]
-        tls: bool,
+        tls: Option<bool>,
         /// Username for authentication.
         #[arg(long)]
         username: Option<String>,
@@ -2308,6 +2314,115 @@ mod unify_enable_disable_tests {
                 assert_eq!(disable, Some(true));
             }
             other => panic!("expected Connector::Update, got {other:?}"),
+        }
+    }
+
+    /// Batch 1 C1: connector create --tls=false must work (was plain `bool`).
+    /// Symmetric with the update path fix from P1.1.
+    #[test]
+    fn connector_create_tls_accepts_explicit_value() {
+        // Explicit false
+        let cmd = parse("connector create --name x --host h --tls=false");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Create { tls, .. } => {
+                assert_eq!(tls, Some(false));
+            }
+            other => panic!("expected Connector::Create, got {other:?}"),
+        }
+
+        // Explicit true
+        let cmd = parse("connector create --name x --host h --tls=true");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Create { tls, .. } => {
+                assert_eq!(tls, Some(true));
+            }
+            other => panic!("expected Connector::Create, got {other:?}"),
+        }
+
+        // Omitted → None (handler defaults to false)
+        let cmd = parse("connector create --name x --host h");
+        let Command::Connector { connector_cmd } = cmd else {
+            panic!("expected Connector, got {cmd:?}");
+        };
+        match connector_cmd {
+            super::ConnectorCommand::Create { tls, .. } => {
+                assert_eq!(tls, None);
+            }
+            other => panic!("expected Connector::Create, got {other:?}"),
+        }
+    }
+
+    /// Batch 1 Concern 1: dashboard share --public=false and device history
+    /// --compress=false must work (Option<bool> sweep).
+    #[test]
+    fn option_bool_sweep_accepts_false_value() {
+        // dashboard share --public=false
+        let cmd = parse("dashboard share dash-001 --public=false");
+        let Command::Dashboard { dashboard_cmd } = cmd else {
+            panic!("expected Dashboard, got {cmd:?}");
+        };
+        match dashboard_cmd {
+            super::DashboardCommand::Share { public, id, .. } => {
+                assert_eq!(id, "dash-001");
+                assert_eq!(public, Some(false));
+            }
+            other => panic!("expected Dashboard::Share, got {other:?}"),
+        }
+
+        // device history --compress=false
+        let cmd = parse("device history dev-001 --compress=false");
+        let Command::Device { device_cmd } = cmd else {
+            panic!("expected Device, got {cmd:?}");
+        };
+        match device_cmd {
+            super::DeviceCommand::History { compress, id, .. } => {
+                assert_eq!(id, "dev-001");
+                assert_eq!(compress, Some(false));
+            }
+            other => panic!("expected Device::History, got {other:?}"),
+        }
+    }
+
+    /// Batch 1 Concern 3: extension get is primary; info is visible alias.
+    #[test]
+    fn extension_get_is_primary_info_is_alias() {
+        // Both `get` and `info` must parse to the same variant.
+        let cmd_get = parse("extension get weather-forecast");
+        let cmd_info = parse("extension info weather-forecast");
+        match (cmd_get, cmd_info) {
+            (
+                Command::Extension {
+                    extension_cmd: super::ExtensionCommand::Get { id_or_path: id1 },
+                },
+                Command::Extension {
+                    extension_cmd: super::ExtensionCommand::Get { id_or_path: id2 },
+                },
+            ) => {
+                assert_eq!(id1, "weather-forecast");
+                assert_eq!(id2, "weather-forecast");
+            }
+            other => panic!("expected Extension::Get for both, got {other:?}"),
+        }
+    }
+
+    /// Batch 1 Concern 8: message ack is a visible alias for read.
+    #[test]
+    fn message_ack_is_alias_for_read() {
+        let cmd = parse("message ack msg-001");
+        let Command::Message { message_cmd } = cmd else {
+            panic!("expected Message, got {cmd:?}");
+        };
+        match message_cmd {
+            super::MessageCommand::Read { id } => {
+                assert_eq!(id, "msg-001");
+            }
+            other => panic!("expected Message::Read, got {other:?}"),
         }
     }
 }

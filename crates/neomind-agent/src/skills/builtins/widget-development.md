@@ -9,7 +9,7 @@ triggers:
   keywords: [widget, custom widget, 自定义组件, widget create, 组件开发, component, IIFE, bundle.js, manifest, 仪表盘组件, dashboard widget, 自定义图表, custom chart, jsxRuntime, device binding]
   tool_target:
     - tool: widget
-      actions: [create, install, bundle, get, list, uninstall, market-list, market-install]
+      actions: [create, install, get, list, uninstall, market-list, market-install]
 anti_triggers:
   keywords: [extension develop, 扩展开发, rule, 规则, device connect, 设备连接, agent, 代理]
 ---
