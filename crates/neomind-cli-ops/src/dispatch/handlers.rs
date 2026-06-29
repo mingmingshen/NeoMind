@@ -195,6 +195,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             name,
             device_type,
             adapter_type,
+            device_id,
             config,
             json,
         } => {
@@ -214,6 +215,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
                     &name,
                     &device_type,
                     &adapter_type,
+                    device_id.as_deref(),
                     connection_config,
                 )
                 .await?,

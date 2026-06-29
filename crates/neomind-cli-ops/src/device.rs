@@ -394,6 +394,7 @@ pub async fn create_device(
     name: &str,
     device_type: &str,
     adapter_type: &str,
+    device_id: Option<&str>,
     connection_config: Option<serde_json::Value>,
 ) -> Result<CliResponse> {
     let mut body = json!({
@@ -402,6 +403,13 @@ pub async fn create_device(
         "adapter_type": adapter_type,
         "connection_config": {}
     });
+    if let Some(id) = device_id {
+        // Only forward non-empty strings — clap passes empty string when the
+        // user explicitly sets `--id ""`, treat that as "auto-generate".
+        if !id.is_empty() {
+            body["device_id"] = json!(id);
+        }
+    }
     if let Some(config) = connection_config {
         body["connection_config"] = config;
     }

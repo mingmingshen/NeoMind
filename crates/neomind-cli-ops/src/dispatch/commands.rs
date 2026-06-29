@@ -540,7 +540,7 @@ pub enum DeviceCommand {
     ///
     /// Workflow:
     ///   1. `neomind device types list` — pick a device type
-    ///   2. `neomind device create --name "My Sensor" --device-type temp_sensor --adapter-type mqtt`
+    ///   2. `neomind device create --name "My Sensor" --device-type temp_sensor --adapter-type mqtt --id my-sensor-01`
     ///   3. Send data via MQTT to the configured topic, or use `device write-metric`
     ///   4. Verify with `device get <ID>`
     Create {
@@ -554,6 +554,11 @@ pub enum DeviceCommand {
         /// Adapter type: mqtt (default) | webhook.
         #[arg(short, long)]
         adapter_type: String,
+        /// Optional explicit device ID. Auto-generated if omitted. Use this when
+        /// the user provides a specific identifier (e.g. `cam-office`) — never
+        /// silently swap it for an auto-generated one.
+        #[arg(long = "id", alias = "device-id")]
+        device_id: Option<String>,
         /// Connection config JSON. For MQTT: '{"topic":"sensor/data"}'.
         /// For webhook: omit (auto-generated URL).
         #[arg(short, long)]
