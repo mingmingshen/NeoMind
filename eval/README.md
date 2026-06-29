@@ -1,15 +1,26 @@
 # NeoMind Chat Agent Eval System
 
-A Claude-as-judge eval harness for the NeoMind chat AI agent. The Rust runner
-spawns a real `neomind serve` subprocess per case (full isolation), runs the
-agent in-process via `SessionManager::memory()`, captures full tool-call traces,
-and a Claude Code session grades the output across 6 dimensions.
+A Claude-as-judge eval harness for the NeoMind chat AI agent. Python runner
+spawns a real `neomind serve` subprocess per case (full isolation), drives the
+agent through the **production chat pipeline** (`POST /api/sessions/:id/chat`),
+captures tool-call traces, and a Claude (Anthropic API) session grades the
+output across 6 dimensions.
 
 ## Layout
 
 ```
 eval/
 ├── README.md                   # this file
+├── requirements.txt            # requests, anthropic
+├── run_eval.py                 # CLI entrypoint (validate / run-case / smoke / run / report)
+├── lib/                        # runner + judge library
+│   ├── server.py               # spawn neomind serve, configure LLM, HTTP chat
+│   ├── seed.py                 # seed fixtures via HTTP
+│   ├── state_query.py          # 12 state-query types (spec §4a)
+│   ├── fallback.py             # suspected_fallback heuristic (spec §7)
+│   ├── validate.py             # case-schema checks (spec §13 step 7)
+│   ├── judge.py                # Claude-as-judge via anthropic SDK
+│   └── report.py               # aggregate scores.jsonl → grade-card.md
 ├── fixtures/                   # seed-default.json, seed-empty.json
 ├── smoke/                      # 5 sanity cases (good-001..003, bad-001..002)
 ├── cases/
@@ -19,25 +30,66 @@ eval/
 └── reports/                    # auto-created (gitignored)
 ```
 
-Crates: `crates/eval-runner/` (Rust binary + lib).
+## Architecture (pivoted 2026-06-29)
+
+The agent under test runs INSIDE the `neomind serve` subprocess via the
+production chat pipeline. This exercises the real system prompts, real tool
+registry, real multi-round tool-calling continuation, real list-only-dead-end
+detection — everything the chat UI exercises. The previous in-process
+`SessionManager` (Rust `eval-runner` crate) bypassed all of that and caused
+multi-tool calls to silently fail in eval despite working fine in the chat UI.
+The Python runner uses HTTP only and has no Rust dependency beyond the
+`neomind` binary itself.
+
+Per case:
+1. Spawn `neomind serve --host 127.0.0.1 --port <free>` with temp
+   `NEOMIND_DATA_DIR` and CWD = tempdir.
+2. Pre-seed a known API key via `neomind api-key create` BEFORE spawning —
+   the subprocess's `AuthState::new()` (CWD-relative path → resolves to the
+   same redb) loads that key. Avoids needing to read redb from Python.
+3. Pass `NEOMIND_API_BASE` + `NEOMIND_API_KEY` as env on the subprocess so
+   the agent's in-process shell dispatch (CLAUDE.md "CLI In-Process Dispatch")
+   talks back to the same server.
+4. Configure the agent-under-test's LLM backend via
+   `POST /api/llm-backends` + `/activate` — same API surface the chat UI uses.
+5. Seed fixture + case extras via HTTP POST.
+6. Create chat session (`POST /api/sessions`) + run each turn
+   (`POST /api/sessions/:id/chat`, 130s timeout).
+7. Run state queries via HTTP GET.
+8. Run `detect_suspected_fallback` (3 conditions: all turns empty+fast AND
+   expectations mention a tool word).
+9. Send CaseRecord to Claude (Anthropic API) for grading.
+10. Teardown: kill subprocess, drop tempdir.
 
 ## Quick Start
 
 ```bash
-# 1. Build the runner
-cargo build -p eval-runner --release
+# 0. Install Python deps (one-time)
+pip install -r eval/requirements.txt
+
+# 1. Build the neomind binary (release; the runner uses target/release/neomind)
+cargo build -p neomind-cli --release
 
 # 2. Validate every case (no server, no LLM)
-cargo run -p eval-runner --release -- validate-all eval/cases
+python3 eval/run_eval.py validate-all --root eval/cases
 
-# 3. Run a single case (requires AGENT_LLM_* + neomind binary on PATH)
+# 3. Run a single case (requires AGENT_LLM_*)
 AGENT_LLM_API_KEY=sk-xxx \
-AGENT_LLM_ENDPOINT=https://dashscope.aliyuncs.com/compatible-mode/v1 \
-AGENT_LLM_MODEL=qwen-plus \
-  cargo run -p eval-runner --release -- run-case eval/smoke/good-002.json
+AGENT_LLM_ENDPOINT=https://api.deepseek.com/v1 \
+AGENT_LLM_MODEL=deepseek-v4-flash \
+AGENT_LLM_BACKEND_TYPE=deepseek \
+  python3 eval/run_eval.py run-case --case eval/smoke/good-002.json
 
-# 4. Run the full eval as Claude-judge (from Claude Code session)
-/eval chat-eval
+# 4. Run smoke cases (no judge)
+AGENT_LLM_API_KEY=... AGENT_LLM_ENDPOINT=... AGENT_LLM_MODEL=... \
+  python3 eval/run_eval.py smoke
+
+# 5. Run all Tier 1 cases WITH Claude judge (requires ANTHROPIC_API_KEY)
+AGENT_LLM_API_KEY=... AGENT_LLM_ENDPOINT=... AGENT_LLM_MODEL=... \
+  python3 eval/run_eval.py run --root eval/cases --lang both --judge
+
+# 6. (Or just generate the grade card from existing scores)
+python3 eval/run_eval.py report --scores eval/runs/<ts>/scores.jsonl
 ```
 
 ## Case Schema (spec §3)
@@ -88,39 +140,34 @@ Weights renormalize over `applies[]` subset.
 `agent_status`, `transform_exists`, `dashboard_exists`,
 `dashboard_component_count`, `channel_exists`, `message_count`, `push_enabled`.
 
-## Architecture
-
-For each case:
-1. Spawn `neomind serve --host 127.0.0.1 --port 0` with temp `NEOMIND_DATA_DIR`
-   and CWD = tempdir (so `AuthState::new()`'s hardcoded `data/api_keys.redb`
-   lands inside the tempdir).
-2. Parse the bound port from merged stdout+stderr (banner uses `println!`).
-3. Poll `/api/health` until ready.
-4. Read the auto-created API key from `<tempdir>/data/api_keys.redb` via
-   `neomind_cli_ops::auto_auth::read_default_api_key_from`.
-5. Seed fixture + extras via HTTP POST.
-6. Build `SessionManager::memory()` in-process, inject `CloudRuntime` via
-   `set_custom_llm`, point the agent's shell tool at the test server via
-   `NEOMIND_API_BASE`/`NEOMIND_API_KEY`.
-7. For each turn: call `sm.process_message()` with 120s timeout, capture
-   `AgentResponse.tool_calls` (full args + results).
-8. Run state queries via HTTP GET.
-9. Run `detect_suspected_fallback` (3 conditions: all turns empty+fast AND
-   expectations mention a tool word).
-10. Teardown: kill subprocess, drop tempdir.
-
 ## Two env-var groups (do not confuse!)
 
 | Var | Purpose | Where |
 |-----|---------|-------|
-| `AGENT_LLM_API_KEY` / `AGENT_LLM_ENDPOINT` / `AGENT_LLM_MODEL` | Powers the chat agent | eval-runner process |
-| `NEOMIND_API_BASE` / `NEOMIND_API_KEY` | Where the agent's shell tool hits | Set per-case from temp server |
+| `AGENT_LLM_API_KEY` / `AGENT_LLM_ENDPOINT` / `AGENT_LLM_MODEL` | Powers the chat agent (model under test) | Set on runner; propagated to server via API |
+| `AGENT_LLM_BACKEND_TYPE` | `openai` (default) / `deepseek` / `qwen` / `anthropic` / etc. | Same as above |
+| `AGENT_LLM_THINKING` | `true` / `false` (default; commit c6385169) | Same as above |
+| `ANTHROPIC_API_KEY` | Powers the Claude judge | Runner process only |
+| `EVAL_JUDGE_MODEL` | Override judge model (default `claude-opus-4-6`) | Runner process only |
+| `NEOMIND_TEST_BIN` | Override `neomind` binary path (default `<cwd>/target/release/neomind`) | Runner process only |
 
 The test server auto-derives its OWN API key — never set `NEOMIND_API_KEY`
-yourself when running the runner.
+yourself; the runner pre-seeds one via `neomind api-key create` and propagates
+it to the subprocess.
+
+## Known limitations
+
+- **Greeting fast-path false positive**: smoke-good-001 (`你好`) triggers the
+  agent's canned greeting response at `agent/mod.rs:1355` (4ms, no LLM). The
+  fallback heuristic flags this as `suspected_fallback=true` because
+  expectations mention tool words. This is a known false positive — the agent
+  behavior is correct for greetings.
+- **Pre-seeded `data/api_keys.redb` quirk**: `AuthState::new()` hardcodes the
+  relative path `data/api_keys.redb` (does NOT respect `NEOMIND_DATA_DIR`).
+  The runner sets CWD = tempdir so the relative path resolves correctly.
 
 ## See Also
 
 - Spec: `docs/superpowers/specs/2026-06-29-eval-system-design.md`
-- Plan: `docs/superpowers/plans/2026-06-29-eval-system.md`
-- Skill: `crates/eval-runner/skills/eval-chat.md` (the Claude-judge slash command)
+- Plan: `docs/superpowers/plans/2026-06-29-eval-system.md` (historical —
+  describes the original Rust crate architecture, now superseded by Python)

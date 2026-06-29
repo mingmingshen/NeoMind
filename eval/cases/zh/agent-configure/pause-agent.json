@@ -12,7 +12,7 @@
         {
           "name": "demo-agent",
           "user_prompt": "demo",
-          "schedule": { "schedule_type": "interval", "config": "60" },
+          "schedule": { "schedule_type": "interval", "interval_seconds": 60 },
           "execution_mode": "free"
         }
       ]

@@ -7,7 +7,7 @@
   "description": "Negative test: agent is asked to create a device but the test captures whether it actually invokes device create. If agent just chatters, expected to score low on tool_accuracy.",
   "setup": { "fixture": "seed-empty" },
   "turns": [
-    { "user": "请帮我添加一个新设备：名称 'Office Sensor'，类型 temp_sensor，MQTT 连接" }
+    { "user": "请帮我添加一个新设备：名称 'Office Sensor'，类型 ne101_camera，MQTT 连接" }
   ],
   "applies": ["tool_accuracy", "task_completion", "language_adherence"],
   "expectations": {

@@ -14,7 +14,7 @@
   "expectations": {
     "per_turn": [
       "Turn 1: Agent should call device list and enumerate all 3 devices",
-      "Turn 2: Agent should call device get/details for sensor-001 and report temperature + humidity metrics, referencing the prior turn's context"
+      "Turn 2: Agent should call device get/details for sensor-001 and report the device's actual metrics (e.g. values.battery, values.batteryVoltage for ne101_camera), referencing the prior turn's context"
     ],
     "overall": "Both turns should use English and reference sensor-001's real metrics"
   }

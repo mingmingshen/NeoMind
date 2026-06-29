@@ -1,51 +1,49 @@
 {
   "name": "seed-default",
-  "description": "Default seed: 2 temp sensors + 1 camera + 1 temperature alert rule",
+  "description": "Default seed: 3 ne101 cameras + 1 enabled low-battery alert rule. ne101_camera template exposes values.battery as a real metric, so the rule passes validation. rule-temp-alert is enabled so rule-disable-existing / rule-list-all cases have something real to operate on.",
   "devices": [
     {
-      "id": "sensor-001",
+      "device_id": "sensor-001",
       "name": "Living Room Sensor",
-      "device_type": "temp_sensor",
+      "device_type": "ne101_camera",
       "adapter_type": "mqtt",
       "connection_config": {}
     },
     {
-      "id": "sensor-002",
+      "device_id": "sensor-002",
       "name": "Bedroom Sensor",
-      "device_type": "temp_sensor",
+      "device_type": "ne101_camera",
       "adapter_type": "mqtt",
       "connection_config": {}
     },
     {
-      "id": "camera-001",
+      "device_id": "camera-001",
       "name": "Front Door Camera",
-      "device_type": "ip_camera",
+      "device_type": "ne101_camera",
       "adapter_type": "mqtt",
       "connection_config": {}
     }
   ],
   "metrics": [
-    { "device_id": "sensor-001", "metric": "temperature", "value": 22.5 },
-    { "device_id": "sensor-001", "metric": "humidity", "value": 55.0 },
-    { "device_id": "sensor-002", "metric": "temperature", "value": 24.1 },
-    { "device_id": "sensor-002", "metric": "humidity", "value": 60.0 }
+    { "device_id": "sensor-001", "metric": "values.battery", "value": 75 },
+    { "device_id": "sensor-002", "metric": "values.battery", "value": 82 }
   ],
   "rules": [
     {
       "name": "rule-temp-alert",
-      "description": "Alert when sensor-001 temperature exceeds 30",
+      "description": "Low-battery alert — fires when sensor-001 reports values.battery < 20. Name kept as rule-temp-alert for backward compatibility with existing case expectations.",
+      "enabled": true,
+      "trigger": { "trigger_type": "data_change" },
       "condition": {
-        "type": "comparison",
-        "field": "device:sensor-001:temperature",
-        "operator": ">",
-        "value": 30
+        "condition_type": "comparison",
+        "source": "device:sensor-001:values.battery",
+        "operator": "less_than",
+        "threshold": 20.0
       },
       "actions": [
-        { "type": "notify", "message": "Temperature too high on sensor-001" }
+        { "type": "notify", "message": "sensor-001 battery low: {value}%", "severity": "warning" }
       ],
-      "trigger": "metric_update",
-      "cooldown": 60,
-      "enabled": true
+      "cooldown": 60000
     }
   ]
 }
