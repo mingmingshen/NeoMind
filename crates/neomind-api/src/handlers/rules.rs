@@ -942,6 +942,15 @@ pub async fn create_rule_handler(
                     "Provide a valid JSON rule object. Required fields: 'name'. \
                      Condition types: 'comparison', 'range', 'logical'. \
                      Action types: 'notify', 'execute', 'trigger_agent'. \
+                     Trigger shape (internally tagged, field is 'trigger_type'): \
+                     {{\"trigger\":{{\"trigger_type\":\"data_change\"}}}} | \
+                     {{\"trigger\":{{\"trigger_type\":\"schedule\",\"cron\":\"* * * * *\"}}}} | \
+                     {{\"trigger\":{{\"trigger_type\":\"manual\"}}}}. \
+                     Minimal working example: \
+                     {{\"name\":\"x\",\"trigger\":{{\"trigger_type\":\"data_change\"}},\
+                      \"condition\":{{\"condition_type\":\"comparison\",\"source\":\"device:sensor-001:values.battery\",\
+                      \"operator\":\"less_than\",\"threshold\":20.0}},\
+                      \"actions\":[{{\"type\":\"notify\",\"message\":\"low\",\"severity\":\"warning\"}}]}}. \
                      Error detail: {}", err_msg
                 )
             )
@@ -1289,33 +1298,13 @@ fn convert_metric_data_type(dt: DeviceMetricDataType) -> neomind_rules::MetricDa
 /// This is shared between `validate_rule_handler` and `create_rule_handler` so that
 /// rule creation rejects rules that reference non-existent resources.
 fn build_validation_context(state: &ServerState) -> neomind_rules::ValidationContext {
-    use neomind_rules::{DeviceInfo, MetricDataType, MetricInfo, ValidationContext};
+    use neomind_rules::{DeviceInfo, ValidationContext};
 
     let mut context = ValidationContext::new();
 
     let all_devices = state.devices.service.list_devices();
     for device in all_devices {
-        let mut metrics = Vec::new();
-        match device.device_type.as_str() {
-            "sensor" | "temperature_sensor" => {
-                metrics.push(MetricInfo {
-                    name: "temperature".to_string(),
-                    data_type: MetricDataType::Number,
-                    unit: Some("°C".to_string()),
-                    min_value: Some(-50.0),
-                    max_value: Some(150.0),
-                });
-            }
-            _ => {
-                metrics.push(MetricInfo {
-                    name: "value".to_string(),
-                    data_type: MetricDataType::Number,
-                    unit: None,
-                    min_value: None,
-                    max_value: None,
-                });
-            }
-        }
+        let metrics = build_device_metrics_for_validation(&state.devices.service, &device);
 
         context.add_device(DeviceInfo {
             id: device.device_id.clone(),
@@ -1328,6 +1317,71 @@ fn build_validation_context(state: &ServerState) -> neomind_rules::ValidationCon
     }
 
     context
+}
+
+/// Build the metric list for rule validation.
+///
+/// Source of truth is the device-type template (so rules can reference real
+/// template metrics like `values.battery` on `ne101_camera`). Falls back to
+/// legacy hardcoded behavior ONLY when no template is registered, to preserve
+/// existing behavior for ad-hoc device types without a registered template.
+fn build_device_metrics_for_validation(
+    service: &neomind_devices::DeviceService,
+    device: &neomind_devices::DeviceConfig,
+) -> Vec<neomind_rules::MetricInfo> {
+    use neomind_devices::MetricDataType as DevicesMetricDataType;
+    use neomind_rules::{MetricDataType, MetricInfo};
+
+    // Preferred: pull real metrics from the registered device-type template.
+    if let Some(template) = service.get_template(&device.device_type) {
+        if !template.metrics.is_empty() {
+            return template
+                .metrics
+                .iter()
+                .map(|m| MetricInfo {
+                    name: m.name.clone(),
+                    data_type: match m.data_type {
+                        DevicesMetricDataType::Float
+                        | DevicesMetricDataType::Integer => MetricDataType::Number,
+                        DevicesMetricDataType::Boolean => MetricDataType::Boolean,
+                        // String / Array / Binary / Enum all map to String for
+                        // rule-validation purposes (rules compare against the
+                        // string representation of the value).
+                        _ => MetricDataType::String,
+                    },
+                    unit: if m.unit.is_empty() { None } else { Some(m.unit.clone()) },
+                    min_value: m.min,
+                    max_value: m.max,
+                })
+                .collect();
+        }
+    }
+
+    // Legacy fallback: hardcoded metric shapes for ad-hoc device types that
+    // have no registered template. Preserves pre-fix behavior so we don't
+    // break existing rule validations on minimal test installs.
+    let mut metrics = Vec::new();
+    match device.device_type.as_str() {
+        "sensor" | "temperature_sensor" => {
+            metrics.push(MetricInfo {
+                name: "temperature".to_string(),
+                data_type: MetricDataType::Number,
+                unit: Some("°C".to_string()),
+                min_value: Some(-50.0),
+                max_value: Some(150.0),
+            });
+        }
+        _ => {
+            metrics.push(MetricInfo {
+                name: "value".to_string(),
+                data_type: MetricDataType::Number,
+                unit: None,
+                min_value: None,
+                max_value: None,
+            });
+        }
+    }
+    metrics
 }
 
 /// Enforce minimum cooldown for virtual-metric rules.
