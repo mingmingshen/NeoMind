@@ -9,6 +9,137 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Overview
+
+A **chat-agent eval system + first round of eval-surfaced production
+fixes**. The eval runner is rewritten in Python and now drives the
+agent-under-test through a real `neomind serve` subprocess over the
+production WebSocket chat path — exercising the actual system prompts,
+tool registry, multi-round ReAct continuation, and list-only-dead-end
+detection that the chat UI relies on. The previous Rust eval-runner
+talked to an in-process SessionManager that bypassed all of it and
+silently masked multi-tool failures.
+
+The first full eval run (29 cases, DeepSeek V4 flash as the agent
+LLM, Claude Opus 4.6 as the judge) surfaces four production gaps that
+this release closes:
+
+1. Fresh-install servers booted with an empty device-type template
+   cache — `init_device_storage()` wrote templates to disk after
+   `ServerState::new()` but never refreshed the cache, so API device
+   registration against built-in templates (NE101, NE301, ...) failed
+   with "template not found" until restart.
+2. `neomind device create` had no `--id` flag, so the agent's
+   user-supplied identifiers (e.g. `sensor-001`) were silently swapped
+   for auto-generated UUIDs.
+3. The `POST /rules` 400-error hint listed condition/action types but
+   omitted the trigger shape — an internally-tagged enum the LLM was
+   guessing wrong repeatedly.
+4. `build_validation_context()` hardcoded metric names per device type
+   ("temperature" for sensors, "value" for everything else), so rule
+   validation rejected conditions on real template metrics like
+   `ne101_camera.values.battery`.
+
+Themes: (1) **eval framework rewrite** — Python + real subprocess +
+WS chat + transient-stall retry; (2) **template-aware rule
+validation** — pull metrics from the registered device-type template;
+(3) **first-boot reliability** — seed templates before cache load;
+(4) **CLI completeness** — `--id` on device create.
+
+### Eval framework — pivot to Python + production subprocess
+
+The agent-under-test now runs inside `neomind serve` spawned per
+case with a temp data dir and a pre-seeded API key. The framework
+drives it through the same WebSocket chat pipeline
+(`process_message_events_with_backend_and_skills` →
+`process_stream_events_with_safeguards`) the chat UI uses — same
+multi-round ReAct loop (up to 30 LLM rounds), same list-only-dead-end
+detection, same system prompts. The previous in-process SessionManager
+path silently capped the agent at one LLM round and masked a class
+of multi-tool failures that production handled correctly.
+
+Coverage: 29 cases across `device`, `dashboard`, `rule`, `agent`,
+`message`, `transform`, `llm` (zh+en where the domain is symmetric;
+zh-only for dashboard delete / list, device unknown-id / update-name,
+llm list-and-capabilities, message list-channels, rule list-all,
+transform create-avg). Last full run with DeepSeek V4 flash:
+**27/29 PASS = 93.1%**, the remaining 2 failures are transient LLM
+backend rate-limit stalls now covered by the chat retry.
+
+Framework pieces (`eval/lib/` + `eval/run_eval.py`):
+
+- `server.TestServer` — per-case subprocess, temp data dir, API key
+  pre-seeded via `neomind api-key create`, LLM backend wired through
+  the standard `/api/llm-backends` + `/activate` API
+- WS chat with multi-round event draining (Content/Thinking/
+  ToolCallStart/ToolCallEnd/end), 600s outer timeout, 180s inner
+  gap timeout (>heartbeat interval so a thinking pause between tool
+  rounds doesn't kill a long run)
+- `_is_transient_stall` + chat retry: a rate-limited LLM HTTP call
+  produces a distinctive zero-events + gap-timeout signature; one
+  re-attempt after 5s backoff confirms. Verified non-pathological —
+  the same case passes in 7–9s on a clean retry
+- `state_query.py` — `*_exists` queries transparently fall back
+  from direct GET to list+match-by-name (agents/transforms/rules
+  are created with auto-UUIDs; cases pass human-readable names)
+- `post_run_delay_ms` case field — covers SQ/async-runtime races
+  (e.g. `agent invoke` returns immediately, but `total_executions`
+  increments only after the background execution lands)
+- `judge.py` — Claude-as-judge (`claude-opus-4-6`) scoring across
+  `tool_accuracy` / `task_completion` / `response_quality` /
+  `language_adherence`
+- `report.py` — `aggregate()` → `grade-card.md`
+
+Drops the `crates/eval-runner/` Rust crate and removes it from the
+workspace `Cargo.toml`.
+
+### Storage / registry — seed built-in templates at init
+
+`DeviceRegistry::new()` now calls `seed_builtin_templates()` BEFORE
+loading templates into memory. Previously, a fresh-install server
+booted with an empty in-memory template cache; `init_device_storage()`
+(written after `ServerState::new()`) wrote templates to disk but
+never refreshed the cache, so API device registration against
+built-in templates (NE101, NE301, ...) failed with
+"template not found" until the server was restarted. The fix makes
+the in-memory load pick them up on first boot; `seed_builtin_templates()`
+is idempotent so subsequent starts are a no-op.
+
+Also adds `DeviceRegistryStore::close_singleton()` — redb only allows
+one process to hold a database file open at a time, and `open()`
+caches the store in a process-global singleton. Test harnesses that
+pre-seed a database file and then hand it off to a child process
+must call this to drop the cached `Arc` and release the file lock.
+Surfaced by the eval framework (every case spawns its own
+`neomind serve` subprocess with a temp data dir).
+
+### CLI — `--id` flag on `neomind device create`
+
+`neomind device create` now accepts `--id <device-id>` (alias
+`--device-id`). Without it, the CLI silently swapped user-supplied
+identifiers (e.g. `sensor-001`) for auto-generated UUIDs, leaving
+the agent to query a `device_id` that didn't exist. The flag is
+optional; auto-generation still happens when omitted. Empty string
+is treated as "auto-generate" so explicit `--id ""` doesn't write
+an empty `device_id`.
+
+### API / rules — trigger schema hint + template-metric validator
+
+Two eval-surfaced gaps on `POST /rules`:
+
+- The 400 error hint listed condition/action types but omitted the
+  trigger shape. The LLM agent was guessing
+  `{"trigger":{"type":"data_change"}}` and failing repeatedly. The
+  hint now spells out all three variants (`data_change` | `schedule`
+  with `cron` | `manual`) and includes a minimal working JSON.
+- `build_validation_context()` hardcoded metric names per device
+  type ("temperature" for sensors, "value" for everything else),
+  so rule validation rejected conditions on real template metrics
+  like `ne101_camera.values.battery`. Now pulls metrics from the
+  registered device-type template via `DeviceService::get_template()`,
+  falling back to the legacy hardcoded behavior only when no
+  template is registered.
+
 ## [0.9.0] - 2026-06-28
 
 ### Overview
