@@ -15,7 +15,7 @@ import { useNavigate } from "react-router-dom"
 import {
   Rocket, Sparkles, Cpu, Check, X, ChevronLeft, ChevronRight,
   LayoutDashboard, Zap, Puzzle, MessageSquareText,
-  Terminal, Copy,
+  Terminal, Copy, BookOpen, ExternalLink,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
@@ -411,6 +411,27 @@ function SetupStep({
           <h2 className="text-lg font-bold text-foreground">{t("onboarding.setup.title")}</h2>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">{t("onboarding.setup.heroSubtitle")}</p>
+      </div>
+
+      {/* Docs strip — fixed above the variable-height grid so it never shifts */}
+      <div className="mb-4 rounded-lg bg-muted-30 px-4 py-2.5 flex items-center gap-4 flex-wrap">
+        <BookOpen className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        {[
+          { label: t("onboarding.setup.docs.quickStart"), href: "https://wiki.camthink.ai/docs/neomind/quick-start/five-minute-guide" },
+          { label: t("onboarding.setup.docs.installSetup"), href: "https://wiki.camthink.ai/docs/neomind/user-guide/install-setup" },
+          { label: t("onboarding.setup.docs.developerGuide"), href: "https://wiki.camthink.ai/docs/neomind/developer-guide/overview" },
+        ].map((doc) => (
+          <a
+            key={doc.href}
+            href={doc.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+          >
+            {doc.label}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        ))}
       </div>
 
       <div className="grid md:grid-cols-[18rem_1fr] gap-4 mb-6">

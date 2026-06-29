@@ -776,6 +776,11 @@
       "title": "Welcome to NeoMind",
       "heroSubtitle": "An edge AI platform for IoT. Configure your AI brain and connect devices, then just describe what you want in natural language.",
       "hint": "Once an AI model is configured, try saying \"help me connect a temperature sensor\" or \"create a dashboard\" in the chat.",
+      "docs": {
+        "quickStart": "5-Minute Guide",
+        "installSetup": "User Guide",
+        "developerGuide": "Developer Guide"
+      },
       "llm": {
         "title": "Configure AI Model",
         "description": "At NeoMind's core is an AI assistant. Configure an LLM backend — local Ollama (free, private), or cloud like OpenAI / Anthropic / Google — and you can run the whole system in natural language.",

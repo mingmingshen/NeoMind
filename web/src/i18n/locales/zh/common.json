@@ -776,6 +776,11 @@
       "title": "欢迎使用 NeoMind",
       "heroSubtitle": "面向物联网的边缘 AI 平台。配好 AI 模型、连上设备，然后用自然语言描述你想做的事。",
       "hint": "配好 AI 模型后，回到对话框试试说「帮我连接一个温度传感器」或「创建一个仪表盘」。",
+      "docs": {
+        "quickStart": "五分钟快速开始",
+        "installSetup": "用户指南",
+        "developerGuide": "开发者指南"
+      },
       "llm": {
         "title": "配置 AI 模型",
         "description": "NeoMind 的核心是 AI 助手。配置一个 LLM 后端——支持 Ollama 本地（免费、隐私），或 OpenAI / Anthropic / Google 等云端——就能用自然语言管理整个系统。",
