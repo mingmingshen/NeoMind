@@ -210,6 +210,17 @@ impl<S: Stream + Unpin> Stream for PermitStream<S> {
     }
 }
 
+/// Transient skill context for the current turn.
+///
+/// Tracks which skill ids have already been loaded so re-loading the same skill
+/// (a common LLM pattern when stuck in a retry loop) doesn't duplicate the body
+/// in the system prompt. The first legitimate load always preserves the full body.
+#[derive(Default)]
+struct TransientSkillContext {
+    loaded_ids: std::collections::HashSet<String>,
+    body: String,
+}
+
 /// Simple LLM chat interface.
 ///
 /// This is a lightweight wrapper around LLM runtime with concurrency limiting.
@@ -260,7 +271,9 @@ pub struct LlmInterface {
     skill_registry: Arc<RwLock<Option<crate::skills::SharedSkillRegistry>>>,
     /// Transient skill context: skill tool results injected into system prompt during current turn.
     /// Cleared at the start of each new user message. Not stored in session history.
-    skill_context: Arc<RwLock<Option<String>>>,
+    /// Deduplicates by skill id so loading the same skill N times in a turn only appends once
+    /// (preserves full body on first legitimate load).
+    skill_context: Arc<RwLock<TransientSkillContext>>,
     /// Pinned skill IDs selected by the user for this session.
     /// These skills are injected as full guides (not just hints) into the system prompt.
     pinned_skills: Arc<RwLock<Vec<String>>>,
@@ -289,7 +302,7 @@ impl LlmInterface {
             intent_classifier: IntentClassifier::default(),
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
             skill_registry: Arc::new(RwLock::new(None)),
-            skill_context: Arc::new(RwLock::new(None)),
+            skill_context: Arc::new(RwLock::new(TransientSkillContext::default())),
             pinned_skills: Arc::new(RwLock::new(Vec::new())),
         }
     }
@@ -319,7 +332,7 @@ impl LlmInterface {
             intent_classifier: IntentClassifier::default(),
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
             skill_registry: Arc::new(RwLock::new(None)),
-            skill_context: Arc::new(RwLock::new(None)),
+            skill_context: Arc::new(RwLock::new(TransientSkillContext::default())),
             pinned_skills: Arc::new(RwLock::new(Vec::new())),
         }
     }
@@ -722,25 +735,34 @@ impl LlmInterface {
 
     /// Clear transient skill context (called at start of each new user message).
     pub async fn clear_skill_context(&self) {
-        *self.skill_context.write().await = None;
+        *self.skill_context.write().await = TransientSkillContext::default();
     }
 
     /// Append transient skill context (from skill tool results).
-    /// Multiple calls accumulate content instead of overwriting.
-    pub async fn set_skill_context(&self, content: String) {
+    ///
+    /// Deduplicates by `skill_id`: if the same skill is loaded again in this turn,
+    /// the call is a no-op (full body from the first load is retained unchanged).
+    /// Distinct skill ids accumulate, separated by a blank line.
+    pub async fn set_skill_context(&self, skill_id: String, content: String) {
         let mut guard = self.skill_context.write().await;
-        match guard.as_mut() {
-            Some(existing) => {
-                existing.push_str("\n\n");
-                existing.push_str(&content);
-            }
-            None => *guard = Some(content),
+        if !guard.loaded_ids.insert(skill_id) {
+            // Already loaded this turn — skip to avoid duplicate context bloat.
+            return;
         }
+        if !guard.body.is_empty() {
+            guard.body.push_str("\n\n");
+        }
+        guard.body.push_str(&content);
     }
 
-    /// Get transient skill context.
+    /// Get transient skill context body (None if empty).
     pub async fn get_skill_context(&self) -> Option<String> {
-        self.skill_context.read().await.clone()
+        let guard = self.skill_context.read().await;
+        if guard.body.is_empty() {
+            None
+        } else {
+            Some(guard.body.clone())
+        }
     }
 
     /// Set pinned skill IDs for this session (user-selected skills).
@@ -885,9 +907,9 @@ impl LlmInterface {
 
         // Inject transient skill context (from skill tool calls in current turn's multi-round loop)
         // This content is NOT in session history — only available during the current turn.
-        if let Some(skill_content) = self.skill_context.read().await.as_ref() {
+        if let Some(skill_content) = self.get_skill_context().await {
             prompt.push_str("\n## Skill Reference\n");
-            prompt.push_str(skill_content);
+            prompt.push_str(&skill_content);
             prompt.push('\n');
         }
 
@@ -2067,6 +2089,40 @@ impl LlmInterface {
     }
 }
 
+/// Extract a stable skill id from a `skill` tool result body for dedup purposes.
+///
+/// Skill tool `load` results are JSON like `{"id":"rule-management","name":"...","guide":"..."}`.
+/// We pull `id` (or `skill_id`) out of that. If the payload isn't JSON or lacks an id
+/// (e.g. `search` results, error payloads), fall back to a content-derived key so the call
+/// still dedups repeated identical payloads without accidentally collapsing distinct skills.
+pub(crate) fn extract_skill_id_from_result(result_str: &str) -> String {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(result_str) {
+        if let Some(id) = v
+            .get("id")
+            .or_else(|| v.get("skill_id"))
+            .and_then(|i| i.as_str())
+        {
+            return id.to_string();
+        }
+        // `search` returns an array of entries — distinct skill loads shouldn't collapse,
+        // so derive a stable key from the payload itself.
+        if let Some(arr) = v.as_array() {
+            if let Some(first) = arr.first() {
+                if let Some(id) = first.get("id").and_then(|i| i.as_str()) {
+                    return format!("search:{}", id);
+                }
+            }
+            return format!("search:len:{}", result_str.len());
+        }
+    }
+    // Last-resort stable fallback: hash the content so repeated identical payloads dedup.
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    result_str.hash(&mut h);
+    format!("hash:{:x}", h.finish())
+}
+
 /// Extract in-band token usage marker from a stream chunk.
 /// Returns (clean_content, is_thinking, extracted_prompt_tokens).
 /// The marker format is `\n__NEOMIND_TOKEN_PROMPT:NN__`.
@@ -2174,6 +2230,91 @@ mod tests {
     fn test_llm_interface_with_system_prompt() {
         let config = ChatConfig::default();
         let _interface = LlmInterface::new(config).with_system_prompt("You are a test assistant.");
+    }
+
+    #[test]
+    fn test_extract_skill_id_from_result_load_payload() {
+        let body = r#"{"id":"rule-management","name":"Rule Management","guide":"..."}"#;
+        assert_eq!(extract_skill_id_from_result(body), "rule-management");
+    }
+
+    #[test]
+    fn test_extract_skill_id_from_result_skill_id_field() {
+        let body = r#"{"skill_id":"device-onboarding","guide":"..."}"#;
+        assert_eq!(extract_skill_id_from_result(body), "device-onboarding");
+    }
+
+    #[test]
+    fn test_extract_skill_id_from_result_search_array() {
+        let body = r#"[{"id":"rule-management","name":"..."},{"id":"agent-management"}]"#;
+        assert_eq!(extract_skill_id_from_result(body), "search:rule-management");
+    }
+
+    #[test]
+    fn test_extract_skill_id_from_result_non_json_is_stable() {
+        let body = "some plain text error";
+        let key1 = extract_skill_id_from_result(body);
+        let key2 = extract_skill_id_from_result(body);
+        assert_eq!(key1, key2, "fallback must be deterministic for identical input");
+        assert!(key1.starts_with("hash:"));
+    }
+
+    #[tokio::test]
+    async fn test_set_skill_context_dedups_repeated_loads() {
+        let interface = LlmInterface::new(ChatConfig::default());
+        let payload = r#"{"id":"rule-management","name":"Rule","guide":"RULE GUIDE"}"#;
+
+        // First load: body is appended.
+        interface
+            .set_skill_context(
+                extract_skill_id_from_result(payload),
+                payload.to_string(),
+            )
+            .await;
+        let after_first = interface.get_skill_context().await.expect("body present");
+        assert!(after_first.contains("RULE GUIDE"));
+
+        // Second identical load: should be a no-op (dedup).
+        interface
+            .set_skill_context(
+                extract_skill_id_from_result(payload),
+                payload.to_string(),
+            )
+            .await;
+        let after_second = interface.get_skill_context().await.expect("body present");
+        assert_eq!(
+            after_first.matches("RULE GUIDE").count(),
+            after_second.matches("RULE GUIDE").count(),
+            "duplicate load must not re-append the body"
+        );
+
+        // A different skill id still accumulates.
+        let payload2 = r#"{"id":"device-onboarding","name":"Dev","guide":"DEVICE GUIDE"}"#;
+        interface
+            .set_skill_context(
+                extract_skill_id_from_result(payload2),
+                payload2.to_string(),
+            )
+            .await;
+        let after_third = interface.get_skill_context().await.expect("body present");
+        assert!(after_third.contains("RULE GUIDE"));
+        assert!(after_third.contains("DEVICE GUIDE"));
+
+        // clear_skill_context resets everything.
+        interface.clear_skill_context().await;
+        assert!(interface.get_skill_context().await.is_none());
+        // After clear, the same id can load again (fresh turn).
+        interface
+            .set_skill_context(
+                extract_skill_id_from_result(payload),
+                payload.to_string(),
+            )
+            .await;
+        assert!(interface
+            .get_skill_context()
+            .await
+            .expect("body present after clear")
+            .contains("RULE GUIDE"));
     }
 
     #[tokio::test]

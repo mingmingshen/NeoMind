@@ -960,7 +960,8 @@ pub async fn process_stream_events_with_safeguards(
                 // Save tool results to memory (large results go through cache → summary)
                 for (tool_name, result_str) in &tool_call_results {
                     if tool_name == "skill" {
-                        llm_interface.set_skill_context(result_str.clone()).await;
+                        let skill_id = crate::llm::extract_skill_id_from_result(result_str);
+                        llm_interface.set_skill_context(skill_id, result_str.clone()).await;
                     } else {
                         let mut state = internal_state.write().await;
                         let history_content = state.large_data_cache.store(tool_name, result_str);
