@@ -792,6 +792,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
 | llm | list, get, models, create, update, delete, activate, test | LLM backend management. `create` needs `--name` + `--type` (ollama/openai/custom) + `--endpoint` + `--model`. `activate` sets as default. `test` verifies connection |
 | push | list, get, create, update, delete, start, stop, test, logs, stats | Data push targets. `create` needs `--name` + `--config`. Type auto-detected from config (webhook/mqtt). Optional: `--schedule` (event/interval) + `--sources` for filtering. |
+| settings | timezone, set-timezone, timezones, retention, set-retention, cleanup | Instance-level settings. `timezone` (read current IANA zone), `set-timezone <ZONE>` (e.g. Asia/Shanghai), `timezones` (list valid IANA zones), `retention` (telemetry/image retention config), `set-retention` (configure auto-cleanup), `cleanup` (trigger manual cleanup). Use `settings timezone` to answer "what timezone is this instance in" — NOT host OS commands like `timedatectl`. |
 
 > **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
 

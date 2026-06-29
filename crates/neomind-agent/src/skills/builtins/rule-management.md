@@ -107,7 +107,11 @@ What does the user want?
 
 - `for_duration` (ms): condition must hold this long before firing. Use 30000–60000 for noisy signals to avoid flapping. Default 0 = fire instantly.
 - `cooldown` (ms): minimum gap between triggers. Default 60000. **Always set explicitly for `notify` actions** — alert storms happen without it.
-- `trigger`: `data_change` (default, sources auto-extracted from condition) | `schedule` (cron) | `manual`
+- `trigger` (OPTIONAL — defaults to `data_change` when omitted, both via API and CLI): an **internally-tagged enum** (`trigger_type` is the tag, INSIDE the `trigger` object). Three shapes only:
+  - Omit entirely → `{"trigger_type":"data_change"}` (sources auto-extracted from condition). This is what you want for any threshold/band/logic rule.
+  - Cron schedule: `"trigger": {"trigger_type": "schedule", "cron": "0 */5 * * * *"}`
+  - Manual only: `"trigger": {"trigger_type": "manual"}`
+  - ❌ NEVER use: `"trigger": "data_change"` (bare string), `"trigger": {"data_change": {}}` (externally tagged), or `"trigger_type": "data_change"` (flat, at root). All three are rejected by the API. The tag field `trigger_type` MUST live INSIDE the `trigger` object.
 
 ## Phase 3: Validate — Pre-Flight Checklist
 

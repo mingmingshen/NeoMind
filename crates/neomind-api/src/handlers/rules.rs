@@ -916,7 +916,7 @@ pub async fn trigger_rule_handler(
 /// POST /api/rules — accepts a JSON body representing a CompiledRule.
 pub async fn create_rule_handler(
     State(state): State<ServerState>,
-    Json(req): Json<serde_json::Value>,
+    Json(mut req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     use crate::validator::{validate_required_string, validate_string_length};
 
@@ -933,6 +933,24 @@ pub async fn create_rule_handler(
         validate_string_length(desc, "description", 0, 500)?;
     }
 
+    // Default the trigger to DataChange when absent. Condition-based rules
+    // (the overwhelmingly common case) all want DataChange, and the engine
+    // auto-extracts sources via `RuleTrigger::from_condition` during
+    // `finalize()`. Forcing every API consumer to spell out
+    // `{"trigger":{"trigger_type":"data_change"}}` is a footgun — without
+    // this default the canonical skill example (which omits `trigger`)
+    // fails with "missing field `trigger`", and agents get trapped
+    // cycling through wrong enum shapes (string / externally-tagged /
+    // flat) even when the 400-error hint shows the correct one.
+    if req.get("trigger").is_none() {
+        if let Some(obj) = req.as_object_mut() {
+            obj.insert(
+                "trigger".to_string(),
+                serde_json::json!({"trigger_type": "data_change"}),
+            );
+        }
+    }
+
     // Deserialize JSON body into a CompiledRule
     let mut rule: CompiledRule = serde_json::from_value(req)
         .map_err(|e| {
@@ -940,6 +958,7 @@ pub async fn create_rule_handler(
             ErrorResponse::bad_request(format!("Invalid rule data: {}", err_msg)).with_hint(
                 format!(
                     "Provide a valid JSON rule object. Required fields: 'name'. \
+                     `trigger` defaults to {{\"trigger_type\":\"data_change\"}} when omitted. \
                      Condition types: 'comparison', 'range', 'logical'. \
                      Action types: 'notify', 'execute', 'trigger_agent'. \
                      Trigger shape (internally tagged, field is 'trigger_type'): \

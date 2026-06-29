@@ -138,7 +138,7 @@ export function OnboardingDialog({ open, onOpenChange, status, onDismiss }: Onbo
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 sm:px-10 py-6 sm:py-8">
-          {step === "setup" && <SetupStep status={status} onAction={handleAction} />}
+          {step === "setup" && <SetupStep open={open} status={status} onAction={handleAction} />}
           {step === "ready" && <ReadyStep status={status} onPromptNavigate={handlePromptNavigate} onStartChat={handleStartChat} />}
         </div>
       </div>
@@ -218,7 +218,6 @@ const FOLLOWUP_COMMANDS = "neomind llm test <ID>\nneomind llm activate <ID>"
 
 function LlmCliHelper() {
   const { t } = useTranslation("common")
-  const [expanded, setExpanded] = useState(true)
   const [providerId, setProviderId] = useState("ollama")
   const provider = LLM_PROVIDERS.find((p) => p.id === providerId) ?? LLM_PROVIDERS[0]
   const command = useMemo(() => buildLlmCommand(provider), [provider])
@@ -233,51 +232,39 @@ function LlmCliHelper() {
   }
 
   return (
-    <div className="mb-4 rounded-xl bg-muted-30 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted-50 transition-colors"
-      >
-        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", expanded && "rotate-90")} />
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
         <Terminal className="w-4 h-4 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground">{t("onboarding.cli.toggle")}</span>
-      </button>
-      {expanded && (
-        <div className="px-4 pb-4 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">{t("onboarding.cli.provider")}</span>
-            <Select value={providerId} onValueChange={setProviderId}>
-              <SelectTrigger className="h-8 w-auto min-w-[140px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="z-[200]">
-                {LLM_PROVIDERS.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {provider.needsKey && (
-              <span className="text-xs text-muted-foreground">{t("onboarding.cli.keyHint")}</span>
-            )}
-          </div>
-          <pre className="text-xs font-mono bg-background border border-border rounded-lg p-3 overflow-x-auto text-foreground whitespace-pre-wrap break-all leading-relaxed">
-            {command}
-          </pre>
-          <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
-            <Copy className="w-3.5 h-3.5" />
-            {t("onboarding.cli.copy")}
-          </Button>
-          <div className="rounded-lg bg-muted-30 p-3">
-            <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">
-              {t("onboarding.cli.followup")}
-            </p>
-            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
-              {FOLLOWUP_COMMANDS}
-            </pre>
-          </div>
-        </div>
-      )}
+        <span className="text-xs text-muted-foreground">{t("onboarding.cli.provider")}</span>
+        <Select value={providerId} onValueChange={setProviderId}>
+          <SelectTrigger className="h-8 w-auto min-w-[140px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="z-[200]">
+            {LLM_PROVIDERS.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {provider.needsKey && (
+          <span className="text-xs text-muted-foreground">{t("onboarding.cli.keyHint")}</span>
+        )}
+      </div>
+      <pre className="text-xs font-mono bg-background border border-border rounded-lg p-3 overflow-x-auto text-foreground whitespace-pre leading-relaxed">
+        {command}
+      </pre>
+      <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
+        <Copy className="w-3.5 h-3.5" />
+        {t("onboarding.cli.copy")}
+      </Button>
+      <div className="rounded-lg bg-muted-30 p-3">
+        <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">
+          {t("onboarding.cli.followup")}
+        </p>
+        <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+          {FOLLOWUP_COMMANDS}
+        </pre>
+      </div>
     </div>
   )
 }
@@ -296,7 +283,6 @@ const DEVICE_FOLLOWUP_COMMANDS = [
 function DeviceQuickStart() {
   const { t } = useTranslation("common")
   const serverUrl = useServerUrl()
-  const [expanded, setExpanded] = useState(true)
 
   // Build curl command dynamically using canonical server URL
   const DEVICE_CURL_COMMAND = useMemo(() => [
@@ -315,51 +301,105 @@ function DeviceQuickStart() {
   }
 
   return (
-    <div className="mb-4 rounded-xl bg-muted-30 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted-50 transition-colors"
-      >
-        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", expanded && "rotate-90")} />
-        <Terminal className="w-4 h-4 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground">{t("onboarding.deviceCli.toggle")}</span>
-      </button>
-      {expanded && (
-        <div className="px-4 pb-4 space-y-3">
-          <p className="text-xs text-muted-foreground leading-relaxed">{t("onboarding.deviceCli.note")}</p>
-          <pre className="text-xs font-mono bg-background border border-border rounded-lg p-3 overflow-x-auto text-foreground whitespace-pre-wrap break-all leading-relaxed">
-            {DEVICE_CURL_COMMAND}
-          </pre>
-          <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
-            <Copy className="w-3.5 h-3.5" />
-            {t("onboarding.cli.copy")}
-          </Button>
-          <div className="rounded-lg bg-muted-30 p-3">
-            <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">
-              {t("onboarding.deviceCli.followup")}
-            </p>
-            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
-              {DEVICE_FOLLOWUP_COMMANDS}
-            </pre>
-          </div>
-        </div>
-      )}
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground leading-relaxed flex items-center gap-1.5">
+        <Terminal className="w-4 h-4 text-muted-foreground shrink-0" />
+        {t("onboarding.deviceCli.note")}
+      </p>
+      <pre className="text-xs font-mono bg-background border border-border rounded-lg p-3 overflow-x-auto text-foreground whitespace-pre leading-relaxed">
+        {DEVICE_CURL_COMMAND}
+      </pre>
+      <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
+        <Copy className="w-3.5 h-3.5" />
+        {t("onboarding.cli.copy")}
+      </Button>
+      <div className="rounded-lg bg-muted-30 p-3">
+        <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">
+          {t("onboarding.deviceCli.followup")}
+        </p>
+        <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+          {DEVICE_FOLLOWUP_COMMANDS}
+        </pre>
+      </div>
     </div>
   )
 }
 
-// ── Step 2: Core setup ──
+// ── Step 1: Core setup (master-detail layout) ──
+
+type SetupCardId = "llm" | "device"
+
+interface SetupItem {
+  id: SetupCardId
+  icon: React.ReactNode
+  tint: string
+  title: string
+  description: string
+  purpose: string
+  completed: boolean
+  completedLabel: string
+  actionLabel: string
+  onAction: () => void
+  extra: React.ReactNode
+}
 
 function SetupStep({
+  open,
   status,
   onAction,
 }: {
+  open: boolean
   status: OnboardingStatus
   onAction: (path: string) => void
 }) {
   const { t } = useTranslation("common")
   const completedLabel = t("onboarding.completed")
+
+  // First incomplete card wins; fall back to LLM when both done.
+  const defaultSelected: SetupCardId = !status.steps.llm.completed
+    ? "llm"
+    : !status.steps.device.completed
+      ? "device"
+      : "llm"
+
+  const [selected, setSelected] = useState<SetupCardId>(defaultSelected)
+
+  // Re-derive selection when the dialog opens (preserves manual selection while open).
+  useEffect(() => {
+    if (open) setSelected(defaultSelected)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const items: SetupItem[] = [
+    {
+      id: "llm",
+      icon: <Sparkles className="w-5 h-5" />,
+      tint: "bg-accent-indigo-light text-accent-indigo",
+      title: t("onboarding.setup.llm.title"),
+      description: t("onboarding.setup.llm.description"),
+      purpose: t("onboarding.setup.llm.purpose"),
+      completed: status.steps.llm.completed,
+      completedLabel,
+      actionLabel: t("onboarding.setup.llm.action"),
+      onAction: () => onAction("/settings?tab=llm"),
+      extra: <LlmCliHelper />,
+    },
+    {
+      id: "device",
+      icon: <Cpu className="w-5 h-5" />,
+      tint: "bg-accent-cyan-light text-accent-cyan",
+      title: t("onboarding.setup.device.title"),
+      description: t("onboarding.setup.device.description"),
+      purpose: t("onboarding.setup.device.purpose"),
+      completed: status.steps.device.completed,
+      completedLabel,
+      actionLabel: t("onboarding.setup.device.action"),
+      onAction: () => onAction("/devices"),
+      extra: <DeviceQuickStart />,
+    },
+  ]
+
+  const active = items.find((i) => i.id === selected) ?? items[0]
 
   return (
     <div>
@@ -373,31 +413,9 @@ function SetupStep({
         <p className="text-sm text-muted-foreground leading-relaxed">{t("onboarding.setup.heroSubtitle")}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <SetupCard
-          icon={<Sparkles className="w-5 h-5" />}
-          tint="bg-accent-indigo-light text-accent-indigo"
-          title={t("onboarding.setup.llm.title")}
-          description={t("onboarding.setup.llm.description")}
-          purpose={t("onboarding.setup.llm.purpose")}
-          completed={status.steps.llm.completed}
-          completedLabel={completedLabel}
-          actionLabel={t("onboarding.setup.llm.action")}
-          onAction={() => onAction("/settings?tab=llm")}
-          extra={<LlmCliHelper />}
-        />
-        <SetupCard
-          icon={<Cpu className="w-5 h-5" />}
-          tint="bg-accent-cyan-light text-accent-cyan"
-          title={t("onboarding.setup.device.title")}
-          description={t("onboarding.setup.device.description")}
-          purpose={t("onboarding.setup.device.purpose")}
-          completed={status.steps.device.completed}
-          completedLabel={completedLabel}
-          actionLabel={t("onboarding.setup.device.action")}
-          onAction={() => onAction("/devices")}
-          extra={<DeviceQuickStart />}
-        />
+      <div className="grid md:grid-cols-[18rem_1fr] gap-4 mb-6">
+        <SetupSelectorList items={items} selectedId={selected} onSelect={setSelected} />
+        <SetupDetailPane item={active} />
       </div>
 
       {/* Hint */}
@@ -408,34 +426,89 @@ function SetupStep({
   )
 }
 
-function SetupCard({
-  icon,
-  tint,
-  title,
-  description,
-  purpose,
-  completed,
-  completedLabel,
-  actionLabel,
-  onAction,
-  extra,
+// Left pane: vertical selector list on desktop, segmented toggle on mobile.
+function SetupSelectorList({
+  items,
+  selectedId,
+  onSelect,
 }: {
-  icon: React.ReactNode
-  tint: string
-  title: string
-  description: string
-  purpose: string
-  completed: boolean
-  completedLabel: string
-  actionLabel: string
-  onAction: () => void
-  extra?: React.ReactNode
+  items: SetupItem[]
+  selectedId: SetupCardId
+  onSelect: (id: SetupCardId) => void
 }) {
+  return (
+    <>
+      {/* Desktop vertical list */}
+      <div className="hidden md:flex flex-col gap-2">
+        {items.map((item) => {
+          const isActive = item.id === selectedId
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelect(item.id)}
+              className={cn(
+                "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                isActive
+                  ? "border-primary bg-card"
+                  : "border-border bg-card hover:bg-muted-30",
+              )}
+            >
+              <div className={cn(
+                "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+                item.completed ? "bg-success-light text-success" : item.tint,
+              )}>
+                {item.completed ? <Check className="w-4 h-4" /> : item.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={cn(
+                  "text-sm font-semibold",
+                  item.completed ? "text-muted-foreground line-through" : "text-foreground",
+                )}>
+                  {item.title}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed line-clamp-1">
+                  {item.completed ? item.completedLabel : item.description}
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Mobile segmented toggle */}
+      <div className="md:hidden grid grid-cols-2 gap-2">
+        {items.map((item) => {
+          const isActive = item.id === selectedId
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelect(item.id)}
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted-30 text-muted-foreground",
+              )}
+            >
+              {item.completed && <Check className="w-3.5 h-3.5" />}
+              {item.title}
+            </button>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+// Right pane: full detail for the selected item.
+function SetupDetailPane({ item }: { item: SetupItem }) {
   return (
     <div
       className={cn(
         "rounded-2xl border p-5 transition-colors flex flex-col",
-        completed
+        item.completed
           ? "border-success bg-success-light"
           : "border-border bg-card",
       )}
@@ -443,29 +516,29 @@ function SetupCard({
       <div className="flex items-start gap-3 mb-3">
         <div className={cn(
           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-          completed ? "bg-success-light text-success" : tint,
+          item.completed ? "bg-success-light text-success" : item.tint,
         )}>
-          {completed ? <Check className="w-5 h-5" /> : icon}
+          {item.completed ? <Check className="w-5 h-5" /> : item.icon}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className={cn("font-semibold text-sm", completed && "text-muted-foreground line-through")}>
-            {title}
+          <h3 className={cn("font-semibold text-sm", item.completed && "text-muted-foreground line-through")}>
+            {item.title}
           </h3>
-          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{description}</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</p>
         </div>
       </div>
-      {completed ? (
+      {item.completed ? (
         <div className="mt-auto flex items-center gap-1.5 text-xs font-medium text-success">
           <Check className="w-3.5 h-3.5" />
-          {completedLabel}
+          {item.completedLabel}
         </div>
       ) : (
         <>
-          <p className="text-xs text-muted-foreground mb-4 pl-12 leading-relaxed">{purpose}</p>
-          {extra}
-          <div className="mt-auto flex justify-end">
-            <Button size="sm" onClick={onAction} className="gap-1.5">
-              {actionLabel}
+          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{item.purpose}</p>
+          {item.extra}
+          <div className="mt-auto pt-4 flex justify-end">
+            <Button size="sm" onClick={item.onAction} className="gap-1.5">
+              {item.actionLabel}
               <ChevronRight className="w-3.5 h-3.5" />
             </Button>
           </div>
