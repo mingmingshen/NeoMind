@@ -22,7 +22,9 @@ use super::thinking::cleanup_thinking_content;
 use super::tool_detect::detect_json_tool_calls;
 use super::tool_exec::execute_tool_with_retry;
 use crate::agent::staged::{IntentCategory, IntentClassifier};
-use crate::agent::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
+use crate::agent::tool_parser::{
+    is_degenerate_fence_only_output, parse_tool_calls, remove_tool_calls_from_response,
+};
 use crate::agent::types::{AgentEvent, AgentInternalState, AgentMessage, ToolCall};
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
@@ -1216,11 +1218,19 @@ pub async fn process_stream_events_with_safeguards(
                 // This handles the case where thinking models consume all generation
                 // budget on thinking tokens, producing no content. Retry once with
                 // thinking forcefully disabled so the model outputs content directly.
-                if raw_response.trim().is_empty() {
+                // Also covers degenerate "fence-only" output (e.g. DeepSeek emitting
+                // just "```" as the final answer) — treated as empty so the retry fires.
+                if is_degenerate_fence_only_output(&raw_response) {
                     let had_thinking = !thinking_content.is_empty();
+                    let orig_len = raw_response.len();
+                    // Blank out the degenerate buffer so the retry fully replaces it
+                    // (the "```" was already streamed to the client, but the persisted
+                    // assistant_message will use the retry content below).
+                    raw_response.clear();
                     tracing::warn!(
                         had_thinking = had_thinking,
-                        "Stream completed with empty content, attempting retry without thinking"
+                        orig_len = orig_len,
+                        "Stream completed with empty/fence-only content, attempting retry without thinking"
                     );
 
                     // Build a compact history for the retry (keep last few messages)
@@ -1297,14 +1307,18 @@ pub async fn process_stream_events_with_safeguards(
                                 );
                             } else {
                                 tracing::warn!("Retry produced only tool calls, using fallback");
-                                let fallback = "抱歉，模型暂时无法生成回复，请稍后重试。".to_string();
+                                let fallback =
+                                    "Sorry, the model could not produce a response. Please retry."
+                                        .to_string();
                                 raw_response = fallback.clone();
                                 yield AgentEvent::content(fallback);
                             }
                         }
                         Err(e) => {
                             tracing::error!("Retry LLM call failed: {}", e);
-                            let fallback = "抱歉，模型暂时无法生成回复，请稍后重试。".to_string();
+                            let fallback =
+                                "Sorry, the model could not produce a response. Please retry."
+                                    .to_string();
                             raw_response = fallback.clone();
                             yield AgentEvent::content(fallback);
                         }

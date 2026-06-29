@@ -18,7 +18,9 @@ use super::sanitize::sanitize_tool_result_for_prompt;
 use super::stream_core::StreamSafeguards;
 use super::tool_detect::detect_json_tool_calls;
 use super::tool_exec::execute_tool_with_retry;
-use crate::agent::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
+use crate::agent::tool_parser::{
+    is_degenerate_fence_only_output, parse_tool_calls, remove_tool_calls_from_response,
+};
 use crate::agent::types::{
     AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, ToolCall,
 };
@@ -511,8 +513,9 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 }
             }
 
-            // Fallback to formatted tool results if summary is empty
-            if final_content.trim().is_empty() {
+            // Fallback to formatted tool results if summary is empty OR degenerate
+            // (e.g. DeepSeek emitting just "```" as the summary).
+            if is_degenerate_fence_only_output(&final_content) {
                 let deduped_results = deduplicate_tool_results(&tool_call_results);
                 let formatted = format_tool_results(&deduped_results);
                 final_content = formatted.clone();
@@ -544,14 +547,30 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 buffer.clone()
             };
 
-            // Clean any embedded tool call JSON from response
-            let response_to_save = remove_tool_calls_from_response(&raw_response);
+            // Detect degenerate fence-only output (e.g. DeepSeek "```") and
+            // substitute a safe non-empty fallback so the user/judge never sees
+            // a content-less reply. The streamed "```" is already out, but the
+            // persisted assistant_message uses this cleaned value.
+            let degenerate = is_degenerate_fence_only_output(&raw_response);
+            let response_to_save = if degenerate {
+                tracing::warn!(
+                    orig_len = raw_response.len(),
+                    "Multimodal stream produced degenerate fence-only output, substituting fallback"
+                );
+                let fallback = "Sorry, the model produced no usable response. Please retry."
+                    .to_string();
+                yield AgentEvent::content(fallback.clone());
+                fallback
+            } else {
+                // Clean any embedded tool call JSON from response
+                remove_tool_calls_from_response(&raw_response)
+            };
 
             let initial_msg = AgentMessage::assistant(&response_to_save);
             internal_state.write().await.push_message(initial_msg);
 
-            // Yield any remaining content
-            if !buffer.is_empty() {
+            // Yield any remaining content (skip when degenerate — already yielded fallback)
+            if !degenerate && !buffer.is_empty() {
                 yield AgentEvent::content(buffer.clone());
             }
         }

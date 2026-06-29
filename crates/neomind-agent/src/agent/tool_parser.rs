@@ -383,9 +383,89 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
     result.trim().to_string()
 }
 
+/// Detect "degenerate" model output: a response whose every non-blank line is a
+/// markdown code-fence marker (```, optionally followed by a language tag like
+/// ```json) with no actual prose content anywhere.
+///
+/// DeepSeek-class models occasionally emit just ` ``` ` (or an empty ` ```\n``` `
+/// pair) as their entire final answer when they intend to format a summary but
+/// stop immediately after the fence opener. Left alone this produces a useless
+/// empty reply that tanks `response_quality` and `language_adherence` scores.
+///
+/// Returns `true` when the response carries no surfaceable content, so callers
+/// can trigger their existing empty-response recovery (e.g. retry without
+/// thinking). Safe for normal responses: any non-fence line (prose, JSON,
+/// code body) makes this return `false`.
+pub fn is_degenerate_fence_only_output(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let mut saw_fence = false;
+    for line in trimmed.lines() {
+        let lt = line.trim();
+        if lt.is_empty() {
+            continue;
+        }
+        if let Some(after) = lt.strip_prefix("```") {
+            // A fence marker is "```" optionally followed by a language tag
+            // consisting solely of [A-Za-z0-9-+_].
+            if after.is_empty()
+                || after
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '+' || c == '_')
+            {
+                saw_fence = true;
+                continue;
+            }
+        }
+        // Any other non-blank line means the response has real content.
+        return false;
+    }
+    saw_fence
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_degenerate_fence_only_single_marker() {
+        assert!(is_degenerate_fence_only_output("```"));
+        assert!(is_degenerate_fence_only_output("  ```\n"));
+        assert!(is_degenerate_fence_only_output("\n```  "));
+    }
+
+    #[test]
+    fn test_degenerate_fence_only_empty_pair() {
+        assert!(is_degenerate_fence_only_output("```\n```"));
+        assert!(is_degenerate_fence_only_output("```\n\n```"));
+        assert!(is_degenerate_fence_only_output("```json\n```"));
+    }
+
+    #[test]
+    fn test_degenerate_fence_only_with_language_tags() {
+        assert!(is_degenerate_fence_only_output("```python\n```bash"));
+        assert!(is_degenerate_fence_only_output("```json"));
+    }
+
+    #[test]
+    fn test_degenerate_not_triggered_for_real_content() {
+        // Prose anywhere → not degenerate.
+        assert!(!is_degenerate_fence_only_output("Done. The file is 45 bytes."));
+        // Code fence WITH body content → not degenerate.
+        assert!(!is_degenerate_fence_only_output("```json\n{\"a\": 1}\n```"));
+        assert!(!is_degenerate_fence_only_output(
+            "Here is the result:\n```json\n{\"a\": 1}\n```"
+        ));
+        // Prose wrapping a fence → not degenerate.
+        assert!(!is_degenerate_fence_only_output(
+            "Summary:\n```\nsome output\n```\nThat's it."
+        ));
+        // Empty input is the only overlap — treated as degenerate so recovery runs.
+        assert!(is_degenerate_fence_only_output(""));
+        assert!(is_degenerate_fence_only_output("   \n  "));
+    }
 
     #[test]
     fn test_parse_json_array_with_id() {
