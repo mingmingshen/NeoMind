@@ -427,6 +427,18 @@ impl DeviceRegistryStore {
         Ok(store)
     }
 
+    /// Clear the process-global singleton cache and release the file lock.
+    ///
+    /// redb only allows one process to hold a database file open at a time.
+    /// `open()` caches the store in a global singleton so that repeated opens
+    /// within the same process (e.g. ServerState::new() followed by
+    /// init_device_storage) don't fight over the lock. Test harnesses that
+    /// need to pre-seed a database file and then hand it off to a child
+    /// process must call this to drop the cached Arc and release the lock.
+    pub fn close_singleton() {
+        *REGISTRY_STORE_SINGLETON.lock() = None;
+    }
+
     // ========== Template Management ==========
 
     /// Save a device type template.

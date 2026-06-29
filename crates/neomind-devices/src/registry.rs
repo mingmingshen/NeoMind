@@ -429,6 +429,29 @@ impl DeviceRegistry {
         let store = DeviceRegistryStore::open(path)
             .map_err(|e| DeviceError::Storage(format!("Failed to open storage: {}", e)))?;
 
+        // Seed built-in device type templates (NE101, NE301, ...) BEFORE
+        // loading into memory. Without this, a fresh-install server boots
+        // with an empty in-memory template cache, and `init_device_storage()`
+        // (called after ServerState::new()) writes templates to disk but
+        // never refreshes the cache — so API device registration against
+        // built-in templates fails with "template not found" until the
+        // server is restarted. Seeding here is idempotent
+        // (`seed_builtin_templates` is a no-op if templates already exist)
+        // and makes the in-memory load pick them up on first boot.
+        match store.seed_builtin_templates() {
+            Ok(n) if n > 0 => tracing::info!(
+                category = "storage",
+                seeded = n,
+                "Seeded built-in device type templates during registry init"
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(
+                category = "storage",
+                error = %e,
+                "Failed to seed built-in device type templates during registry init"
+            ),
+        }
+
         let registry = Self {
             templates: DashMap::new(),
             devices: DashMap::new(),
