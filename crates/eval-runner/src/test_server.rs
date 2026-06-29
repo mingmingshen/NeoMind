@@ -106,7 +106,13 @@ impl TestServer {
 
     pub async fn shutdown(mut self) -> Result<()> {
         let _ = self.child.kill().await;
-        let _ = self.child.wait().await;
+        // Guard against a stuck child hanging the runner (e.g. redb lock).
+        // After 5s we leak the PID — TempDir still drops and cleans the FS.
+        match tokio::time::timeout(Duration::from_secs(5), self.child.wait()).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "test_server child wait error"),
+            Err(_) => tracing::warn!("test_server child did not exit within 5s after kill — leaking PID"),
+        }
         Ok(())
     }
 }

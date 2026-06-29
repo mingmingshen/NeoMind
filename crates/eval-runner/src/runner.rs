@@ -31,7 +31,14 @@ pub async fn run_case(case_path: &str) -> Result<CaseRecord> {
     };
 
     // 3. Point shell tool at this server.
-    // SAFETY: eval runs cases sequentially (no parallelism) per spec §6.
+    // SAFETY: eval runs cases sequentially per spec §6. This env-var mutation
+    // is process-global and unsafe under parallelism — DO NOT invoke
+    // `run_case` concurrently (the `Smoke` and `chat-eval` commands both run
+    // cases in series). The shell tool reads these on every dispatch
+    // (toolkit/shell.rs:122 → cli-ops/api_client.rs:10), so a per-case value
+    // here is the only way to redirect at the agent's call site. If you need
+    // parallelism in the future, refactor the shell tool to take a per-call
+    // ApiClient instead of reading env.
     std::env::set_var("NEOMIND_API_BASE", server.api_base());
     std::env::set_var("NEOMIND_API_KEY", server.api_key());
 

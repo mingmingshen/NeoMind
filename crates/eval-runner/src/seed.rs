@@ -72,9 +72,12 @@ impl TestServer {
     }
     pub async fn seed_extensions_metadata(&self, exts: &[serde_json::Value]) -> Result<()> {
         // Tier 1 avoids real extension installs — case writers should not seed
-        // extensions that require .nep binary upload (spec §10).
+        // extensions that require .nep binary upload (spec §10). The actual
+        // install route is `/extensions/market/install` (verified router.rs:980).
+        // This seeder is included for completeness; cases that need real
+        // extensions must bundle a .nep binary (out of scope for Tier 1).
         for e in exts {
-            self.post_or_bail("/extensions/install", e).await?
+            self.post_or_bail("/extensions/market/install", e).await?
         }
         Ok(())
     }
