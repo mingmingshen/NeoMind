@@ -58,13 +58,42 @@ detection, same system prompts. The previous in-process SessionManager
 path silently capped the agent at one LLM round and masked a class
 of multi-tool failures that production handled correctly.
 
-Coverage: 29 cases across `device`, `dashboard`, `rule`, `agent`,
-`message`, `transform`, `llm` (zh+en where the domain is symmetric;
-zh-only for dashboard delete / list, device unknown-id / update-name,
-llm list-and-capabilities, message list-channels, rule list-all,
-transform create-avg). Last full run with DeepSeek V4 flash:
-**27/29 PASS = 93.1%**, the remaining 2 failures are transient LLM
-backend rate-limit stalls now covered by the chat retry.
+Coverage: 70 cases (35 unique × zh+en) across `device`, `dashboard`,
+`rule`, `agent`, `message`, `transform`, `llm`, `extension`, `widget`,
+`system`, `tools`, `connector`, `push`, `settings`. The case set now
+exercises every NeoMind CLI domain at least once, including the
+connector / data-push / settings surfaces that previously had zero
+coverage. The zh+en split is fully symmetric on the latest batch —
+every case has both language variants. Last full run with DeepSeek V4
+flash (29-case subset): **27/29 PASS = 93.1%**, the remaining 2
+failures are transient LLM backend rate-limit stalls now covered by
+the chat retry.
+
+New cases in this batch (16 unique × zh+en = 32 files on top of the
+prior 38-file set):
+
+- `agent/list-agents`, `agent/clear-memory` — agent discovery + the
+  memory-reset path (`neomind agent clear-memory`)
+- `transform/list-empty` — graceful empty-list handling on
+  `neomind transform list`
+- `rule/history` — `neomind rule history` (trigger history read path)
+- `device/webhook-telemetry` — multi-turn: create webhook device →
+  `curl` POST telemetry → verify read-back (covers the webhook write
+  path + curl toolchain end-to-end)
+- `device/drafts-list`, `device/telemetry-history` — auto-discovery
+  drafts + `neomind device history`
+- `connector/list` — connector-management skill, previously 0 coverage
+- `push/list` — data-push-management skill, previously 0 coverage
+- `settings/timezone` — settings API surface
+- `tools/memory-update`, `tools/file-write`, `tools/web-fetch` —
+  non-CLI tool coverage (chat memory tool, file_edit/file_write,
+  web_fetch)
+- `system/info`, `extension/list`, `widget/list` — system, extension,
+  widget domains
+- Plus the 9 zh-only mirror cases (dashboard delete/list,
+  device unknown-id/update-name, llm list-and-capabilities,
+  message list-channels, rule list-all, transform create-avg,
+  agent pause-agent) translated to English and parity-restored
 
 Framework pieces (`eval/lib/` + `eval/run_eval.py`):
 
