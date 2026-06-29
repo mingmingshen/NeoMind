@@ -11,8 +11,6 @@ interface MessageItemProps {
   message: Message
   user: UserInfo | null
   getUserInitials: (username: string) => string
-  /** Wrap assistant response in a subtle card background */
-  assistantCard?: boolean
 }
 
 /**
@@ -20,7 +18,7 @@ interface MessageItemProps {
  * Only re-renders when message.id, content, thinking, tool_calls, or role changes.
  */
 export const MessageItem = React.memo<MessageItemProps>(
-  ({ message, user, getUserInitials, assistantCard }) => {
+  ({ message, user, getUserInitials }) => {
     const isAssistant = message.role === "assistant"
 
     return (
@@ -34,7 +32,7 @@ export const MessageItem = React.memo<MessageItemProps>(
         )}
 
         {isAssistant ? (
-          <div className={`flex-1 min-w-0 ${assistantCard ? 'rounded-xl bg-muted-30 px-3.5 py-3' : ''}`}>
+          <div className="flex-1 min-w-0">
             {/* Thinking block */}
             {message.thinking && (
               <ThinkingBlock thinking={message.thinking} />
@@ -94,8 +92,7 @@ export const MessageItem = React.memo<MessageItemProps>(
       prev.message.thinking === next.message.thinking &&
       prev.message.tool_calls === next.message.tool_calls &&
       prev.message.role === next.message.role &&
-      prev.message.images === next.message.images &&
-      prev.assistantCard === next.assistantCard
+      prev.message.images === next.message.images
     )
   }
 )

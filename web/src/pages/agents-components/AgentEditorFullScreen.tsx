@@ -1480,38 +1480,59 @@ export function AgentEditorFullScreen({
               </div>
               <Select value={llmBackendId ?? activeBackendId ?? ''} onValueChange={setLlmBackendId}>
                 <SelectTrigger className="h-10">
-                  <SelectValue placeholder={tAgent('creator.basicInfo.useActiveBackend')} />
+                  {(() => {
+                    const selectedId = llmBackendId ?? activeBackendId ?? '';
+                    if (!selectedId || selectedId === 'default') {
+                      const activeName = llmBackends.find((b) => b.id === activeBackendId)?.name;
+                      return (
+                        <span className="flex items-center gap-2 min-w-0 truncate">
+                          <span className="truncate">{tAgent('creator.basicInfo.useActiveBackend')}</span>
+                          {activeName && (
+                            <span className="text-xs text-muted-foreground shrink-0 truncate">({activeName})</span>
+                          )}
+                        </span>
+                      );
+                    }
+                    const backend = llmBackends.find((b) => b.id === selectedId);
+                    if (!backend) {
+                      return <span className="text-muted-foreground truncate">{tAgent('creator.basicInfo.useActiveBackend')}</span>;
+                    }
+                    return (
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="truncate min-w-0">{backend.name}</span>
+                        <span className="text-muted-foreground shrink-0 truncate">{backend.model}</span>
+                      </span>
+                    );
+                  })()}
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="default">
-                    <div className="flex items-center gap-2">
+                  <SelectItem value="default" textValue={tAgent('creator.basicInfo.useActiveBackend')}>
+                    <span className="flex items-center gap-2">
                       <span>{tAgent('creator.basicInfo.useActiveBackend')}</span>
                       {activeBackendId && (
                         <span className="text-xs text-muted-foreground">
                           ({tAgent('creator.basicInfo.active')})
                         </span>
                       )}
-                    </div>
+                    </span>
                   </SelectItem>
                   {llmBackends.map((backend) => (
-                    <SelectItem key={backend.id} value={backend.id}>
-                      <div className="flex flex-col gap-1 w-full py-0.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate">{backend.name}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">{backend.model}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
+                    <SelectItem key={backend.id} value={backend.id} textValue={backend.name}>
+                      <span className="flex flex-1 min-w-0 items-center gap-2">
+                        <span className="truncate min-w-0">{backend.name}</span>
+                        <span className="text-muted-foreground shrink-0 truncate">{backend.model}</span>
+                        <span className="ml-auto flex items-center gap-1 shrink-0">
                           {backend.capabilities?.supports_multimodal && (
-                            <span title={tAgent('creator.basicInfo.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.vision', { defaultValue: 'Vision' })}</span>
+                            <span title={tAgent('creator.basicInfo.supportsVision')} className="inline-flex items-center px-1.5 h-5 rounded font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.vision', { defaultValue: 'Vision' })}</span>
                           )}
                           {backend.capabilities?.supports_tools && (
-                            <span title={tAgent('creator.basicInfo.supportsTools')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.tools', { defaultValue: 'Tools' })}</span>
+                            <span title={tAgent('creator.basicInfo.supportsTools')} className="inline-flex items-center px-1.5 h-5 rounded font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.tools', { defaultValue: 'Tools' })}</span>
                           )}
                           {backend.capabilities?.supports_thinking && (
-                            <span title={tAgent('creator.basicInfo.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.thinking', { defaultValue: 'Thinking' })}</span>
+                            <span title={tAgent('creator.basicInfo.supportsThinking')} className="inline-flex items-center px-1.5 h-5 rounded font-medium bg-muted-30 text-muted-foreground">{tAgent('creator.capability.thinking', { defaultValue: 'Thinking' })}</span>
                           )}
-                        </div>
-                      </div>
+                        </span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>

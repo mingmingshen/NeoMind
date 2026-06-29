@@ -134,7 +134,7 @@ const SelectItem = React.forwardRef<
     </span>
 
     {icon && <span className="mr-2 flex-shrink-0">{icon}</span>}
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    <SelectPrimitive.ItemText className="flex-1 min-w-0">{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
 ))
 SelectItem.displayName = SelectPrimitive.Item.displayName

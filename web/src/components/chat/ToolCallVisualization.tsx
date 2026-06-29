@@ -134,7 +134,7 @@ export function ToolProcessBlock({
   const manyCalls = toolCalls.length > 4
 
   return (
-    <div className="mb-4 rounded-lg bg-muted-30 overflow-hidden">
+    <div className="mb-4">
       {/* Summary header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -230,7 +230,7 @@ function RoundContent({ content }: { content: string }) {
       </button>
       {isExpanded && (
         <div className="px-3 pb-2">
-          <div className={cn(textBody, "font-mono text-muted-foreground whitespace-pre-wrap break-words bg-muted-30 rounded p-2 leading-relaxed")}>
+          <div className={cn(textBody, "font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed")}>
             {content}
           </div>
         </div>

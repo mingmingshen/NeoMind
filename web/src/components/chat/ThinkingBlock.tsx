@@ -81,7 +81,7 @@ export function ThinkingBlock({
   }
 
   return (
-    <div className="my-3 rounded-lg bg-muted-30 overflow-hidden">
+    <div className="my-3">
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}

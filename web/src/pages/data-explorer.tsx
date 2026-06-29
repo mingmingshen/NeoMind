@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Clock, Copy, ChevronDown, Send, Plus } from 'lucide-react'
+import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Clock, Copy, Check, ChevronDown, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { isBase64Image, getImageDataUrl } from '@/pages/devices/utils'
 import { cn } from '@/lib/utils'
@@ -111,6 +111,7 @@ export function DataExplorerPage() {
   const [historyRange, setHistoryRange] = useState<string>('1h')
   const [historyData, setHistoryData] = useState<Array<{ timestamp: number; value: unknown; quality: number | null }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [copiedValue, setCopiedValue] = useState(false)
 
   // Abort controller for cancelling in-flight requests on unmount
   const abortRef = useRef<AbortController | null>(null)
@@ -471,24 +472,84 @@ export function DataExplorerPage() {
                 <div className="rounded-xl border p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      {selectedSource.current_value !== undefined && selectedSource.current_value !== null ? (
-                        typeof selectedSource.current_value === 'string' && isBase64Image(selectedSource.current_value) ? (
-                          <img src={getImageDataUrl(selectedSource.current_value) ?? undefined} alt="metric" className="max-h-32 rounded-lg object-contain" />
-                        ) : typeof selectedSource.current_value === 'object' ? (
-                          <pre className="font-mono text-sm whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
-                            {JSON.stringify(selectedSource.current_value, null, 2)}
-                          </pre>
-                        ) : (
+                      {(() => {
+                        const v = selectedSource.current_value
+                        if (v === undefined || v === null) {
+                          return <span className="text-lg text-muted-foreground">{t('data:noData', 'No current data')}</span>
+                        }
+                        // Image base64
+                        if (typeof v === 'string' && isBase64Image(v)) {
+                          return <img src={getImageDataUrl(v) ?? undefined} alt="metric" className="max-h-32 rounded-lg object-contain" />
+                        }
+                        // Object/JSON: clamp to 5 lines + copy full value
+                        if (typeof v === 'object') {
+                          const jsonText = JSON.stringify(v, null, 2)
+                          const overflows = jsonText.split('\n').length > 5
+                          return (
+                            <div className="space-y-1">
+                              <div className="flex items-start gap-2">
+                                <pre className={cn(
+                                  "flex-1 min-w-0 font-mono text-sm whitespace-pre-wrap break-all",
+                                  overflows && "line-clamp-5"
+                                )}>
+                                  {jsonText}
+                                </pre>
+                                {overflows && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try { await navigator.clipboard.writeText(jsonText); setCopiedValue(true); setTimeout(() => setCopiedValue(false), 2000) } catch {}
+                                    }}
+                                    className="shrink-0 mt-0.5 text-muted-foreground hover:text-foreground"
+                                    title={t('common:copy', 'Copy')}
+                                  >
+                                    {copiedValue ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        }
+                        // String scalar: short → prominent, long/base64 → clamped code block + copy
+                        const str = String(v)
+                        const isLong = str.length > 80 || str.includes('\n')
+                        if (isLong) {
+                          const overflows = str.length > 200 || str.split('\n').length > 3
+                          return (
+                            <div className="space-y-1">
+                              <div className="flex items-start gap-2">
+                                <pre className={cn(
+                                  "flex-1 min-w-0 font-mono text-sm whitespace-pre-wrap break-all",
+                                  overflows && "line-clamp-3"
+                                )}>
+                                  {str}
+                                </pre>
+                                {overflows && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try { await navigator.clipboard.writeText(str); setCopiedValue(true); setTimeout(() => setCopiedValue(false), 2000) } catch {}
+                                    }}
+                                    className="shrink-0 mt-0.5 text-muted-foreground hover:text-foreground"
+                                    title={t('common:copy', 'Copy')}
+                                  >
+                                    {copiedValue ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        }
+                        // Short scalar: prominent display
+                        return (
                           <div className="flex items-baseline gap-2 flex-wrap">
-                            <span className="font-mono text-2xl md:text-3xl font-semibold break-all">{String(selectedSource.current_value)}</span>
+                            <span className="font-mono text-2xl md:text-3xl font-semibold break-all">{str}</span>
                             {selectedSource.unit && (
                               <span className="font-mono text-lg text-muted-foreground">{selectedSource.unit}</span>
                             )}
                           </div>
                         )
-                      ) : (
-                        <span className="text-lg text-muted-foreground">{t('data:noData', 'No current data')}</span>
-                      )}
+                      })()}
                     </div>
                     {selectedSource.data_type && (
                       <Badge variant="secondary" className={cn(textNano, "shrink-0")}>{selectedSource.data_type}</Badge>

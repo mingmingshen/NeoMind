@@ -520,7 +520,6 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
               executionPlan={streamState.executionPlan}
               planStepStates={streamState.planStepStates}
               roundContents={streamState.roundContents}
-              assistantCard
             />
           )}
 

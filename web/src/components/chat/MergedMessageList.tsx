@@ -21,8 +21,6 @@ interface MergedMessageListProps {
   executionPlan?: ExecutionPlan | null
   planStepStates?: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
   roundContents?: Record<number, string>
-  /** Wrap assistant messages in card style */
-  assistantCard?: boolean
 }
 
 export function MergedMessageList({
@@ -35,7 +33,6 @@ export function MergedMessageList({
   executionPlan,
   planStepStates,
   roundContents = {},
-  assistantCard = false,
 }: MergedMessageListProps) {
   const user = useStore((s) => s.user)
   const { t } = useTranslation("chat")
@@ -107,7 +104,6 @@ export function MergedMessageList({
                       message={message}
                       user={user}
                       getUserInitials={getUserInitials}
-                      assistantCard={assistantCard}
                     />
                   </div>
                 )
@@ -123,7 +119,6 @@ export function MergedMessageList({
               message={message}
               user={user}
               getUserInitials={getUserInitials}
-              assistantCard={assistantCard}
             />
           ))}
 
@@ -133,7 +128,7 @@ export function MergedMessageList({
               <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">
                 <Bot className="h-4.5 w-4.5 text-accent-orange" />
               </div>
-              <div className={`flex-1 min-w-0 ${assistantCard ? 'rounded-xl bg-muted-30 px-3.5 py-3' : ''}`}>
+              <div className="flex-1 min-w-0">
                 {/* Execution plan */}
                 {executionPlan && (
                   <ExecutionPlanPanel

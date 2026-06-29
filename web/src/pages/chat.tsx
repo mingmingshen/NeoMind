@@ -1141,10 +1141,9 @@ export function ChatPage() {
                   <div className={`max-w-[85%] sm:max-w-[80%] ${message.role === "user" ? "order-1" : ""}`}>
                     <div
                       className={cn(
-                        "rounded-2xl px-3 py-2 sm:px-4 sm:py-3",
                         message.role === "user"
-                          ? "bg-foreground text-background"
-                          : "bg-muted text-foreground"
+                          ? "rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-foreground text-background"
+                          : ""
                       )}
                     >
                       <div className={message.role === "user" ? "message-bubble-user" : "message-bubble-assistant"}>
@@ -1254,7 +1253,7 @@ export function ChatPage() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-muted-foreground mt-1 px-1">
+                    <p className="text-xs text-muted-foreground mt-2 px-1">
                       {formatTimestamp(message.timestamp, false)}
                     </p>
                   </div>
