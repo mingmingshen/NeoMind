@@ -242,8 +242,8 @@ mod tests {
         // Baseline captured 2026-07-01 after removing rules.md, trimming
         // thinking_guidelines/principles/tool_strategy of cross-file duplicates.
         // Update ONLY when an intentional prompt change lands.
-        const BASELINE_LEN: usize = 9122;
-        const BASELINE_HASH: u64 = 18083644095083542179;
+        const BASELINE_LEN: usize = 9191;
+        const BASELINE_HASH: u64 = 13547979153067402138;
 
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(bytes, &mut hasher);

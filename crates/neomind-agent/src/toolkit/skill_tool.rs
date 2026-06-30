@@ -100,6 +100,7 @@ Available skill IDs (load these when relevant):
 - widget-development: Custom widget creation, manifest, bundle
 - connector-management: External MQTT broker connections
 - data-push-management: Data push to external systems
+- llm-management: LLM backend CRUD, capability, default selection
 
 When to load a skill:
 - User asks to create/update/delete any entity → load the relevant skill FIRST
@@ -117,7 +118,7 @@ When to load a skill:
                 },
                 "id": {
                     "type": "string",
-                    "description": "Skill ID for load/update/delete. Example: 'rule-management', 'device-management'"
+                    "description": "Skill ID for load/update/delete. Example: 'rule-management', 'device-onboarding'"
                 },
                 "query": {
                     "type": "string",
@@ -316,7 +317,7 @@ When to load a skill:
                 }
             }
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action '{}' for skill. Available actions: search, list, get, create, update, delete",
+                "Unknown action '{}' for skill. Available actions: search, load, create, update, delete",
                 action
             ))),
         }

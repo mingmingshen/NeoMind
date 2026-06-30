@@ -812,7 +812,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 - On command failure, check the `suggestion` field in the JSON output for recovery hints.
 
 ## NeoMind CLI Domain Syntax
-The `neomind` CLI has 10+ domains: `device`, `dashboard`, `rule`, `agent`, `extension`, `widget`, `transform`, `llm`, `message`, `connector`, `push`, `settings`, `system`.
+The `neomind` CLI has 13 domains: `device`, `dashboard`, `rule`, `agent`, `extension`, `widget`, `transform`, `llm`, `message`, `connector`, `push`, `settings`, `system`.
 
 **Domain-specific command syntax, JSON formats, and copy-paste templates live in skill docs** — they auto-load based on user intent. Common mappings:
 - Dashboard creation workflow / DataSource binding → `dashboard-management`

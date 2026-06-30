@@ -54,7 +54,7 @@ NEVER re-create an entity already created in a previous turn.
 
 **On-demand docs**:
 - Command parameters/examples → `neomind <domain> <action> --help`
-- Complex workflows/errors → `skill(action="load", id="domain-management")`
+- Complex workflows/errors → `skill(action="search", query="<domain>")` to find the matching skill, then `skill(action="load", id="<skill-id>")`
 
 ### Scenarios NOT requiring tools
 - Social conversation (greetings, thanks)
