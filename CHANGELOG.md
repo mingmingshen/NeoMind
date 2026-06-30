@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Shell tool description slimmed down — neomind CLI reference moved to
+  skills.** The `shell` tool's description was 15.7 KB and embedded the
+  full `neomind` CLI command reference (10 domains × commands ×
+  copy-paste templates), sent on every LLM turn in BOTH the tools array
+  and the system prompt prose (~31 KB/turn). The same content was also
+  maintained in 11 skill `.md` files, causing drift. Now:
+  - Shell description is ~2.5 KB (-84%): keeps only cross-domain rules
+    that apply to every `neomind` invocation (ID-is-positional, never
+    guess metric names, `--json` output, `suggestion` recovery field),
+    plus a domain→skill mapping table that points the LLM at the right
+    skill doc for per-domain syntax. Native system commands and
+    execution semantics preserved.
+  - Per-domain command syntax, JSON formats, and templates are sourced
+    exclusively from `skills/builtins/*.md`, which auto-load based on
+    user intent. Verified coverage: all 10 CLI domains map to at least
+    one skill (agent, llm, connector, dashboard, device, extension,
+    message, rule, transform, widget, push, plus `system info` in
+    device-onboarding).
+  - Approximately 26 KB of context saved per LLM turn.
+
 ### Added
 
 - **Per-extension and per-command AI tool management.** Users can now

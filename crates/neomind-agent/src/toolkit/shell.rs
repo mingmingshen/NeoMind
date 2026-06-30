@@ -805,193 +805,37 @@ impl Tool for ShellTool {
 
 Use this tool to run any system command. For NeoMind platform operations, use the `neomind` CLI.
 
-## Critical Syntax Rules
+## Critical Syntax Rules (apply to ALL neomind domains)
 - **ID is always a positional argument**, NEVER a `--id` flag. Correct: `neomind device get abc123`. Wrong: `neomind device get --id abc123`.
-- **NEVER guess metric names**. Always discover them first via `neomind device list` (shows metric_fields per type) or `neomind device get <ID>` (shows all metric names + values for one device), then use the exact names in `--metric` or rule conditions.
-- **When a command fails with "unexpected argument"**, you likely used flag syntax where positional was expected. Rewrite without the flag.
+- **NEVER guess metric names**. Discover first via `neomind device list` (returns `metric_fields` per type) or `neomind device get <ID>` (full metric names + values), then use exact names in `--metric`, rule conditions, transform code, or dashboard bindings. The same applies to extension fields — discover via `neomind extension info <ID>`.
+- **"unexpected argument" error** = you used a flag where positional was expected. Rewrite without the flag.
+- On command failure, check the `suggestion` field in the JSON output for recovery hints.
 
-## NeoMind CLI Domains
+## NeoMind CLI Domain Syntax
+The `neomind` CLI has 10+ domains: `device`, `dashboard`, `rule`, `agent`, `extension`, `widget`, `transform`, `llm`, `message`, `connector`, `push`, `settings`, `system`.
 
-| Domain | Key Actions | Description |
-|--------|------------|-------------|
-| device | list, get, create, update, delete, history, control, write-metric, webhook-url, types, drafts | **Discovery**: `device list` returns devices **grouped by type** with `metric_fields` (actual field names from real data), `example` (one online device's current values per type), and all device IDs/names/status. **One command for complete discovery** — no need to call `device latest` separately. `device get <ID>` returns full picture: metadata + config + all metrics + available commands. `device latest <ID>` is an alias for `device get`. CRUD: create/update/delete. Telemetry: `history <ID>` for time-series. Control: `control <ID> <CMD>`. Adapters: `mqtt`/`webhook`. `types` subcommand: list/get/create/delete (for managing type definitions). `drafts` subcommand: list/get/approve/reject/config |
-| dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
-| widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
-| rule | list, get, create, update, delete, enable, disable, test, history | Rules use JSON: `{\"name\":\"...\",\"condition\":{...},\"actions\":[...]}` |
-| agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, clear-memory, send-message | Created as `active` by default. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents. **`--llm-backend`**: check `neomind llm list` for available backends and their capabilities (`multimodal`, `supports_images`, `function_calling`, `max_context`). Match capabilities to the task — use a multimodal backend for image/vision tasks, check `function_calling` for tool-heavy agents |
-| transform | list, get, create, update, delete, test-code, metrics, data-sources | JS code transforms; `input` is raw metric value. `--scope` defaults to `global`. `metrics` lists virtual outputs |
-| extension | list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload | `get <ID>` returns commands, metrics, config details. `config <ID>` reads config, `config <ID> --set '<JSON>'` updates |
-| message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema | Send requires `--title` + `--body` + `--severity`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
-| system | info | MQTT broker, webhook URL, network info |
-| connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
-| llm | list, get, models, create, update, delete, activate, test | LLM backend management. `create` needs `--name` + `--type` (ollama/openai/custom) + `--endpoint` + `--model`. `activate` sets as default. `test` verifies connection |
-| push | list, get, create, update, delete, start, stop, test, logs, stats | Data push targets. `create` needs `--name` + `--config`. Type auto-detected from config (webhook/mqtt). Optional: `--schedule` (event/interval) + `--sources` for filtering. |
-| settings | timezone, set-timezone, timezones, retention, set-retention, cleanup | Instance-level settings. `timezone` (read current IANA zone), `set-timezone <ZONE>` (e.g. Asia/Shanghai), `timezones` (list valid IANA zones), `retention` (telemetry/image retention config), `set-retention` (configure auto-cleanup), `cleanup` (trigger manual cleanup). Use `settings timezone` to answer "what timezone is this instance in" — NOT host OS commands like `timedatectl`. |
+**Domain-specific command syntax, JSON formats, and copy-paste templates live in skill docs** — they auto-load based on user intent. Common mappings:
+- Dashboard creation workflow / DataSource binding → `dashboard-management`
+- Rule JSON format → `rule-management`
+- Widget IIFE templates → `widget-development`
+- Transform JS rules → `transform-management`
+- Device onboarding → `device-onboarding`
+- Agent scheduling / capabilities → `agent-management`
+- Extension install / config → `extension-development`
+- LLM backend selection → `llm-management`
+- Message channels → `message-management`
+- Connectors → `connector-management`
+- Data push → `data-push-management`
 
-> **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
+If no skill matched, run `neomind <domain> <action> --help` for flags and examples. Most commands accept `--json` for machine-readable output.
 
-## Domain Quick Guides
+## Native System Commands
+Runs on host via `/bin/sh -c` (Unix) or `cmd /C` (Windows). Common tools available: ping, traceroute, curl, arp, nmap, ps, df, free, top, uptime, systemctl status, ls, cat, head, tail, grep, find, wc, arp-scan, avahi-browse, bluetoothctl, docker.
 
-> For complex operations (dashboard creation, agent management, extension development, device onboarding), use the `skill` tool to load detailed step-by-step guides.
-
-### Rule JSON Format — MANDATORY: discover device IDs and metrics FIRST
-**Before creating ANY rule, you MUST run `neomind device list`** to get real device IDs and `metric_fields` per type.
-If `metric_fields` is empty, run `neomind device get <ID>` for exact metric names.
-**NEVER guess device IDs or metric names** — rules with fake names silently fail.
-
-```json
-{
-  "name": "Rule Name",
-  "condition": {
-    "condition_type": "comparison",
-    "source": "device:SENSOR_ID:METRIC",
-    "operator": "greater_than",
-    "threshold": 30
-  },
-  "actions": [
-    {"type": "notify", "message": "Alert: {value}", "severity": "critical"}
-  ]
-}
-```
-- **Sources**: `device:SENSOR_ID:METRIC`, `extension:EXT_ID:METRIC`
-- **Condition types**: `comparison` (operator + threshold), `range` (min + max), `logical` (AND/OR/NOT combining sub-conditions)
-- **Operators**: `greater_than`, `less_than`, `greater_equal`, `less_equal`, `equal`, `not_equal`, `contains`, `starts_with`, `ends_with`, `regex`
-- **Actions**: `notify` (message + severity), `execute` (target + command + params), `trigger_agent` (agent_id + input)
-- **Severities**: `info`, `warning`, `critical`, `emergency`
-- New rules are **enabled by default** — use `neomind rule disable <ID>` to pause
-
-```bash
-# Step 1: DISCOVER real device IDs and metric names
-neomind device list
-# → Returns types with metric_fields (e.g. ["temperature","humidity"]) and device IDs
-
-# Step 2: Create rule using DISCOVERED names (not the examples below!)
-# These examples use placeholder names — YOU must replace with real ones from step 1
-neomind rule create --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:REAL_DEVICE_ID:temperature","operator":"greater_than","threshold":30},"actions":[{"type":"notify","message":"High temp: {value}°C","severity":"critical"}]}'
-```
-
-### Dashboard Components
-Grid is 12 columns. `--components` **replaces ALL** — always use `add-components` to append.
-
-**Quick copy-paste templates** (replace values in CAPS):
-```bash
-# 1. Value card (single metric): 4x2
-#    IMPORTANT: type MUST be "telemetry" (not "device") for metric bindings
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c1","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"telemetry","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","metricId":"METRIC_NAME","timeRange":1,"limit":50}}]'
-
-# 2. Line chart (trend): 12x4
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c2","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":{"type":"telemetry","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"timeseries","sourceId":"DEVICE_ID","metricId":"METRIC_NAME","timeRange":1,"limit":50,"timeWindow":{"type":"last_24hours"}}}]'
-
-# 3. Gauge: 3x3
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c3","type":"gauge","title":"LABEL","position":{"x":4,"y":0,"w":3,"h":3},"data_source":{"type":"telemetry","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","metricId":"METRIC_NAME","timeRange":1,"limit":50},"display":{"min":0,"max":100,"unit":"%"}}]'
-
-# 4. Extension metric: use id + field as COMMAND:FIELD
-#    Discover via: neomind extension info <ID> -> commands[].id + commands[].output_fields[].name
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c4","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"extension-metric","source":"extension","id":"EXT_ID","field":"COMMAND:FIELD","mode":"timeseries","extensionId":"EXT_ID","extensionMetric":"COMMAND:FIELD"}}]'
-
-# 5. Multi-series line chart: data_source as array
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c5","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":[{"type":"telemetry","source":"device","id":"DEV1","field":"metric1","mode":"timeseries","sourceId":"DEV1","metricId":"metric1","timeRange":1,"limit":50},{"type":"telemetry","source":"device","id":"DEV2","field":"metric2","mode":"timeseries","sourceId":"DEV2","metricId":"metric2","timeRange":1,"limit":50}],"timeWindow":"1h"}]'
-```
-
-DataSource unified fields (v0.8.2+):
-| source | mode | id | field | When to use |
-|--------|------|----|-------|-------------|
-| `device` | `latest` | device ID | metric name | Value cards, LEDs, gauges — single latest value |
-| `device` | `timeseries` | device ID | metric name | Line/area/bar charts — historical trend |
-| `device` | `command` | device ID | command name | Toggle switches, command buttons |
-| `device` | `info` | device ID | property (`name`/`status`/etc) | Map display, device metadata |
-| `extension` | `timeseries` | extension ID | `COMMAND:FIELD` | Extension metrics in charts |
-| `extension` | `command` | extension ID | command name | Extension command buttons |
-| `system` | `latest` | `neomind` | system metric | System stats (cpu, memory, etc) |
-| `system` | `timeseries` | `neomind` | system metric | System stats over time |
-
-**IMPORTANT**: Device metrics MUST use `"type":"telemetry"` (NOT `"device"`). The `"device"` type is reserved for map markers (no metric). Always include both unified fields (`source`/`mode`/`id`/`field`) AND legacy fields (`sourceId`/`metricId`/`extensionId`/`extensionMetric`) for full editor compatibility.
-
-**Critical rules:**
-- **NEVER guess metric names** — always discover via `device list` (metric_fields per type) or `device get <ID>` or `extension info <ID>` first
-- `id` = entity identifier (device ID, extension ID), `field` = metric/command name — same field for all source types
-- **extension field MUST be `COMMAND:FIELD` format** (e.g. `get_weather:temperature_c`). Discover via `extension info <ID>` → each command has `id` and `output_fields[].name`. NEVER use bare field names like `temperature_c` — they silently fail to load data.
-- Charts always use `mode: "timeseries"`; indicators use `mode: "latest"`
-- Position: x increments by width (4-col layout: x=0,4,8), y increments when row is full
-- **For full workflow, load `dashboard-management` skill.**
-
-### Transform JS Rules
-**Discover first, code second** — NEVER guess field names:
-- Device metrics: `neomind device get <ID>` → see actual field names and structure
-- Extension metrics: `neomind extension info <ID>` → see commands, params, return fields
-- Existing transforms: `neomind transform metrics` or `transform data-sources`
-
-**`input` semantics** (auto-unwrap):
-- If device sends `{"value": 42}` → `input = 42` (auto-unwrapped from single-key object)
-- If device sends `{"temperature": 23.5, "humidity": 60}` → `input = {temperature: 23.5, humidity: 60}` (multi-key object, use `input.temperature`)
-- Must `return` the result (scalar, object, or array)
-
-**`extensions.invoke(extId, command, params)`** — call extension commands from transform:
-```javascript
-const weather = extensions.invoke('weather', 'get_forecast', {city: 'Shanghai'});
-return {temp: weather.temperature, humidity: weather.humidity};
-```
-Extension calls are pre-executed asynchronously before user code runs.
-
-**Scope**: `global` (all devices) | `device_type:<Type>` (all devices of type) | `device:<ID>` (one device)
-**Output**: DataSourceId `transform:<output_prefix>:<field>`
-
-```bash
-# Workflow: discover → test → create
-neomind device list                       # Step 1: discover fields (metric_fields per type)
-neomind transform test-code --code '...' --input '{"temperature": 25}'  # Step 2: test
-neomind transform create --name 'F to C' --code 'return (input - 32) * 5 / 9'  # Step 3: create
-```
-
-### Custom Widget IIFE Format
-No build tools. `manifest.json` + `bundle.js`. Use `neomind widget create "Name" --widget-type <TYPE>` to scaffold.
-```javascript
-// Preferred: variable assignment with jsxRuntime (cleaner than createElement)
-var MyWidget = (function() {
-  var React = window.React;
-  var jsx = window.jsxRuntime.jsx;
-  var jsxs = window.jsxRuntime.jsxs;
-
-  function MyWidget(props) {
-    var config = props.config || {};
-    var value = (props.dataSource && props.dataSource.value) != null ? props.dataSource.value : '-';
-    return jsx('div', {
-      className: 'flex flex-col items-center justify-center h-full w-full p-3 rounded-lg border border-border bg-card',
-      children: jsx('span', { className: 'text-2xl font-bold font-mono tabular-nums text-foreground', children: String(value) })
-    });
-  }
-
-  return { default: MyWidget, MyWidget: MyWidget };
-})();
-```
-Runtime: `window.React` (hooks: useState, useEffect, useRef), `window.jsxRuntime.jsx/jsxs`
-Styling: Tailwind classes preferred (`text-foreground`, `text-muted-foreground`, `bg-muted`, `bg-success`, `border-border`) or CSS vars (`var(--chart-1..6)`)
-**Border requirement**: Every widget's outermost container MUST include `border border-border rounded-lg bg-card` classes. Without borders, cards visually merge with the dashboard background and look incomplete.
-Props: `props.dataSource` (.value, .timeSeries, .isLoading, .unit), `props.config`, `props.title`, `props.deviceContext`, `props.sendDeviceCommand`
-manifest `global_name` must match IIFE variable name (e.g. `var MyWidget = ...` → `"global_name": "MyWidget"`)
-
-### Widget Creation Workflow (scaffold → edit → install → use)
-1. `neomind widget create "My Widget" --widget-type <TYPE>` → scaffold to `data/frontend-components/<widget-id>/`
-   - Types: `chart`, `gauge`, `stat`, `table`, `image`, `custom`
-2. Edit `manifest.json` — required fields:
-   - `id` (lowercase-hyphen, must not match built-ins like `value-card`)
-   - `global_name` (convention: `NeoMind{PascalCase}`, must match bundle.js assignment)
-   - `has_data_source`: true/false, `config_schema`: JSON Schema for user settings
-3. Edit `bundle.js` — must be valid IIFE (see template above), assign to `global['{global_name}']`
-4. Install: `neomind widget install data/frontend-components/<widget-id>` (accepts directory or .zip)
-5. Add to dashboard: `neomind dashboard add-components <ID> --components '[...]'`
-**For complete templates (value card, chart, gauge) and data binding examples, load `widget-development` skill.**
-
-## System Commands
-- Network: ping, traceroute, curl, arp, nmap
-- Monitoring: ps, df, free, top, uptime, systemctl status
-- Files: ls, cat, head, tail, grep, find, wc
-- Discovery: arp-scan, avahi-browse, bluetoothctl
-- Containers: docker ps, docker logs
-
-Commands run in a separate process — no persistent shell state between calls.
-Output may be truncated for very long responses.
-On failure, check the "suggestion" field for recovery hints."#
+## Execution Notes
+- Each command runs in a fresh process — no persistent shell state between calls.
+- `neomind` commands are dispatched in-process (no subprocess); they return a structured `CliResponse` as pretty-printed JSON on stdout.
+- Output may be truncated for very long responses."#
     }
 
     fn parameters(&self) -> Value {
