@@ -865,6 +865,7 @@
     "uninstall": "Uninstall",
     "reinstall": "Reinstall",
     "reinstallSuccess": "Component refreshed",
+    "updateAvailable": "New version v{{version}} available — click to update",
     "importTitle": "Import Component",
     "zipPackageDesc": "Upload a .zip containing manifest.json and bundle.js",
     "installSuccess": "Component installed successfully",

@@ -70,6 +70,7 @@ export interface DashboardToolbarProps {
   onUninstall: (id: string) => Promise<void>
   onRefreshComponent: (id: string) => Promise<void>
   onSetInstalling: (id: string | null) => void
+  updatesAvailable: Record<string, { current: string; latest: string }>
   importDialogOpen: boolean
   onImportDialogOpenChange: (open: boolean) => void
 }
@@ -108,6 +109,7 @@ export function DashboardToolbar(props: DashboardToolbarProps) {
     onUninstall,
     onRefreshComponent,
     onSetInstalling,
+    updatesAvailable,
     importDialogOpen,
     onImportDialogOpenChange,
   } = props
@@ -212,6 +214,7 @@ export function DashboardToolbar(props: DashboardToolbarProps) {
             onUninstall={onUninstall}
             onRefreshComponent={onRefreshComponent}
             onSetInstalling={onSetInstalling}
+            updatesAvailable={updatesAvailable}
             importDialogOpen={importDialogOpen}
             onImportDialogOpenChange={onImportDialogOpenChange}
           />

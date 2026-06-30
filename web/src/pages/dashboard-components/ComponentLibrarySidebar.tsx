@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { dynamicIconMap } from '@/lib/dynamicIcons'
 import {
   LayoutGrid, Store as StoreIcon, Search,
-  Box, Check, Trash2, Download, Loader2, Upload, PackagePlus, RefreshCw,
+  Box, Check, Trash2, Download, Loader2, Upload, PackagePlus, RefreshCw, ArrowDownCircle,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -44,6 +44,8 @@ export interface ComponentLibrarySidebarProps {
   onUninstall: (id: string) => Promise<void>
   onRefreshComponent: (id: string) => Promise<void>
   onSetInstalling: (id: string | null) => void
+  /** Map of component id → { current, latest } for components with a newer marketplace version. */
+  updatesAvailable: Record<string, { current: string; latest: string }>
 
   // Import dialog
   importDialogOpen: boolean
@@ -67,6 +69,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
   onUninstall,
   onRefreshComponent,
   onSetInstalling,
+  updatesAvailable,
   importDialogOpen,
   onImportDialogOpenChange,
 }: ComponentLibrarySidebarProps) {
@@ -178,7 +181,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                           const Icon = item.icon
                           const installedComp = installedComponents.find(c => c.id === item.id)
                           const isCommunity = !!installedComp
-                          const isLocal = installedComp?.source !== 'marketplace'
+                          const update = updatesAvailable[item.id]
                           const isHighlighted = highlightedId === item.id
                           return (
                             <div
@@ -186,6 +189,12 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                               ref={isHighlighted ? highlightedRef : undefined}
                               className="relative group"
                             >
+                              {update && (
+                                <span
+                                  className="absolute top-1.5 right-1.5 z-10 h-2 w-2 rounded-full bg-info ring-2 ring-background"
+                                  title={t('componentLibrary.updateAvailable', { version: update.latest })}
+                                />
+                              )}
                               <button
                                 type="button"
                                 onClick={() => onAddComponent(item.id)}
@@ -201,31 +210,36 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                               </button>
                               {isCommunity && (
                                 <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  {isLocal && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-5 w-5 text-muted-foreground hover:text-info"
-                                      disabled={installingId === item.id}
-                                      aria-label={t('componentLibrary.reinstall')}
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        onSetInstalling(item.id)
-                                        try {
-                                          await onRefreshComponent(item.id)
-                                          notifySuccess(t('componentLibrary.reinstallSuccess'))
-                                        } catch {
-                                          notifyError(t('componentLibrary.installError'))
-                                        } finally {
-                                          onSetInstalling(null)
-                                        }
-                                      }}
-                                    >
-                                      {installingId === item.id
-                                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-5 w-5 ${update ? 'text-info' : 'text-muted-foreground hover:text-info'}`}
+                                    disabled={installingId === item.id}
+                                    title={update
+                                      ? t('componentLibrary.updateAvailable', { version: update.latest })
+                                      : t('componentLibrary.reinstall')}
+                                    aria-label={update
+                                      ? t('componentLibrary.updateAvailable', { version: update.latest })
+                                      : t('componentLibrary.reinstall')}
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      onSetInstalling(item.id)
+                                      try {
+                                        await onRefreshComponent(item.id)
+                                        notifySuccess(t('componentLibrary.reinstallSuccess'))
+                                      } catch {
+                                        notifyError(t('componentLibrary.installError'))
+                                      } finally {
+                                        onSetInstalling(null)
+                                      }
+                                    }}
+                                  >
+                                    {installingId === item.id
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : update
+                                        ? <ArrowDownCircle className="h-3 w-3" />
                                         : <RefreshCw className="h-3 w-3" />}
-                                    </Button>
-                                  )}
+                                  </Button>
                                   <Button
                                     variant="ghost"
                                     size="icon"

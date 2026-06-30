@@ -140,12 +140,13 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const {
     marketComponents, marketLoading, installed: installedComponents,
     fetchMarket, fetchInstalled, installFromMarket, uninstall: uninstallComponent,
-    refreshComponent: refreshComponentAction,
+    refreshComponent: refreshComponentAction, updatesAvailable, checkUpdates,
   } = useStore((s) => ({
     marketComponents: s.marketComponents, marketLoading: s.marketLoading,
     installed: s.installed, fetchMarket: s.fetchMarket,
     fetchInstalled: s.fetchInstalled, installFromMarket: s.installFromMarket,
     uninstall: s.uninstall, refreshComponent: s.refreshComponent,
+    updatesAvailable: s.updatesAvailable, checkUpdates: s.checkUpdates,
   }))
 
   // Extension lifecycle management for hot updates
@@ -183,6 +184,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       fetchMarket()
     }
   }, [componentLibraryOpen, libraryTab, fetchMarket])
+
+  // Check for community component updates when the library opens (30s throttle).
+  const lastUpdateCheckRef = useRef<number>(0)
+  useEffect(() => {
+    if (!componentLibraryOpen) return
+    const now = Date.now()
+    if (now - lastUpdateCheckRef.current < 30_000) return
+    lastUpdateCheckRef.current = now
+    checkUpdates()
+  }, [componentLibraryOpen, checkUpdates])
 
   // Fetch installed components early for community registry sync
   // This MUST complete before community widgets can receive fetchData prop
@@ -1004,6 +1015,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onUninstall={uninstallComponent}
           onRefreshComponent={refreshComponentAction}
           onSetInstalling={setInstallingId}
+          updatesAvailable={updatesAvailable}
           importDialogOpen={importDialogOpen}
           onImportDialogOpenChange={setImportDialogOpen}
         />

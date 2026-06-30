@@ -27,6 +27,8 @@ export interface FrontendComponentState {
   loading: boolean
   error: string | null
   fetchCache: Record<string, { timestamp: number }>
+  /** Map of component id → { current, latest } when a newer version exists on the marketplace. */
+  updatesAvailable: Record<string, { current: string; latest: string }>
 }
 
 // ============================================================================
@@ -40,6 +42,7 @@ export interface FrontendComponentSlice extends FrontendComponentState {
   installManualZip: (zipFile: File) => Promise<FrontendComponentMeta>
   uninstall: (id: string) => Promise<void>
   refreshComponent: (id: string) => Promise<void>
+  checkUpdates: () => Promise<void>
 }
 
 // ============================================================================
@@ -71,6 +74,7 @@ export const createFrontendComponentSlice: StateCreator<
   loading: false,
   error: null,
   fetchCache: {},
+  updatesAvailable: {},
 
   // ========== Actions ==========
 
@@ -262,21 +266,78 @@ export const createFrontendComponentSlice: StateCreator<
   },
 
   /**
-   * Refresh a local component — clears registry cache and re-fetches from API.
-   * Used when the bundle.js is updated (e.g. by AI re-generating the component).
+   * Refresh a component so the latest bundle is loaded.
+   *
+   * - Always clears the in-browser community registry cache (window[globalName],
+   *   injected <script> tags, loadedModules) so the IIFE re-executes on next mount.
+   * - For marketplace components, additionally POSTs to the install endpoint so the
+   *   backend re-downloads the latest manifest + bundle from GitHub, overwriting the
+   *   frozen local copy. (The install endpoint is idempotent via atomic_write.)
+   * - For locally-installed components (manual ZIP / AI regeneration), the bundle on
+   *   disk is already current, so only the registry-cache reset is needed.
+   *
+   * On success the authoritative installed list is re-fetched and the id is cleared
+   * from `updatesAvailable`. On failure the error is re-thrown so the UI can toast.
    */
   refreshComponent: async (id) => {
-    // Clear community registry caches for this component
+    // 1. Clear community registry caches for this component
     communityRegistry.refreshComponent(id)
 
-    // Force re-fetch by clearing cache
+    // 2. For marketplace components, trigger backend re-download from GitHub
+    const comp = get().installed.find((c) => c.id === id)
+    const isMarketplace = comp?.source === 'marketplace'
+    if (isMarketplace) {
+      const res = await api.post<{ success?: boolean; error?: string }>(
+        '/frontend-components/market/install',
+        { component_id: id }
+      )
+      if (res.success === false) {
+        throw new Error(res.error || 'Failed to reinstall component')
+      }
+    }
+
+    // 3. Force re-fetch by clearing cache, then pull authoritative list
     set((state) => ({
       fetchCache: Object.fromEntries(
         Object.entries(state.fetchCache).filter(([key]) => key !== 'installed')
       ),
     }))
-
-    // Re-fetch installed list (will re-register with community registry)
     await get().fetchInstalled()
+
+    // 4. Clear update badge for this component
+    set((state) => {
+      if (!state.updatesAvailable[id]) return state
+      const next = { ...state.updatesAvailable }
+      delete next[id]
+      return { updatesAvailable: next }
+    })
+  },
+
+  /**
+   * Check the marketplace for newer versions of installed community components.
+   * Backend: GET /api/frontend-components/updates -> { updates: [{ id, current_version, latest_version }] }
+   *
+   * Network-tolerant: failures are swallowed (no error toast) — update badges
+   * are best-effort and must never block the UI.
+   */
+  checkUpdates: async () => {
+    try {
+      const res = await api.get<{
+        updates?: Array<{ id: string; current_version: string; latest_version: string }>
+        error?: string
+      }>('/frontend-components/updates')
+
+      // Backend returns 200 with { error: "network_error" } on failure.
+      if (res.error) return
+
+      const map: Record<string, { current: string; latest: string }> = {}
+      for (const u of res.updates || []) {
+        map[u.id] = { current: u.current_version, latest: u.latest_version }
+      }
+      set({ updatesAvailable: map })
+    } catch (error) {
+      // Silent — update detection is best-effort.
+      logError(error, { operation: 'Check component updates' })
+    }
   },
 })

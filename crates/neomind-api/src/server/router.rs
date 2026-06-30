@@ -1033,6 +1033,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             post(frontend_components::market_install_handler),
         )
         .route(
+            "/api/frontend-components/updates",
+            get(frontend_components::check_updates_handler),
+        )
+        .route(
             "/api/frontend-components",
             get(frontend_components::list_components_handler),
         )

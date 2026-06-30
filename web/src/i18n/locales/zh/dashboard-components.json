@@ -865,6 +865,7 @@
     "uninstall": "卸载",
     "reinstall": "重新安装",
     "reinstallSuccess": "组件已刷新",
+    "updateAvailable": "有新版本 v{{version}}，点击更新",
     "importTitle": "导入组件",
     "zipPackageDesc": "上传包含 manifest.json 和 bundle.js 的 .zip 压缩包",
     "installSuccess": "组件安装成功",

@@ -241,6 +241,81 @@ pub async fn market_list_handler(
     }
 }
 
+/// GET `/api/frontend-components/updates`
+///
+/// Compare installed community components against the latest marketplace index
+/// and return those with a newer version available.
+///
+/// Protected endpoint — requires authentication.
+/// Tolerates network failures: returns `{ updates: [], count: 0, error: "network_error" }`
+/// rather than an HTTP error so the UI can degrade gracefully.
+pub async fn check_updates_handler(
+    State(state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    let store = state.frontend_component_store.clone();
+    let installed = match tokio::task::spawn_blocking(move || store.list_all())
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("List task failed: {}", e)))?
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to list installed components: {}", e);
+            return ok(json!({
+                "updates": [],
+                "count": 0,
+                "error": "internal_error",
+                "message": "Failed to read installed components"
+            }));
+        }
+    };
+
+    // Fast path: nothing installed → no updates possible.
+    if installed.is_empty() {
+        return ok(json!({ "updates": [], "count": 0 }));
+    }
+
+    let client = match http_client() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to create HTTP client: {:?}", e);
+            return ok(json!({
+                "updates": [],
+                "count": 0,
+                "error": "network_error"
+            }));
+        }
+    };
+
+    let index = match fetch_market_index(&client).await {
+        Ok(idx) => idx,
+        Err(e) => {
+            tracing::warn!("Failed to fetch marketplace index for update check: {}", e);
+            return ok(json!({
+                "updates": [],
+                "count": 0,
+                "error": "network_error"
+            }));
+        }
+    };
+
+    let mut updates: Vec<serde_json::Value> = Vec::new();
+    for manifest in &installed {
+        if let Some(entry) = index.components.iter().find(|c| c.id == manifest.id) {
+            if manifest.version != entry.version {
+                updates.push(json!({
+                    "id": manifest.id,
+                    "name": manifest.name,
+                    "current_version": manifest.version,
+                    "latest_version": entry.version,
+                }));
+            }
+        }
+    }
+
+    let count = updates.len();
+    ok(json!({ "updates": updates, "count": count }))
+}
+
 /// POST `/api/frontend-components/market/install`
 ///
 /// Download and install a component from the community marketplace.
