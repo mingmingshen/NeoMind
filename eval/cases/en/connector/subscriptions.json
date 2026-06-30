@@ -4,11 +4,11 @@
   "category": "connector",
   "workflow": "connector-management",
   "scenario_type": "multi_turn",
-  "description": "Multi-turn: create connector -> subscribe topic -> list subscriptions -> unsubscribe (covers `neomind connector subscribe` + `subscriptions` + `unsubscribe`; previously 0 coverage).",
+  "description": "Multi-turn: create connector -> subscribe topic -> list subscriptions -> unsubscribe (covers `neomind connector subscribe` + `subscriptions` + `unsubscribe`; previously 0 coverage). Note: subscribe/unsubscribe/subscriptions operate on the embedded broker globally — they take only --topic, no connector id.",
   "setup": { "fixture": "seed-empty" },
   "turns": [
     { "user": "Add an MQTT broker: name sub-broker, host 10.0.0.50." },
-    { "user": "Subscribe it to topic 'env/temp/#'." },
+    { "user": "Subscribe to topic 'env/temp/#' on the embedded broker." },
     { "user": "Show the current subscription list." },
     { "user": "Unsubscribe from 'env/temp/#'." }
   ],
@@ -16,10 +16,10 @@
   "expectations": {
     "per_turn": [
       "Turn 1: Agent runs `neomind connector create --name sub-broker --host 10.0.0.50`, parses id",
-      "Turn 2: Agent runs `neomind connector subscribe <id> --topic 'env/temp/#'`",
-      "Turn 3: Agent runs `neomind connector subscriptions <id>`",
-      "Turn 4: Agent runs `neomind connector unsubscribe <id> --topic 'env/temp/#'`"
+      "Turn 2: Agent runs `neomind connector subscribe --topic 'env/temp/#'` (subscribe takes only --topic, no connector id)",
+      "Turn 3: Agent runs `neomind connector subscriptions` (no id arg)",
+      "Turn 4: Agent runs `neomind connector unsubscribe --topic 'env/temp/#'`"
     ],
-    "overall": "Last three turns must reuse the id from turn 1"
+    "overall": "Turns 2-4 must use the correct no-id syntax; subscribe/unsubscribe operate globally on the embedded broker, not per-connector"
   }
 }

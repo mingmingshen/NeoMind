@@ -283,7 +283,7 @@ class TestServer:
         data = body.get("data", body)
         return data.get("messages", []) or []
 
-    def chat(self, session_id: str, message: str, timeout: float = 600.0) -> dict:
+    def chat(self, session_id: str, message: str, timeout: float = 900.0) -> dict:
         """One chat turn via WebSocket (production chat UI path).
 
         Routes through `ws://.../api/chat?api_key=...` →
@@ -472,10 +472,13 @@ async def _ws_chat_async(
             # pause between tool rounds doesn't kill a long run. Use 180s
             # (6x heartbeat) — production agent execution can run up to 5
             # minutes (300s) and the first LLM response on long prompts may
-            # take 90-150s on slow models. Outer `timeout` (600s) bounds
-            # total wall clock for very multi-tool runs.
+            # take 90-150s on slow models. Outer `timeout` (900s) bounds
+            # total wall clock for very multi-tool runs (raised from 600s
+            # to handle complex lifecycle cases: extension build, widget
+            # tar/gzip, multi-turn state parsing). Inner gap raised to
+            # 240s (8x heartbeat) for thinking models on slow endpoints.
             deadline = time.monotonic() + timeout
-            inner_gap = 180.0
+            inner_gap = 240.0
             while time.monotonic() < deadline:
                 remaining = max(0.0, deadline - time.monotonic())
                 try:

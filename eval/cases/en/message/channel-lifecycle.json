@@ -4,22 +4,22 @@
   "category": "message",
   "workflow": "message-management",
   "scenario_type": "multi_turn",
-  "description": "Multi-turn: create channel -> update filter -> test -> delete (covers `neomind message channel-update` + `channel-test` + `channel-delete`).",
+  "description": "Multi-turn: create channel -> update filter -> test -> delete (covers `neomind message channel-update` + `channel-test` + `channel-delete`). channel-update uses --name flag + --config JSON; channel-delete/channel-test take name as positional arg.",
   "setup": { "fixture": "seed-empty" },
   "turns": [
-    { "user": "Create a message channel named ops-critical." },
-    { "user": "Configure it to accept only severity >= warning." },
+    { "user": "Create a webhook message channel named ops-critical pointing at https://example.com/hook." },
+    { "user": "Configure it to accept only messages with severity warning or higher." },
     { "user": "Run a test delivery on this channel." },
     { "user": "Finally delete it." }
   ],
   "applies": ["tool_accuracy", "task_completion", "context_retention", "language_adherence"],
   "expectations": {
     "per_turn": [
-      "Turn 1: Agent runs `neomind message channel-create --name ops-critical` (or POST /messages/channels), parses channel name/id",
-      "Turn 2: Agent runs `neomind message channel-update ops-critical --min-severity warning` (or PUT equivalent)",
-      "Turn 3: Agent runs `neomind message channel-test ops-critical`",
-      "Turn 4: Agent runs `neomind message channel-delete ops-critical`"
+      "Turn 1: Agent runs `neomind message channel-create --name ops-critical --type webhook --config '{\"url\":\"https://example.com/hook\"}'`",
+      "Turn 2: Agent runs `neomind message channel-update --name ops-critical --config '{\"min_severity\":\"warning\"}'` (filter config goes inside --config JSON)",
+      "Turn 3: Agent runs `neomind message channel-test ops-critical` (positional name)",
+      "Turn 4: Agent runs `neomind message channel-delete ops-critical` (positional name)"
     ],
-    "overall": "Last three turns must reuse the channel identifier from turn 1"
+    "overall": "Last three turns must reuse the channel name 'ops-critical'; turn 2 must express severity filter inside the --config JSON blob, not as a separate --min-severity flag"
   }
 }

@@ -711,7 +711,7 @@ impl ShellTool {
                 } else if action == "config" {
                     Some("Usage: neomind extension config <ID> to view, or neomind extension config <ID> --set '{\"key\":\"value\"}' to update.".to_string())
                 } else {
-                    Some("Available actions: list, get, status, logs, config, install, uninstall, market-list, market-install".to_string())
+                    Some("Available actions: list, get, status, logs, config, install, uninstall, reload, create, build, market-list, market-install".to_string())
                 }
             }
             "transform" => {
@@ -734,7 +734,7 @@ impl ShellTool {
                 } else if action == "install" && is_validation {
                     Some("Provide a widget directory (containing manifest.json + bundle.js) or a .zip file. Example: neomind widget install data/frontend-components/my-widget".to_string())
                 } else {
-                    Some("Available actions: list, get, bundle, create, install, uninstall, market-list, market-install".to_string())
+                    Some("Available actions: list, get, create, install, uninstall, market-list, market-install".to_string())
                 }
             }
             "message" => {
@@ -742,6 +742,8 @@ impl ShellTool {
                     Some("Run 'neomind message list' to see all messages.".to_string())
                 } else if action == "send" && is_validation {
                     Some("Required fields: --title, --body, --severity (info|warning|critical|emergency). Example: neomind message send --title \"Alert\" --body \"High temp\" --severity warning".to_string())
+                } else if action == "channel-update" {
+                    Some("Usage: neomind message channel-update --name <N> --config '<JSON>'. To filter by severity: --config '{\"min_severity\":\"warning\"}'. To filter by source type: --config '{\"source_types\":[\"device\"]}'. channel-create uses --name flag; channel-delete/channel-test take name as positional arg.".to_string())
                 } else {
                     Some("Available actions: list, get, send, read, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-types, channel-test".to_string())
                 }

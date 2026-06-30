@@ -12,7 +12,7 @@
         {
           "device_id": "draft-001",
           "name": "Pending draft device",
-          "device_type": "unknown_type",
+          "device_type": "ne101_camera",
           "adapter_type": "mqtt",
           "connection_config": {},
           "status": "draft"

@@ -1461,7 +1461,13 @@ neomind_export!({struct_name});
 }
 
 /// Build an extension from source.
+///
+/// Runs `cargo build --release`, then packages the resulting cdylib +
+/// manifest.json into a `.nep` zip archive. On success, prints a structured
+/// marker line `NEP_PATH=<path>` so downstream tools (and the agent) can
+/// extract the package path deterministically.
 fn build_extension(path: &std::path::PathBuf) -> Result<()> {
+    use std::fs;
     use std::process::Command;
 
     if !path.exists() {
@@ -1476,18 +1482,167 @@ fn build_extension(path: &std::path::PathBuf) -> Result<()> {
         anyhow::bail!("Cargo.toml not found in extension path. Is this a Rust project?");
     }
 
-    // Run cargo build
+    // 1. Read manifest.json to learn the extension id/version + expected crate name.
+    let manifest_path = path.join("manifest.json");
+    let manifest = if manifest_path.exists() {
+        let raw = fs::read_to_string(&manifest_path)?;
+        serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| {
+            anyhow::anyhow!("Failed to parse manifest.json: {}. Please fix the JSON syntax.", e)
+        })?
+    } else {
+        anyhow::bail!(
+            "manifest.json not found at {}. Run 'neomind extension create' to scaffold a project first.",
+            manifest_path.display()
+        );
+    };
+
+    let ext_id = manifest
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("manifest.json missing required 'id' field"))?
+        .to_string();
+    let ext_version = manifest
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.1.0")
+        .to_string();
+
+    // 2. cargo build --release
     let status = Command::new("cargo")
         .args(["build", "--release"])
         .current_dir(path)
         .status()?;
 
-    if status.success() {
-        println!("✅ Extension built successfully!");
-        Ok(())
-    } else {
-        anyhow::bail!("Extension build failed");
+    if !status.success() {
+        anyhow::bail!("Extension build failed (cargo build returned non-zero status)");
     }
+
+    println!("✅ Cargo build succeeded");
+    println!();
+
+    // 3. Locate the compiled cdylib in target/release/.
+    let target_dir = path.join("target").join("release");
+    if !target_dir.exists() {
+        anyhow::bail!(
+            "target/release not found at {}. Did cargo build succeed?",
+            target_dir.display()
+        );
+    }
+
+    // cdylib extension varies by platform: .so (linux), .dylib (macos), .dll (windows)
+    // Rust cdylibs are emitted as lib<name>.so / lib<name>.dylib / <name>.dll.
+    // We skip Linux versioned variants like libfoo.so.1 (rare for Rust cdylibs) by
+    // requiring the filename stem to contain no dot (i.e. only one extension).
+    let lib_exts = ["so", "dylib", "dll"];
+    let mut lib_path: Option<std::path::PathBuf> = None;
+    for entry in fs::read_dir(&target_dir)? {
+        let entry = entry?;
+        let p = entry.path();
+        let Some(ext) = p.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        if !lib_exts.contains(&ext) {
+            continue;
+        }
+        // stem = filename without extension (e.g. "libfoo" from "libfoo.dylib")
+        let stem = p
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        // Reject Linux versioned libs like libfoo.so.1.0 (stem contains digits+dots after .so)
+        // For .so specifically: skip if there are extra dot-separated segments after the first.
+        if ext == "so" && stem.contains('.') {
+            continue;
+        }
+        lib_path = Some(p);
+        break;
+    }
+    let lib_path = lib_path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "No cdylib (.so/.dylib/.dll) found in {}. Ensure Cargo.toml has [lib] crate-type = [\"cdylib\"].",
+            target_dir.display()
+        )
+    })?;
+
+    println!("Found compiled binary: {}", lib_path.display());
+
+    // 4. Determine current platform key for the .nep (e.g. darwin_aarch64).
+    let platform = neomind_core::extension::package::detect_platform();
+    println!("Detected platform: {}", platform);
+
+    // 5. Package into a .nep zip archive at <ext_dir>/<id>-<version>.nep
+    let nep_filename = format!("{}-{}.nep", ext_id, ext_version);
+    let nep_path = path.join(&nep_filename);
+
+    let lib_bytes = fs::read(&lib_path)?;
+    let lib_name = lib_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid lib filename"))?
+        .to_string();
+    let manifest_str = serde_json::to_string_pretty(&manifest)?;
+
+    let file = std::fs::File::create(&nep_path)?;
+    let mut writer = zip::ZipWriter::new(file);
+    use zip::write::SimpleFileOptions;
+    let opts = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    writer.start_file("manifest.json", opts)?;
+    std::io::Write::write_all(&mut writer, manifest_str.as_bytes())?;
+
+    let bin_archive_path = format!("binaries/{}/{}", platform, lib_name);
+    writer.start_file(&bin_archive_path, opts)?;
+    std::io::Write::write_all(&mut writer, &lib_bytes)?;
+
+    // Optional frontend/dist directory — include if present.
+    let frontend_dir = path.join("frontend").join("dist");
+    if frontend_dir.exists() {
+        for entry in walk_dir(&frontend_dir)? {
+            let rel = entry.strip_prefix(path).unwrap_or(&entry);
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            if entry.is_file() {
+                let bytes = fs::read(&entry)?;
+                writer.start_file(&rel_str, opts)?;
+                std::io::Write::write_all(&mut writer, &bytes)?;
+            }
+        }
+        println!("Included frontend/dist assets");
+    }
+
+    writer.finish()?;
+
+    let nep_size = fs::metadata(&nep_path)?.len();
+    println!();
+    println!("✅ Extension packaged successfully!");
+    println!("  Package: {}", nep_path.display());
+    println!("  Size:    {} bytes", nep_size);
+    println!("  Install: neomind extension install {}", nep_path.display());
+    println!();
+    // Structured marker for downstream parsing (agent, scripts).
+    println!("NEP_PATH={}", nep_path.display());
+
+    Ok(())
+}
+
+/// Recursively collect all files under `dir`.
+fn walk_dir(dir: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
+    let mut out = Vec::new();
+    let mut stack: Vec<std::path::PathBuf> = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d)? {
+            let entry = entry?;
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Run API key management commands.
