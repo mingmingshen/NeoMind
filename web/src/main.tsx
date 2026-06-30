@@ -252,6 +252,28 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
       return []
     }
   },
+
+  /**
+   * Fetch a device-type definition (metrics + commands schema).
+   * GET /api/device-types/:id -> DeviceType
+   * Used by community components to populate per-pin metric/command pickers
+   * from the stable schema rather than only live-reported values.
+   */
+  getDeviceType: async (deviceType: string): Promise<{
+    metrics: Array<{ name: string; display_name: string; data_type?: string; unit?: string }>
+    commands: Array<{ name: string; display_name: string }>
+  } | null> => {
+    const { api } = await import('@/lib/api')
+    try {
+      const t: any = await api.getDeviceType(deviceType)
+      return {
+        metrics: Array.isArray(t?.metrics) ? t.metrics : [],
+        commands: Array.isArray(t?.commands) ? t.commands : [],
+      }
+    } catch {
+      return null
+    }
+  },
 }
 
 // Initialize global VisualViewport tracking for mobile keyboard handling
