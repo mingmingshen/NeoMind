@@ -294,37 +294,12 @@ fn get_icon_for_type(widget_type: &str) -> &'static str {
     }
 }
 
-/// Built-in widget types shipped with the frontend (mirror of
-/// `builtInTypes` in `web/src/pages/dashboard-components/Renderers.tsx`).
-/// Kept in sync manually since the frontend registry is the source of truth.
-/// Used by `neomind widget list` so agents/users can enumerate available
-/// dashboard component types without scanning the frontend bundle.
-const BUILTIN_WIDGET_TYPES: &[&str] = &[
-    "value-card",
-    "counter",
-    "metric-card",
-    "led-indicator",
-    "sparkline",
-    "progress-bar",
-    "line-chart",
-    "area-chart",
-    "bar-chart",
-    "pie-chart",
-    "toggle-switch",
-    "image-display",
-    "image-history",
-    "web-display",
-    "markdown-display",
-    "map-display",
-    "video-display",
-    "custom-layer",
-];
-
 /// List all installed widgets with compact summary.
 ///
-/// Returns id, name, type, and version per widget, plus the static list of
-/// built-in widget types so callers can see everything available without
-/// separately querying the frontend. Full manifest for an installed widget
+/// Returns id, name, type, and version per installed widget, plus the
+/// catalogue of built-in widget types (sourced from the backend's
+/// `neomind_core::dashboard::BUILTIN_WIDGET_TYPES`, mirrored from
+/// `Renderers.tsx::builtInTypes`). Full manifest for an installed widget
 /// is available via `neomind widget get <id>`.
 pub async fn list_widgets(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/frontend-components").await?;
@@ -348,22 +323,32 @@ pub async fn list_widgets(client: &ApiClient) -> Result<CliResponse> {
         })
         .collect();
 
-    let builtin: Vec<serde_json::Value> = BUILTIN_WIDGET_TYPES
-        .iter()
-        .map(|s| json!(*s))
-        .collect();
+    // Built-in types come straight from the API response (sourced from
+    // `neomind_core::dashboard::BUILTIN_WIDGET_TYPES` on the server) — the
+    // CLI never hardcodes widget type names itself.
+    let builtin_raw = data
+        .get("data")
+        .and_then(|d| d.get("builtin_types"))
+        .or_else(|| data.get("builtin_types"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let builtin_count = data
+        .get("data")
+        .and_then(|d| d.get("builtin_count"))
+        .and_then(|v| v.as_u64())
+        .or_else(|| data.get("builtin_count").and_then(|v| v.as_u64()))
+        .unwrap_or(0);
 
     Ok(CliResponse::success(
         json!({
             "total": total,
             "widgets": summary,
-            "builtin_types": builtin,
-            "builtin_count": builtin.len(),
+            "builtin_types": builtin_raw,
+            "builtin_count": builtin_count,
         }),
         format!(
             "{} widget(s) listed (plus {} built-in types)",
-            total,
-            builtin.len()
+            total, builtin_count,
         ),
     ))
 }

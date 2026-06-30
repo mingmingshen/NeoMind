@@ -5,6 +5,7 @@
 // alerts module removed - use neomind_messages instead
 pub mod brand;
 pub mod config;
+pub mod dashboard;
 pub mod datasource;
 pub mod error;
 pub mod event;

@@ -666,9 +666,25 @@ pub async fn list_components_handler(
         .map_err(|e| ErrorResponse::internal(format!("List task failed: {}", e)))?
         .map_err(|e| ErrorResponse::internal(format!("Failed to list components: {}", e)))?;
 
+    // Surface the static catalogue of built-in widget types (mirror of
+    // `builtInTypes` in `Renderers.tsx`) so CLI callers and agents can
+    // enumerate every available dashboard component without guessing.
+    let builtin_types: Vec<serde_json::Value> = neomind_core::dashboard::BUILTIN_WIDGET_TYPES
+        .iter()
+        .map(|t| {
+            json!({
+                "type_id": t.type_id,
+                "display_name": t.display_name,
+                "category": t.category,
+            })
+        })
+        .collect();
+
     ok(json!({
         "components": components,
         "total": components.len(),
+        "builtin_types": builtin_types,
+        "builtin_count": builtin_types.len(),
     }))
 }
 
