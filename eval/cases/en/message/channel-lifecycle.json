@@ -1,0 +1,25 @@
+{
+  "id": "message-channel-lifecycle",
+  "lang": "en",
+  "category": "message",
+  "workflow": "message-management",
+  "scenario_type": "multi_turn",
+  "description": "Multi-turn: create channel -> update filter -> test -> delete (covers `neomind message channel-update` + `channel-test` + `channel-delete`).",
+  "setup": { "fixture": "seed-empty" },
+  "turns": [
+    { "user": "Create a message channel named ops-critical." },
+    { "user": "Configure it to accept only severity >= warning." },
+    { "user": "Run a test delivery on this channel." },
+    { "user": "Finally delete it." }
+  ],
+  "applies": ["tool_accuracy", "task_completion", "context_retention", "language_adherence"],
+  "expectations": {
+    "per_turn": [
+      "Turn 1: Agent runs `neomind message channel-create --name ops-critical` (or POST /messages/channels), parses channel name/id",
+      "Turn 2: Agent runs `neomind message channel-update ops-critical --min-severity warning` (or PUT equivalent)",
+      "Turn 3: Agent runs `neomind message channel-test ops-critical`",
+      "Turn 4: Agent runs `neomind message channel-delete ops-critical`"
+    ],
+    "overall": "Last three turns must reuse the channel identifier from turn 1"
+  }
+}

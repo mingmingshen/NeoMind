@@ -1,0 +1,25 @@
+{
+  "id": "connector-subscriptions",
+  "lang": "en",
+  "category": "connector",
+  "workflow": "connector-management",
+  "scenario_type": "multi_turn",
+  "description": "Multi-turn: create connector -> subscribe topic -> list subscriptions -> unsubscribe (covers `neomind connector subscribe` + `subscriptions` + `unsubscribe`; previously 0 coverage).",
+  "setup": { "fixture": "seed-empty" },
+  "turns": [
+    { "user": "Add an MQTT broker: name sub-broker, host 10.0.0.50." },
+    { "user": "Subscribe it to topic 'env/temp/#'." },
+    { "user": "Show the current subscription list." },
+    { "user": "Unsubscribe from 'env/temp/#'." }
+  ],
+  "applies": ["tool_accuracy", "task_completion", "context_retention", "language_adherence"],
+  "expectations": {
+    "per_turn": [
+      "Turn 1: Agent runs `neomind connector create --name sub-broker --host 10.0.0.50`, parses id",
+      "Turn 2: Agent runs `neomind connector subscribe <id> --topic 'env/temp/#'`",
+      "Turn 3: Agent runs `neomind connector subscriptions <id>`",
+      "Turn 4: Agent runs `neomind connector unsubscribe <id> --topic 'env/temp/#'`"
+    ],
+    "overall": "Last three turns must reuse the id from turn 1"
+  }
+}
