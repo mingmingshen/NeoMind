@@ -82,6 +82,7 @@ def _build_turn_record(user_msg: str, resp: dict, pt_ms: int) -> dict:
             "raw_messages": resp.get("new_messages") or [],
             "transport": "websocket",
             "ws_error": resp.get("error"),
+            "transient_stall_retry_count": resp.get("transient_stall_retry_count", 0),
         }
 
     # === Fallback: parse history delta (HTTP path or WS without stream data) ===
@@ -158,6 +159,7 @@ def _build_turn_record(user_msg: str, resp: dict, pt_ms: int) -> dict:
         "raw_messages": new_messages,
         "transport": "websocket" if resp.get("tool_calls_stream") is not None else "http",
         "ws_error": resp.get("error") if resp.get("tool_calls_stream") is not None else None,
+        "transient_stall_retry_count": resp.get("transient_stall_retry_count", 0),
     }
 
 

@@ -305,13 +305,18 @@ class TestServer:
         - Intent / Plan / Progress / Warning / Heartbeat
         - end (terminal) / Error (terminal)
 
-        RETRY: if the first attempt produces ZERO Content/ToolCall events AND
-        the failure is a WS gap timeout (no event for 180s), retry once. This
-        is the signature of a transient LLM backend stall (DeepSeek/OpenAI
-        rate-limit windows, network blips) — verified non-pathological: the
-        same case passes in 7-9s on a clean retry. Real bugs produce at least
-        one Thinking/Content event before stalling.
+        RETRY: if an attempt produces ZERO Content/ToolCall events AND the
+        failure is a WS gap timeout (no event for 240s), retry up to 2 times
+        with exponential backoff (5s, then 15s). This is the signature of a
+        transient LLM backend stall (DeepSeek/OpenAI rate-limit windows,
+        network blips) — verified non-pathological: the same case passes in
+        7-9s on a clean retry. Real bugs produce at least one Thinking/Content
+        event before stalling. Up to 3 total attempts; each stalled attempt
+        can take up to `timeout` (900s) so a genuinely-down endpoint still
+        terminates within ~3×timeout + backoff.
         """
+        backoffs = [5.0, 15.0]  # sleeps BEFORE retry attempt #2 and #3
+        retry_count = 0
         history_before = self._snapshot_history_len(session_id)
         result = _ws_chat(
             host="127.0.0.1",
@@ -323,12 +328,13 @@ class TestServer:
             history_before=history_before,
             history_fetch=lambda sid: self.get_history(sid),
         )
-        if _is_transient_stall(result):
+        while _is_transient_stall(result) and retry_count < len(backoffs):
+            retry_count += 1
             sys_stderr_write(
-                "[chat] transient stall detected (0 events + gap timeout); "
-                "retrying once after 5s backoff\n"
+                f"[chat] transient stall detected (0 events + gap timeout); "
+                f"retry #{retry_count}/{len(backoffs)} after {backoffs[retry_count-1]:.0f}s backoff\n"
             )
-            time.sleep(5.0)
+            time.sleep(backoffs[retry_count - 1])
             # Re-snapshot history in case the stalled attempt left a partial
             # assistant message — the retry starts fresh from current state.
             history_before = self._snapshot_history_len(session_id)
@@ -342,7 +348,9 @@ class TestServer:
                 history_before=history_before,
                 history_fetch=lambda sid: self.get_history(sid),
             )
+        if retry_count:
             result["retried_after_transient_stall"] = True
+            result["transient_stall_retry_count"] = retry_count
         return result
 
     def _snapshot_history_len(self, session_id: str) -> int:
