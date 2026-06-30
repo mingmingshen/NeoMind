@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.9.0]
 
 ### Overview
 
@@ -45,6 +45,18 @@ WS chat + transient-stall retry; (2) **template-aware rule
 validation** — pull metrics from the registered device-type template;
 (3) **first-boot reliability** — seed templates before cache load;
 (4) **CLI completeness** — `--id` on device create.
+
+**Second batch (post-first-round):** the 70-case set was doubled to
+**146 cases (73 unique × zh + en)** across all CLI domains including
+marketplace / observability / lifecycle / error-path surfaces. The
+146-case run surfaced a second round of production gaps (settings
+domain missing from CLI help, `POST /rules` trigger required despite
+skill doc saying otherwise, `neomind extension build` not producing
+a `.nep`, two agent-reliability bugs: skill-context accumulation and
+degenerate code-fence-only output). Plus a marketplace component
+reinstall + update-detection path, an onboarding docs-links strip,
+and a Discord community entry + release-notify GitHub Action. Latest
+baseline 91.1% PASS, expected ~95% after the round-2 fixes.
 
 ### Eval framework — pivot to Python + production subprocess
 
@@ -169,9 +181,177 @@ Two eval-surfaced gaps on `POST /rules`:
   falling back to the legacy hardcoded behavior only when no
   template is registered.
 
-## [0.9.0] - 2026-06-28
+### Eval expansion — 70 → 146 cases (73 unique × zh + en)
 
-### Overview
+Coverage doubled after the first round of eval-surfaced fixes
+landed. The case set now exercises every NeoMind CLI domain with
+at least one scenario, including the previously-zero-coverage
+marketplace / observability / lifecycle / error-path surfaces:
+
+- **P0 control-action** (9 scenarios × zh+en): device control,
+  extension reload, rule enable/disable, agent pause/resume,
+  transform enable — all multi-turn control flows, not just list/get.
+- **P0 marketplace** (push/connector/extension/memory): data-push,
+  notification connector, extension install lifecycle, agent memory
+  reset — surfaces that historically had 0 coverage.
+- **P1 observability + lifecycle** (13 scenarios × zh+en):
+  extension install/reload/uninstall, agent lifecycle (pause/resume/
+  clear-memory), transform create-and-enable, rule history + cleanup.
+- **P2 marketplace + error-path** (4 scenarios × zh+en): draft-approval,
+  device update, unknown-id handling, channel lifecycle.
+- **Final coverage gaps** (5 scenarios × zh+en): widget list, draft
+  deletion, telemetry history, connector subscriptions, message
+  channel-update with nested JSON config.
+- **Detect-and-explain acceptance** (extension-reload + device-control):
+  both cases ship with empty target lists. The harness now accepts
+  "ran the command" OR "saw empty list + explained to the user" — the
+  latter is valid behavior, not a failure. Stops penalizing the agent
+  for not blindly issuing no-ops.
+- **Per-turn timeout bump** 600s → 900s; inner WS gap 180s → 240s —
+  complex multi-turn cases (extension build, transform lifecycle) need
+  headroom for thinking models on slow endpoints.
+
+Latest 146-case run: **91.1% PASS** pre-fix, expected ~95% after
+the eval-surfaced fixes below land.
+
+### Eval-surfaced fixes — settings domain, rule trigger default, extension build
+
+Production gaps surfaced by the 70-case and 146-case runs:
+
+- **`settings` missing from CLI domain table** — `shell.rs` listed
+  12 domains but `settings` wasn't one, so the agent reached for
+  `timedatectl` / `neomind system info` instead of `neomind settings
+  timezone`. Added a `settings` row enumerating timezone /
+  set-timezone / timezones / retention / set-retention / cleanup with
+  explicit "use `settings timezone`, NOT host OS commands" guidance.
+- **`POST /rules` trigger now defaults to `data_change`** — the skill
+  doc claimed `trigger` was optional, but the API required it. Agent
+  cycled through four wrong shapes (absent / bare string /
+  externally-tagged / flat-at-root) before failing. `create_rule_handler`
+  now defaults an absent `trigger` to `{"trigger_type":"data_change"}`
+  before deserializing. Aligns API behavior with the skill doc and
+  removes the footgun for all API consumers.
+- **`neomind extension build` now produces a `.nep`** — previously
+  the command ran `cargo build` and printed "success" without
+  producing any installable artifact, breaking the entire install
+  chain downstream. Now reads `manifest.json`, locates the compiled
+  cdylib, and zips `manifest.json` + `binaries/<platform>/` + optional
+  `frontend/dist/` into `<id>-<version>.nep`. Emits a
+  `NEP_PATH=<path>` marker line for deterministic agent parsing.
+- **CLI help table corrections** — extension table now lists
+  `reload` / `create` / `build` (was missing `reload`, causing the
+  agent to fall back to `list`); widget table drops the deprecated
+  `bundle` action; `message channel-update` hint now documents the
+  `--name <N> --config '<JSON>'` syntax (severity filter lives inside
+  the JSON, not a separate flag).
+
+### Agent reliability — transient skill dedup + degenerate fence guard
+
+Two agent-side issues surfaced by long eval traces:
+
+- **Transient skill context was pure string accumulation** — loading
+  the same skill N times in one turn (a common retry-loop pattern)
+  appended N copies into the system prompt. Eval traces showed the
+  agent reloading `rule-management` 10+ times, drowning in ~50KB of
+  duplicate context and getting stuck. Replaced `Option<String>` with
+  `TransientSkillContext { loaded_ids, body }` — first load of a
+  given skill id preserves the body verbatim; repeat loads are
+  no-ops; distinct ids still accumulate. 5 unit tests cover load
+  payload, skill_id field, search array, non-JSON fallback, and
+  the full dedup+clear lifecycle.
+- **Degenerate code-fence-only output guard** — DeepSeek-class models
+  occasionally emit just ` ``` ` (or ` ```\n``` `) as their entire
+  final answer, intending to format a summary but stopping after the
+  fence opener. Left alone this produced a content-less reply that
+  zeroed `response_quality` and `language_adherence`. Added
+  `is_degenerate_fence_only_output()` and wired it into both
+  `stream_core.rs` (empty-content recovery fires for fence-only too,
+  so the retry-without-thinking fully replaces it) and
+  `stream_multimodal.rs` (summary fallback / English fallback message).
+  4 new unit tests cover single marker, empty pair, language tags,
+  and the negative cases.
+
+### Marketplace components — reinstall + update detection
+
+Marketplace widget bundles were frozen at install time; the refresh
+button only cleared the in-browser cache and was hidden for
+marketplace components.
+
+- New `GET /api/frontend-components/updates` — compares installed
+  manifests against the live marketplace index, network-tolerant
+  (returns empty result on index fetch failure rather than 500ing).
+- `refreshComponent` rewritten to re-download marketplace components
+  via the idempotent install endpoint (local components still only
+  clear the registry cache), then re-fetch the authoritative list.
+- Refresh button now visible for marketplace components too; an
+  update badge (ArrowDownCircle + persistent dot) appears when a
+  newer version exists. `checkUpdates` runs on a 30s throttle when
+  the component library opens.
+
+### Onboarding — docs links strip
+
+The core setup step in the onboarding wizard now pins a docs strip
+(BookOpen icon + 3 wiki links: Quick Start / User Guide / Developer
+Guide) above the master-detail grid. Stays put when card content
+height changes between LLM and Device selection, so the help links
+don't jump around mid-flow. Links open in a new tab via
+`target=_blank rel=noopener`.
+
+### Community / release automation
+
+- **Discord community entry in README** — top-of-file badge + a new
+  Community section (Discord / GitHub Issues / Discussions / Wiki).
+- **`release-notify.yml` GitHub Action** — on `release: published`,
+  posts a `🚀 NeoMind vX.Y.Z is out!` announcement to the Discord
+  `#announcements` channel via Webhook. Pulls tag + URL + Release
+  Notes body from the event payload, truncates the body to 1800 chars
+  (Discord embed description cap 4096, leaving headroom for markdown),
+  assembles the webhook payload via `jq`, and supports an optional
+  `DISCORD_ROLE_ID` secret for role pings. Manual `workflow_dispatch`
+  mode is wired for testing without cutting a real release. Webhook
+  URL lives in `DISCORD_WEBHOOK_URL` repository secret — never in
+  the repo. Latent / empty-secret / non-204 responses all degrade
+  gracefully (warning + exit-0, or `::error::` + fail-with-body).
+
+### Agent tooling transparency — prompt split + Tools catalog
+
+Two independent improvements that make the agent subsystem easier
+to maintain and introspect. Neither changes runtime behavior; both
+are zero-risk additive layers.
+
+- **System-prompt source split (`crates/neomind-agent/src/prompts/`)**
+  — the seven inline `const X: &str = r#"..."#;` blocks in
+  `builder.rs` (IDENTITY, VISION_HINT, PRINCIPLES, TOOL_STRATEGY,
+  MEMORY_USAGE, THINKING_GUIDELINES, LANGUAGE_POLICY) plus the
+  inline rule pair at the top of the prompt are now
+  `include_str!("X.md")` references. Editing prompt copy no longer
+  requires touching Rust source. The composition is guarded by
+  `test_system_prompt_byte_stable` — a length + `DefaultHasher`
+  baseline that fails loudly if a `.md` edit changes the assembled
+  prompt by even one byte, with the new hash printed in the panic
+  message so updating the baseline is a one-paste operation.
+- **`GET /api/agents/tools` read-only catalog** — new endpoint that
+  returns the server's `ToolRegistry` as JSON. Each entry carries
+  name, description, source (`built-in` | `extension`), category,
+  namespace (extension id for `.nep`-registered tools), version,
+  deprecated flag, and the full JSON Schema of the tool's input
+  parameters. Route declared before `/api/agents/:id` to avoid
+  Axum path-parameter shadowing. Tools are surfaced exactly as the
+  agent sees them at runtime — no separate maintenance surface.
+- **Tools tab on the Agents page** — page-level tab (alongside
+  Agents / Memory / Skills) rendering the catalog as a
+  `ResponsiveTable` with `table-fixed` column widths. Columns:
+  Tool (icon + name + 2-line description) · Version · Source badge
+  · Namespace (extension id for `.nep` tools, lowercased category
+  for built-ins, e.g. `system`) · Parameter chips (JSON Schema
+  property names, required params highlighted in orange, overflow
+  counter past 6). Top-right header carries a source-filter
+  dropdown + debounced search input (mirrors the Data Explorer
+  pattern). Row click opens a read-only `FullScreenDialog` showing
+  description, metadata grid, and the parameters JSON Schema.
+  Source filter + search reset automatically on tab leave.
+
+### Production reliability & UX themes — DashScope, external broker, mobile masonry
 
 A **DashScope hybrid-thinking reliability + external broker parity**
 release. The headline work closes a two-week-old production issue
