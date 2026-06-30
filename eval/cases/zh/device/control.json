@@ -1,0 +1,19 @@
+{
+  "id": "device-control",
+  "lang": "zh",
+  "category": "device",
+  "workflow": "device-onboarding",
+  "scenario_type": "single_turn",
+  "description": "向设备下发控制命令（覆盖 `neomind device control` — IoT 控制闭环核心，此前 0 覆盖）",
+  "setup": { "fixture": "seed-default" },
+  "turns": [
+    { "user": "请给 sensor-001 发一个 reboot 重启命令。" }
+  ],
+  "applies": ["tool_accuracy", "task_completion", "language_adherence"],
+  "expectations": {
+    "per_turn": [
+      "Turn 1: Agent 先用 `neomind device get sensor-001`（或 list）确认设备存在，再调用 `neomind device control sensor-001 reboot`（--params 可选）"
+    ],
+    "overall": "必须实际调用 control 工具下发命令，不能只在回复中确认"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "device-control",
+  "lang": "en",
+  "category": "device",
+  "workflow": "device-onboarding",
+  "scenario_type": "single_turn",
+  "description": "Send a control command to a device (covers `neomind device control` — core IoT control loop, previously 0 coverage).",
+  "setup": { "fixture": "seed-default" },
+  "turns": [
+    { "user": "Send a reboot command to sensor-001." }
+  ],
+  "applies": ["tool_accuracy", "task_completion", "language_adherence"],
+  "expectations": {
+    "per_turn": [
+      "Turn 1: Agent first confirms device existence via `neomind device get sensor-001` (or list), then runs `neomind device control sensor-001 reboot` (--params optional)"
+    ],
+    "overall": "Must actually invoke the control tool to send the command, not just confirm in reply"
+  }
+}
