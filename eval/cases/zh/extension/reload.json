@@ -1,0 +1,19 @@
+{
+  "id": "extension-reload",
+  "lang": "zh",
+  "category": "extension",
+  "workflow": "extension-management",
+  "scenario_type": "single_turn",
+  "description": "触发扩展全量 reload（覆盖 `neomind extension reload`，无需 .nep 安装）",
+  "setup": { "fixture": "seed-empty" },
+  "turns": [
+    { "user": "把所有已安装扩展重新加载一遍。" }
+  ],
+  "applies": ["tool_accuracy", "task_completion", "language_adherence"],
+  "expectations": {
+    "per_turn": [
+      "Turn 1: Agent 调用 `neomind extension reload`（或 POST /api/extensions/reload）"
+    ],
+    "overall": "即使 0 个扩展也要明确确认 reload 完成"
+  }
+}
