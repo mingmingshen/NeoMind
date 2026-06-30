@@ -232,6 +232,26 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
       return null
     }
   },
+
+  /**
+   * List all devices known to the platform.
+   * GET /api/devices -> { devices: Device[] }
+   * Used by community components that need to enumerate devices (e.g. the 3D
+   * viewer's per-pin device picker). Returns a minimal shape.
+   */
+  listDevices: async (): Promise<Array<{ id: string; name: string; device_type: string }>> => {
+    const { api } = await import('@/lib/api')
+    try {
+      const result = await api.getDevices()
+      return (result.devices || []).map((d: any) => ({
+        id: d.id,
+        name: d.name || d.id,
+        device_type: d.device_type || '',
+      }))
+    } catch {
+      return []
+    }
+  },
 }
 
 // Initialize global VisualViewport tracking for mobile keyboard handling
