@@ -56,8 +56,54 @@ def _resolve_neomind_bin() -> str:
     cwd = os.getcwd()
     candidate = os.path.join(cwd, "target", "release", "neomind")
     if os.path.exists(candidate):
+        _warn_if_stale(candidate)
         return candidate
     return "neomind"  # fall back to PATH
+
+
+def _warn_if_stale(bin_path: str) -> None:
+    """Warn loudly if the release binary predates any source file.
+
+    Eval results from a stale binary are meaningless — recent fixes don't
+    take effect and cases fail for reasons already patched. We compare the
+    binary mtime against the newest .rs file under crates/ and print a
+    hard-to-miss warning when the binary is older. Set NEOMIND_SKIP_STALE_CHECK=1
+    to suppress (e.g. for prod binaries built elsewhere).
+    """
+    if os.environ.get("NEOMIND_SKIP_STALE_CHECK"):
+        return
+    try:
+        bin_mtime = os.path.getmtime(bin_path)
+    except OSError:
+        return
+    newest_src = 0.0
+    newest_path = ""
+    for root, _dirs, files in os.walk("crates"):
+        for f in files:
+            if f.endswith(".rs"):
+                p = os.path.join(root, f)
+                try:
+                    m = os.path.getmtime(p)
+                except OSError:
+                    continue
+                if m > newest_src:
+                    newest_src = m
+                    newest_path = p
+    if newest_src > bin_mtime:
+        from datetime import datetime
+        bin_t = datetime.fromtimestamp(bin_mtime).strftime("%H:%M:%S")
+        src_t = datetime.fromtimestamp(newest_src).strftime("%H:%M:%S")
+        print(
+            "⚠️  STALE BINARY WARNING: target/release/neomind was built at "
+            f"{bin_t} but {newest_path} was modified at {src_t}.\n"
+            "    Recent source changes are NOT in the binary the eval will "
+            "run against.\n"
+            "    Rebuild with `cargo build --release -p neomind-cli` before "
+            "trusting eval results,\n"
+            "    or set NEOMIND_SKIP_STALE_CHECK=1 to silence this warning.",
+            file=__import__("sys").stderr,
+            flush=True,
+        )
 
 
 def _precreate_api_key(data_dir: Path) -> str:

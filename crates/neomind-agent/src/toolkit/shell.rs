@@ -91,6 +91,27 @@ impl ShellTool {
         // which strips most useful information from the output.
         cmd.env("NEOMIND_JSON", "1");
 
+        // Prepend the current binary's directory to PATH so subprocess `neomind`
+        // invocations resolve to the same binary that's running the server.
+        // Without this, `/bin/sh -c "neomind ..."` walks PATH and may find a
+        // stale install (e.g. `~/.cargo/bin/neomind`), causing silent version
+        // drift between server and CLI — particularly for local-only commands
+        // (extension create/build/install) that bypass in-process dispatch.
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let exe_dir = exe_dir.display().to_string();
+                match std::env::var_os("PATH") {
+                    Some(existing) => {
+                        let new_path = format!("{}{}{}", exe_dir, path_delimiter(), existing.to_string_lossy());
+                        cmd.env("PATH", new_path);
+                    }
+                    None => {
+                        cmd.env("PATH", exe_dir);
+                    }
+                }
+            }
+        }
+
         cmd
     }
 
@@ -449,6 +470,17 @@ fn set_process_group(cmd: &mut std::process::Command) {
 fn set_process_group(_cmd: &mut std::process::Command) {
     // On Windows, child processes are naturally terminated when the parent dies
     // via Job Object inheritance. No explicit action needed for our use case.
+}
+
+/// PATH element delimiter — `:` on Unix, `;` on Windows.
+#[cfg(unix)]
+fn path_delimiter() -> &'static str {
+    ":"
+}
+
+#[cfg(windows)]
+fn path_delimiter() -> &'static str {
+    ";"
 }
 
 /// Kill a process by PID. On Unix, kills the entire process group to prevent orphans.
