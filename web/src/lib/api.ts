@@ -1519,6 +1519,31 @@ export const api = {
     }),
 
   /**
+   * Toggle an extension's master tool-enable flag.
+   * PATCH /api/extensions/:id/enabled
+   * `enabled=false` hides ALL of this extension's tools from the LLM.
+   */
+  setExtensionEnabled: (id: string, enabled: boolean) =>
+    fetchAPI<{ id: string; enabled: boolean }>(`/extensions/${id}/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+
+  /**
+   * Toggle a single extension command's tool-enable flag.
+   * PATCH /api/extensions/:id/commands/:cmd/enabled
+   * Independent of the master `enabled` flag.
+   */
+  setExtensionCommandEnabled: (id: string, cmd: string, enabled: boolean) =>
+    fetchAPI<{ id: string; command: string; enabled: boolean }>(
+      `/extensions/${id}/commands/${encodeURIComponent(cmd)}/enabled`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      },
+    ),
+
+  /**
    * Check extension health
    * GET /api/extensions/:id/health
    */

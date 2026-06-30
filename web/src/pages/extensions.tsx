@@ -31,7 +31,13 @@ export function ExtensionsPage() {
   const unregisterExtension = useStore((state) => state.unregisterExtension)
   const reloadExtension = useStore((state) => state.reloadExtension)
 
-  const [selectedExtension, setSelectedExtension] = useState<Extension | null>(null)
+  const [selectedExtensionId, setSelectedExtensionId] = useState<string | null>(null)
+  // Derive the live extension from the store so the dialog sees fresh data
+  // after fetchExtensions() refreshes (e.g. after a tool-toggle PATCH).
+  // Storing the whole object captures a snapshot that goes stale on update.
+  const selectedExtension = selectedExtensionId
+    ? extensions.find((e) => e.id === selectedExtensionId) ?? null
+    : null
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [marketplaceDialogOpen, setMarketplaceDialogOpen] = useState(false)
@@ -81,7 +87,7 @@ export function ExtensionsPage() {
   const handleConfigure = (id: string) => {
     const ext = extensions.find(e => e.id === id)
     if (ext) {
-      setSelectedExtension(ext)
+      setSelectedExtensionId(id)
       setDetailsDialogOpen(true)
     }
   }

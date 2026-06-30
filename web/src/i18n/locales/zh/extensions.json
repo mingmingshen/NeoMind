@@ -212,6 +212,18 @@
     "type": "类型",
     "searchPlaceholder": "搜索指标..."
   },
+  "tools": {
+    "masterTitle": "作为 AI 工具暴露",
+    "masterOnHint": "所有指令都对 Agent 可见。",
+    "masterOffHint": "此扩展的任何指令都不会到达 Agent。",
+    "cmdToggleAria": "切换 {{cmd}} 作为 AI 工具",
+    "confirmDisableTitle": "关闭 AI 工具？",
+    "confirmDisableMasterDesc": "关闭后，Agent 将无法调用此扩展的任何指令。",
+    "confirmDisableCmdDesc": "关闭后，Agent 将无法调用 \"{{cmd}}\" 指令。",
+    "confirmDisableAction": "关闭",
+    "enableMasterDone": "AI 工具已启用",
+    "disableMasterDone": "AI 工具已禁用"
+  },
   "card": {
     "stop": "停止",
     "start": "启动",
@@ -220,6 +232,12 @@
     "stopped": "已停止",
     "byAuthor": "作者：{{author}}",
     "id": "ID",
+    "aiToolsLabel": "AI 工具",
+    "aiToolsOff": "对 Agent 隐藏",
+    "aiToolsOffShort": "AI 已关",
+    "moreActions": "更多操作",
+    "reload": "重载",
+    "uninstall": "卸载",
     "version": "版本",
     "types": {
       "llm_provider": "LLM 提供者",

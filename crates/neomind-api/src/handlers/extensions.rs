@@ -82,6 +82,18 @@ pub struct ExtensionDto {
     /// Configuration parameters for this extension
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_parameters: Option<Vec<ConfigParamDto>>,
+    /// Master tool-toggle: when false, none of this extension's tools are
+    /// exposed to the LLM. Persisted in ExtensionRecord.enabled.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// Per-command disable list (command names without extension-id prefix).
+    /// Source of truth for per-command toggles; UI flips membership.
+    #[serde(default)]
+    pub disabled_commands: Vec<String>,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_health_status() -> String {
@@ -253,7 +265,7 @@ pub async fn list_extensions_handler(
 
         // Create DTO for failed extension
         extensions.push(ExtensionDto {
-            id: record.id,
+            id: record.id.clone(),
             name: record.name,
             version: record.version,
             description: record.description,
@@ -267,6 +279,8 @@ pub async fn list_extensions_handler(
             commands: Vec::new(),
             metrics: Vec::new(),
             config_parameters: None,
+            enabled: record.enabled,
+            disabled_commands: record.disabled_commands,
         });
     }
 
@@ -281,6 +295,18 @@ pub async fn list_extensions_handler(
 /// Helper function to convert ExtensionInfo to ExtensionDto
 fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -> ExtensionDto {
     use neomind_core::extension::system::ParamMetricValue;
+
+    // Load persisted record (if any) to get enabled flag + disabled_commands.
+    // Defaults: enabled=true, no disabled commands. Same lookup is reused for
+    // health_status below, so we cache it once.
+    let record_opt: Option<ExtensionRecord> = ExtensionStore::open("data/extensions.redb")
+        .ok()
+        .and_then(|store| store.load(&info.metadata.id).ok().flatten());
+    let (enabled, disabled_commands): (bool, Vec<String>) = record_opt
+        .as_ref()
+        .map(|r| (r.enabled, r.disabled_commands.clone()))
+        .unwrap_or((true, Vec::new()));
+    let disabled_set: std::collections::HashSet<String> = disabled_commands.iter().cloned().collect();
 
     // Convert commands to DTOs (V2 format)
     let commands: Vec<CommandDescriptorDto> = info
@@ -298,6 +324,7 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
                 is_stream: false,
                 expected_duration_ms: None,
             },
+            disabled: !enabled || disabled_set.contains(&cmd.name),
         })
         .collect();
 
@@ -345,21 +372,15 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
             .collect()
     });
 
-    // Try to get health status from storage
-    let (health_status, last_error, last_error_at) =
-        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-            if let Ok(Some(record)) = store.load(&info.metadata.id) {
-                (
-                    record.health_status,
-                    record.last_error,
-                    record.last_error_at,
-                )
-            } else {
-                ("unknown".to_string(), None, None)
-            }
-        } else {
-            ("unknown".to_string(), None, None)
-        };
+    // Try to get health status from storage (reuse the record loaded above)
+    let (health_status, last_error, last_error_at) = match &record_opt {
+        Some(record) => (
+            record.health_status.clone(),
+            record.last_error.clone(),
+            record.last_error_at,
+        ),
+        None => ("unknown".to_string(), None, None),
+    };
 
     // Determine state based on is_running and health_status
     let state_str = if !info.is_running {
@@ -389,6 +410,8 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
         commands,
         metrics,
         config_parameters,
+        enabled,
+        disabled_commands,
     }
 }
 
@@ -406,117 +429,7 @@ pub async fn get_extension_handler(
         .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
-    // Convert commands to DTOs (V2 format)
-    let commands: Vec<CommandDescriptorDto> = info
-        .commands
-        .iter()
-        .map(|cmd| CommandDescriptorDto {
-            id: cmd.name.clone(),
-            display_name: cmd.display_name.clone(),
-            description: cmd.description.clone(),
-            input_schema: build_parameters_schema(&cmd.parameters),
-            output_fields: vec![], // V2: Commands don't declare output fields
-            config: CommandConfigDto {
-                requires_auth: false,
-                timeout_ms: 300000,
-                is_stream: false,
-                expected_duration_ms: None,
-            },
-        })
-        .collect();
-
-    // Convert metrics to DTOs (V2)
-    let metrics: Vec<MetricDescriptorDto> = info
-        .metrics
-        .iter()
-        .map(|m| MetricDescriptorDto {
-            name: m.name.clone(),
-            display_name: m.display_name.clone(),
-            data_type: format!("{:?}", m.data_type),
-            unit: m.unit.clone(),
-            description: None, // V2: MetricDefinition doesn't have description
-            min: m.min,
-            max: m.max,
-            required: m.required,
-        })
-        .collect();
-
-    // Convert config parameters to DTOs
-    let config_parameters = info.metadata.config_parameters.as_ref().map(|params| {
-        params
-            .iter()
-            .map(|p| {
-                use neomind_core::extension::system::ParamMetricValue;
-                ConfigParamDto {
-                    name: p.name.clone(),
-                    display_name: p.display_name.clone(),
-                    description: p.description.clone(),
-                    param_type: format!("{:?}", p.param_type).to_lowercase(),
-                    required: p.required,
-                    default: p.default_value.as_ref().map(|v| match v {
-                        ParamMetricValue::Float(f) => serde_json::json!(f),
-                        ParamMetricValue::Integer(i) => serde_json::json!(i),
-                        ParamMetricValue::Boolean(b) => serde_json::json!(b),
-                        ParamMetricValue::String(s) => serde_json::json!(s),
-                        ParamMetricValue::Binary(_) => serde_json::json!(null),
-                        ParamMetricValue::Null => serde_json::json!(null),
-                    }),
-                    min: p.min,
-                    max: p.max,
-                    options: match &p.param_type {
-                        MetricDataType::Enum { options } => options.clone(),
-                        _ => Vec::new(),
-                    },
-                }
-            })
-            .collect()
-    });
-
-    // Try to get health status from storage
-    let (health_status, last_error, last_error_at) =
-        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-            if let Ok(Some(record)) = store.load(&id) {
-                (
-                    record.health_status,
-                    record.last_error,
-                    record.last_error_at,
-                )
-            } else {
-                ("unknown".to_string(), None, None)
-            }
-        } else {
-            ("unknown".to_string(), None, None)
-        };
-
-    // Determine state based on is_running and health_status
-    let state_str = if !info.is_running {
-        "Stopped"
-    } else if health_status == "error" {
-        "Error"
-    } else if health_status == "warning" {
-        "Warning"
-    } else if info.is_isolated {
-        "Running (Isolated)"
-    } else {
-        "Running"
-    };
-
-    ok(ExtensionDto {
-        id: info.metadata.id.clone(),
-        name: info.metadata.name.clone(),
-        version: info.metadata.version.to_string(),
-        description: info.metadata.description.clone(),
-        author: info.metadata.author.clone(),
-        state: state_str.to_string(),
-        file_path: info.path.as_ref().map(|p| p.display().to_string()),
-        loaded_at: None,
-        health_status,
-        last_error,
-        last_error_at,
-        commands,
-        metrics,
-        config_parameters,
-    })
+    ok(extension_info_to_dto(&info))
 }
 
 /// GET /api/extensions/types
@@ -1125,6 +1038,11 @@ pub struct CommandDescriptorDto {
     pub input_schema: serde_json::Value,
     pub output_fields: Vec<OutputFieldDto>,
     pub config: CommandConfigDto,
+    /// True when this command is excluded from the LLM tool registry — either
+    /// named in the parent extension's `disabled_commands` list, or the parent
+    /// extension's master `enabled` flag is off.
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 /// Output field DTO
@@ -1178,6 +1096,16 @@ pub async fn list_extension_commands_handler(
         .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
+    // Load persisted disable state so `disabled` flag reflects current setting.
+    let (ext_enabled, disabled_cmds): (bool, std::collections::HashSet<String>) =
+        match ExtensionStore::open("data/extensions.redb")
+            .ok()
+            .and_then(|s| s.load(&id).ok().flatten())
+        {
+            Some(r) => (r.enabled, r.disabled_commands.iter().cloned().collect()),
+            None => (true, Default::default()),
+        };
+
     let result: Vec<CommandDescriptorDto> = info
         .commands
         .iter()
@@ -1193,11 +1121,135 @@ pub async fn list_extension_commands_handler(
                 is_stream: false,
                 expected_duration_ms: None,
             },
+            disabled: !ext_enabled || disabled_cmds.contains(&cmd.name),
         })
         .collect();
 
     ok(result)
 }
+
+/// Request body for tool-enable toggles.
+#[derive(Debug, Deserialize)]
+pub struct SetToolEnabledRequest {
+    pub enabled: bool,
+}
+
+/// Rebuild the ToolRegistry disabled set from the on-disk state of all
+/// extensions and push it live. Called from both PATCH handlers below so the
+/// LLM picks up the change on the next tool-calling round without a server
+/// restart. Cheap: O(n_extensions × n_commands) string formatting.
+async fn refresh_tool_registry_disabled(state: &ServerState) {
+    let Some(registry) = state.agents.session_manager.get_tool_registry().await else {
+        return;
+    };
+
+    let mut disabled: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+        if let Ok(records) = store.load_all() {
+            for r in records {
+                if !r.enabled {
+                    // Master off: every command of this extension is hidden.
+                    // We don't know all command names here cheaply, so we mark
+                    // by prefix-lookup at the registry level using the disabled
+                    // set as exact names; the registry's `definitions_for_llm`
+                    // also needs a prefix mode. Simpler: walk the loaded
+                    // extension runtime to enumerate command names.
+                    if let Some(info) = state.extensions.runtime.get(&r.id).await {
+                        for cmd in &info.commands {
+                            disabled.insert(format!("{}:{}", r.id, cmd.name));
+                        }
+                    }
+                    continue;
+                }
+                for cmd_name in &r.disabled_commands {
+                    disabled.insert(format!("{}:{}", r.id, cmd_name));
+                }
+            }
+        }
+    }
+    registry.set_disabled(disabled);
+}
+
+/// PATCH /api/extensions/:id/enabled
+///
+/// Master tool-toggle for an extension. `enabled=false` removes ALL of this
+/// extension's tools from the LLM-facing list; `enabled=true` restores them
+/// (subject to per-command disables). Storage is the source of truth; the
+/// live ToolRegistry is refreshed from storage after the write.
+pub async fn set_extension_enabled_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetToolEnabledRequest>,
+) -> HandlerResult<serde_json::Value> {
+    validate_extension_id(&id)?;
+
+    let store = ExtensionStore::open("data/extensions.redb")
+        .map_err(|e| ErrorResponse::internal(format!("Extension store: {e}")))?;
+    let mut record = store
+        .load(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Load extension: {e}")))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Extension {id}")))?;
+
+    record.enabled = req.enabled;
+    record.touch();
+    store
+        .save(&record)
+        .map_err(|e| ErrorResponse::internal(format!("Save extension: {e}")))?;
+
+    refresh_tool_registry_disabled(&state).await;
+
+    tracing::info!(
+        extension = %id,
+        enabled = req.enabled,
+        "extension tool-toggle updated"
+    );
+    ok(json!({ "id": id, "enabled": req.enabled }))
+}
+
+/// PATCH /api/extensions/:id/commands/:cmd/enabled
+///
+/// Per-command tool-toggle. `enabled=false` adds the command to
+/// `disabled_commands`; `enabled=true` removes it. Master `enabled` flag is
+/// untouched. Storage is the source of truth; the live ToolRegistry is
+/// refreshed from storage after the write.
+pub async fn set_extension_command_enabled_handler(
+    State(state): State<ServerState>,
+    Path((id, cmd)): Path<(String, String)>,
+    Json(req): Json<SetToolEnabledRequest>,
+) -> HandlerResult<serde_json::Value> {
+    validate_extension_id(&id)?;
+    if cmd.is_empty() {
+        return Err(ErrorResponse::bad_request("Command name required".to_string()));
+    }
+
+    let store = ExtensionStore::open("data/extensions.redb")
+        .map_err(|e| ErrorResponse::internal(format!("Extension store: {e}")))?;
+    let mut record = store
+        .load(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Load extension: {e}")))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Extension {id}")))?;
+
+    if req.enabled {
+        record.disabled_commands.retain(|c| c != &cmd);
+    } else if !record.disabled_commands.iter().any(|c| c == &cmd) {
+        record.disabled_commands.push(cmd.clone());
+    }
+    record.touch();
+    store
+        .save(&record)
+        .map_err(|e| ErrorResponse::internal(format!("Save extension: {e}")))?;
+
+    refresh_tool_registry_disabled(&state).await;
+
+    tracing::info!(
+        extension = %id,
+        command = %cmd,
+        enabled = req.enabled,
+        "extension command tool-toggle updated"
+    );
+    ok(json!({ "id": id, "command": cmd, "enabled": req.enabled }))
+}
+
 
 /// GET /api/extensions/:id/event-subscriptions
 ///

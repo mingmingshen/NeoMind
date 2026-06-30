@@ -101,6 +101,8 @@
     "toolsParameters": "参数",
     "toolsNoParameters": "无参数",
     "toolsDeprecated": "已废弃",
+    "toolsDisabled": "已禁用",
+    "toolsDisabledHint": "此工具已对 Agent 隐藏，可在「扩展」页面重新启用。",
     "toolsNamespace": "命名空间",
     "toolsCategory": "分类",
     "toolsVersion": "版本",

@@ -326,6 +326,16 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/:id",
             delete(extensions::unregister_extension_handler),
         )
+        // Tool enable/disable (master + per-command). Distinct paths so they
+        // don't get shadowed by the `:id` catch-all above.
+        .route(
+            "/api/extensions/:id/enabled",
+            axum::routing::patch(extensions::set_extension_enabled_handler),
+        )
+        .route(
+            "/api/extensions/:id/commands/:cmd/enabled",
+            axum::routing::patch(extensions::set_extension_command_enabled_handler),
+        )
         .route(
             "/api/extensions/:id/logs",
             get(extensions::get_extension_logs_handler)

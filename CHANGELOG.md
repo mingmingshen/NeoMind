@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Per-extension and per-command AI tool management.** Users can now
+  control which extension commands are exposed to the agent from the
+  Extensions page. Two granularities, both live (no restart required):
+  - **Master toggle per extension** — hides every command of that
+    extension from the LLM.
+  - **Per-command toggle** — hides individual commands while leaving
+    the rest of the extension available.
+  Toggle lives in the Extension details dialog (Commands section).
+  Turning a tool OFF asks for confirmation (changes agent
+  capabilities); turning ON is immediate (safe direction).
+
+- **Disabled tools in the Tools catalog.** The Tools panel now lists
+  disabled tools with a muted row tint and a `Disabled` badge next to
+  the tool name, so administrators can audit what the agent will and
+  won't see at a glance.
+
+- Two new API endpoints:
+  - `PATCH /api/extensions/:id/enabled` — master toggle.
+  - `PATCH /api/extensions/:id/commands/:cmd/enabled` — per-command
+    toggle.
+  Both rebuild the in-memory disabled set on every call and persist
+  state to `extensions.redb` (`ExtensionRecord.enabled`,
+  `ExtensionRecord.disabled_commands`).
+
+### Changed
+
+- **Disabled-tool filter covers all LLM paths.** Previously only the
+  scheduled executor called `definitions_for_llm()`. Now:
+  - `Agent::update_tool_definitions()` (chat/session path) uses
+    `definitions_for_llm()` instead of iterating all tools.
+  - `Agent::process()` refreshes tool definitions on every chat turn,
+    so mid-session toggles take effect on the next message.
+  - `ToolRegistry::execute()` / `execute_parallel()` gain a
+    defense-in-depth `is_disabled()` guard so a stale tool definition
+    that somehow reaches execution returns `ToolError::Disabled`
+    instead of running.
+
+- **Extension card layout.** The on-card AI-tools switch was removed
+  (cluttered, alignment drifted between on/off state). The card now
+  shows a compact inline `AI off` badge in the footer when tools are
+  disabled — single line, stable height.
+
+### Fixed
+
+- **Stale dialog state.** Selecting an extension, toggling its tools,
+  and returning to the dialog previously showed stale on/off state
+  because the dialog captured a snapshot of the extension at open
+  time. Now tracks `selectedExtensionId` and derives the live record
+  from the store, so the dialog always reflects the latest persisted
+  state.
+
+---
+
 ## [0.9.0]
 
 ### Overview

@@ -10,6 +10,12 @@ pub enum ToolError {
     #[error("Tool not found: {0}")]
     NotFound(String),
 
+    /// Tool is disabled (hidden from the LLM by the user via the Extensions
+    /// page). Surfaced when a stale tool definition still reaches execute(),
+    /// e.g. mid-session toggle on the chat path before refresh.
+    #[error("Tool disabled: {0}")]
+    Disabled(String),
+
     /// Invalid arguments
     #[error("Invalid arguments: {0}")]
     InvalidArguments(String),
@@ -47,6 +53,7 @@ impl From<ToolError> for NeoMindError {
     fn from(e: ToolError) -> Self {
         match e {
             ToolError::NotFound(s) => NeoMindError::NotFound(s),
+            ToolError::Disabled(s) => NeoMindError::Unauthorized(format!("Tool {s} is disabled")),
             ToolError::InvalidArguments(s) => NeoMindError::Validation(s),
             ToolError::Execution(s) => NeoMindError::Tool(s),
             ToolError::Serialization(s) => NeoMindError::Serialization(s),

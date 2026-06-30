@@ -13,6 +13,16 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   FullScreenDialog,
   FullScreenDialogHeader,
   FullScreenDialogContent,
@@ -92,6 +102,12 @@ export function ExtensionDetailsDialog({
   const [commandArgs, setCommandArgs] = useState<Record<string, Record<string, unknown>>>({})
   const [commandResults, setCommandResults] = useState<Record<string, { success: boolean; result?: unknown; message?: string }>>({})
   const [executingCommand, setExecutingCommand] = useState<string | null>(null)
+
+  // Pending tool-disable confirmation. Toggling OFF needs confirmation since
+  // it changes what the agent can do; ON is immediate (safe direction).
+  // kind: "master" = whole extension, "command" = single command.
+  const [pendingDisable, setPendingDisable] =
+    useState<{ kind: "master" | "command"; cmdId?: string } | null>(null)
 
   // Metric history state
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
@@ -297,6 +313,43 @@ export function ExtensionDetailsDialog({
   }, [saving, reloading, onOpenChange])
 
   // Reload extension
+  // --- AI tools toggle helpers (master + per-command) ---
+  // OFF asks for confirmation (changes agent capabilities); ON is immediate.
+  const runMasterToggle = async (checked: boolean) => {
+    if (!extension) return
+    try {
+      await api.setExtensionEnabled(extension.id, checked)
+      toast({
+        title: checked
+          ? t("extensions:tools.enableMasterDone", { defaultValue: "AI tools enabled" })
+          : t("extensions:tools.disableMasterDone", { defaultValue: "AI tools disabled" }),
+      })
+      await fetchExtensions()
+    } catch (e) {
+      handleError(e, { operation: "Toggle extension tools", showToast: true })
+    }
+  }
+
+  const runCmdToggle = async (cmdId: string, checked: boolean) => {
+    if (!extension) return
+    try {
+      await api.setExtensionCommandEnabled(extension.id, cmdId, checked)
+      await fetchExtensions()
+    } catch (e) {
+      handleError(e, { operation: "Toggle extension command", showToast: true })
+    }
+  }
+
+  const confirmDisable = () => {
+    if (!pendingDisable) return
+    if (pendingDisable.kind === "master") {
+      runMasterToggle(false)
+    } else if (pendingDisable.cmdId) {
+      runCmdToggle(pendingDisable.cmdId, false)
+    }
+    setPendingDisable(null)
+  }
+
   const handleReloadExtension = async () => {
     if (!extension) return
 
@@ -674,38 +727,87 @@ export function ExtensionDetailsDialog({
       )
     }
 
+    const masterEnabled = extension.enabled !== false
+
+    // Turning OFF asks for confirmation; ON is immediate.
+    const handleMasterToggle = (checked: boolean) => {
+      if (!checked) {
+        setPendingDisable({ kind: "master" })
+        return
+      }
+      runMasterToggle(true)
+    }
+
+    const handleCmdToggle = (cmdId: string, checked: boolean) => {
+      if (!checked) {
+        setPendingDisable({ kind: "command", cmdId })
+        return
+      }
+      runCmdToggle(cmdId, true)
+    }
+
     return (
       <div className="space-y-3">
+        {/* Master toggle — hides ALL commands from the LLM when off */}
+        <div className="flex items-center justify-between gap-3 border rounded-lg p-3 bg-muted-30">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {t("extensions:tools.masterTitle", { defaultValue: "Expose as AI tools" })}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {masterEnabled
+                ? t("extensions:tools.masterOnHint", { defaultValue: "All commands are visible to the agent." })
+                : t("extensions:tools.masterOffHint", { defaultValue: "No command from this extension reaches the agent." })}
+            </p>
+          </div>
+          <Switch
+            checked={masterEnabled}
+            onCheckedChange={handleMasterToggle}
+            aria-label={t("extensions:tools.masterTitle", { defaultValue: "Expose as AI tools" })}
+          />
+        </div>
+
         {extension.commands.map((command) => {
           const isExpanded = expandedCommand === command.id
           const isExecuting = executingCommand === command.id
           const result = commandResults[command.id]
           const inputProps = (command.input_schema?.properties || {}) as Record<string, any>
           const hasParams = Object.keys(inputProps).length > 0
+          const cmdEnabled = masterEnabled && !command.disabled
 
           return (
-            <div key={command.id} className="border rounded-lg overflow-hidden">
+            <div key={command.id} className={cn("border rounded-lg overflow-hidden", !cmdEnabled && "opacity-60")}>
               {/* Command Header — clickable to expand */}
-              <button
-                className={cn(
-                  "w-full flex items-center gap-3 p-3 text-left",
-                  "hover:bg-muted-30 transition-colors"
-                )}
-                onClick={() => setExpandedCommand(isExpanded ? null : command.id)}
-              >
-                <Badge variant="outline" className="text-xs shrink-0">
-                  {command.id}
-                </Badge>
-                <span className="font-medium text-sm flex-1 min-w-0 break-words">
-                  {command.display_name}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                    isExpanded && "rotate-180"
-                  )}
+              <div className="w-full flex items-center gap-3 p-3">
+                <button
+                  className="flex items-center gap-3 flex-1 min-w-0 text-left hover:bg-muted-30 transition-colors -m-3 p-3"
+                  onClick={() => setExpandedCommand(isExpanded ? null : command.id)}
+                >
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    {command.id}
+                  </Badge>
+                  <span className="font-medium text-sm flex-1 min-w-0 break-words">
+                    {command.display_name}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                      isExpanded && "rotate-180"
+                    )}
+                  />
+                </button>
+                {/* Per-command tool toggle */}
+                <Switch
+                  checked={!!command.disabled ? false : masterEnabled}
+                  disabled={!masterEnabled}
+                  onCheckedChange={(checked) => handleCmdToggle(command.id, checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={t("extensions:tools.cmdToggleAria", {
+                    defaultValue: "Toggle {cmd} as AI tool",
+                    cmd: command.id,
+                  })}
                 />
-              </button>
+              </div>
 
               {/* Expanded Content */}
               {isExpanded && (
@@ -1102,6 +1204,48 @@ export function ExtensionDetailsDialog({
           </div>
         </FullScreenDialogMain>
       </FullScreenDialogContent>
+
+      {/* Confirm tool-disable (master or per-command). OFF changes agent
+          capabilities, so confirm; ON is immediate and needs no dialog. */}
+      <AlertDialog
+        open={!!pendingDisable}
+        onOpenChange={(open) => { if (!open) setPendingDisable(null) }}
+      >
+        <AlertDialogContent className="z-[200]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("extensions:tools.confirmDisableTitle", {
+                defaultValue: "Disable AI tools?",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDisable?.kind === "master"
+                ? t("extensions:tools.confirmDisableMasterDesc", {
+                    defaultValue:
+                      "The agent will no longer be able to call any command from this extension.",
+                  })
+                : t("extensions:tools.confirmDisableCmdDesc", {
+                    defaultValue:
+                      'The agent will no longer be able to call the "{{cmd}}" command.',
+                    cmd: pendingDisable?.cmdId ?? "",
+                  })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t("common:cancel", { defaultValue: "Cancel" })}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-error-foreground hover:bg-destructive-hover"
+              onClick={confirmDisable}
+            >
+              {t("extensions:tools.confirmDisableAction", {
+                defaultValue: "Disable",
+              })}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </FullScreenDialog>
   )
 }

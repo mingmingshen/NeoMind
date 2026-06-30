@@ -13,6 +13,7 @@ import {
   Terminal,
   Database,
   RefreshCw,
+  EyeOff,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
@@ -32,7 +33,12 @@ export function ExtensionCard({
   onDetails,
   onReload,
 }: ExtensionCardProps) {
-  const { t } = useTranslation(["extensions"])
+  const { t } = useTranslation(["extensions", "common"])
+
+  // toolsEnabled = master toggle for exposing commands to the agent.
+  // The card only shows state; toggling lives in the details dialog to keep
+  // the card height stable across on/off (no extra line, no alignment drift).
+  const toolsEnabled = extension.enabled !== false
 
   const hasError = extension.state === "Error"
   const hasWarning = extension.state === "Warning"
@@ -124,7 +130,8 @@ export function ExtensionCard({
           </p>
         )}
 
-        {/* Footer: capabilities + author (compact, single row) */}
+        {/* Footer: capabilities + (optional) AI-tools-off badge + author.
+            Single line, stable height whether tools are on or off. */}
         <div className="mt-auto flex items-center gap-2 pt-2">
           {extension.commands?.length > 0 && (
             <span className={cn(textMini, "text-muted-foreground flex items-center gap-1 shrink-0")}>
@@ -136,6 +143,19 @@ export function ExtensionCard({
             <span className={cn(textMini, "text-muted-foreground flex items-center gap-1 shrink-0")}>
               <Database className="h-3 w-3" />
               {extension.metrics.length} {t('metricsLabel', { defaultValue: 'metrics' })}
+            </span>
+          )}
+          {!toolsEnabled && (
+            <span
+              className={cn(
+                textNano,
+                "flex items-center gap-1 px-1.5 py-0.5 rounded-full shrink-0",
+                "bg-warning-light text-warning border border-warning-light",
+              )}
+              title={t('card.aiToolsOff', { defaultValue: 'Hidden from agent' })}
+            >
+              <EyeOff className="h-3 w-3" />
+              {t('card.aiToolsOffShort', { defaultValue: 'AI off' })}
             </span>
           )}
           {extension.author && (

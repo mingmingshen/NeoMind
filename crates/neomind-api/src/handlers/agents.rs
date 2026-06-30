@@ -2480,27 +2480,31 @@ pub async fn list_agent_tools(State(state): State<ServerState>) -> HandlerResult
 
     let tools: Vec<Value> = match registry_opt {
         None => Vec::new(),
-        Some(registry) => registry
-            .definitions()
-            .into_iter()
-            .map(|def| {
-                let source = if def.namespace.is_some() {
-                    "extension"
-                } else {
-                    "built-in"
-                };
-                json!({
-                    "name": def.name,
-                    "description": def.description,
-                    "source": source,
-                    "namespace": def.namespace,
-                    "category": format!("{:?}", def.category),
-                    "parameters": def.parameters,
-                    "deprecated": def.deprecated,
-                    "version": def.version,
+        Some(registry) => {
+            let disabled_names = registry.disabled_names();
+            registry
+                .definitions()
+                .into_iter()
+                .map(|def| {
+                    let source = if def.namespace.is_some() {
+                        "extension"
+                    } else {
+                        "built-in"
+                    };
+                    json!({
+                        "name": def.name,
+                        "description": def.description,
+                        "source": source,
+                        "namespace": def.namespace,
+                        "category": format!("{:?}", def.category),
+                        "parameters": def.parameters,
+                        "deprecated": def.deprecated,
+                        "version": def.version,
+                        "disabled": disabled_names.contains(&def.name),
+                    })
                 })
-            })
-            .collect(),
+                .collect()
+        }
     };
 
     let count = tools.len();

@@ -55,6 +55,13 @@ pub struct ExtensionRecord {
     #[serde(default)]
     pub uninstalled: bool,
 
+    /// Per-command disable list (master off is `enabled: false`).
+    /// Entries are command names WITHOUT the extension-id prefix —
+    /// e.g. `["get_alerts"]` for tool `weather-forecast:get_alerts`.
+    /// Agent tool-loop filters these out at lookup time.
+    #[serde(default)]
+    pub disabled_commands: Vec<String>,
+
     /// Extension configuration (key-value pairs)
     /// This config is passed to the extension when loaded
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +111,7 @@ impl ExtensionRecord {
             auto_start: false,
             enabled: true,
             uninstalled: false,
+            disabled_commands: Vec::new(),
             config: None,
             last_error: None,
             last_error_at: None,

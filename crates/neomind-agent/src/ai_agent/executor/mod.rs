@@ -392,7 +392,7 @@ impl AgentExecutor {
     ) {
         use neomind_core::llm::backend::sanitize_tool_name;
 
-        let defs = registry.definitions();
+        let defs = registry.definitions_for_llm();
         let mut name_map: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 

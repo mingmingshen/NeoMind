@@ -101,6 +101,8 @@
     "toolsParameters": "Parameters",
     "toolsNoParameters": "No parameters",
     "toolsDeprecated": "Deprecated",
+    "toolsDisabled": "Disabled",
+    "toolsDisabledHint": "This tool is hidden from the agent. Enable it on the Extensions page.",
     "toolsNamespace": "Namespace",
     "toolsCategory": "Category",
     "toolsVersion": "Version",

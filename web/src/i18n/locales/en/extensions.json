@@ -212,6 +212,18 @@
     "type": "Type",
     "searchPlaceholder": "Search metrics..."
   },
+  "tools": {
+    "masterTitle": "Expose as AI tools",
+    "masterOnHint": "All commands are visible to the agent.",
+    "masterOffHint": "No command from this extension reaches the agent.",
+    "cmdToggleAria": "Toggle {{cmd}} as AI tool",
+    "confirmDisableTitle": "Disable AI tools?",
+    "confirmDisableMasterDesc": "The agent will no longer be able to call any command from this extension.",
+    "confirmDisableCmdDesc": "The agent will no longer be able to call the \"{{cmd}}\" command.",
+    "confirmDisableAction": "Disable",
+    "enableMasterDone": "AI tools enabled",
+    "disableMasterDone": "AI tools disabled"
+  },
   "card": {
     "stop": "Stop",
     "start": "Start",
@@ -221,6 +233,12 @@
     "byAuthor": "By {{author}}",
     "id": "ID",
     "version": "Version",
+    "aiToolsLabel": "AI tools",
+    "aiToolsOff": "Hidden from agent",
+    "aiToolsOffShort": "AI off",
+    "moreActions": "More actions",
+    "reload": "Reload",
+    "uninstall": "Uninstall",
     "types": {
       "llm_provider": "LLM Provider",
       "device_protocol": "Device Protocol",

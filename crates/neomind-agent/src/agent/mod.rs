@@ -1163,24 +1163,26 @@ impl Agent {
     }
 
     /// Update tool definitions in the LLM interface.
-    /// Uses tool definitions from the actual tool registry.
+    /// Uses tool definitions from the actual tool registry, filtered through
+    /// the disabled set so tools the user turned off on the Extensions page
+    /// never reach the LLM (covers both scheduled and chat/session paths).
     /// Also dynamically updates the system prompt to include tool descriptions.
     pub async fn update_tool_definitions(&self) {
         use neomind_core::llm::backend::ToolDefinition as CoreToolDefinition;
 
-        // Build tool definitions from the actual tool registry
-        let mut core_defs: Vec<CoreToolDefinition> = Vec::new();
-
-        for tool_name in self.tools.list() {
-            if let Some(tool) = self.tools.get(&tool_name) {
-                let def = tool.definition();
-                core_defs.push(CoreToolDefinition {
-                    name: def.name.clone(),
-                    description: def.description.clone(),
-                    parameters: def.parameters.clone(),
-                });
-            }
-        }
+        // definitions_for_llm() already filters out disabled tools (master-off
+        // extension or per-command disable). Use it directly instead of
+        // iterating list() + get() so the chat path can't leak disabled tools.
+        let core_defs: Vec<CoreToolDefinition> = self
+            .tools
+            .definitions_for_llm()
+            .into_iter()
+            .map(|def| CoreToolDefinition {
+                name: def.name,
+                description: def.description,
+                parameters: def.parameters,
+            })
+            .collect();
 
         let tool_count = core_defs.len();
         self.llm_interface.set_tool_definitions(core_defs).await;
@@ -1401,6 +1403,12 @@ impl Agent {
 
         // === NORMAL PATH: Acquire lock for complex processing ===
         let _lock = self.process_lock.lock().await;
+
+        // Refresh tool definitions on every turn so mid-session toggles
+        // (user disabled a tool via the Extensions page) take effect on the
+        // next chat turn instead of requiring a new session. Cheap: filters
+        // an in-memory Vec and only re-pushes if the LLM interface changed.
+        self.update_tool_definitions().await;
 
         // Set session ID on memory tool to avoid cross-session contamination
         // (must happen under process_lock so concurrent calls to THIS session serialize)

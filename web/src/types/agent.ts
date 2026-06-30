@@ -486,7 +486,7 @@ export interface NotificationSent {
 export interface AgentToolCatalogItem {
   name: string
   description: string
-  /** Origin of the tool: built-in | extension | custom */
+  /** Origin of the tool: built-in | extension */
   source: string
   namespace?: string | null
   category: string
@@ -494,4 +494,6 @@ export interface AgentToolCatalogItem {
   parameters: Record<string, unknown>
   deprecated?: boolean
   version?: string
+  /** True when this tool is hidden from the LLM (disabled via Extensions page). */
+  disabled?: boolean
 }

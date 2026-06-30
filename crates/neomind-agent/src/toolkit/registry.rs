@@ -1,6 +1,6 @@
 //! Tool registry for managing available tools.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -27,6 +27,11 @@ pub struct ToolRegistry {
     /// consistency within the struct. Backward-compat: when `None`, behavior is
     /// bit-identical to pre-cancellation.
     cancellation_token: Arc<RwLock<Option<CancellationToken>>>,
+    /// Disabled tool-name set (extension tools the user turned off, or all
+    /// tools of a disabled extension). Apply at runtime via `set_disabled`;
+    /// affects `definitions_for_llm()` (filter) and `is_disabled()` but NOT
+    /// `definitions()` (catalog sees all + uses `is_disabled` to mark).
+    disabled: Arc<RwLock<HashSet<String>>>,
 }
 
 impl ToolRegistry {
@@ -36,6 +41,7 @@ impl ToolRegistry {
             tools: HashMap::new(),
             cached_definitions: RwLock::new(None),
             cancellation_token: Arc::new(RwLock::new(None)),
+            disabled: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -105,6 +111,49 @@ impl ToolRegistry {
         defs
     }
 
+    /// Get tool definitions for LLM consumption — excludes disabled tools.
+    /// Use this at the LLM tool-calling chokepoint so disabled tools never
+    /// reach the model. The catalog/API path uses `definitions()` + `is_disabled()`
+    /// to show all tools (greyed-out when disabled).
+    pub fn definitions_for_llm(&self) -> Vec<ToolDefinition> {
+        let disabled = self.disabled.read();
+        if disabled.is_empty() {
+            return self.definitions();
+        }
+        self.definitions()
+            .into_iter()
+            .filter(|d| !disabled.contains(&d.name))
+            .collect()
+    }
+
+    /// Replace the disabled tool-name set. Called on startup (after extensions
+    /// loaded) and on every API toggle. Cheap: just a lock swap.
+    pub fn set_disabled(&self, names: HashSet<String>) {
+        *self.disabled.write() = names;
+    }
+
+    /// Add a single tool name to the disabled set. Returns the new total.
+    pub fn disable(&self, name: impl Into<String>) -> usize {
+        let mut guard = self.disabled.write();
+        guard.insert(name.into());
+        guard.len()
+    }
+
+    /// Remove a tool name from the disabled set. Returns true if it was present.
+    pub fn enable(&self, name: &str) -> bool {
+        self.disabled.write().remove(name)
+    }
+
+    /// Check whether a tool name is currently disabled.
+    pub fn is_disabled(&self, name: &str) -> bool {
+        self.disabled.read().contains(name)
+    }
+
+    /// Snapshot of the disabled set (cloned).
+    pub fn disabled_names(&self) -> HashSet<String> {
+        self.disabled.read().clone()
+    }
+
     /// Set or clear the cancellation token used by `execute` / `execute_parallel`.
     ///
     /// When set, tool execution is wrapped in `tokio::select!` against
@@ -117,6 +166,13 @@ impl ToolRegistry {
 
     /// Execute a tool by name.
     pub async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput> {
+        // Defense-in-depth: even if a stale tool definition reaches the LLM
+        // (e.g. chat path mid-session toggle before refresh), a disabled tool
+        // refuses to execute. The LLM will see an error and pick another path.
+        if self.is_disabled(name) {
+            return Err(ToolError::Disabled(name.to_string()));
+        }
+
         let tool = self
             .get(name)
             .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
@@ -165,6 +221,14 @@ impl ToolRegistry {
         let mut join_set: JoinSet<(usize, ToolResult)> = JoinSet::new();
 
         for (idx, call) in calls.into_iter().enumerate() {
+            // Disabled tools refuse to execute even if a stale definition
+            // reached the LLM. Mirrors the single-execute guard above.
+            if self.is_disabled(&call.name) {
+                let name = call.name;
+                let result = Err(ToolError::Disabled(name.clone()));
+                join_set.spawn(async move { (idx, ToolResult { name, result }) });
+                continue;
+            }
             if let Some(tool) = self.get(&call.name) {
                 let tool_clone = tool.clone();
                 let args = call.args;

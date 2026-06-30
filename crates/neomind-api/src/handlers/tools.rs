@@ -20,6 +20,7 @@ pub async fn list_tools_handler(State(state): State<ServerState>) -> HandlerResu
         .await
         .ok_or_else(|| ErrorResponse::not_found("Tool registry"))?;
 
+    let disabled_names = registry.disabled_names();
     let definitions = registry.definitions();
 
     let tools: Vec<Value> = definitions
@@ -32,6 +33,7 @@ pub async fn list_tools_handler(State(state): State<ServerState>) -> HandlerResu
                 "parameters": def.parameters,
                 "deprecated": def.deprecated,
                 "version": def.version,
+                "disabled": disabled_names.contains(&def.name),
             })
         })
         .collect();

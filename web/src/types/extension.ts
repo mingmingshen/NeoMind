@@ -204,6 +204,8 @@ export interface ExtensionCommandDescriptor {
   input_schema: Record<string, unknown>  // Built from parameters
   // output_fields removed - commands no longer declare output
   // config removed - no execution config
+  /** True when this command is hidden from the LLM tool registry. */
+  disabled?: boolean
 }
 
 /**
@@ -225,6 +227,10 @@ export interface Extension {
   last_error?: string
   last_error_at?: number
   config_parameters?: ExtensionConfigParam[]
+  /** Master tool-toggle. When false, none of this extension's tools reach the LLM. */
+  enabled?: boolean
+  /** Per-command disable list (command ids without extension-id prefix). */
+  disabled_commands?: string[]
 }
 
 /**

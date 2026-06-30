@@ -1984,8 +1984,13 @@ impl ServerState {
         let tool_count = tool_registry.len();
         self.agents
             .session_manager
-            .set_tool_registry(tool_registry)
+            .set_tool_registry(tool_registry.clone())
             .await;
+
+        // Apply persisted tool-disable state so previously toggled-off tools
+        // stay hidden from the LLM after a server restart. Built-ins are never
+        // disabled; only extension tools (and only those listed in storage).
+        apply_persisted_tool_disabled_state(&self.extensions.runtime, &tool_registry).await;
 
         tracing::info!(
             category = "ai",
@@ -3010,6 +3015,64 @@ impl ServerState {
         // when extensions are loaded
         tracing::info!("Capability services initialized for extension providers");
     }
+}
+
+/// Rebuild the ToolRegistry disabled set from the persisted ExtensionRecord
+/// state and push it live. Built-in tools are never disabled; only extension
+/// tools whose parent extension is `enabled=false` (master off) or whose
+/// command name appears in `disabled_commands` (per-command off) are hidden.
+///
+/// Called at startup (after extensions load + tool registry finalized) and
+/// after every toggle API call. Cheap: O(n_extensions × n_commands).
+async fn apply_persisted_tool_disabled_state(
+    runtime: &neomind_core::extension::ExtensionRuntime,
+    tool_registry: &std::sync::Arc<neomind_agent::toolkit::ToolRegistry>,
+) {
+    use std::collections::HashSet;
+
+    let records = match neomind_storage::ExtensionStore::open("data/extensions.redb") {
+        Ok(store) => store.load_all().unwrap_or_default(),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Failed to open extension store for tool-disable bootstrap; all tools enabled"
+            );
+            return;
+        }
+    };
+
+    let mut disabled: HashSet<String> = HashSet::new();
+    for r in records {
+        if r.uninstalled {
+            continue;
+        }
+        if !r.enabled {
+            // Master off: enumerate live commands to materialize tool names.
+            if let Some(info) = runtime.get(&r.id).await {
+                for cmd in &info.commands {
+                    disabled.insert(format!("{}:{}", r.id, cmd.name));
+                }
+            }
+            continue;
+        }
+        for cmd_name in &r.disabled_commands {
+            disabled.insert(format!("{}:{}", r.id, cmd_name));
+        }
+    }
+
+    if disabled.is_empty() {
+        tracing::debug!(
+            category = "ai",
+            "Tool-disable bootstrap: all extension tools enabled"
+        );
+    } else {
+        tracing::info!(
+            category = "ai",
+            count = disabled.len(),
+            "Tool-disable bootstrap: hiding disabled extension tools from LLM"
+        );
+    }
+    tool_registry.set_disabled(disabled);
 }
 
 // Note: Default implementation removed because ServerState::new() is now async

@@ -92,6 +92,7 @@ interface ToolRow {
   namespace: string | null
   version: string | null
   deprecated: boolean
+  disabled: boolean
   param_count: number
   param_names: string[]
   required_params: string[]
@@ -187,6 +188,7 @@ export function ToolsPanel({ onPaginationChange, searchQuery = "", sourceFilter 
       namespace: tool.namespace ?? null,
       version: tool.version ?? null,
       deprecated: !!tool.deprecated,
+      disabled: !!tool.disabled,
       param_count: paramNames.length,
       param_names: paramNames,
       required_params: required,
@@ -202,7 +204,7 @@ export function ToolsPanel({ onPaginationChange, searchQuery = "", sourceFilter 
       <ResponsiveTable
         className="table-fixed"
         columns={[
-          { key: "name", label: t("agents:detail.toolsColumnName", "Tool"), width: "w-[320px]" },
+          { key: "name", label: t("agents:detail.toolsColumnName", "Tool"), width: "w-[440px]" },
           {
             key: "version",
             label: t("agents:detail.toolsColumnVersion", "Version"),
@@ -233,6 +235,13 @@ export function ToolsPanel({ onPaginationChange, searchQuery = "", sourceFilter 
           const tool = pagedTools.find((t2) => t2.name === row.name)
           if (tool) handleView(tool)
         }}
+        getRowClassName={(rowData) => {
+          const row = rowData as unknown as ToolRow
+          // Locked/disabled row: muted bg tint + faded foreground text.
+          // Badges with their own explicit text/bg colors (Disabled badge,
+          // source badge) keep their accent so the state stays readable.
+          return row.disabled ? "bg-muted-30 text-muted-foreground" : ""
+        }}
         renderCell={(columnKey, rowData) => {
           const row = rowData as unknown as ToolRow
           const src = resolveSource(row.source)
@@ -258,6 +267,11 @@ export function ToolsPanel({ onPaginationChange, searchQuery = "", sourceFilter 
                       {row.deprecated && (
                         <span className="text-[10px] uppercase tracking-wide text-error shrink-0">
                           {t("agents:detail.toolsDeprecated")}
+                        </span>
+                      )}
+                      {row.disabled && (
+                        <span className="text-[10px] uppercase tracking-wide text-warning shrink-0 bg-warning-light border border-warning-light rounded px-1">
+                          {t("agents:detail.toolsDisabled", { defaultValue: "Disabled" })}
                         </span>
                       )}
                     </div>
@@ -372,6 +386,18 @@ export function ToolsPanel({ onPaginationChange, searchQuery = "", sourceFilter 
         <FullScreenDialogContent>
           {dialogTool && (
             <div className="w-full h-full overflow-auto px-6 py-4 space-y-5">
+              {/* Disabled banner — only shown when the tool is hidden from the LLM */}
+              {dialogTool.disabled && (
+                <div className="rounded-md border border-warning-light bg-warning-light text-warning px-3 py-2 text-xs flex items-center gap-2">
+                  <Eye className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {t("agents:detail.toolsDisabledHint", {
+                      defaultValue: "This tool is hidden from the agent. Enable it on the Extensions page.",
+                    })}
+                  </span>
+                </div>
+              )}
+
               {/* Description */}
               <section>
                 <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-1.5">

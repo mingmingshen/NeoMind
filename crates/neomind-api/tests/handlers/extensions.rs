@@ -25,6 +25,8 @@ mod tests {
             commands: vec![],
             metrics: vec![],
             config_parameters: None,
+            enabled: true,
+            disabled_commands: vec![],
         }
     }
 
@@ -57,6 +59,8 @@ mod tests {
             commands: vec![],
             metrics: vec![],
             config_parameters: None,
+            enabled: true,
+            disabled_commands: vec![],
         };
 
         let serialized = serde_json::to_value(&dto).unwrap();
@@ -128,6 +132,7 @@ mod tests {
                 is_stream: false,
                 expected_duration_ms: None,
             },
+            disabled: false,
         };
 
         assert_eq!(command.id, "turn_on");
@@ -212,6 +217,8 @@ mod tests {
                 metrics: vec![],
                 last_error_at: None,
                 config_parameters: None,
+                enabled: true,
+                disabled_commands: vec![],
             };
             assert_eq!(dto.state, state);
         }
@@ -243,6 +250,7 @@ mod tests {
                     is_stream: false,
                     expected_duration_ms: None,
                 },
+                disabled: false,
             }],
             metrics: vec![MetricDescriptorDto {
                 name: "temperature".to_string(),
@@ -255,6 +263,8 @@ mod tests {
                 required: true,
             }],
             config_parameters: None,
+            enabled: true,
+            disabled_commands: vec![],
         };
 
         assert_eq!(dto.commands.len(), 1);
@@ -289,6 +299,7 @@ mod tests {
                     is_stream: false,
                     expected_duration_ms: None,
                 },
+                disabled: false,
             }],
             metrics: vec![MetricDescriptorDto {
                 name: "metric1".to_string(),
@@ -301,6 +312,8 @@ mod tests {
                 required: false,
             }],
             config_parameters: None,
+            enabled: true,
+            disabled_commands: vec![],
         };
 
         let serialized = serde_json::to_value(&original).unwrap();
@@ -363,6 +376,8 @@ mod tests {
                 metrics: vec![],
                 last_error_at: None,
                 config_parameters: None,
+                enabled: true,
+                disabled_commands: vec![],
             };
             assert_eq!(dto.version, version);
         }
