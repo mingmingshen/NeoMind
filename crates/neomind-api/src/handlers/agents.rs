@@ -2460,3 +2460,52 @@ pub async fn get_available_resources(
         "extensions": extension_resources,
     }))
 }
+
+// ============================================================================
+// Agent tools — read-only catalog
+// ============================================================================
+
+/// List all tools currently registered on the server's ToolRegistry.
+///
+/// Read-only — agent runtime tool composition is not modified. The frontend uses
+/// this to render a "Tools" tab on the agent detail page so operators and
+/// integrators can see what an agent can actually call.
+///
+/// Each item includes a derived `source` field:
+/// - `"built-in"`   — shipped with the server, compiled into the binary
+/// - `"extension"`  — contributed by an installed `.nep` package
+/// - `"custom"`     — reserved for the future HTTP-tool feature (name prefix `custom:`)
+pub async fn list_agent_tools(State(state): State<ServerState>) -> HandlerResult<Value> {
+    let registry_opt = state.agents.session_manager.get_tool_registry().await;
+
+    let tools: Vec<Value> = match registry_opt {
+        None => Vec::new(),
+        Some(registry) => registry
+            .definitions()
+            .into_iter()
+            .map(|def| {
+                let source = if def.namespace.is_some() {
+                    "extension"
+                } else {
+                    "built-in"
+                };
+                json!({
+                    "name": def.name,
+                    "description": def.description,
+                    "source": source,
+                    "namespace": def.namespace,
+                    "category": format!("{:?}", def.category),
+                    "parameters": def.parameters,
+                    "deprecated": def.deprecated,
+                    "version": def.version,
+                })
+            })
+            .collect(),
+    };
+
+    let count = tools.len();
+    ok(json!({
+        "tools": tools,
+        "count": count,
+    }))
+}

@@ -20,8 +20,18 @@ import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, Settings, Zap, BookOpen, Edit, Play, FileText } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, Settings, Zap, BookOpen, Edit, Play, FileText, Wrench, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { debounce } from "@/lib/utils/async"
+import type { ToolSourceFilter } from "./agents-components/ToolsPanel"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Device, DeviceType, Extension, UnifiedDataSourceInfo } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
@@ -33,6 +43,7 @@ import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog
 import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
 import { MemoryPanel, MemoryPanelRef } from "./agents-components/MemoryPanel"
 import { SkillsPanel, type SkillsPanelHandle } from "./agents-components/SkillsPanel"
+import { ToolsPanel } from "./agents-components/ToolsPanel"
 import {
   FullScreenDialog,
   FullScreenDialogHeader,
@@ -56,6 +67,9 @@ export function AgentsPage() {
     if (location.pathname.includes('/agents/skills')) {
       return 'skills'
     }
+    if (location.pathname.includes('/agents/tools')) {
+      return 'tools'
+    }
     return 'agents'
   }
   const activeTab = getTabFromPath()
@@ -66,6 +80,8 @@ export function AgentsPage() {
       navigate('/agents/memory')
     } else if (tab === 'skills') {
       navigate('/agents/skills')
+    } else if (tab === 'tools') {
+      navigate('/agents/tools')
     } else {
       navigate('/agents')
     }
@@ -102,6 +118,35 @@ export function AgentsPage() {
   const handleSkillsPaginationChange = useCallback((info: typeof skillsPagination) => {
     setSkillsPagination(info)
   }, [])
+
+  // Tools tab: lifted pagination + search state. Search input lives in the
+  // PageTabsBar actionsExtra (top-right) like Data Explorer; the actual filter
+  // runs client-side inside ToolsPanel.
+  const [toolsPagination, setToolsPagination] = useState<{
+    total: number
+    pageSize: number
+    currentPage: number
+    onPageChange: (page: number) => void
+    loading: boolean
+  }>({ total: 0, pageSize: 10, currentPage: 1, onPageChange: () => {}, loading: false })
+  const handleToolsPaginationChange = useCallback((info: typeof toolsPagination) => {
+    setToolsPagination(info)
+  }, [])
+  const [toolsSearch, setToolsSearch] = useState("")
+  const [toolsDebouncedSearch, setToolsDebouncedSearch] = useState("")
+  const [toolsSourceFilter, setToolsSourceFilter] = useState<ToolSourceFilter>('all')
+  const updateToolsSearch = useMemo(() => debounce(setToolsDebouncedSearch, 300), [])
+  useEffect(() => {
+    updateToolsSearch(toolsSearch)
+  }, [toolsSearch, updateToolsSearch])
+  // Clear search + filter when leaving the tools tab so they don't leak across tabs.
+  useEffect(() => {
+    if (activeTab !== 'tools') {
+      setToolsSearch("")
+      setToolsDebouncedSearch("")
+      setToolsSourceFilter('all')
+    }
+  }, [activeTab])
 
   // Track executing agents for real-time updates with timestamps for timeout
   const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
@@ -484,6 +529,7 @@ export function AgentsPage() {
     { value: 'agents', label: tAgent('tabs.agents'), icon: <Cpu className="h-4 w-4" /> },
     { value: 'memory', label: tAgent('tabs.memory'), icon: <Brain className="h-4 w-4" /> },
     { value: 'skills', label: tAgent('tabs.skills'), icon: <BookOpen className="h-4 w-4" /> },
+    { value: 'tools', label: tAgent('tabs.tools'), icon: <Wrench className="h-4 w-4" /> },
   ]
 
   const tabActions = activeTab === 'agents' && agents.length > 0
@@ -499,7 +545,31 @@ export function AgentsPage() {
       ]
     : []
 
-  const skillsActionsExtra = undefined
+  const skillsActionsExtra = activeTab === 'tools' ? (
+    <div className="flex items-center gap-2">
+      <Select value={toolsSourceFilter} onValueChange={(v) => setToolsSourceFilter(v as ToolSourceFilter)}>
+        <SelectTrigger className="h-9 w-[140px]">
+          <SelectValue placeholder={tAgent('detail.toolsFilterAllSources', 'All sources')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{tAgent('detail.toolsFilterAllSources', 'All sources')}</SelectItem>
+          <SelectItem value="built-in">{tAgent('detail.toolsSourceBuiltIn')}</SelectItem>
+          <SelectItem value="extension">{tAgent('detail.toolsSourceExtension')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <div className="relative">
+        <span className="absolute left-2.5 top-0 bottom-0 flex items-center">
+          <Search className="h-4 w-4 text-muted-foreground pointer-events-none" />
+        </span>
+        <Input
+          placeholder={tAgent('detail.toolsSearchPlaceholder', 'Search tools…')}
+          value={toolsSearch}
+          onChange={(e) => setToolsSearch(e.target.value)}
+          className="pl-9 w-[180px] md:w-[240px] h-9"
+        />
+      </div>
+    </div>
+  ) : undefined
 
   return (
     <PageLayout
@@ -531,6 +601,14 @@ export function AgentsPage() {
             currentPage={skillsPagination.currentPage}
             onPageChange={skillsPagination.onPageChange}
             isLoading={skillsPagination.loading}
+          />
+        ) : activeTab === 'tools' && toolsPagination.total > toolsPagination.pageSize ? (
+          <Pagination
+            total={toolsPagination.total}
+            pageSize={toolsPagination.pageSize}
+            currentPage={toolsPagination.currentPage}
+            onPageChange={toolsPagination.onPageChange}
+            isLoading={toolsPagination.loading}
           />
         ) : undefined
       }
@@ -578,6 +656,14 @@ export function AgentsPage() {
 
       <PageTabsContent value="skills" activeTab={activeTab}>
         <SkillsPanel ref={skillsPanelRef} onPaginationChange={handleSkillsPaginationChange} />
+      </PageTabsContent>
+
+      <PageTabsContent value="tools" activeTab={activeTab}>
+        <ToolsPanel
+          onPaginationChange={handleToolsPaginationChange}
+          searchQuery={toolsDebouncedSearch}
+          sourceFilter={toolsSourceFilter}
+        />
       </PageTabsContent>
 
       {/* Mobile: Bottom navigation bar */}

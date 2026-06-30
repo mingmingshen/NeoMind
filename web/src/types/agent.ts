@@ -478,3 +478,20 @@ export interface NotificationSent {
   sent_at: number
   success: boolean
 }
+
+/**
+ * Read-only catalog item describing a tool in the server's ToolRegistry.
+ * Returned by GET /api/agents/tools.
+ */
+export interface AgentToolCatalogItem {
+  name: string
+  description: string
+  /** Origin of the tool: built-in | extension | custom */
+  source: string
+  namespace?: string | null
+  category: string
+  /** JSON Schema describing the tool's input parameters */
+  parameters: Record<string, unknown>
+  deprecated?: boolean
+  version?: string
+}

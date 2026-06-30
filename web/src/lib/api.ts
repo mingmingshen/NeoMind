@@ -82,6 +82,7 @@ import type {
   // AI Agent Types
   AiAgentDetail,
   AgentMemory,
+  AgentToolCatalogItem,
   AgentStats,
   AgentExecution,
   AgentExecutionDetail,
@@ -1943,6 +1944,13 @@ export const api = {
    */
   getAgentMemory: (id: string) =>
     fetchAPI<AgentMemory>(`/agents/${id}/memory`),
+
+  /**
+   * Get available agent tools (read-only catalog of the server's ToolRegistry).
+   * GET /api/agents/tools
+   */
+  getAgentTools: () =>
+    fetchAPI<{ tools: AgentToolCatalogItem[]; count: number }>(`/agents/tools`),
 
   /**
    * Clear agent memory
