@@ -77,6 +77,46 @@ pub struct SetRuleStatusRequest {
     pub enabled: bool,
 }
 
+/// Extract a numeric test value from the `rule test --input` JSON body.
+///
+/// Accepted shapes (in priority order):
+/// 1. `{"value": <number>}` — canonical CLI shape
+/// 2. `{"input": <number>}` — common alternative key
+/// 3. `<number>` — bare number body
+///
+/// Returns `None` for non-numeric bodies so the handler can fall back to
+/// live/historical data.
+fn extract_input_number(body: &serde_json::Value) -> Option<f64> {
+    if let Some(obj) = body.as_object() {
+        for key in ["value", "input"] {
+            if let Some(v) = obj.get(key) {
+                if let Some(n) = v.as_f64() {
+                    return Some(n);
+                }
+            }
+        }
+    }
+    body.as_f64()
+}
+
+/// Extract a text test value from the `rule test --input` JSON body.
+///
+/// Accepted shapes: `{"value": "<string>"}`, `{"input": "<string>"}`,
+/// or a bare JSON string. Returns `None` for non-string bodies so the
+/// handler can fall back to numeric extraction / live data.
+fn extract_input_text(body: &serde_json::Value) -> Option<String> {
+    if let Some(obj) = body.as_object() {
+        for key in ["value", "input"] {
+            if let Some(v) = obj.get(key) {
+                if let Some(s) = v.as_str() {
+                    return Some(s.to_string());
+                }
+            }
+        }
+    }
+    body.as_str().map(|s| s.to_string())
+}
+
 /// Convert ComparisonOperator to symbol string for frontend
 fn operator_to_symbol(op: &ComparisonOperator) -> &'static str {
     match op {
@@ -604,12 +644,25 @@ pub async fn test_rule_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
     Query(params): Query<std::collections::HashMap<String, String>>,
+    body: Option<axum::Json<serde_json::Value>>,
 ) -> HandlerResult<serde_json::Value> {
     // Check if we should also execute actions (not just test condition)
     let execute_actions = params
         .get("execute")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
+
+    // Parse user-provided test value from request body. The CLI sends
+    // `--input '{"value": <num>}'` (or a raw number) as JSON body. Without
+    // this, the handler silently dropped the body and always fell back to
+    // historical telemetry — making `rule test` useless for what-if testing.
+    let input_value: Option<f64> = body
+        .as_ref()
+        .and_then(|b| extract_input_number(&b.0));
+
+    let input_text: Option<String> = body
+        .as_ref()
+        .and_then(|b| extract_input_text(&b.0));
 
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
@@ -687,6 +740,18 @@ pub async fn test_rule_handler(
 
     // Get current value from the value provider
     let mut current_value = state.automation.rule_engine.get_value_provider().get_by_source(&query_source);
+
+    // User-supplied test input takes priority over live/historical data.
+    // This is the whole point of `rule test --input`: what-if evaluation
+    // without needing to publish real telemetry.
+    let mut used_input_value = false;
+    if let Some(n) = input_value {
+        current_value = Some(neomind_rules::RuleValue::Number(n));
+        used_input_value = true;
+    } else if let Some(s) = input_text.clone() {
+        current_value = Some(neomind_rules::RuleValue::Text(s));
+        used_input_value = true;
+    }
 
     // Virtual-metric shortcut: when testing a rule that references a virtual
     // metric like `__last_seen_age_secs`, the emitter may not have ticked yet
@@ -853,7 +918,7 @@ pub async fn test_rule_handler(
         "rule_name": rule.name,
         "condition_met": condition_met,
         "value_used": used_value,
-        "value_source": if is_current { "current" } else { value_source },
+        "value_source": if used_input_value { "input" } else if is_current { "current" } else { value_source },
         "threshold": match condition {
             RuleCondition::Range { .. } => serde_json::Value::Null,
             _ => json!(threshold),

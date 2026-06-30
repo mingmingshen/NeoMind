@@ -82,6 +82,7 @@ mod tests {
             State(state),
             Path("invalid_id".to_string()),
             Query(std::collections::HashMap::new()),
+            None,
         )
         .await;
         assert!(result.is_err());
