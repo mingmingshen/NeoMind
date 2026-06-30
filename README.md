@@ -16,6 +16,9 @@
   <a href="https://github.com/camthink-ai/NeoMind/stargazers">
     <img src="https://img.shields.io/github/stars/camthink-ai/NeoMind?style=social" alt="Stars">
   </a>
+  <a href="https://discord.gg/gkM7cc8gKb">
+    <img src="https://img.shields.io/discord/0.svg?logo=discord&logoColor=ffffff&label=Discord&color=5865F2&link=https://discord.gg/gkM7cc8gKb" alt="Discord Community">
+  </a>
   <img src="https://img.shields.io/github/last-commit/camthink-ai/NeoMind?label=last%20commit&color=success" alt="Last Commit">
   <img src="https://img.shields.io/badge/Rust-1.85+-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Server-informational.svg" alt="Platform">
@@ -488,6 +491,17 @@ Repo-local references (kept here for contributors):
 | **AI/LLM** | Ollama, OpenAI, Anthropic, and 6+ more backends |
 | **IoT** | MQTT (embedded broker), BLE, HTTP/Webhook |
 | **Extensions** | Native (.so/.dylib/.dll), WASM, process isolation |
+
+## Community
+
+Join our community to get help, share ideas, and stay up to date:
+
+- **[Discord](https://discord.gg/gkM7cc8gKb)** — Real-time chat, support, and announcements (recommended)
+- **[GitHub Issues](https://github.com/camthink-ai/NeoMind/issues)** — Bug reports and feature requests
+- **[GitHub Discussions](https://github.com/camthink-ai/NeoMind/discussions)** — Long-form Q&A and design talks
+- **[NeoMind Wiki](https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind)** — Full documentation
+
+Release announcements are published to the Discord `#announcements` channel and on [GitHub Releases](https://github.com/camthink-ai/NeoMind/releases).
 
 ## Contributing
 
