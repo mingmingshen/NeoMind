@@ -942,8 +942,9 @@ impl LargeDataCache {
 
     /// Quick heuristic: does this look like base64 data?
     fn looks_like_base64(s: &str) -> bool {
-        let sample_len = s.len().min(200);
-        let sample = &s[..sample_len];
+        // Sample first 200 chars (NOT bytes — byte slicing panics on
+        // multi-byte UTF-8, see sanitize.rs fix for the same bug).
+        let sample: String = s.chars().take(200).collect();
         sample.chars().all(|c| {
             c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r'
         })

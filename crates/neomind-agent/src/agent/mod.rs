@@ -393,8 +393,10 @@ fn extract_first_phrase(text: &str, max_len: usize) -> String {
         }
     }
 
-    // Hard truncate with ellipsis
-    format!("{}...", &trimmed[..max_len.saturating_sub(3)])
+    // Hard truncate with ellipsis (UTF-8 safe — byte slicing panics on
+    // multi-byte chars; floor_char_boundary lands on a valid boundary).
+    let end = trimmed.floor_char_boundary(max_len.saturating_sub(3));
+    format!("{}...", &trimmed[..end])
 }
 
 /// === ENHANCED: Context Window with Importance-Based Selection ===

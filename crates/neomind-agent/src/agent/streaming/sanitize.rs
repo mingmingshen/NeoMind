@@ -102,9 +102,10 @@ pub(crate) fn is_large_base64_string(s: &str) -> bool {
     if s.len() <= 10_000 {
         return false;
     }
-    // Sample first 200 chars to check base64 alphabet
-    let sample_end = s.len().min(200);
-    let sample = &s[..sample_end];
+    // Sample first 200 chars to check base64 alphabet.
+    // MUST use char-based slicing — byte slicing panics on multi-byte UTF-8
+    // (e.g., skill docs containing '→' at byte boundary 200).
+    let sample: String = s.chars().take(200).collect();
     sample
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
@@ -157,3 +158,41 @@ pub(crate) fn truncate_result_utf8(result: &str, max_chars: usize) -> String {
     let truncated: String = result.chars().take(max_chars).collect();
     format!("{}... (truncated, total {} chars)", truncated, char_count)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: byte-slicing at fixed offset 200 panicked when the offset
+    /// landed inside a multi-byte UTF-8 char (e.g., '→' in skill docs).
+    /// Reproducer for the eval hang on 2026-07-01 where loading
+    /// `agent-management.md` (which contains "Create → Active Pattern")
+    /// triggered `byte index 200 is not a char boundary` inside
+    /// `is_large_base64_string`. Chat session was poisoned thereafter.
+    #[test]
+    fn test_is_large_base64_multibyte_at_boundary() {
+        // Build a >10 KB string whose byte 200 falls inside '→' (3 bytes).
+        // Prefix is ASCII to push past the 10 KB threshold, then place the
+        // arrow exactly where byte 200 lands.
+        let mut s = String::with_capacity(12_000);
+        s.push_str(&"a".repeat(198)); // bytes 0..198 = ASCII
+        s.push('→'); // bytes 198..201 (3-byte char)
+        s.push_str(&"a".repeat(12_000 - 201));
+        assert_eq!(s.len(), 12_000);
+        // Must not panic; the sample is non-ASCII so returns false.
+        assert!(!is_large_base64_string(&s));
+    }
+
+    /// Same regression guard for the twin implementation in `types.rs`
+    /// (`ContentPart::looks_like_base64`) which had identical byte-slicing.
+    #[test]
+    fn test_truncate_result_utf8_keeps_char_boundary() {
+        // Sanity: truncate_result_utf8 already used chars().take — verify
+        // multi-byte content at the cut point doesn't panic.
+        let s: String = "中".repeat(500);
+        let out = truncate_result_utf8(&s, 100);
+        assert!(out.contains("... (truncated,"));
+        assert!(!out.contains('\u{FFFD}')); // no replacement char from bad slicing
+    }
+}
+
