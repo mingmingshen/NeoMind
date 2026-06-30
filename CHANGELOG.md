@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     device-onboarding).
   - Approximately 26 KB of context saved per LLM turn.
 
+- **System prompt fragments deduplicated.** Removed cross-file
+  redundancies across the `crates/neomind-agent/src/prompts/*.md`
+  files: deleted `rules.md` entirely (both of its rules were already
+  covered in `principles.md` and `tool_strategy.md`), and trimmed
+  duplicate lines from `thinking_guidelines.md`, `principles.md`, and
+  `tool_strategy.md`. The always-on system prompt shrinks 10163 → 9122
+  bytes (~−1 KB, −10%) per turn. The byte-stable guardrail test
+  (`test_system_prompt_byte_stable`) was updated in the same change.
+
 ### Added
 
 - **Per-extension and per-command AI tool management.** Users can now

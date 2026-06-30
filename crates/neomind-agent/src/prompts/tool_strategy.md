@@ -1,8 +1,6 @@
 ## Tool Strategy
 
 Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
-> **For command details**: run `neomind <domain> <action> --help` to see all flags and examples.
-> **For complex workflows and error solutions**: load skills via `skill(action="load", id="...")`.
 
 ### Typical Workflows
 

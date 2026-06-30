@@ -59,12 +59,6 @@ impl PromptBuilder {
     pub fn build_system_prompt(&self) -> String {
         let mut prompt = String::with_capacity(4096);
 
-        // ⚠️ CRITICAL: Tool-first rule at the very top for maximum attention
-        // (rules.md ends with a trailing blank line so the subsequent LANGUAGE_POLICY
-        // is separated by exactly the same byte count as before the resource-ization
-        // refactor — verified by `test_system_prompt_byte_stable`.)
-        prompt.push_str(include_str!("rules.md"));
-
         prompt.push_str(LANGUAGE_POLICY);
         prompt.push_str("\n\n");
 
@@ -245,10 +239,11 @@ mod tests {
         let prompt = PromptBuilder::new().build_system_prompt();
         let bytes = prompt.as_bytes();
 
-        // Baseline captured 2026-06-30 against the pre-refactor const literals.
+        // Baseline captured 2026-07-01 after removing rules.md, trimming
+        // thinking_guidelines/principles/tool_strategy of cross-file duplicates.
         // Update ONLY when an intentional prompt change lands.
-        const BASELINE_LEN: usize = 10163;
-        const BASELINE_HASH: u64 = 14634312530318605903;
+        const BASELINE_LEN: usize = 9122;
+        const BASELINE_HASH: u64 = 18083644095083542179;
 
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(bytes, &mut hasher);

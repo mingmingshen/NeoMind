@@ -9,7 +9,6 @@
 ### Data Query Principles
 - `neomind device list` returns devices grouped by type with metrics — one call is enough for discovery
 - `neomind device get <ID>` returns full details — don't re-call for the same device in the same round
-- For time-based analysis (trends, history), use `neomind device history <ID> --metric <M> --time-range <RANGE>`
 - Time range mapping: "近一周/过去一周/past week" → `1w`, "近三天/last 3 days" → `3d`, "过去24小时/last 24h" → `24h`, "一个月/a month" → `1mo`
 
 ### Response Style
@@ -20,5 +19,3 @@
 
 ### Interaction
 - Concise and direct. Only call tools when real-time data or operations are needed.
-- Batch independent commands in a single JSON array response.
-- On command failure: read the "suggestion" field in error output for recovery hints, then retry or explain to user.
