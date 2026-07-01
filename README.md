@@ -80,7 +80,7 @@ NeoMind is an **edge-deployed AI platform** that brings intelligence to IoT. It 
 - **Natural Language Chat** — Conversational interface to query and control all connected devices
 - **Autonomous Agents** — Scheduled AI agents that monitor, analyze, and act on device data independently
 - **10+ LLM Backends** — Ollama, OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax, and any OpenAI-compatible endpoint
-- **Memory System** — Multi-tier memory (Profile, Knowledge, Tasks, Evolution) with automatic extraction and compression
+- **Memory System** — Multi-tier memory (User, Knowledge, Procedures, Session) with automatic extraction and compression
 - **Skill System** — YAML+Markdown skills that guide agent behavior for specific scenarios
 - **Multimodal** — Image upload and visual analysis support
 
@@ -93,7 +93,7 @@ NeoMind is an **edge-deployed AI platform** that brings intelligence to IoT. It 
 - **Custom Device Types** — Define device metrics and commands via JSON type definitions
 
 ### Automation
-- **DSL Rule Engine** — Human-readable rule language: `WHEN device("sensor").temperature > 30 DO device("ac").power_on()`
+- **Rule Engine** — JSON-based rules with recursive conditions (comparison/range/logical) and actions (notify/execute/trigger_agent), with cooldown and `for_duration` debouncing
 - **Data Transforms** — JavaScript-based data transformation for creating virtual metrics
 - **Scheduled Agents** — Time-based and event-driven AI agent execution
 - **Event Bus** — Pub/sub architecture for decoupled component communication
@@ -199,7 +199,7 @@ docker compose up -d
 
 **Specific version:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.11 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.9.0 sh
 ```
 
 **Custom directories:**
@@ -219,7 +219,7 @@ curl -fsSL ... | USE_NGINX=true sh
 
 **Manual installation:**
 ```bash
-VERSION=0.8.11
+VERSION=0.9.0
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz
@@ -319,7 +319,7 @@ NeoMind/
 │   ├── neomind-devices/         # Device management (MQTT, BLE, Webhook)
 │   ├── neomind-storage/         # Storage layer (redb)
 │   ├── neomind-messages/        # Notifications (7 channels)
-│   ├── neomind-rules/           # DSL rule engine
+│   ├── neomind-rules/           # Rule engine (JSON conditions/actions)
 │   ├── neomind-data-push/       # Data push to external systems
 │   ├── neomind-cli-ops/         # Shared CLI logic (in-process dispatch)
 │   ├── neomind-extension-sdk/   # Extension development SDK
