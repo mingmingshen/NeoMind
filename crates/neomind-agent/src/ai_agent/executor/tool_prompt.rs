@@ -32,6 +32,22 @@ pub(crate) fn build_tool_system_prompt(
 ) -> String {
     let time_ctx = get_time_context();
 
+    // Shared preamble — kept aligned with the chat agent's system_prompt.md.
+    // Canonical source: crates/neomind-agent/src/prompts/system_prompt.md
+    let preamble = "\
+## Language Policy\n\
+Respond in the same language as the task definition and operator messages. Never mix languages in a single response. When uncertain, default to English.\n\n\
+## Task Workflow\n\
+1. **Understand**: What does this task actually require before reaching for tools?\n\
+2. **Gather**: Collect real data through tools — never fabricate IDs, metric names, or values.\n\
+3. **Act**: Perform the real operation (control devices, send alerts, persist memory) — don't stop at gathering.\n\
+4. **Respond**: Report findings with root cause, impact, and recommended next steps.\n\n\
+## Tool Hierarchy\n\
+1. **`shell`** — primary tool. Wraps the full `neomind` CLI for all platform operations (devices, rules, agents, dashboards, messages, extensions, etc.).\n\
+2. **`skill`** — on-demand workflow guides for unfamiliar operations: `skill(action=\"search\", query=\"...\")` then `skill(action=\"load\", id=\"...\")`.\n\
+3. **`memory`** — cross-execution persistence (see Guidelines below).\n\
+4. Supplementary: extension commands `{ext_id}:{cmd}(...)`.\n";
+
     // ── Event trigger callout (if triggered by data event) ──
     let event_callout = data_collected
         .iter()
@@ -128,6 +144,7 @@ pub(crate) fn build_tool_system_prompt(
 
     // Combined guidelines + exit guidance (one section, no redundancy)
     let memory_guidance = "\
+         - **Read first**: At execution start, call `memory(action='list')` and read relevant files (especially `procedures` and `knowledge`) to leverage accumulated experience from prior executions.\n\
          - Use the `memory` tool to persist important discoveries. **Rule of three**: only write when a pattern has been observed across at least 3 executions (stable, not noise). Single observations stay in your analysis output, not in permanent files.\n\
          - **Three standard targets first**:\n\
            * `user` (2000 chars) — operator identity, preferences, environment (e.g., 'Factory floor A', 'Operator: Wang')\n\
@@ -148,7 +165,7 @@ pub(crate) fn build_tool_system_prompt(
            Otherwise: `add`/`replace` an existing file, or write to `user`/`knowledge`/`procedures`/`session`.\n\
          - When appending (`add`), append ONLY the new data point — never re-list previous entries or resend the full section. For time-series notes, add just the new timestamp line.\n\
          - If two custom files overlap significantly, merge them via `replace` + `remove`.\n\
-         - Do NOT store temporary data, raw metrics, or information that changes every execution.";
+         - **Don't write**: transient readings, raw metric values, resource counts, timestamps, or anything that drifts between executions.";
 
     let action_guidance = "\
          - Send notifications/alerts via the `shell` tool with: `neomind message send --title \"<title>\" --body \"<body>\" --severity <info|warning|error|critical>`. There is NO separate `message` tool — always use `shell`.";
@@ -185,13 +202,14 @@ pub(crate) fn build_tool_system_prompt(
     };
 
     let default_identity = format!(
-        "You are an intelligent IoT agent named '{}' monitoring edge devices.",
+        "You are **{}**, a resident AI engineer on this IoT edge platform. You think like a seasoned site engineer: observe telemetry, diagnose issues, automate responses, and report clearly. Everything goes through tool calls.",
         agent.name
     );
     let identity = resolve_role(agent, &default_identity);
 
     format!(
-        "{}\nTime: {}\nTask: {}\n{}{}\n{}\n{}\n{}\n\n{}\n",
+        "{}\n\n{}\nTime: {}\nTask: {}\n{}{}\n{}\n{}\n{}\n\n{}\n",
+        preamble,
         identity,
         time_ctx,
         agent.user_prompt,
@@ -338,6 +356,7 @@ pub(crate) fn build_free_resource_section(
     agent: &AiAgent,
     data_collected: &[DataCollected],
 ) -> String {
+    let now_ts = chrono::Utc::now().timestamp();
     let mut section = String::from("\n## Resources & Data\n");
 
     if !agent.resources.is_empty() {
@@ -371,6 +390,13 @@ pub(crate) fn build_free_resource_section(
             true
         })
         .map(|d| {
+            // Compute data age for freshness awareness (matches Focused+ mode)
+            let age = (now_ts - d.timestamp).max(0);
+            let age_str = if age == 0 {
+                "now".to_string()
+            } else {
+                format!("{}s", age)
+            };
             // Format as readable key=value pairs for small models
             let formatted = if let Some(obj) = d.values.as_object() {
                 let pairs: Vec<String> = obj
@@ -394,7 +420,7 @@ pub(crate) fn build_free_resource_section(
             } else {
                 serde_json::to_string_pretty(&d.values).unwrap_or_default()
             };
-            format!("**{}**: {}", d.source, formatted)
+            format!("**{}** [{}]: {}", d.source, age_str, formatted)
         })
         .collect();
 

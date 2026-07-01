@@ -78,7 +78,7 @@ impl PromptBuilder {
     pub fn get_intent_prompt_addon(&self, intent: &str) -> String {
         match intent {
             "device" => "\n\n## Current Task: Device Management\nFocus on device queries and control operations.".to_string(),
-            "data" => "\n\n## Current Task: Data Query and Analysis\n**MUST CALL TOOLS**: When user asks for historical data, trend analysis, or data changes, you MUST call shell tool with `neomind device history <id> --metric <name>` to get real data.\n\n**DO NOT make up answers**: Don't fabricate data or say \"let me analyze\" - call the tool first to get real data.".to_string(),
+            "data" => "\n\n## Current Task: Data Analysis\nGather real data via tools, then provide insights, root-cause analysis, and actionable recommendations.\n\nUse `neomind device history <id> --metric <name>` for time-series data — never fabricate values.".to_string(),
             "rule" => "\n\n## Current Task: Rule Management\nFocus on creating and modifying automation rules.".to_string(),
             "alert" | "message" => "\n\n## Current Task: Message Management\nFocus on message queries, sending, and status updates.".to_string(),
             "system" => "\n\n## Current Task: System Status\nFocus on system health checks and status queries.".to_string(),
@@ -158,7 +158,7 @@ mod tests {
     fn test_intent_addon() {
         let builder = PromptBuilder::new();
         let addon = builder.get_intent_prompt_addon("data");
-        assert!(addon.contains("Data Query"));
+        assert!(addon.contains("Data Analysis"));
     }
 
     #[test]

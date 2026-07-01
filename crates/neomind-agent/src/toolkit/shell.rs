@@ -814,20 +814,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 ## NeoMind CLI Domain Syntax
 The `neomind` CLI has 13 domains: `device`, `dashboard`, `rule`, `agent`, `extension`, `widget`, `transform`, `llm`, `message`, `connector`, `push`, `settings`, `system`.
 
-**Domain-specific command syntax, JSON formats, and copy-paste templates live in skill docs** — they auto-load based on user intent. Common mappings:
-- Dashboard creation workflow / DataSource binding → `dashboard-management`
-- Rule JSON format → `rule-management`
-- Widget IIFE templates → `widget-development`
-- Transform JS rules → `transform-management`
-- Device onboarding → `device-onboarding`
-- Agent scheduling / capabilities → `agent-management`
-- Extension install / config → `extension-development`
-- LLM backend selection → `llm-management`
-- Message channels → `message-management`
-- Connectors → `connector-management`
-- Data push → `data-push-management`
-
-If no skill matched, run `neomind <domain> <action> --help` for flags and examples. Most commands accept `--json` for machine-readable output.
+**Domain-specific command syntax, JSON formats, and copy-paste templates live in skill docs** — use the `skill` tool (`skill(action="search", query="<domain>")`) to load the matching guide, or run `neomind <domain> <action> --help` for flags and examples. Most commands accept `--json` for machine-readable output.
 
 ## Easy-to-miss subcommands (check before falling back to ping/nc/ls)
 When the user asks for a domain-specific action, try the matching `neomind <domain> <subcommand>` FIRST — do NOT fall back to raw shell tools (`ping`, `nc`, `ls`, `curl`) until the CLI subcommand has been tried and returned an error.

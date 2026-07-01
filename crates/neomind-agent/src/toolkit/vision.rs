@@ -532,7 +532,7 @@ Only use this tool when you need to analyze images from OTHER sources:
         object_schema(
             serde_json::json!({
                 "image": string_property("Image source: base64 data URL, raw base64, local image file path, or public HTTP/HTTPS URL"),
-                "prompt": string_property("Analysis instructions for the image. IMPORTANT: always forward the user's language preference, desired detail level, and any specific focus from the conversation. E.g. if the user speaks Chinese, write the prompt in Chinese; if they want a brief answer, include 'be concise'.")
+                "prompt": string_property("Analysis instructions for the image. Match the user's language and detail level from the conversation.")
             }),
             vec!["image".to_string(), "prompt".to_string()],
         )

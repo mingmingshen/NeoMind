@@ -40,7 +40,7 @@ pub(crate) fn build_context_window_with_summary(
     // Inject summary as a system message at the beginning (after any existing system messages)
     if let Some(summary_text) = summary {
         if !summary_text.is_empty() {
-            let summary_msg = AgentMessage::system(format!("[之前对话的摘要]\n{}", summary_text));
+            let summary_msg = AgentMessage::system(format!("[Summary of previous conversation]\n{}", summary_text));
             // Find insertion point: after system messages, before other messages
             let insert_pos = result.iter().take_while(|m| m.role == "system").count();
             result.insert(insert_pos, summary_msg);
