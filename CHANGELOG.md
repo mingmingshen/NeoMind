@@ -9,89 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Shell tool description slimmed down — neomind CLI reference moved to
-  skills.** The `shell` tool's description was 15.7 KB and embedded the
-  full `neomind` CLI command reference (10 domains × commands ×
-  copy-paste templates), sent on every LLM turn in BOTH the tools array
-  and the system prompt prose (~31 KB/turn). The same content was also
-  maintained in 11 skill `.md` files, causing drift. Now:
-  - Shell description is ~2.5 KB (-84%): keeps only cross-domain rules
-    that apply to every `neomind` invocation (ID-is-positional, never
-    guess metric names, `--json` output, `suggestion` recovery field),
-    plus a domain→skill mapping table that points the LLM at the right
-    skill doc for per-domain syntax. Native system commands and
-    execution semantics preserved.
-  - Per-domain command syntax, JSON formats, and templates are sourced
-    exclusively from `skills/builtins/*.md`, which auto-load based on
-    user intent. Verified coverage: all 10 CLI domains map to at least
-    one skill (agent, llm, connector, dashboard, device, extension,
-    message, rule, transform, widget, push, plus `system info` in
-    device-onboarding).
-  - Approximately 26 KB of context saved per LLM turn.
-
-- **System prompt fragments deduplicated.** Removed cross-file
-  redundancies across the `crates/neomind-agent/src/prompts/*.md`
-  files: deleted `rules.md` entirely (both of its rules were already
-  covered in `principles.md` and `tool_strategy.md`), and trimmed
-  duplicate lines from `thinking_guidelines.md`, `principles.md`, and
-  `tool_strategy.md`. The always-on system prompt shrinks 10163 → 9122
-  bytes (~−1 KB, −10%) per turn. The byte-stable guardrail test
-  (`test_system_prompt_byte_stable`) was updated in the same change.
-
-### Added
-
-- **Per-extension and per-command AI tool management.** Users can now
-  control which extension commands are exposed to the agent from the
-  Extensions page. Two granularities, both live (no restart required):
-  - **Master toggle per extension** — hides every command of that
-    extension from the LLM.
-  - **Per-command toggle** — hides individual commands while leaving
-    the rest of the extension available.
-  Toggle lives in the Extension details dialog (Commands section).
-  Turning a tool OFF asks for confirmation (changes agent
-  capabilities); turning ON is immediate (safe direction).
-
-- **Disabled tools in the Tools catalog.** The Tools panel now lists
-  disabled tools with a muted row tint and a `Disabled` badge next to
-  the tool name, so administrators can audit what the agent will and
-  won't see at a glance.
-
-- Two new API endpoints:
-  - `PATCH /api/extensions/:id/enabled` — master toggle.
-  - `PATCH /api/extensions/:id/commands/:cmd/enabled` — per-command
-    toggle.
-  Both rebuild the in-memory disabled set on every call and persist
-  state to `extensions.redb` (`ExtensionRecord.enabled`,
-  `ExtensionRecord.disabled_commands`).
-
-### Changed
-
-- **Disabled-tool filter covers all LLM paths.** Previously only the
-  scheduled executor called `definitions_for_llm()`. Now:
-  - `Agent::update_tool_definitions()` (chat/session path) uses
-    `definitions_for_llm()` instead of iterating all tools.
-  - `Agent::process()` refreshes tool definitions on every chat turn,
-    so mid-session toggles take effect on the next message.
-  - `ToolRegistry::execute()` / `execute_parallel()` gain a
-    defense-in-depth `is_disabled()` guard so a stale tool definition
-    that somehow reaches execution returns `ToolError::Disabled`
-    instead of running.
-
-- **Extension card layout.** The on-card AI-tools switch was removed
-  (cluttered, alignment drifted between on/off state). The card now
-  shows a compact inline `AI off` badge in the footer when tools are
-  disabled — single line, stable height.
-
-### Fixed
-
-- **Stale dialog state.** Selecting an extension, toggling its tools,
-  and returning to the dialog previously showed stale on/off state
-  because the dialog captured a snapshot of the extension at open
-  time. Now tracks `selectedExtensionId` and derives the live record
-  from the store, so the dialog always reflects the latest persisted
-  state.
+_None yet._
 
 ---
 
@@ -99,584 +17,182 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Overview
 
-A **chat-agent eval system + first round of eval-surfaced production
-fixes**. The eval runner is rewritten in Python and now drives the
-agent-under-test through a real `neomind serve` subprocess over the
-production WebSocket chat path — exercising the actual system prompts,
-tool registry, multi-round ReAct continuation, and list-only-dead-end
-detection that the chat UI relies on. The previous Rust eval-runner
-talked to an in-process SessionManager that bypassed all of it and
-silently masked multi-tool failures.
+A **chat-agent quality release**: a Python eval harness driving the
+real `neomind serve` subprocess (146 cases, zh+en, Claude Opus 4.6 as
+judge), the production gaps it surfaced, an agent-prompt evolution
+(CLI reference → skills, response-format calibration, tool-toggle
+parity), per-command extension tool management, and DashScope
+hybrid-thinking reliability. Baseline eval: ~91% → expected ~95%+.
 
-The first full eval run (29 cases, DeepSeek V4 flash as the agent
-LLM, Claude Opus 4.6 as the judge) surfaces four production gaps that
-this release closes:
+Themes: (1) **eval framework** — Python + production WS path; (2)
+**eval-surfaced production fixes** — template seeding, `--id` flag,
+rule trigger default, extension build producing `.nep`; (3) **agent
+prompt evolution** — CLI reference moved to skills, fragment
+consolidation, response calibration, multi-step narration; (4)
+**extension tool management** — per-extension + per-command toggles,
+disabled-filter across all LLM paths, tool registry rebuild on
+install/uninstall; (5) **DashScope thinking reliability** — cloud
+backend honors `thinking_enabled`, tool-loop streams for thinking
+models; (6) **external broker parity** — `$SYS` presence synthesis.
 
-1. Fresh-install servers booted with an empty device-type template
-   cache — `init_device_storage()` wrote templates to disk after
-   `ServerState::new()` but never refreshed the cache, so API device
-   registration against built-in templates (NE101, NE301, ...) failed
-   with "template not found" until restart.
-2. `neomind device create` had no `--id` flag, so the agent's
-   user-supplied identifiers (e.g. `sensor-001`) were silently swapped
-   for auto-generated UUIDs.
-3. The `POST /rules` 400-error hint listed condition/action types but
-   omitted the trigger shape — an internally-tagged enum the LLM was
-   guessing wrong repeatedly.
-4. `build_validation_context()` hardcoded metric names per device type
-   ("temperature" for sensors, "value" for everything else), so rule
-   validation rejected conditions on real template metrics like
-   `ne101_camera.values.battery`.
+### Eval framework
 
-Themes: (1) **eval framework rewrite** — Python + real subprocess +
-WS chat + transient-stall retry; (2) **template-aware rule
-validation** — pull metrics from the registered device-type template;
-(3) **first-boot reliability** — seed templates before cache load;
-(4) **CLI completeness** — `--id` on device create.
+Rewritten in Python (`eval/run_eval.py` + `eval/lib/`). Each case
+spawns `neomind serve` with a temp data dir, pre-seeds an API key +
+LLM backend, and drives the chat agent through the production
+WebSocket pipeline (multi-round ReAct, list-only-dead-end detection,
+same system prompts as the chat UI). The previous in-process Rust
+runner bypassed all of this and silently masked multi-tool failures.
 
-**Second batch (post-first-round):** the 70-case set was doubled to
-**146 cases (73 unique × zh + en)** across all CLI domains including
-marketplace / observability / lifecycle / error-path surfaces. The
-146-case run surfaced a second round of production gaps (settings
-domain missing from CLI help, `POST /rules` trigger required despite
-skill doc saying otherwise, `neomind extension build` not producing
-a `.nep`, two agent-reliability bugs: skill-context accumulation and
-degenerate code-fence-only output). Plus a marketplace component
-reinstall + update-detection path, an onboarding docs-links strip,
-and a Discord community entry + release-notify GitHub Action. Latest
-baseline 91.1% PASS, expected ~95% after the round-2 fixes.
+Coverage: 146 cases (73 unique × zh+en) across every CLI domain
+(device, dashboard, rule, agent, message, transform, llm, extension,
+widget, system, tools, connector, push, settings). Judge scores
+`tool_accuracy` / `task_completion` / `response_quality` /
+`language_adherence`. Latest run: 91.1% PASS pre-fix.
 
-### Eval framework — pivot to Python + production subprocess
+### Eval-surfaced production fixes
 
-The agent-under-test now runs inside `neomind serve` spawned per
-case with a temp data dir and a pre-seeded API key. The framework
-drives it through the same WebSocket chat pipeline
-(`process_message_events_with_backend_and_skills` →
-`process_stream_events_with_safeguards`) the chat UI uses — same
-multi-round ReAct loop (up to 30 LLM rounds), same list-only-dead-end
-detection, same system prompts. The previous in-process SessionManager
-path silently capped the agent at one LLM round and masked a class
-of multi-tool failures that production handled correctly.
+- **First-boot template seeding** — `DeviceRegistry::new()` now seeds
+  built-in device-type templates (NE101, NE301…) before loading the
+  in-memory cache. Fresh installs no longer fail device registration
+  with "template not found" until restart.
+- **`neomind device create --id`** — optional flag (alias
+  `--device-id`) preserving user-supplied IDs; previously silently
+  swapped for auto-UUIDs.
+- **`POST /rules` trigger default** — absent `trigger` now defaults to
+  `data_change` (aligns API with skill doc; agent was cycling through
+  four wrong shapes).
+- **Template-metric rule validation** — `build_validation_context()`
+  pulls metrics from the registered device-type template instead of
+  hardcoding "temperature"/"value".
+- **`neomind extension build` produces a `.nep`** — reads
+  `manifest.json`, packages cdylib + binaries + optional frontend
+  into `<id>-<version>.nep`, emits `NEP_PATH=<path>` for deterministic
+  parsing.
+- **`settings` domain in CLI help** — `shell.rs` domain table now
+  lists timezone/retention/cleanup so the agent uses
+  `neomind settings timezone` instead of host OS commands.
 
-Coverage: 70 cases (35 unique × zh+en) across `device`, `dashboard`,
-`rule`, `agent`, `message`, `transform`, `llm`, `extension`, `widget`,
-`system`, `tools`, `connector`, `push`, `settings`. The case set now
-exercises every NeoMind CLI domain at least once, including the
-connector / data-push / settings surfaces that previously had zero
-coverage. The zh+en split is fully symmetric on the latest batch —
-every case has both language variants. Last full run with DeepSeek V4
-flash (29-case subset): **27/29 PASS = 93.1%**, the remaining 2
-failures are transient LLM backend rate-limit stalls now covered by
-the chat retry.
+### Agent prompt evolution
 
-New cases in this batch (16 unique × zh+en = 32 files on top of the
-prior 38-file set):
+- **CLI reference moved to skills** — the `shell` tool description
+  dropped from 15.7 KB to ~2.5 KB (-84%, ~26 KB/turn saved). Per-domain
+  syntax now sourced exclusively from `skills/builtins/*.md` (no more
+  drift between the two copies).
+- **Prompt fragments consolidated** — seven inline `const` blocks
+  merged into a single `system_prompt.md` with conditional
+  `BEGIN_VISION`/`BEGIN_THINKING` sentinels; deleted `rules.md`
+  (duplicated elsewhere); trimmed cross-file redundancies (~1 KB /
+  10% per turn).
+- **Response format calibration** — replaced rigid 3-pattern rules
+  with adaptive guidance (quick answer / action result / comparison /
+  analysis / tutorial) + explicit table discipline; added
+  "Calibrate effort to task" (complex → search skills first, simple →
+  just do it).
+- **Multi-step narration + completion self-check** — 3+ entity tasks
+  lead with a one-line intent statement; before declaring done, replay
+  the original request against actual work done.
+- **Memory instruction corrected** — standard files (user/knowledge/
+  procedures) are auto-injected into the system prompt; the old
+  instruction told the LLM to waste a tool call re-reading them.
+- **Error recovery rule** — fix the root cause then RETRY the
+  original command (not stop after the side fix).
+- **UTF-8 safe slicing** in base64 heuristics (was panicking on
+  Chinese text at byte boundaries).
 
-- `agent/list-agents`, `agent/clear-memory` — agent discovery + the
-  memory-reset path (`neomind agent clear-memory`)
-- `transform/list-empty` — graceful empty-list handling on
-  `neomind transform list`
-- `rule/history` — `neomind rule history` (trigger history read path)
-- `device/webhook-telemetry` — multi-turn: create webhook device →
-  `curl` POST telemetry → verify read-back (covers the webhook write
-  path + curl toolchain end-to-end)
-- `device/drafts-list`, `device/telemetry-history` — auto-discovery
-  drafts + `neomind device history`
-- `connector/list` — connector-management skill, previously 0 coverage
-- `push/list` — data-push-management skill, previously 0 coverage
-- `settings/timezone` — settings API surface
-- `tools/memory-update`, `tools/file-write`, `tools/web-fetch` —
-  non-CLI tool coverage (chat memory tool, file_edit/file_write,
-  web_fetch)
-- `system/info`, `extension/list`, `widget/list` — system, extension,
-  widget domains
-- Plus the 9 zh-only mirror cases (dashboard delete/list,
-  device unknown-id/update-name, llm list-and-capabilities,
-  message list-channels, rule list-all, transform create-avg,
-  agent pause-agent) translated to English and parity-restored
+### Extension tool management
 
-Framework pieces (`eval/lib/` + `eval/run_eval.py`):
-
-- `server.TestServer` — per-case subprocess, temp data dir, API key
-  pre-seeded via `neomind api-key create`, LLM backend wired through
-  the standard `/api/llm-backends` + `/activate` API
-- WS chat with multi-round event draining (Content/Thinking/
-  ToolCallStart/ToolCallEnd/end), 600s outer timeout, 180s inner
-  gap timeout (>heartbeat interval so a thinking pause between tool
-  rounds doesn't kill a long run)
-- `_is_transient_stall` + chat retry: a rate-limited LLM HTTP call
-  produces a distinctive zero-events + gap-timeout signature; one
-  re-attempt after 5s backoff confirms. Verified non-pathological —
-  the same case passes in 7–9s on a clean retry
-- `state_query.py` — `*_exists` queries transparently fall back
-  from direct GET to list+match-by-name (agents/transforms/rules
-  are created with auto-UUIDs; cases pass human-readable names)
-- `post_run_delay_ms` case field — covers SQ/async-runtime races
-  (e.g. `agent invoke` returns immediately, but `total_executions`
-  increments only after the background execution lands)
-- `judge.py` — Claude-as-judge (`claude-opus-4-6`) scoring across
-  `tool_accuracy` / `task_completion` / `response_quality` /
-  `language_adherence`
-- `report.py` — `aggregate()` → `grade-card.md`
-
-Drops the `crates/eval-runner/` Rust crate and removes it from the
-workspace `Cargo.toml`.
-
-### Storage / registry — seed built-in templates at init
-
-`DeviceRegistry::new()` now calls `seed_builtin_templates()` BEFORE
-loading templates into memory. Previously, a fresh-install server
-booted with an empty in-memory template cache; `init_device_storage()`
-(written after `ServerState::new()`) wrote templates to disk but
-never refreshed the cache, so API device registration against
-built-in templates (NE101, NE301, ...) failed with
-"template not found" until the server was restarted. The fix makes
-the in-memory load pick them up on first boot; `seed_builtin_templates()`
-is idempotent so subsequent starts are a no-op.
-
-Also adds `DeviceRegistryStore::close_singleton()` — redb only allows
-one process to hold a database file open at a time, and `open()`
-caches the store in a process-global singleton. Test harnesses that
-pre-seed a database file and then hand it off to a child process
-must call this to drop the cached `Arc` and release the file lock.
-Surfaced by the eval framework (every case spawns its own
-`neomind serve` subprocess with a temp data dir).
-
-### CLI — `--id` flag on `neomind device create`
-
-`neomind device create` now accepts `--id <device-id>` (alias
-`--device-id`). Without it, the CLI silently swapped user-supplied
-identifiers (e.g. `sensor-001`) for auto-generated UUIDs, leaving
-the agent to query a `device_id` that didn't exist. The flag is
-optional; auto-generation still happens when omitted. Empty string
-is treated as "auto-generate" so explicit `--id ""` doesn't write
-an empty `device_id`.
-
-### API / rules — trigger schema hint + template-metric validator
-
-Two eval-surfaced gaps on `POST /rules`:
-
-- The 400 error hint listed condition/action types but omitted the
-  trigger shape. The LLM agent was guessing
-  `{"trigger":{"type":"data_change"}}` and failing repeatedly. The
-  hint now spells out all three variants (`data_change` | `schedule`
-  with `cron` | `manual`) and includes a minimal working JSON.
-- `build_validation_context()` hardcoded metric names per device
-  type ("temperature" for sensors, "value" for everything else),
-  so rule validation rejected conditions on real template metrics
-  like `ne101_camera.values.battery`. Now pulls metrics from the
-  registered device-type template via `DeviceService::get_template()`,
-  falling back to the legacy hardcoded behavior only when no
-  template is registered.
-
-### Eval expansion — 70 → 146 cases (73 unique × zh + en)
-
-Coverage doubled after the first round of eval-surfaced fixes
-landed. The case set now exercises every NeoMind CLI domain with
-at least one scenario, including the previously-zero-coverage
-marketplace / observability / lifecycle / error-path surfaces:
-
-- **P0 control-action** (9 scenarios × zh+en): device control,
-  extension reload, rule enable/disable, agent pause/resume,
-  transform enable — all multi-turn control flows, not just list/get.
-- **P0 marketplace** (push/connector/extension/memory): data-push,
-  notification connector, extension install lifecycle, agent memory
-  reset — surfaces that historically had 0 coverage.
-- **P1 observability + lifecycle** (13 scenarios × zh+en):
-  extension install/reload/uninstall, agent lifecycle (pause/resume/
-  clear-memory), transform create-and-enable, rule history + cleanup.
-- **P2 marketplace + error-path** (4 scenarios × zh+en): draft-approval,
-  device update, unknown-id handling, channel lifecycle.
-- **Final coverage gaps** (5 scenarios × zh+en): widget list, draft
-  deletion, telemetry history, connector subscriptions, message
-  channel-update with nested JSON config.
-- **Detect-and-explain acceptance** (extension-reload + device-control):
-  both cases ship with empty target lists. The harness now accepts
-  "ran the command" OR "saw empty list + explained to the user" — the
-  latter is valid behavior, not a failure. Stops penalizing the agent
-  for not blindly issuing no-ops.
-- **Per-turn timeout bump** 600s → 900s; inner WS gap 180s → 240s —
-  complex multi-turn cases (extension build, transform lifecycle) need
-  headroom for thinking models on slow endpoints.
-
-Latest 146-case run: **91.1% PASS** pre-fix, expected ~95% after
-the eval-surfaced fixes below land.
-
-### Eval-surfaced fixes — settings domain, rule trigger default, extension build
-
-Production gaps surfaced by the 70-case and 146-case runs:
-
-- **`settings` missing from CLI domain table** — `shell.rs` listed
-  12 domains but `settings` wasn't one, so the agent reached for
-  `timedatectl` / `neomind system info` instead of `neomind settings
-  timezone`. Added a `settings` row enumerating timezone /
-  set-timezone / timezones / retention / set-retention / cleanup with
-  explicit "use `settings timezone`, NOT host OS commands" guidance.
-- **`POST /rules` trigger now defaults to `data_change`** — the skill
-  doc claimed `trigger` was optional, but the API required it. Agent
-  cycled through four wrong shapes (absent / bare string /
-  externally-tagged / flat-at-root) before failing. `create_rule_handler`
-  now defaults an absent `trigger` to `{"trigger_type":"data_change"}`
-  before deserializing. Aligns API behavior with the skill doc and
-  removes the footgun for all API consumers.
-- **`neomind extension build` now produces a `.nep`** — previously
-  the command ran `cargo build` and printed "success" without
-  producing any installable artifact, breaking the entire install
-  chain downstream. Now reads `manifest.json`, locates the compiled
-  cdylib, and zips `manifest.json` + `binaries/<platform>/` + optional
-  `frontend/dist/` into `<id>-<version>.nep`. Emits a
-  `NEP_PATH=<path>` marker line for deterministic agent parsing.
-- **CLI help table corrections** — extension table now lists
-  `reload` / `create` / `build` (was missing `reload`, causing the
-  agent to fall back to `list`); widget table drops the deprecated
-  `bundle` action; `message channel-update` hint now documents the
-  `--name <N> --config '<JSON>'` syntax (severity filter lives inside
-  the JSON, not a separate flag).
-
-### Agent reliability — transient skill dedup + degenerate fence guard
-
-Two agent-side issues surfaced by long eval traces:
-
-- **Transient skill context was pure string accumulation** — loading
-  the same skill N times in one turn (a common retry-loop pattern)
-  appended N copies into the system prompt. Eval traces showed the
-  agent reloading `rule-management` 10+ times, drowning in ~50KB of
-  duplicate context and getting stuck. Replaced `Option<String>` with
-  `TransientSkillContext { loaded_ids, body }` — first load of a
-  given skill id preserves the body verbatim; repeat loads are
-  no-ops; distinct ids still accumulate. 5 unit tests cover load
-  payload, skill_id field, search array, non-JSON fallback, and
-  the full dedup+clear lifecycle.
-- **Degenerate code-fence-only output guard** — DeepSeek-class models
-  occasionally emit just ` ``` ` (or ` ```\n``` `) as their entire
-  final answer, intending to format a summary but stopping after the
-  fence opener. Left alone this produced a content-less reply that
-  zeroed `response_quality` and `language_adherence`. Added
-  `is_degenerate_fence_only_output()` and wired it into both
-  `stream_core.rs` (empty-content recovery fires for fence-only too,
-  so the retry-without-thinking fully replaces it) and
-  `stream_multimodal.rs` (summary fallback / English fallback message).
-  4 new unit tests cover single marker, empty pair, language tags,
-  and the negative cases.
-
-### Marketplace components — reinstall + update detection
-
-Marketplace widget bundles were frozen at install time; the refresh
-button only cleared the in-browser cache and was hidden for
-marketplace components.
-
-- New `GET /api/frontend-components/updates` — compares installed
-  manifests against the live marketplace index, network-tolerant
-  (returns empty result on index fetch failure rather than 500ing).
-- `refreshComponent` rewritten to re-download marketplace components
-  via the idempotent install endpoint (local components still only
-  clear the registry cache), then re-fetch the authoritative list.
-- Refresh button now visible for marketplace components too; an
-  update badge (ArrowDownCircle + persistent dot) appears when a
-  newer version exists. `checkUpdates` runs on a 30s throttle when
-  the component library opens.
-
-### Onboarding — docs links strip
-
-The core setup step in the onboarding wizard now pins a docs strip
-(BookOpen icon + 3 wiki links: Quick Start / User Guide / Developer
-Guide) above the master-detail grid. Stays put when card content
-height changes between LLM and Device selection, so the help links
-don't jump around mid-flow. Links open in a new tab via
-`target=_blank rel=noopener`.
-
-### Community / release automation
-
-- **Discord community entry in README** — top-of-file badge + a new
-  Community section (Discord / GitHub Issues / Discussions / Wiki).
-- **`release-notify.yml` GitHub Action** — on `release: published`,
-  posts a `🚀 NeoMind vX.Y.Z is out!` announcement to the Discord
-  `#announcements` channel via Webhook. Pulls tag + URL + Release
-  Notes body from the event payload, truncates the body to 1800 chars
-  (Discord embed description cap 4096, leaving headroom for markdown),
-  assembles the webhook payload via `jq`, and supports an optional
-  `DISCORD_ROLE_ID` secret for role pings. Manual `workflow_dispatch`
-  mode is wired for testing without cutting a real release. Webhook
-  URL lives in `DISCORD_WEBHOOK_URL` repository secret — never in
-  the repo. Latent / empty-secret / non-204 responses all degrade
-  gracefully (warning + exit-0, or `::error::` + fail-with-body).
-
-### Agent tooling transparency — prompt split + Tools catalog
-
-Two independent improvements that make the agent subsystem easier
-to maintain and introspect. Neither changes runtime behavior; both
-are zero-risk additive layers.
-
-- **System-prompt source split (`crates/neomind-agent/src/prompts/`)**
-  — the seven inline `const X: &str = r#"..."#;` blocks in
-  `builder.rs` (IDENTITY, VISION_HINT, PRINCIPLES, TOOL_STRATEGY,
-  MEMORY_USAGE, THINKING_GUIDELINES, LANGUAGE_POLICY) plus the
-  inline rule pair at the top of the prompt are now
-  `include_str!("X.md")` references. Editing prompt copy no longer
-  requires touching Rust source. The composition is guarded by
-  `test_system_prompt_byte_stable` — a length + `DefaultHasher`
-  baseline that fails loudly if a `.md` edit changes the assembled
-  prompt by even one byte, with the new hash printed in the panic
-  message so updating the baseline is a one-paste operation.
-- **`GET /api/agents/tools` read-only catalog** — new endpoint that
-  returns the server's `ToolRegistry` as JSON. Each entry carries
-  name, description, source (`built-in` | `extension`), category,
-  namespace (extension id for `.nep`-registered tools), version,
-  deprecated flag, and the full JSON Schema of the tool's input
-  parameters. Route declared before `/api/agents/:id` to avoid
-  Axum path-parameter shadowing. Tools are surfaced exactly as the
-  agent sees them at runtime — no separate maintenance surface.
-- **Tools tab on the Agents page** — page-level tab (alongside
-  Agents / Memory / Skills) rendering the catalog as a
-  `ResponsiveTable` with `table-fixed` column widths. Columns:
-  Tool (icon + name + 2-line description) · Version · Source badge
-  · Namespace (extension id for `.nep` tools, lowercased category
-  for built-ins, e.g. `system`) · Parameter chips (JSON Schema
-  property names, required params highlighted in orange, overflow
-  counter past 6). Top-right header carries a source-filter
-  dropdown + debounced search input (mirrors the Data Explorer
-  pattern). Row click opens a read-only `FullScreenDialog` showing
-  description, metadata grid, and the parameters JSON Schema.
-  Source filter + search reset automatically on tab leave.
-
-### Production reliability & UX themes — DashScope, external broker, mobile masonry
-
-A **DashScope hybrid-thinking reliability + external broker parity**
-release. The headline work closes a two-week-old production issue
-where qwen3.7-plus cloud agents on prod-01 (Garbage Monitoring) were
-intermittently failing mid-execution with "Network error: error
-sending request for url" or "LLM tool-calling produced malformed
-output". Two complementary fixes land: the cloud OpenAI-compatible
-backend now honors `thinking_enabled=false` on analytical LLM calls
-(gotcha #7 used to be silently ignored), and the agent tool-loop now
-auto-routes thinking-capable backends through streaming so the long
-reasoning phase can no longer hit the gateway's idle timeout.
-
-Alongside: external MQTT brokers (the deployment pattern for shops
-that already run EMQX / Mosquitto) now synthesize
-`DeviceTransportOnline/Offline` events from `$SYS` presence
-broadcasts, closing the gap with the embedded broker's
-`DevicePresenceHook` — devices on external brokers no longer show as
-"never connected" in the 4-state UI. The mobile dashboard gets a
-derived single-column masonry layout so a 12-col desktop grid
-doesn't get squished onto a 360–480px phone viewport. Plus a
-template-metric regression fix and a workspace clippy sweep.
-
-Themes: (1) **DashScope thinking models** — `thinking_enabled` now
-honored on cloud backends + tool-loop streaming for thinking-capable
-models; (2) **external broker transport events** — `$SYS` presence
-bridge brings parity with the embedded broker; (3) **mobile dashboard
-masonry** — every card stacks full-width on phones; (4) **fixes &
-maintenance** — template-metric 1h-lookback bug, workspace clippy
-clean.
+- **Per-extension + per-command toggles** — two new endpoints
+  (`PATCH /api/extensions/:id/enabled`,
+  `PATCH /api/extensions/:id/commands/:cmd/enabled`) hide tools from
+  the LLM at either granularity, live (no restart). Persisted to
+  `extensions.redb` (`ExtensionRecord.enabled`,
+  `disabled_commands`).
+- **Disabled-filter covers all LLM paths** — chat agent now uses
+  `definitions_for_llm()` (was iterating all tools, ignoring disabled
+  set); defense-in-depth `is_disabled()` guard added to
+  `ToolRegistry::execute()`. Mid-session toggles take effect next
+  message.
+- **Tool registry rebuild on install/uninstall/reload** —
+  `refresh_extension_tools()` is now called in all 7 lifecycle
+  handlers so new tools are visible to the LLM without a server
+  restart.
+- **CLI invoke endpoint fix** — `invoke_agent` was calling `/execute`
+  (async) instead of `/invoke` (sync, returns results).
+- **Tools catalog** — `GET /api/agents/tools` read-only endpoint +
+  Tools tab on the Agents page render the runtime tool registry
+  (name, description, source, namespace, JSON Schema, params). UI
+  shows disabled tools with a muted tint + `Disabled` badge.
+- **Extension card** — on-card AI-tools switch replaced with a
+  compact `AI off` footer badge (stable height, no alignment drift);
+  dialog now derives live state from store instead of open-time
+  snapshot.
 
 ### DashScope hybrid-thinking reliability
 
-Two related fixes for the same failure mode on DashScope
-`compatible-mode/v1/chat/completions` with hybrid thinking models
-(qwen3.7-plus, qwen3.6-plus, qwen3-vl-plus).
+Two related fixes for qwen3.7-plus cloud agents failing mid-execution
+with "Network error" or "malformed output":
 
-- **Cloud OpenAI backend now honors `thinking_enabled`**
-  (`crates/neomind-agent/src/llm_backends/backends/openai.rs`,
-  commit `c6385169`). The Ollama path already translated
-  `LlmInput.params.thinking_enabled` into `OllamaThink::Bool`
-  (`ollama.rs:826-844`), but the cloud OpenAI path's
-  `ChatCompletionRequest` struct had no `enable_thinking` field — so
-  `thinking_enabled: Some(false)` set by `analyzer.rs:258`,
-  `intent.rs:62`, and `tool_result.rs:241` (gotcha #7) was silently
-  discarded on qwen3.x-plus backends. The model kept thinking on,
-  burning tokens on hidden chain-of-thought during memory extraction,
-  compression, and other non-chat LLM calls.
+- **Cloud backend honors `thinking_enabled`** — `ChatCompletionRequest`
+  gains `enable_thinking: Option<bool>` (Qwen-only, others skip). Gotcha
+  #7 was silently ignored on cloud paths; memory extraction /
+  compression calls no longer burn tokens on hidden chain-of-thought.
+- **Tool-loop streams for thinking models** — thinking-capable
+  backends now route through `generate_to_completion` (streaming) so
+  the reasoning phase can't trip the gateway idle timeout. Non-thinking
+  backends unchanged.
 
-  Fix: added `enable_thinking: Option<bool>` field to
-  `ChatCompletionRequest`, gated with
-  `#[serde(skip_serializing_if = "Option::is_none")]`. Translation is
-  scoped to `CloudProvider::Qwen` only — DashScope's doc explicitly
-  documents the field, while other OpenAI-compatible servers may
-  reject unknown fields with HTTP 400. Extracted a `build_chat_request`
-  helper from `generate_openai` and `generate_stream_openai` so the
-  request body is unit-testable in isolation. Three new tests cover
-  Qwen-disabled, Qwen-default-omitted, and the never-emitted-on-non-Qwen
-  invariant.
+### External MQTT broker parity
 
-- **Tool-loop routes through streaming for thinking-capable backends**
-  (`crates/neomind-agent/src/ai_agent/executor/tool_loop.rs` +
-  `crates/neomind-core/src/llm/backend.rs`, commit `c89d32a0`). Even
-  with `thinking_enabled=false` available as a manual override, the
-  default tool-loop was still calling non-streaming `generate()` on
-  thinking models. Under non-streaming + thinking ON, DashScope's
-  compatible-mode gateway can sit silent for 30+ seconds during the
-  reasoning phase before the first byte comes back — long enough to
-  trip the gateway's idle timeout and surface as a "Network error"
-  mid agent execution.
+External brokers (EMQX / Mosquitto) now synthesize
+`DeviceTransportOnline/Offline` from `$SYS/brokers/+/clients/+/
+{connected,disconnected}` broadcasts, closing the gap with the
+embedded broker's `DevicePresenceHook`. Devices on external brokers no
+longer show as "never connected" in the 4-state UI. User config is
+untouched (filters appended at adapter creation); harmless on brokers
+that don't publish `$SYS`.
 
-  Fix: added a default `generate_to_completion` method on the
-  `LlmRuntime` trait that drives `generate_stream` to completion,
-  accumulating `text` and `thinking` separately and surfacing the
-  first stream error. `tool_loop.rs` now branches on
-  `capabilities().thinking_display`: thinking-capable backends go
-  through `generate_to_completion` (streaming), everyone else stays
-  on `generate` (no behavior change). The token-usage marker protocol
-  (`\n__NEOMIND_TOKEN_PROMPT:N__`) is filtered out of the assembled
-  text. Four new trait-level tests use a `MockStreamRuntime` with a
-  `MockChunk` enum (Content / Thinking / TokenMarker / Error) to
-  exercise assembly, thinking separation, and error propagation
-  without coupling to a real LlmError (which isn't `Clone`).
+### Agent reliability
 
-### External MQTT broker transport events
+- **Transient skill dedup** — reloading the same skill N times in one
+  turn (a retry-loop pattern) no longer appends N copies into the
+  system prompt (was drowning the agent in ~50 KB of dupes).
+- **Degenerate code-fence guard** — DeepSeek-class models occasionally
+  emit just ` ``` ` as their entire answer; now detected and recovered
+  via the retry-without-thinking path.
+- **Scheduled prompt unified** — Free-mode data freshness (`Age`
+  column), error-path journal entries (failed executions write
+  `success: false` so the agent learns from failures), event-trigger
+  callout section.
+- **Agent status auto-recovery** — `Error → Active` sweep on restart
+  alongside the existing `Executing → Active` (Error agents were
+  silently dropped across server restarts).
+- **Cooperative cancellation** for scheduled execution.
 
-- **`$SYS` presence synthesis** (`crates/neomind-api/src/handlers/mqtt/brokers.rs`
-  + `crates/neomind-devices/src/adapters/mqtt.rs`, commit `51c9cf68`).
-  External MQTT brokers don't run our embedded rmqtt
-  `DevicePresenceHook`, so devices registered on them never fired
-  `DeviceTransportOnline/Offline` — they showed as "never connected"
-  in the 4-state UI ("online / connectedIdle / offline / disconnected")
-  even when actively publishing telemetry. The `DeviceTransportOnline`
-  doc string had always promised "$SYS topic subscription when using
-  an external broker" as the fallback path; this release delivers it.
+### Marketplace, mobile, community
 
-  Two-part bridge. (1) `create_and_connect_broker` (brokers.rs) now
-  appends two EMQX-style presence filters —
-  `$SYS/brokers/+/clients/+/connected` and
-  `$SYS/brokers/+/clients/+/disconnected` — to the effective
-  subscribe list passed to `add_broker_with_tls`. User-facing
-  `broker.subscribe_topics` config is untouched. MQTT spec excludes
-  `$`-prefixed topics from `#` / `+` wildcards, so an explicit filter
-  is required; subscribing is harmless on brokers that don't publish
-  these topics (e.g. Mosquitto's per-client presence shape differs)
-  — they simply never arrive. (2) The MqttAdapter Publish handler
-  (mqtt.rs) short-circuits any topic starting with `$SYS/brokers/` at
-  the top, before standard-uplink detection or auto-onboarding: a new
-  `parse_sys_presence_topic` helper extracts `(client_id, is_online)`
-  from `$SYS/brokers/{node}/clients/{cid}/{connected,disconnected}`
-  and publishes `DeviceTransportOnline` / `DeviceTransportOffline`
-  with `client_id` as `device_id` (matches the embedded-broker
-  passthrough convention). Internal `neomind-` prefixed clients
-  (e.g. `neomind-external-{broker_id}` — the adapter's own bridge
-  session) are skipped to avoid firing phantom transport events for
-  our own connection. `$SYS` topics never flow into telemetry or
-  auto-onboarding paths. Four unit tests cover EMQX-style positive
-  cases, aggregate / metrics / malformed-topic rejection, and
-  internal-client passthrough semantics.
-
-### Mobile dashboard masonry
-
-- **Single-column derived layout for phones**
-  (`web/src/components/dashboard/DashboardGrid.tsx`, commit
-  `08708f3c`). Desktop layouts authored on a 12-col grid were being
-  reused verbatim on phones: the same `layouts` array was fed into
-  every breakpoint, so cards authored at e.g. `x=8 / w=4` landed
-  off-grid on a 4-col mobile layout and react-grid-layout silently
-  wrapped them into unpredictable positions. On a 360–480px viewport
-  the result was cramped, mis-ordered cards with stretched aspect
-  ratios.
-
-  Fix: phones (<768px) now render a derived single-column layout —
-  the Home Assistant / masonry-style pattern. `buildMobileLayout`
-  forces every card to `w = MOBILE_COLS = 1` and stacks them
-  vertically (x/y = 0, RGL's vertical compactor handles packing).
-  `breakpoints.xs` drops to 0 (was 480) so every width below the `sm`
-  floor lands in `xs` and gets the mobile layout — previously narrow
-  phones had no matching breakpoint and fell back to the 12-col
-  desktop layout. `cols.xs` drops to 1 (was 4); the lg/md/sm
-  breakpoints keep 12/10/6 so desktop authoring is unchanged.
-  Authored height is preserved but floored by a per-type
-  `MOBILE_MIN_H` (charts → h≥3 for axis room, value-cards → h≥2,
-  markdown → h≥3, etc.) so a chart the user pinned to h=2 on desktop
-  still gets enough vertical room for its axes when it becomes
-  full-width on mobile. Mobile is non-editable: drag/resize disabled,
-  edit-mode toolbar hidden. Eight unit tests cover width force,
-  per-type height floors, and packing invariants.
-
-### Fixes & maintenance
-
-- **Template-metric 1h-lookback bug** (`crates/neomind-api/src/handlers/devices/crud.rs`,
-  commit `a188ad86`). Template metrics (e.g. NE101 `values.image`)
-  went through `query_telemetry` with a 1h window in
-  `/devices/:id/current`, while the batch endpoint already used
-  `storage.latest()` with no window. After 1h of no uploads the
-  single-device endpoint returned null, wiping the last capture from
-  any UI that relied on it (NE101 widget blank after quiet period,
-  DeviceDetail metric cards showing `-`). Unified both branches to
-  `storage.latest()` — consistent with `getDevicesCurrentBatch_handler`,
-  faster (single-point lookup vs range scan), and the semantic all
-  consumers already expect.
-
-- **Error-status agents silently dropped on restart**
-  (`crates/neomind-agent/src/ai_agent/mod.rs`). After a server
-  restart, `reload_active_agents` only loaded agents in `Active`
-  status. `reset_stale_executing_agents` swept `Executing → Active`
-  but never touched `Error` — so any agent that landed in `Error`
-  before the restart was permanently dropped from the scheduler,
-  requiring manual reactivation per agent with no log clue about
-  why it stopped. The startup sweep now also reactivates `Error →
-  Active`. If the failure condition still exists the agent will
-  fail again and land back in `Error`, surfacing the problem in
-  logs/UI rather than silently disappearing.
-
-- **Manual agent execution bypassed event-trigger dedup**
-  (`crates/neomind-agent/src/ai_agent/executor/event_trigger.rs` +
-  `mod.rs`). `execute_agent_now` ran without registering in
-  `recent_executions`, so the next real event for any of the
-  event-type agent's bound sources could fire within the 60 s
-  cooldown window — yielding a duplicate execution (duplicate
-  journal entry, potential duplicate notification, wasted LLM
-  tokens). Added `mark_manual_execution` which pre-inserts a dedup
-  entry for every candidate source derived from `event_filter` /
-  resource bindings, so any incoming event for one of those sources
-  is properly cooled. No-op for non-event agents.
-
-- **Unbounded `knowledge_files` growth**
-  (`crates/neomind-agent/src/ai_agent/executor/memory.rs` +
-  `mod.rs`). The MemoryTool could append arbitrary new knowledge
-  files; `AgentMemory.knowledge_files` had no FIFO cap, so a
-  long-lived or runaway agent accumulated dozens of files. Since
-  `prefetch_knowledge_files` injects ALL file contents into the
-  system prompt on every execution, this silently bloated both
-  storage and the LLM context. Added `MAX_KNOWLEDGE_FILES = 20`
-  with the same FIFO trim pattern used by `journal.records`
-  (max 10) and `user_messages` (max 50). Dropped file names are
-  logged.
-
-- **Workspace clippy cleanup** (commit `cbdfd960`). Six clippy
-  warnings fixed across five crates: redundant `.ok()` on
-  `try_recv()` match in `neomind-core/eventbus.rs`; `contains(&x)`
-  instead of `.iter().any(|s| *s == x)` in `neomind-devices/mqtt.rs`;
-  collapsed nested `if` into outer condition chain in
-  `neomind-api/rules.rs`; doc-list indent fix in
-  `neomind-storage/timeseries.rs`; and
-  `#[allow(clippy::too_many_arguments)]` on
-  `deliver_with_retry` in `neomind-data-push/scheduler.rs` (8 args,
-  refactor cost > cleanup value). `cargo clippy --workspace` now
-  warning-free; 1248 lib tests still pass.
+- **Marketplace component reinstall + update detection** —
+  `GET /api/frontend-components/updates`, refresh button re-downloads
+  marketplace bundles, update badge on newer versions.
+- **Mobile dashboard masonry** — desktop 12-col grid stacks
+  single-column on phone viewports.
+- **Onboarding docs strip** — pinned BookOpen + 3 wiki links in the
+  setup step.
+- **Discord community + release-notify Action** — README badge +
+  `release-notify.yml` posts to `#announcements` on release.
 
 ### Upgrade notes
 
-- **DashScope users**: no action required. Existing `thinking_enabled`
-  overrides in your backend config now take effect on qwen3.x-plus
-  cloud backends (previously silently ignored). Default tool-loop
-  streaming kicks in automatically when the active backend reports
-  `thinking_display = true`.
-- **External MQTT broker users**: no action required. The two
-  `$SYS/...` filters are appended to the subscribe list at adapter
-  creation time; user config is untouched. On brokers that don't
-  expose EMQX-style `$SYS/brokers/+/clients/+/{connected,disconnected}`
-  topics (Mosquitto, RabbitMQ-MQTT, etc.) the subscriptions simply
-  never match — no errors, no behavioral change.
-- **Operators with agents in Error state**: on first startup after
-  this release, every agent previously in `Error` status is
-  automatically reactivated (`Error → Active`) and rescheduled. If
-  the underlying failure condition still exists the agent will land
-  back in `Error` and stay there until the condition is fixed, but
-  it will no longer be silently dropped from the scheduler across
-  restarts. Check the server logs for `Reactivating agents in Error
-  status at startup` to see how many were reactivated.
-- **Knowledge file trim**: agents with more than 20 knowledge files
-  will have the oldest entries dropped FIFO on the next execution.
-  The actual markdown files on disk under `data/memory/agent-{id}/`
-  are NOT auto-deleted by the trim (only the in-memory index is
-  bounded) — operators who want to reclaim disk space should remove
-  the orphaned files manually after upgrading.
+- **External broker users**: no action required; `$SYS` filters are
+  appended automatically.
+- **Agents in Error state**: first startup after upgrade sweeps
+  `Error → Active` and reschedules. Check logs for "Reactivating
+  agents in Error status at startup".
+- **Knowledge file trim**: agents with >20 knowledge files drop oldest
+  FIFO (in-memory index only; orphaned markdown files on disk are NOT
+  auto-deleted).
+
+---
 
 ## [0.8.25] - 2026-06-26
 
