@@ -886,5 +886,53 @@ mod tests {
         let merged = MemoryTool::merge_custom_content(existing, dup, &dedup);
         assert_eq!(merged.trim(), existing.trim(), "near-duplicate block must be dropped");
     }
+
+    #[tokio::test]
+    async fn test_add_then_read_user_roundtrip() {
+        // Reproduce eval case tools-memory-read: add to user, then read must
+        // observe the just-written content. Previously read returned the empty
+        // template even though add reported a successful cumulative length.
+        let temp = tempfile::TempDir::new().unwrap();
+        let store = neomind_storage::MarkdownMemoryStore::new(temp.path());
+        store.init().unwrap();
+        let store = std::sync::Arc::new(tokio::sync::RwLock::new(store));
+        let tool = MemoryTool::new(store.clone());
+
+        // 1. Baseline read: returns init() template (34 chars)
+        let r = tool
+            .execute(serde_json::json!({"action":"read","target":"user"}))
+            .await
+            .unwrap();
+        let body0 = &r.data;
+        let chars0 = body0["chars"].as_u64().unwrap();
+        assert!(chars0 < 60, "baseline USER.md should be the template, got {} chars: {:?}", chars0, body0["content"]);
+
+        // 2. Add new content
+        let a = tool
+            .execute(serde_json::json!({
+                "action": "add",
+                "target": "user",
+                "content": "## 传感器告警阈值偏好\n\n- 仓库 B 区 3 号货架：摄氏 35 度告警（非默认 40°C）",
+            }))
+            .await
+            .unwrap();
+        let msg = a.data["message"].as_str().unwrap_or("");
+        assert!(msg.starts_with("Added to user"), "add must succeed: {}", msg);
+
+        // 3. Read MUST observe the new content
+        let r2 = tool
+            .execute(serde_json::json!({"action":"read","target":"user"}))
+            .await
+            .unwrap();
+        let body2 = &r2.data;
+        let content2 = body2["content"].as_str().unwrap_or("");
+        let chars2 = body2["chars"].as_u64().unwrap_or(0);
+        assert!(
+            content2.contains("35") && content2.contains("仓库"),
+            "read after add must contain the new content; got {} chars: {:?}",
+            chars2,
+            content2
+        );
+    }
 }
 

@@ -98,7 +98,16 @@ pub(crate) fn is_tool_cacheable(name: &str, arguments: &Value) -> bool {
         return is_read_only_cli_command(cmd);
     }
 
-    // Other tools (skill, memory, web_fetch, vision, ...) are read-only by default.
+    // The `memory` tool is NEVER cacheable. Its files change via `add`/`replace`/
+    // `remove`/`create` actions within the same session, plus background summarization
+    // and user edits. Caching `read`/`list` returns stale templates after writes —
+    // observed in eval as read returning the 34-char template forever after the first
+    // pre-write read, while `list` (different cache key) saw fresh content.
+    if resolved == "memory" {
+        return false;
+    }
+
+    // Other tools (skill, web_fetch, vision, ...) are read-only by default.
     true
 }
 
@@ -192,7 +201,22 @@ mod tests {
 
         // Non-shell tools are cacheable
         assert!(is_tool_cacheable("skill", &serde_json::json!({})));
-        assert!(is_tool_cacheable("memory", &serde_json::json!({})));
+
+        // Memory tool is NEVER cacheable — files mutate via add/replace/remove
+        // and background summarization. Caching read returned stale templates
+        // after writes (eval regression: tools-memory-read zh).
+        assert!(!is_tool_cacheable(
+            "memory",
+            &serde_json::json!({"action": "read", "target": "user"})
+        ));
+        assert!(!is_tool_cacheable(
+            "memory",
+            &serde_json::json!({"action": "list"})
+        ));
+        assert!(!is_tool_cacheable(
+            "memory",
+            &serde_json::json!({"action": "add", "target": "user", "content": "x"})
+        ));
     }
 
     #[test]

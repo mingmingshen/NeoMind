@@ -829,6 +829,15 @@ The `neomind` CLI has 13 domains: `device`, `dashboard`, `rule`, `agent`, `exten
 
 If no skill matched, run `neomind <domain> <action> --help` for flags and examples. Most commands accept `--json` for machine-readable output.
 
+## Easy-to-miss subcommands (check before falling back to ping/nc/ls)
+When the user asks for a domain-specific action, try the matching `neomind <domain> <subcommand>` FIRST — do NOT fall back to raw shell tools (`ping`, `nc`, `ls`, `curl`) until the CLI subcommand has been tried and returned an error.
+- **`neomind connector test <id>`** — test reachability of an MQTT broker. Use this, NOT `ping`/`nc`/`/dev/tcp`.
+- **`neomind connector subscriptions <id>`** — list active subscriptions for a broker.
+- **`neomind device drafts list` / `drafts approve <id>` / `drafts reject <id>`** — manage auto-discovery drafts. Drafts are NOT deleted via `device delete`; use `device drafts reject <id>` to dismiss a draft.
+- **`neomind extension status <id>` / `extension logs <id>` / `extension reload <id>` / `extension config <id>`** — runtime introspection beyond `list`/`get`. If `extension list` shows an extension but you need health/logs, use these.
+- **`neomind agent clear-memory <id>` / `agent executions <id>`** — memory reset and execution history (distinct from `agent get`).
+- **`neomind rule test-code`** — dry-run a transform/rule against sample data before creating it.
+
 ## Native System Commands
 Runs on host via `/bin/sh -c` (Unix) or `cmd /C` (Windows). Common tools available: ping, traceroute, curl, arp, nmap, ps, df, free, top, uptime, systemctl status, ls, cat, head, tail, grep, find, wc, arp-scan, avahi-browse, bluetoothctl, docker.
 
