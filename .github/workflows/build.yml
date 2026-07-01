@@ -358,15 +358,15 @@ jobs:
             server-
 
       - name: Cache cross-compilation tool
-        if: matrix.os == 'linux'
+        if: matrix.os == 'linux' && matrix.arch != 'amd64'
         uses: actions/cache@v4
         id: cache-cross
         with:
           path: ~/.cargo/bin/cross
-          key: cross-${{ runner.os }}-v1
+          key: cross-${{ matrix.target }}-${{ runner.os }}-v2
 
       - name: Install cross-compilation tool
-        if: matrix.os == 'linux' && steps.cache-cross.outputs.cache-hit != 'true'
+        if: matrix.os == 'linux' && matrix.arch != 'amd64' && steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       # ========== 构建纯 API 服务器（无前端嵌入）==========
@@ -376,9 +376,16 @@ jobs:
         run: |
           set -e
 
-          # Build server binary (no static feature - pure API server)
-          cross build --release -p neomind-cli --target ${{ matrix.target }}
-          cross build --release -p neomind-extension-runner --target ${{ matrix.target }}
+          # Native x86_64 build uses plain cargo (target == host) to avoid the
+          # `cross` binary's own glibc dependency leaking into the toolchain.
+          # aarch64 is cross-compiled from x86_64 host via `cross`.
+          if [[ "${{ matrix.arch }}" == "amd64" ]]; then
+            cargo build --release -p neomind-cli --target ${{ matrix.target }}
+            cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
+          else
+            cross build --release -p neomind-cli --target ${{ matrix.target }}
+            cross build --release -p neomind-extension-runner --target ${{ matrix.target }}
+          fi
 
           # Verify binaries exist
           ls -la target/${{ matrix.target }}/release/neomind target/${{ matrix.target }}/release/neomind-extension-runner
