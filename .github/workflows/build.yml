@@ -345,6 +345,10 @@ jobs:
         run: rustup target add aarch64-apple-darwin
 
       # 更激进的 Rust 缓存策略
+      # Key includes matrix.runner so ubuntu-22.04 and ubuntu-latest caches stay
+      # separate — aws_lc_sys / ring build C code whose symbols depend on the
+      # host glibc/toolchain, and reusing a cache built on a newer image breaks
+      # linking (e.g. undefined __isoc23_sscanf when 24.04 artifacts land on 22.04).
       - name: Setup Rust cache
         uses: actions/cache@v4
         with:
@@ -352,10 +356,9 @@ jobs:
             ~/.cargo/registry/
             ~/.cargo/git/
             target/
-          key: server-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          key: server-v2-${{ matrix.runner }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            server-${{ matrix.target }}-
-            server-
+            server-v2-${{ matrix.runner }}-${{ matrix.target }}-
 
       - name: Cache cross-compilation tool
         if: matrix.os == 'linux' && matrix.arch != 'amd64'
