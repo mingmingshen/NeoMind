@@ -31,10 +31,14 @@ impl ToolResultCache {
     }
 
     pub(crate) fn insert(&mut self, key: String, value: crate::toolkit::ToolOutput) {
-        // Enforce size limit - remove oldest entry if at capacity
+        // Enforce size limit - evict the entry with the oldest timestamp
         if self.entries.len() >= self.max_entries {
-            // Remove the oldest entry (first key in iteration)
-            if let Some(oldest_key) = self.entries.keys().next().cloned() {
+            if let Some(oldest_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (_, ts))| *ts)
+                .map(|(k, _)| k.clone())
+            {
                 self.entries.remove(&oldest_key);
             }
         }
@@ -45,10 +49,17 @@ impl ToolResultCache {
         self.entries
             .retain(|_, (_, timestamp)| timestamp.elapsed() < self.ttl);
 
-        // Also enforce size limit after cleanup
+        // Also enforce size limit after cleanup — evict oldest by timestamp
         while self.entries.len() > self.max_entries {
-            if let Some(oldest_key) = self.entries.keys().next().cloned() {
+            if let Some(oldest_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (_, ts))| *ts)
+                .map(|(k, _)| k.clone())
+            {
                 self.entries.remove(&oldest_key);
+            } else {
+                break;
             }
         }
     }

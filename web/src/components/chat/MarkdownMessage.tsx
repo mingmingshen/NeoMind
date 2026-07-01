@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
 import { cn } from "@/lib/utils"
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { textBody, textCode, textHeading } from "@/design-system/tokens/typography"
 
 interface MarkdownMessageProps {
@@ -25,6 +26,42 @@ function dedupeRepeatedContent(content: string): string {
   return content
 }
 
+// Static component overrides — hoisted to module scope to avoid re-allocating
+// a new object (and new closure functions) on every render / streaming chunk.
+const MARKDOWN_COMPONENTS: Components = {
+  pre: ({ node, className, children, ...props }) => (
+    <pre className={cn("overflow-x-auto", className)} {...(props as any)}>
+      {children}
+    </pre>
+  ),
+  code: ({ node, className, children, ...props }) => {
+    const isBlock = !!className
+    if (!isBlock) {
+      return (
+        <code className={cn("bg-muted px-1 py-0.5 rounded", textCode, "font-mono text-foreground", className)} {...(props as any)}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <code className={cn("text-foreground", className)} {...(props as any)}>
+        {children}
+      </code>
+    )
+  },
+  a: ({ node, className, children, href, ...props }) => (
+    <a
+      className={cn("text-primary hover:underline", className)}
+      href={href as string}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...(props as any)}
+    >
+      {children}
+    </a>
+  ),
+}
+
 /**
  * Markdown message renderer with support for:
  * - GitHub Flavored Markdown (GFM) via remark-gfm
@@ -32,46 +69,14 @@ function dedupeRepeatedContent(content: string): string {
  * - Tables, lists, links, images
  * - Styled for chat interface
  * - Auto-scrolls during streaming, fully expands after
+ *
+ * Memoized: only re-renders when content/className/variant change.
+ * Component overrides are module-scope (no per-render allocation).
+ * Wrapped in ErrorBoundary so malformed markdown can't crash the chat.
  */
-export function MarkdownMessage({ content, className, variant = 'assistant' }: MarkdownMessageProps) {
+export const MarkdownMessage = React.memo<MarkdownMessageProps>(
+  ({ content, className, variant = 'assistant' }) => {
   const displayContent = dedupeRepeatedContent(content)
-
-  const components: Components = {
-    // Custom code block rendering
-    pre: ({ node, className, children, ...props }) => (
-      <pre className={cn("overflow-x-auto", className)} {...(props as any)}>
-        {children}
-      </pre>
-    ),
-    // Custom inline code
-    code: ({ node, className, children, ...props }) => {
-      const isBlock = !!className
-      if (!isBlock) {
-        return (
-          <code className={cn("bg-muted px-1 py-0.5 rounded", textCode, "font-mono text-foreground", className)} {...(props as any)}>
-            {children}
-          </code>
-        )
-      }
-      return (
-        <code className={cn("text-foreground", className)} {...(props as any)}>
-          {children}
-        </code>
-      )
-    },
-    // Custom link rendering
-    a: ({ node, className, children, href, ...props }) => (
-      <a
-        className={cn("text-primary hover:underline", className)}
-        href={href as string}
-        target="_blank"
-        rel="noopener noreferrer"
-        {...(props as any)}
-      >
-        {children}
-      </a>
-    ),
-  }
 
   return (
     <div className={cn("relative", className)}>
@@ -104,10 +109,19 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
         )}
         data-variant={variant}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-          {displayContent}
-        </ReactMarkdown>
+        <ErrorBoundary resetKey={displayContent}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+            {displayContent}
+          </ReactMarkdown>
+        </ErrorBoundary>
       </div>
     </div>
   )
-}
+},
+  (prev, next) =>
+    prev.content === next.content &&
+    prev.className === next.className &&
+    prev.variant === next.variant
+)
+
+MarkdownMessage.displayName = "MarkdownMessage"
