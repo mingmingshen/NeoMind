@@ -40,7 +40,7 @@
   "applies": ["tool_accuracy", "task_completion", "response_quality", "language_adherence"],
   "expectations": {
     "per_turn": [
-      "Turn 1: Agent calls `neomind agent execute daily-report` (or POST /api/agents/daily-report/execute)"
+      "Turn 1: Agent calls `neomind agent invoke daily-report` (or POST /api/agents/daily-report/execute)"
     ],
     "overall": "Should trigger execution and report the result; agent should not just say 'cannot do this'"
   },

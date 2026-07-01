@@ -433,11 +433,9 @@ impl AgentScheduler {
                     let semaphore_clone = semaphore.clone();
                     let backend_sems = backend_semaphores.clone();
 
-                    // Mark as running
-                    running_executions_clone
-                        .write()
-                        .await
-                        .insert(agent_id.clone());
+                    // Note: agent_id was already inserted into running_executions
+                    // during the reservation phase (line 411) under the scheduler lock.
+                    // RunningSlotGuard below handles cleanup on task exit.
 
                     // Capture agent_id for the handle map BEFORE the value is
                     // moved into the spawn closure below.

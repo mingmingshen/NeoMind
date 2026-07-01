@@ -514,8 +514,8 @@ pub async fn register_extension_handler(
         }
     }
 
-    // Note: Extensions are always active once registered in the new system
-    // The auto_start flag is kept for API compatibility but not used
+    // Rebuild tool registry so the new extension's tools are visible to the LLM
+    state.refresh_extension_tools().await;
 
     ok(serde_json::json!({
         "message": "Extension registered successfully",
@@ -2370,6 +2370,9 @@ pub async fn install_marketplace_extension_handler(
                             }
                         }
 
+                        // Rebuild tool registry so the new extension's tools are visible to the LLM
+                        state.refresh_extension_tools().await;
+
                         ok(MarketplaceInstallResponse {
                             success: true,
                             extension_id: ext_id,
@@ -2601,6 +2604,9 @@ pub async fn install_marketplace_extension_handler(
                 }
 
                 tracing::info!("Extension {} installed successfully", req.id);
+
+                // Rebuild tool registry so the new extension's tools are visible to the LLM
+                state.refresh_extension_tools().await;
 
                 ok(MarketplaceInstallResponse {
                     success: true,
@@ -2894,6 +2900,9 @@ pub async fn reload_extension_handler(
             }
         }
     }
+
+    // Rebuild tool registry: reload may change the command set
+    state.refresh_extension_tools().await;
 
     ok(json!({
         "extension_id": id,
@@ -3664,6 +3673,9 @@ pub async fn upload_extension_package_handler(
         }
     }
 
+    // Rebuild tool registry so the new extension's tools are visible to the LLM
+    state.refresh_extension_tools().await;
+
     // Build response
     ok(serde_json::json!({
         "message": "Extension package installed successfully",
@@ -3797,6 +3809,9 @@ pub async fn uninstall_extension_handler(
 
     // Clean up extension metrics
     cleanup_extension_metrics(&state, &id).await;
+
+    // Rebuild tool registry to remove the uninstalled extension's tools
+    state.refresh_extension_tools().await;
 
     ok(serde_json::json!({
         "message": "Extension uninstalled completely",
@@ -3982,6 +3997,9 @@ pub async fn upload_extension_file_handler(
             tracing::warn!("Failed to save extension to storage: {}", e);
         }
     }
+
+    // Rebuild tool registry so the new extension's tools are visible to the LLM
+    state.refresh_extension_tools().await;
 
     // Build response
     ok(serde_json::json!({

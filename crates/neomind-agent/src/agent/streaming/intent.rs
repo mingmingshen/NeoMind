@@ -34,7 +34,6 @@ const ACTION_VERBS: &[&str] = &[
     "添加",
     "替换",
     "绑定",
-    "检查",
     "巡检",
     // English
     "create",

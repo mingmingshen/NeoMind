@@ -12,7 +12,7 @@
   "applies": ["tool_accuracy", "task_completion", "response_quality", "language_adherence"],
   "expectations": {
     "per_turn": [
-      "Turn 1: Agent calls `neomind message create-channel` with webhook config"
+      "Turn 1: Agent calls `neomind message channel-create` with webhook config"
     ],
     "overall": "Channel should be created"
   },

@@ -12,7 +12,7 @@
   "applies": ["tool_accuracy", "task_completion", "response_quality", "language_adherence"],
   "expectations": {
     "per_turn": [
-      "Turn 1: Agent 调用 `neomind message create-channel`（或 channel create）"
+      "Turn 1: Agent 调用 `neomind message channel-create`（或 channel create）"
     ],
     "overall": "通道应被创建"
   },

@@ -812,18 +812,18 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 - On command failure, check the `suggestion` field in the JSON output for recovery hints.
 
 ## NeoMind CLI Domain Syntax
-The `neomind` CLI has 13 domains: `device`, `dashboard`, `rule`, `agent`, `extension`, `widget`, `transform`, `llm`, `message`, `connector`, `push`, `settings`, `system`.
+The `neomind` CLI has 14 domains: `device`, `dashboard`, `rule`, `agent`, `extension`, `widget`, `transform`, `llm`, `message`, `connector`, `push`, `settings`, `system`, `api-key`.
 
-**Domain-specific command syntax, JSON formats, and copy-paste templates live in skill docs** — use the `skill` tool (`skill(action="search", query="<domain>")`) to load the matching guide, or run `neomind <domain> <action> --help` for flags and examples. Most commands accept `--json` for machine-readable output.
+**Domain-specific command syntax, JSON formats, and copy-paste templates live in skill docs** — use the `skill` tool (`skill(action="search", query="<domain>")`) to load the matching guide, or run `neomind <domain> <action> --help` for flags and examples. All commands return JSON by default; do NOT pass `--json` as an output flag (only `rule create/update --json '<BODY>'` uses `--json` as a content-body argument).
 
 ## Easy-to-miss subcommands (check before falling back to ping/nc/ls)
 When the user asks for a domain-specific action, try the matching `neomind <domain> <subcommand>` FIRST — do NOT fall back to raw shell tools (`ping`, `nc`, `ls`, `curl`) until the CLI subcommand has been tried and returned an error.
 - **`neomind connector test <id>`** — test reachability of an MQTT broker. Use this, NOT `ping`/`nc`/`/dev/tcp`.
-- **`neomind connector subscriptions <id>`** — list active subscriptions for a broker.
+- **`neomind connector subscriptions`** — list active MQTT subscriptions across all brokers (takes no id).
 - **`neomind device drafts list` / `drafts approve <id>` / `drafts reject <id>`** — manage auto-discovery drafts. Drafts are NOT deleted via `device delete`; use `device drafts reject <id>` to dismiss a draft.
 - **`neomind extension status <id>` / `extension logs <id>` / `extension reload <id>` / `extension config <id>`** — runtime introspection beyond `list`/`get`. If `extension list` shows an extension but you need health/logs, use these.
 - **`neomind agent clear-memory <id>` / `agent executions <id>`** — memory reset and execution history (distinct from `agent get`).
-- **`neomind rule test-code`** — dry-run a transform/rule against sample data before creating it.
+- **`neomind transform test-code`** — dry-run transform JavaScript against sample input before saving. For rules, use `neomind rule test <id> --input '<JSON>'` (what-if evaluation against existing rule).
 
 ## Native System Commands
 Runs on host via `/bin/sh -c` (Unix) or `cmd /C` (Windows). Common tools available: ping, traceroute, curl, arp, nmap, ps, df, free, top, uptime, systemctl status, ls, cat, head, tail, grep, find, wc, arp-scan, avahi-browse, bluetoothctl, docker.

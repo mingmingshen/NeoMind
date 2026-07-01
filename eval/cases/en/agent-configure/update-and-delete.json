@@ -25,7 +25,7 @@
   "applies": ["tool_accuracy", "task_completion", "context_retention", "language_adherence"],
   "expectations": {
     "per_turn": [
-      "Turn 1: Agent resolves demo-agent's id then runs `neomind agent update <id> --user-prompt 'monitor temperature and alert'` (or PUT /api/agents/<id>)",
+      "Turn 1: Agent resolves demo-agent's id then runs `neomind agent update <id> --prompt 'monitor temperature and alert'` (or PUT /api/agents/<id>)",
       "Turn 2: Agent runs `neomind agent delete <id>` (or DELETE /api/agents/<id>)"
     ],
     "overall": "Both turns must reuse the same id"

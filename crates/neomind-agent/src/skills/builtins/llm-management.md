@@ -83,7 +83,7 @@ A backend can process images only if its `capabilities.multimodal` is `true`. Ca
 ### Checking Multimodal Before Creating Vision Agents
 
 ```bash
-neomind llm list --json
+neomind llm list
 # Look at each backend's capabilities object:
 #   "multimodal": true|false
 #   "multimodal_source": "user_override" | "runtime_api" | "registry" | "heuristic"
@@ -153,7 +153,7 @@ If a thinking model causes gateway timeouts on long responses, consider:
 
 | Command | Purpose |
 |---------|---------|
-| `neomind llm list [--json]` | List all backends with capabilities |
+| `neomind llm list` | List all backends with capabilities |
 | `neomind llm get <ID>` | Full backend config details |
 | `neomind llm models [--endpoint URL]` | List models from Ollama server |
 | `neomind llm create --name N --type T --endpoint URL --model M [--api-key K] [--temperature 0.7]` | Register backend |

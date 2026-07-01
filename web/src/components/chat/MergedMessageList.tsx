@@ -124,8 +124,8 @@ export function MergedMessageList({
 
           {/* Streaming message — always rendered outside the virtualizer */}
           {isStreaming && (
-            <div className="flex gap-3 justify-start">
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">
+            <div className="flex gap-3 items-start justify-start">
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-accent-orange-bg flex items-center justify-center">
                 <Bot className="h-4.5 w-4.5 text-accent-orange" />
               </div>
               <div className="flex-1 min-w-0">

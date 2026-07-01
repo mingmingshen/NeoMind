@@ -23,10 +23,12 @@ export const MessageItem = React.memo<MessageItemProps>(
 
     return (
       <div
-        className={`flex gap-3 animate-fade-in-up ${isAssistant ? "justify-start" : "justify-end"}`}
+        className={`flex gap-3 items-start animate-fade-in-up ${
+          isAssistant ? "justify-start" : "justify-end"
+        }`}
       >
         {isAssistant && (
-          <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-accent-orange-bg flex items-center justify-center">
             <Bot className="h-4.5 w-4.5 text-accent-orange" />
           </div>
         )}
