@@ -406,12 +406,16 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom on messages change or during streaming.
-  // Uses instant scroll after stream ends to prevent bounce during
-  // the streaming→saved message transition.
+  // rAF coalesces the burst of state changes at stream end (messages +
+  // streamingContent clear + isStreaming flip) into a single scroll call,
+  // preventing the visual "bounce" from 2-3 rapid scrollIntoView invocations.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: streamState.isStreaming ? "smooth" : "instant"
+    const raf = requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: streamState.isStreaming ? "smooth" : "instant",
+      })
     })
+    return () => cancelAnimationFrame(raf)
   }, [messages, streamState.streamingContent, streamState.isStreaming])
 
   // Sync isStreaming ref with state
