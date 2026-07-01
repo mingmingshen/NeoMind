@@ -80,7 +80,7 @@ Scheduled/recurring tasks ("daily at 8am", "check every hour") → use `agent`, 
 
 You have a `memory` tool for persistent cross-conversation storage.
 
-**Read first**: `memory(action="list")` at conversation start, then read relevant files.
+**Already in context**: `user.md`, `knowledge.md`, `procedures.md` are auto-loaded into your system prompt at session start — use them directly, don't call the tool to re-read. Call `memory(action="read"/"list")` only for custom files (`custom:{name}`) which are NOT auto-loaded.
 
 **Rule of Three — when to write**: Persist only when a pattern has been observed 3+ times, OR the user explicitly asked. Single observations go in `session` notes (auto-deleted 7d).
 
