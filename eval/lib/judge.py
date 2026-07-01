@@ -39,6 +39,17 @@ case's `applies[]` list from 0-10 using these anchors:
 If `applies[]` is a subset, only score those dimensions. If `suspected_fallback`
 is true, the agent likely never called the LLM — cap all scores at 2.
 
+**CRITICAL — read ALL fields in tool results before scoring:**
+Tool results are JSON objects that often contain MULTIPLE data fields. For
+example, a `neomind widget list` result has both `total` (count of installed
+widgets) AND `builtin_types` (a catalogue of built-in widget types). A
+`total: 0` in one field does NOT mean the tool returned nothing — you MUST
+scan every field in the result (including ones further down like
+`builtin_types`, `builtin_count`, `summary`, `meta`, etc.) before deciding
+whether the agent's response matches the data. Do NOT claim the agent
+"hallucinated" or "contradicted the tool output" unless you have checked
+every field in the truncated result shown to you.
+
 Return STRICT JSON only, no prose, matching this exact shape:
 {
   "scores": {"tool_accuracy": 9, "task_completion": 10, ...},
@@ -81,7 +92,7 @@ def _format_case_record(rec: dict) -> str:
                 rnd = tc.get("round")
                 rnd_tag = f" round={rnd}" if rnd else ""
                 args_s = _truncate_for_judge(args, 200)
-                res_s = _truncate_for_judge(result, 400)
+                res_s = _truncate_for_judge(result, 4000)
                 out.append(
                     f"  [{j}] {name}{rnd_tag} args={args_s} result={res_s}"
                 )
