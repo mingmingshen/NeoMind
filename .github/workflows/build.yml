@@ -319,7 +319,7 @@ jobs:
           - os: linux
             target: x86_64-unknown-linux-gnu
             arch: amd64
-            runner: ubuntu-latest
+            runner: ubuntu-22.04  # pin to oldest supported LTS for glibc 2.35 baseline (ubuntu-latest=24.04 breaks 22.04 hosts)
           - os: linux
             target: aarch64-unknown-linux-gnu
             arch: arm64
