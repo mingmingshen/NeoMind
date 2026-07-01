@@ -122,10 +122,13 @@ pub async fn llm_generate_handler(
         }
     };
 
-    // Build the input with system prompt (includes language policy to respond in user's language)
+    // Build the input with system prompt (includes language policy to respond in user's language).
+    // Canonical copy lives in `crates/neomind-agent/src/prompts/system_prompt.md` (Language Policy
+    // section) — keep this in sync if that policy text changes.
+    const LANGUAGE_POLICY: &str = "## Language Policy (Highest Priority)\n\nYou MUST respond in the EXACT SAME language as the user's message.\n- User writes in English → respond in English\n- User writes in Chinese → respond in Chinese\n- Never mix languages in a single response\n- When uncertain, default to English";
     let system_prompt = format!(
         "You are a helpful assistant.\n\n{}",
-        neomind_agent::prompts::LANGUAGE_POLICY
+        LANGUAGE_POLICY
     );
     let input = LlmInput {
         messages: vec![Message::system(system_prompt), Message::user(&req.prompt)],

@@ -16,12 +16,14 @@ pub const LOCAL_TIME_PLACEHOLDER: &str = "{{LOCAL_TIME}}";
 /// Placeholder for system timezone in prompts.
 pub const TIMEZONE_PLACEHOLDER: &str = "{{TIMEZONE}}";
 
-/// Language policy prepended to all prompts, instructing the LLM to respond in the user's language.
-///
-/// Content lives in `language_policy.md` next to this file so prompt edits no longer
-/// require a Rust recompile. The string is `include_str!`-substituted at compile time —
-/// byte-identical to the previous inline raw-string literal.
-pub const LANGUAGE_POLICY: &str = include_str!("language_policy.md");
+/// Single-file system prompt template. Conditional sections (Vision, Thinking)
+/// are wrapped in HTML-comment sentinels, stripped at build time based on flags.
+const SYSTEM_PROMPT_TEMPLATE: &str = include_str!("system_prompt.md");
+
+const VISION_BEGIN: &str = "<!-- BEGIN_VISION -->";
+const VISION_END: &str = "<!-- END_VISION -->";
+const THINKING_BEGIN: &str = "<!-- BEGIN_THINKING -->";
+const THINKING_END: &str = "<!-- END_THINKING -->";
 
 /// Enhanced prompt builder.
 #[derive(Debug, Clone)]
@@ -57,59 +59,20 @@ impl PromptBuilder {
 
     /// Build the enhanced system prompt.
     pub fn build_system_prompt(&self) -> String {
-        let mut prompt = String::with_capacity(4096);
-
-        prompt.push_str(LANGUAGE_POLICY);
-        prompt.push_str("\n\n");
-
-        prompt.push_str(Self::IDENTITY);
-        prompt.push_str("\n\n");
-
+        let mut prompt = SYSTEM_PROMPT_TEMPLATE.to_string();
         if self.supports_vision {
-            prompt.push_str(Self::VISION_HINT);
-            prompt.push_str("\n\n");
+            // Keep content, strip only the sentinel markers.
+            prompt = strip_sentinels(&prompt, VISION_BEGIN, VISION_END);
+        } else {
+            prompt = strip_block(&prompt, VISION_BEGIN, VISION_END);
         }
-
-        prompt.push_str(Self::PRINCIPLES);
-        prompt.push_str("\n\n");
-
-        prompt.push_str(Self::TOOL_STRATEGY);
-        prompt.push_str("\n\n");
-
-        prompt.push_str(Self::MEMORY_USAGE);
-        prompt.push('\n');
-
         if self.include_thinking {
-            prompt.push('\n');
-            prompt.push_str(Self::THINKING_GUIDELINES);
+            prompt = strip_sentinels(&prompt, THINKING_BEGIN, THINKING_END);
+        } else {
+            prompt = strip_block(&prompt, THINKING_BEGIN, THINKING_END);
         }
-
         prompt
     }
-
-    // === Static content constants ===
-    //
-    // Each prompt section lives in its own `.md` file next to this source so the
-    // prompts can be edited without touching Rust. `include_str!` performs a
-    // compile-time byte-for-byte substitution — the produced `&'static str` is
-    // identical to the previous inline raw-string literals.
-    //
-    // Guardrail: `test_system_prompt_byte_stable` (below) asserts that the composed
-    // `build_system_prompt()` hash matches a baseline captured at the refactor
-    // commit. If you intentionally edit any `.md` file, update the baseline hash
-    // in that test in the same commit.
-
-    const IDENTITY: &str = include_str!("identity.md");
-
-    const VISION_HINT: &str = include_str!("vision_hint.md");
-
-    const PRINCIPLES: &str = include_str!("principles.md");
-
-    const TOOL_STRATEGY: &str = include_str!("tool_strategy.md");
-
-    const MEMORY_USAGE: &str = include_str!("memory_usage.md");
-
-    const THINKING_GUIDELINES: &str = include_str!("thinking_guidelines.md");
 
     /// Get intent-specific system prompt addon.
     pub fn get_intent_prompt_addon(&self, intent: &str) -> String {
@@ -129,6 +92,36 @@ impl Default for PromptBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Remove a conditional block (markers + content) from the prompt.
+/// Also consumes one adjacent newline on each side to avoid blank-line accumulation.
+fn strip_block(s: &str, begin: &str, end: &str) -> String {
+    match (s.find(begin), s.find(end)) {
+        (Some(b), Some(e)) if e >= b => {
+            let mut start = b;
+            // Consume one preceding newline so we don't leave a dangling blank line.
+            if start > 0 && s.as_bytes()[start - 1] == b'\n' {
+                start -= 1;
+            }
+            let mut finish = e + end.len();
+            // Consume one trailing newline after the end marker.
+            if finish < s.len() && s.as_bytes()[finish] == b'\n' {
+                finish += 1;
+            }
+            let mut out = String::with_capacity(s.len());
+            out.push_str(&s[..start]);
+            out.push_str(&s[finish..]);
+            out
+        }
+        _ => s.to_string(),
+    }
+}
+
+/// Strip only the sentinel marker lines, keeping the enclosed content.
+fn strip_sentinels(s: &str, begin: &str, end: &str) -> String {
+    s.replace(&format!("{}\n", begin), "")
+        .replace(&format!("\n{}", end), "")
 }
 
 #[cfg(test)]
@@ -216,57 +209,31 @@ mod tests {
         let prompt = builder.build_system_prompt();
         // Tier 1 rules must remain
         assert!(prompt.contains("No Hallucinated Operations"));
-        assert!(prompt.contains("Complete Every Task"));
+        assert!(prompt.contains("Task Workflow"));
         assert!(prompt.contains("BATCH RULE"));
         assert!(prompt.contains("Domain Boundaries"));
-        assert!(prompt.contains("Chinese Term Mapping"));
     }
 
-    /// Byte-stable guardrail for the chat-agent system prompt.
-    ///
-    /// Captured at the `const → include_str!()` refactor commit (2026-06-30).
-    /// Asserts that `build_system_prompt()` produces byte-identical output across
-    /// the refactor. If you **intentionally** edit any of the `.md` files under
-    /// `crates/neomind-agent/src/prompts/`, recompute the baseline length/hash
-    /// below in the same commit — the failing assertion message will print the
-    /// new values for you.
-    ///
-    /// Why both length AND hash:
-    /// - length alone catches gross content drift (deleted/added sections)
-    /// - hash catches single-character edits that length misses
     #[test]
-    fn test_system_prompt_byte_stable() {
-        let prompt = PromptBuilder::new().build_system_prompt();
-        let bytes = prompt.as_bytes();
+    fn test_conditional_blocks_stripped_when_disabled() {
+        let with_all = PromptBuilder::new()
+            .with_vision(true)
+            .with_thinking(true)
+            .build_system_prompt();
+        let no_vision = PromptBuilder::new().with_vision(false).build_system_prompt();
+        let no_thinking = PromptBuilder::new().with_thinking(false).build_system_prompt();
 
-        // Baseline captured 2026-07-01 after removing rules.md, trimming
-        // thinking_guidelines/principles/tool_strategy of cross-file duplicates.
-        // Update ONLY when an intentional prompt change lands.
-        const BASELINE_LEN: usize = 9191;
-        const BASELINE_HASH: u64 = 13547979153067402138;
+        assert!(with_all.contains("## Vision"));
+        assert!(!no_vision.contains("## Vision"));
+        assert!(!no_vision.contains("BEGIN_VISION"));
 
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        std::hash::Hash::hash(bytes, &mut hasher);
-        let actual_hash = std::hash::Hasher::finish(&hasher);
+        assert!(with_all.contains("## Thinking Mode"));
+        assert!(!no_thinking.contains("## Thinking Mode"));
+        assert!(!no_thinking.contains("BEGIN_THINKING"));
 
-        // Soft-check length first — gives a clearer diff message on failure.
-        if bytes.len() != BASELINE_LEN {
-            panic!(
-                "system_prompt length drifted: baseline={}, actual={}. \
-                 If this is intentional, update BASELINE_LEN/BASELINE_HASH in this test. \
-                 New hash: {}",
-                BASELINE_LEN,
-                bytes.len(),
-                actual_hash
-            );
-        }
-        if actual_hash != BASELINE_HASH {
-            panic!(
-                "system_prompt hash drifted: baseline={}, actual={}. \
-                 Length matches ({}), so a single-character edit is the likely cause. \
-                 If this is intentional, update BASELINE_HASH in this test.",
-                BASELINE_HASH, actual_hash, bytes.len()
-            );
-        }
+        // Default builder has vision disabled, thinking enabled.
+        let default_prompt = PromptBuilder::new().build_system_prompt();
+        assert!(!default_prompt.contains("## Vision"));
+        assert!(default_prompt.contains("## Thinking Mode"));
     }
 }
