@@ -44,7 +44,7 @@ impl std::error::Error for DispatchError {}
 /// Dispatch a tokenized `neomind` command in-process.
 ///
 /// `argv` is the full argument vector including the program name as the first
-/// element (e.g. `["neomind", "dashboard", "list", "--json"]`). Data commands
+/// element (e.g. `["neomind", "dashboard", "list"]`). Data commands
 /// return their [`CliResponse`]; everything else returns
 /// [`DispatchError::NotInProcess`] so the caller can fall back to a subprocess.
 ///

@@ -227,7 +227,7 @@ neomind message channel-create --name telegram-alerts --type telegram \
   --config '{"token": "BOT_TOKEN", "chat_id": "CHAT_ID"}'
 
 # Step 2: Create a rule with a notify action — that's it!
-neomind rule create --json '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor-001:temperature","operator":"greater_than","threshold":35},"actions":[{"type":"notify","message":"Temperature {value}°C on sensor-001","severity":"critical"}]}'
+neomind rule create --body '{"name":"High Temp Alert","condition":{"condition_type":"comparison","source":"device:sensor-001:temperature","operator":"greater_than","threshold":35},"actions":[{"type":"notify","message":"Temperature {value}°C on sensor-001","severity":"critical"}]}'
 # → When temp > 35, the rule creates a critical message → delivered to telegram-alerts automatically
 ```
 

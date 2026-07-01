@@ -41,7 +41,7 @@ NEOMIND_RE = re.compile(
     neomind\s+                # the binary name
     (?P<domain>[a-z][a-z0-9_-]+)  # top-level domain, e.g. agent/rule/device
     (?:
-        \s+--?[a-z]           # flag directly after domain (e.g. `neomind device --json`)
+        \s+--?[a-z]           # flag directly after domain (e.g. `neomind device --limit`)
         |
         \s+(?P<action>[a-z][a-z0-9_-]+)  # OR an action word
         (?:

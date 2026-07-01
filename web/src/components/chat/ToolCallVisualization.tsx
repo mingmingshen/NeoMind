@@ -37,12 +37,12 @@ function formatDuration(ms?: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-/** "device list --json" → "device list" */
+/** "device list --yes" → "device list" */
 function getToolDisplayName(name: string, args?: unknown): string {
   if (!args || typeof args !== 'object') return name
   const a = args as Record<string, unknown>
 
-  // Shell tool: parse "neomind device list --json" → "device list"
+  // Shell tool: parse "neomind device list" → "device list"
   if (typeof a.command === 'string' && a.command.trim()) {
     const cmd = a.command.trim()
     if (cmd.startsWith('neomind ')) {

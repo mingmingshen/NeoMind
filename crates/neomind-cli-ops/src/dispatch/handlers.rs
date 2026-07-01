@@ -101,7 +101,7 @@ pub async fn run_llm_cmd(cmd: LlmCommand) -> Result<(CliResponse, OutputFormat)>
     };
 
     let response = match cmd {
-        LlmCommand::List { json: _ } => list_backends(&client).await?,
+        LlmCommand::List {} => list_backends(&client).await?,
         LlmCommand::Get { id } => get_backend(&client, &id).await?,
         LlmCommand::Models { endpoint: _ } => list_ollama_models(&client).await?,
         LlmCommand::Create {
@@ -160,7 +160,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Resolve output format: --json flag > NEOMIND_JSON env > Human
+    // Resolve output format: NEOMIND_JSON env var > Human default
     let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -171,25 +171,14 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
         DeviceCommand::List {
             device_type,
             status,
-            json,
         } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             (
                 list_devices(&client, device_type.as_deref(), status.as_deref()).await?,
-                output_format,
+                base_format,
             )
         }
-        DeviceCommand::Get { id, json } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
-            (get_device(&client, &id).await?, output_format)
+        DeviceCommand::Get { id } => {
+            (get_device(&client, &id).await?, base_format)
         }
         DeviceCommand::Create {
             name,
@@ -197,13 +186,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             adapter_type,
             device_id,
             config,
-            json,
         } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
@@ -219,20 +202,14 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
                     connection_config,
                 )
                 .await?,
-                output_format,
+                base_format,
             )
         }
         DeviceCommand::Update {
             id,
             name,
             config,
-            json,
         } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
@@ -240,37 +217,21 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             };
             (
                 update_device(&client, &id, name.as_deref(), connection_config).await?,
-                output_format,
+                base_format,
             )
         }
-        DeviceCommand::Delete { id, json } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
-            (delete_device(&client, &id).await?, output_format)
+        DeviceCommand::Delete { id } => {
+            (delete_device(&client, &id).await?, base_format)
         }
-        DeviceCommand::Latest { id, json } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
-            (get_device(&client, &id).await?, output_format)
+        DeviceCommand::Latest { id } => {
+            (get_device(&client, &id).await?, base_format)
         }
         DeviceCommand::History {
             id,
             metric,
             time_range,
             compress,
-            json,
         } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             (
                 get_telemetry_history(
                     &client,
@@ -280,20 +241,14 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
                     compress.unwrap_or(false),
                 )
                 .await?,
-                output_format,
+                base_format,
             )
         }
         DeviceCommand::Control {
             id,
             command,
             params,
-            json,
         } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             let params_json = if let Some(params_str) = params {
                 serde_json::from_str(&params_str)?
             } else {
@@ -301,7 +256,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             };
             (
                 control_device(&client, &id, &command, params_json).await?,
-                output_format,
+                base_format,
             )
         }
         DeviceCommand::Types { type_cmd } => {
@@ -312,13 +267,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             metric,
             value,
             timestamp,
-            json,
         } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             // Try parsing value as number, bool, then fallback to string
             let value_json = if let Ok(n) = value.parse::<f64>() {
                 serde_json::json!(n)
@@ -329,7 +278,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             };
             (
                 write_metric(&client, &id, &metric, value_json, timestamp).await?,
-                output_format,
+                base_format,
             )
         }
         DeviceCommand::WebhookUrl { id } => (get_webhook_url(&client, &id).await?, base_format),
@@ -353,13 +302,8 @@ pub async fn run_draft_cmd(cmd: DraftCommand) -> Result<(CliResponse, OutputForm
         OutputFormat::Human
     };
     let response = match cmd {
-        DraftCommand::List { json } => {
-            let output_format = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
-            (list_drafts(&client).await?, output_format)
+        DraftCommand::List {} => {
+            (list_drafts(&client).await?, base_format)
         }
         DraftCommand::Get { id } => (get_draft(&client, &id).await?, base_format),
         DraftCommand::Approve { id, name, r#type } => (
@@ -429,7 +373,7 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
+    // Get output format (controlled by NEOMIND_JSON env var)
     let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -437,35 +381,19 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
     };
 
     let (response, output_format) = match cmd {
-        DashboardCommand::List { json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        DashboardCommand::List {} => {
             let resp = list_dashboards(&client).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
-        DashboardCommand::Get { id, json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        DashboardCommand::Get { id } => {
             let resp = get_dashboard(&client, &id).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
         DashboardCommand::Create {
             name,
             description,
             layout,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
             let layout_json = if let Some(layout_str) = layout {
                 Some(serde_json::from_str(&layout_str)?)
             } else {
@@ -473,7 +401,7 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
             };
             let resp =
                 create_dashboard(&client, &name, description.as_deref(), layout_json).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
         DashboardCommand::Update {
             id,
@@ -481,13 +409,7 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
             description,
             layout,
             components,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
             let layout_json = if let Some(layout_str) = layout {
                 Some(serde_json::from_str(&layout_str)?)
             } else {
@@ -507,46 +429,29 @@ pub async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<(CliResponse, Ou
                 components_json,
             )
             .await?;
-            (resp, fmt)
+            (resp, output_format)
         }
         DashboardCommand::Delete { id } => (delete_dashboard(&client, &id).await?, output_format),
         DashboardCommand::AddComponents {
             id,
             components,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
             let comps = serde_json::from_str(&components).unwrap_or(serde_json::json!([]));
             let resp = add_components(&client, &id, comps).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
-        DashboardCommand::RemoveComponents { id, ids, json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        DashboardCommand::RemoveComponents { id, ids } => {
             let ids_val = serde_json::from_str(&ids).unwrap_or(serde_json::json!([]));
             let resp = remove_components(&client, &id, ids_val).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
         DashboardCommand::Share {
             id,
             public,
             expires,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
             let resp = share_dashboard(&client, &id, public.unwrap_or(false), expires.as_deref()).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
     };
 
@@ -565,7 +470,7 @@ pub async fn run_rule_cmd(cmd: RuleCommand) -> Result<(CliResponse, OutputFormat
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
+    // Get output format (controlled by NEOMIND_JSON env var)
     let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -575,9 +480,9 @@ pub async fn run_rule_cmd(cmd: RuleCommand) -> Result<(CliResponse, OutputFormat
     let response = match cmd {
         RuleCommand::List => list_rules(&client).await?,
         RuleCommand::Get { id } => get_rule(&client, &id).await?,
-        RuleCommand::Create { json } => create_rule(&client, &json).await?,
-        RuleCommand::Update { id, json } => {
-            update_rule(&client, &id, &json).await?
+        RuleCommand::Create { body } => create_rule(&client, &body).await?,
+        RuleCommand::Update { id, body } => {
+            update_rule(&client, &id, &body).await?
         }
         RuleCommand::Delete { id } => delete_rule(&client, &id).await?,
         RuleCommand::Enable { id } => enable_rule(&client, &id).await?,
@@ -604,7 +509,7 @@ pub async fn run_transform_cmd(cmd: TransformCommand) -> Result<(CliResponse, Ou
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
+    // Get output format (controlled by NEOMIND_JSON env var)
     let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -680,7 +585,7 @@ pub async fn run_agent_cmd(cmd: AgentCommand) -> Result<(CliResponse, OutputForm
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
+    // Get output format (controlled by NEOMIND_JSON env var)
     let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -814,7 +719,7 @@ pub async fn run_message_cmd(cmd: MessageCommand) -> Result<(CliResponse, Output
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
+    // Get output format (controlled by NEOMIND_JSON env var)
     let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -926,7 +831,7 @@ pub async fn run_widget_cmd(cmd: WidgetCommand) -> Result<(CliResponse, OutputFo
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
+    // Get output format (controlled by NEOMIND_JSON env var)
     let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
         OutputFormat::Json
     } else {
@@ -934,64 +839,38 @@ pub async fn run_widget_cmd(cmd: WidgetCommand) -> Result<(CliResponse, OutputFo
     };
 
     let (response, output_format) = match cmd {
-        WidgetCommand::List { json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        WidgetCommand::List {} => {
             let resp = list_widgets(&client).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
-        WidgetCommand::Get { id, json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        WidgetCommand::Get { id } => {
             let resp = get_widget(&client, &id).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
-        WidgetCommand::Bundle { id, json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        WidgetCommand::Bundle { id } => {
             let resp = get_widget_bundle(&client, &id).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
         WidgetCommand::Create {
             name,
             widget_type,
             output,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
             let resp = create_widget(&name, &widget_type, output.as_deref())?;
-            (resp, fmt)
+            (resp, output_format)
         }
         WidgetCommand::Install { file } => (install_widget_file(&client, &file).await?, output_format),
         WidgetCommand::Uninstall { id } => (uninstall_widget(&client, &id).await?, output_format),
-        WidgetCommand::MarketList { json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                output_format
-            };
+        WidgetCommand::MarketList {} => {
             let resp = list_marketplace_widgets(&client).await?;
-            (resp, fmt)
+            (resp, output_format)
         }
         WidgetCommand::MarketInstall { id, version } => {
             (install_widget_market(&client, &id, version.as_deref()).await?, output_format)
         }
     };
 
-    // Format and print output (for commands without --json flag)
+    // Format and print output
     Ok((response, output_format))
 }
 
@@ -1004,14 +883,9 @@ pub async fn run_system_cmd(cmd: SystemCommand) -> Result<(CliResponse, OutputFo
     };
 
     let result = match cmd {
-        SystemCommand::Info { json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
+        SystemCommand::Info {} => {
             let resp = crate::system::system_info(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
     };
     Ok(result)
@@ -1026,34 +900,28 @@ pub async fn run_settings_cmd(cmd: SettingsCommand) -> Result<(CliResponse, Outp
     };
 
     let result = match cmd {
-        SettingsCommand::Timezone { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        SettingsCommand::Timezone {} => {
             let resp = crate::settings::get_timezone(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
-        SettingsCommand::SetTimezone { timezone, json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        SettingsCommand::SetTimezone { timezone } => {
             let resp = crate::settings::update_timezone(&client, &timezone).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
-        SettingsCommand::Timezones { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        SettingsCommand::Timezones {} => {
             let resp = crate::settings::list_timezones(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
-        SettingsCommand::Retention { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        SettingsCommand::Retention {} => {
             let resp = crate::settings::get_retention(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
         SettingsCommand::SetRetention {
             enabled,
             interval_hours,
             default_retention,
             image_retention,
-            json,
         } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
             let resp = crate::settings::update_retention(
                 &client,
                 enabled,
@@ -1062,12 +930,11 @@ pub async fn run_settings_cmd(cmd: SettingsCommand) -> Result<(CliResponse, Outp
                 image_retention,
             )
             .await?;
-            (resp, fmt)
+            (resp, base_format)
         }
-        SettingsCommand::Cleanup { json } => {
-            let fmt = if json { OutputFormat::Json } else { base_format };
+        SettingsCommand::Cleanup {} => {
             let resp = crate::settings::trigger_cleanup(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
     };
     Ok(result)
@@ -1082,23 +949,13 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
     };
 
     let result = match cmd {
-        ConnectorCommand::List { json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
+        ConnectorCommand::List {} => {
             let resp = crate::connector::list_connectors(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
-        ConnectorCommand::Get { id, json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
+        ConnectorCommand::Get { id } => {
             let resp = crate::connector::get_connector(&client, &id).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
         ConnectorCommand::Create {
             connector_type,
@@ -1109,13 +966,7 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
             username,
             password,
             topics,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             let resp = crate::connector::create_connector(
                 &client,
                 &name,
@@ -1128,7 +979,7 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
                 topics.as_deref(),
             )
             .await?;
-            (resp, fmt)
+            (resp, base_format)
         }
         ConnectorCommand::Update {
             id,
@@ -1140,13 +991,7 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
             password,
             topics,
             disable,
-            json,
         } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
             let enabled = disable.map(|d| !d);
             let tls_val = tls;
             let resp = crate::connector::update_connector(
@@ -1162,7 +1007,7 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
                 enabled,
             )
             .await?;
-            (resp, fmt)
+            (resp, base_format)
         }
         ConnectorCommand::Delete { id } => {
             let resp = crate::connector::delete_connector(&client, &id).await?;
@@ -1186,14 +1031,9 @@ pub async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<(CliResponse, Ou
             let resp = crate::connector::test_connector(&client, &id).await?;
             (resp, base_format)
         }
-        ConnectorCommand::Subscriptions { json } => {
-            let fmt = if json {
-                OutputFormat::Json
-            } else {
-                base_format
-            };
+        ConnectorCommand::Subscriptions {} => {
             let resp = crate::connector::list_subscriptions(&client).await?;
-            (resp, fmt)
+            (resp, base_format)
         }
         ConnectorCommand::Subscribe { topic, qos } => {
             let resp =

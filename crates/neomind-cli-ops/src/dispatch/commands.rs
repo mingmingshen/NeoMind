@@ -215,9 +215,6 @@ pub enum LlmCommand {
     ///
     /// Example: `neomind llm list`
     List {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Get LLM backend details.
     ///
@@ -512,9 +509,6 @@ pub enum DeviceCommand {
         /// Filter by status.
         #[arg(short, long)]
         status: Option<String>,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Get device details (metadata + metrics + commands).
     ///
@@ -529,9 +523,6 @@ pub enum DeviceCommand {
         /// Device ID.
         #[arg(required = true)]
         id: String,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Create a new device.
     ///
@@ -563,9 +554,6 @@ pub enum DeviceCommand {
         /// For webhook: omit (auto-generated URL).
         #[arg(short, long)]
         config: Option<String>,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Update device.
     ///
@@ -585,9 +573,6 @@ pub enum DeviceCommand {
         /// Connection config JSON.
         #[arg(short, long)]
         config: Option<String>,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Delete device.
     ///
@@ -599,9 +584,6 @@ pub enum DeviceCommand {
         /// Device ID.
         #[arg(required = true)]
         id: String,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// (Alias for device get) Get device details and current metrics.
     ///
@@ -612,9 +594,6 @@ pub enum DeviceCommand {
         /// Device ID.
         #[arg(required = true)]
         id: String,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Get telemetry history.
     ///
@@ -643,9 +622,6 @@ pub enum DeviceCommand {
         /// Use --compress=true to enable or --compress=false to disable.
         #[arg(long)]
         compress: Option<bool>,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Send control command.
     ///
@@ -667,9 +643,6 @@ pub enum DeviceCommand {
         /// Command parameters JSON. Example: '{"state":true}'
         #[arg(short, long)]
         params: Option<String>,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Device type management.
     Types {
@@ -701,9 +674,6 @@ pub enum DeviceCommand {
         /// Timestamp in milliseconds (defaults to now).
         #[arg(long)]
         timestamp: Option<i64>,
-        /// Output in JSON format.
-        #[arg(long)]
-        json: bool,
     },
     /// Get webhook URL for a device.
     ///
@@ -741,9 +711,6 @@ pub enum DraftCommand {
     /// Shows all unapproved devices that have sent data but aren't registered yet.
     /// Example: `neomind device drafts list`
     List {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Get draft details including sample data.
     ///
@@ -865,29 +832,23 @@ pub enum DashboardCommand {
     /// List all dashboards.
     ///
     /// Shows dashboard ID, name, description, and component count.
-    /// Use --json for structured output.
+    /// Set `NEOMIND_JSON=1` for structured output.
     ///
     /// Workflow: Use this to find dashboard IDs for get/update/delete/share commands.
     ///
-    /// Example: `neomind dashboard list --json`
+    /// Example: `neomind dashboard list`
     List {
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
     /// Get dashboard details.
     ///
     /// Shows full dashboard config including layout and all widget components.
-    /// Use --json to get the exact format needed for `dashboard update --components`.
+    /// Use `NEOMIND_JSON=1` to get the exact format needed for `dashboard update --components`.
     ///
     /// Example: `neomind dashboard get dash-001`
     Get {
         /// Dashboard ID.
         #[arg(required = true)]
         id: String,
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
     /// Create a new dashboard.
     ///
@@ -908,9 +869,6 @@ pub enum DashboardCommand {
         /// Layout configuration JSON (optional, auto-generated if omitted).
         #[arg(short, long)]
         layout: Option<String>,
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
     /// Update dashboard.
     ///
@@ -935,9 +893,6 @@ pub enum DashboardCommand {
         /// Each component: {"type":"widget-type","data_source":{"..."},"display":{...},"config":{...}}
         #[arg(short, long)]
         components: Option<String>,
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
     /// Add components to dashboard (append mode).
     ///
@@ -952,9 +907,6 @@ pub enum DashboardCommand {
         /// JSON array of new components to append.
         #[arg(short, long)]
         components: String,
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
     /// Remove components from dashboard by ID.
     ///
@@ -968,9 +920,6 @@ pub enum DashboardCommand {
         /// JSON array of component IDs to remove.
         #[arg(short, long)]
         ids: String,
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
     /// Delete dashboard.
     ///
@@ -998,9 +947,6 @@ pub enum DashboardCommand {
         /// Expiration date/time.
         #[arg(short, long)]
         expires: Option<String>,
-        /// Output format (json flag for structured output).
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -1028,28 +974,28 @@ pub enum RuleCommand {
     /// Create a new rule.
     ///
     /// Uses JSON format for rule definition. Must include name, condition, and actions.
-    /// Example: `neomind rule create --json '{"name":"Alert","condition":{...},"actions":[...]}'`
+    /// Example: `neomind rule create --body '{"name":"Alert","condition":{...},"actions":[...]}'`
     Create {
         /// Rule definition as JSON string.
         /// Required fields: name, condition (optional for schedule/manual), actions.
         /// Conditions: {"condition_type":"comparison","source":"device:sensor1:temp","operator":"greater_than","threshold":30}
         /// Actions: [{"type":"notify","message":"Too hot","severity":"critical"}]
         #[arg(short, long)]
-        json: String,
+        body: String,
     },
     /// Update rule.
     ///
     /// Modify rule using JSON format. Only included fields are updated.
     /// Test first with `rule test <ID> --input '...'` to verify new conditions.
     ///
-    /// Example: `neomind rule update rule-001 --json '{"name":"New Name"}'`
+    /// Example: `neomind rule update rule-001 --body '{"name":"New Name"}'`
     Update {
         /// Rule ID.
         #[arg(required = true)]
         id: String,
         /// Updated rule definition as JSON string.
         #[arg(short, long)]
-        json: String,
+        body: String,
     },
     /// Delete rule.
     ///
@@ -1868,11 +1814,8 @@ pub enum WidgetCommand {
     /// List installed widgets.
     ///
     /// Shows widget ID, name, type, and version.
-    /// Example: `neomind widget list --json`
+    /// Example: `neomind widget list`
     List {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Get widget details.
     ///
@@ -1882,9 +1825,6 @@ pub enum WidgetCommand {
         /// Widget ID.
         #[arg(required = true)]
         id: String,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Get widget bundle.
     ///
@@ -1894,9 +1834,6 @@ pub enum WidgetCommand {
         /// Widget ID.
         #[arg(required = true)]
         id: String,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Scaffold a new widget component (generates manifest.json + bundle.js).
     ///
@@ -1913,9 +1850,6 @@ pub enum WidgetCommand {
         /// Output directory (defaults to widget ID).
         #[arg(long)]
         output: Option<String>,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Install widget from file.
     ///
@@ -1940,9 +1874,6 @@ pub enum WidgetCommand {
     /// Shows all widgets available in the marketplace registry.
     /// Example: `neomind widget market-list`
     MarketList {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Install widget from marketplace.
     ///
@@ -1963,9 +1894,6 @@ pub enum WidgetCommand {
 pub enum SystemCommand {
     /// Show system infrastructure info (MQTT broker, webhook URL, network).
     Info {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -1974,30 +1902,18 @@ pub enum SystemCommand {
 pub enum SettingsCommand {
     /// Get the current global timezone.
     Timezone {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Set the global timezone (IANA format, e.g. Asia/Shanghai).
     SetTimezone {
         /// Timezone in IANA format (e.g. "Asia/Shanghai", "UTC").
         #[arg(required = true)]
         timezone: String,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// List available timezones.
     Timezones {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Get data retention configuration.
     Retention {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Update data retention configuration.
     ///
@@ -2016,15 +1932,9 @@ pub enum SettingsCommand {
         /// Retention limit in hours for image data.
         #[arg(long)]
         image_retention: Option<u64>,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Trigger a manual data cleanup now.
     Cleanup {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -2034,11 +1944,8 @@ pub enum ConnectorCommand {
     /// List all data connectors.
     ///
     /// Shows connector ID, name, host, port, type, and connection status.
-    /// Example: `neomind connector list --json`
+    /// Example: `neomind connector list`
     List {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Get connector details and connection status.
     ///
@@ -2048,9 +1955,6 @@ pub enum ConnectorCommand {
         /// Connector ID.
         #[arg(required = true)]
         id: String,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Create a new data connector.
     ///
@@ -2088,9 +1992,6 @@ pub enum ConnectorCommand {
         /// Comma-separated topic subscriptions (default: # for all).
         #[arg(long)]
         topics: Option<String>,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Update connector configuration.
     ///
@@ -2124,9 +2025,6 @@ pub enum ConnectorCommand {
         /// Disable the connector (use --disable=true or --disable=false). Prefer `connector enable/disable` subcommands.
         #[arg(long)]
         disable: Option<bool>,
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Delete a connector.
     ///
@@ -2175,9 +2073,6 @@ pub enum ConnectorCommand {
     /// Shows all active topic subscriptions across all connectors.
     /// Example: `neomind connector subscriptions`
     Subscriptions {
-        /// Output as JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Subscribe to a custom MQTT topic.
     ///

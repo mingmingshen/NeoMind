@@ -129,7 +129,7 @@ Before running `neomind rule create`, tick every box:
 
 ```bash
 # Rule is ENABLED by default on creation — no separate enable step needed.
-neomind rule create --json '<your_json>'
+neomind rule create --body '<your_json>'
 # Note the returned rule ID.
 
 # For threshold rules: inject a test value to confirm it fires end-to-end.
@@ -167,8 +167,8 @@ Run these in order. Stop at the first failure.
 ```bash
 neomind rule list                         # all rules
 neomind rule get <ID>                     # inspect one
-neomind rule create --json '<JSON>'       # create (enabled by default)
-neomind rule update <ID> --json '<JSON>'  # modify fields
+neomind rule create --body '<JSON>'       # create (enabled by default)
+neomind rule update <ID> --body '<JSON>'  # modify fields
 neomind rule enable <ID>                  # re-enable a paused rule
 neomind rule disable <ID>                 # pause without deleting
 neomind rule delete <ID>                  # permanent removal
