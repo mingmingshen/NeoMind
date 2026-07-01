@@ -305,7 +305,7 @@ pub async fn control_agent(client: &ApiClient, id: &str, status: &str) -> Result
 pub async fn invoke_agent(client: &ApiClient, id: &str, input: &str) -> Result<CliResponse> {
     let body = json!({ "input": input });
     let data = client
-        .post(&format!("/agents/{}/execute", id), &body)
+        .post(&format!("/agents/{}/invoke", id), &body)
         .await?;
     Ok(CliResponse::success(data, "Agent invoked"))
 }

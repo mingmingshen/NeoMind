@@ -1231,42 +1231,33 @@ impl Agent {
 
         prompt.push_str("\n\n## Available Tools (Quick Reference)\n\n");
 
-        // Build tool reference from the actual registry
-        let tool_names = self.tools.list();
-        let mut extension_tools: Vec<String> = Vec::new();
+        // definitions_for_llm() filters out disabled tools so the text prompt
+        // stays in sync with the function-calling schema.
+        let defs = self.tools.definitions_for_llm();
+        let extension_defs: Vec<_> = defs.iter().filter(|d| d.name.contains(':')).collect();
 
-        for tool_name in &tool_names {
-            if let Some(tool) = self.tools.get(tool_name) {
-                let def = tool.definition();
-                if tool_name.contains(':') {
-                    extension_tools.push(tool_name.clone());
-                } else {
-                    prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
-                }
-            }
+        for def in defs.iter().filter(|d| !d.name.contains(':')) {
+            prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
         }
 
-        if !extension_tools.is_empty() {
+        if !extension_defs.is_empty() {
             prompt.push_str("\n### Extension Tools\n");
             prompt.push_str("These tools are provided by installed extensions. Use them when users ask about related functionality.\n\n");
-            for ext_name in &extension_tools {
-                if let Some(tool) = self.tools.get(ext_name) {
-                    let def = tool.definition();
-                    prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
-                    if let Some(params) = def.parameters.get("properties") {
-                        prompt.push_str("  Parameters:\n");
-                        if let Some(obj) = params.as_object() {
-                            for (pname, pschema) in obj {
-                                let desc = pschema
-                                    .get("description")
-                                    .and_then(|d| d.as_str())
-                                    .unwrap_or("");
-                                prompt.push_str(&format!("    - `{}`: {}\n", pname, desc));
-                            }
+            for def in &extension_defs {
+                prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
+                if let Some(params) = def.parameters.get("properties") {
+                    prompt.push_str("  Parameters:\n");
+                    if let Some(obj) = params.as_object() {
+                        for (pname, pschema) in obj {
+                            let desc = pschema
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("");
+                            prompt.push_str(&format!("    - `{}`: {}\n", pname, desc));
                         }
                     }
-                    prompt.push('\n');
                 }
+                prompt.push('\n');
             }
         }
 
