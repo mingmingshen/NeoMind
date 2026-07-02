@@ -71,4 +71,4 @@ jobs:
             skills-${{ runner.os }}-
 
       - name: Run skill tests
-        run: cargo test -p neomind-agent --lib skills::
+        run: "cargo test -p neomind-agent --lib skills::"
