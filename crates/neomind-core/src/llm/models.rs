@@ -115,8 +115,8 @@ pub fn get_builtin_models() -> HashMap<String, ModelInfo> {
                 streaming: true,
                 function_calling: true,
                 vision: true,
-                audio: true,
-                video: true,
+                audio: false,
+                video: false,
                 reasoning: false,
                 max_context: Some(1_000_000),
                 json_mode: true,
@@ -205,8 +205,12 @@ pub fn get_builtin_models() -> HashMap<String, ModelInfo> {
                 streaming: true,
                 function_calling: true,
                 vision: true,
-                audio: true,
-                video: true,
+                // Bare `gpt-4o` (the omni text+vision model) does NOT accept
+                // audio input — only the `gpt-4o-audio*` variants do. Marking
+                // this true caused the pipeline to emit audio ContentParts that
+                // the OpenAI API rejected. See capability::detect_audio.
+                audio: false,
+                video: false,
                 reasoning: false,
                 max_context: Some(128_000),
                 json_mode: true,

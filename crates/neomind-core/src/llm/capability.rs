@@ -182,12 +182,19 @@ impl CapabilityDetector {
     }
 
     /// Detect audio capability.
+    ///
+    /// Note: `gpt-4o-audio` is matched specifically rather than the bare
+    /// `gpt-4o` substring — `gpt-4o-mini` and most `gpt-4o-*` text/vision
+    /// variants do NOT accept audio input, and a too-broad match would
+    /// cause the agent pipeline to emit audio content parts that the API
+    /// rejects. Same class of bug as the historical `is_vision_model`
+    /// over-broad heuristic (see MEMORY.md).
     fn detect_audio(&self, model: &str) -> bool {
         model.contains("audio")
             || model.contains("tts")
             || model.contains("asr")
             || model.contains("whisper")
-            || model.contains("gpt-4o")
+            || model.contains("gpt-4o-audio")
             || model.contains("qwen-audio")
             || model.contains("qwen-tts")
             || model.contains("qwen-omni")
@@ -459,6 +466,35 @@ mod tests {
         assert!(!model_supports("gpt-3.5-turbo", "vision"));
         assert!(!model_supports("o1-preview", "vision"));
         assert!(!model_supports("qwen-turbo", "vision"));
+    }
+
+    #[test]
+    fn test_detect_audio_gpt4o_no_false_positive() {
+        // Regression: bare `gpt-4o` substring used to match every gpt-4o*
+        // variant including gpt-4o-mini (text/vision only). This caused the
+        // pipeline to send audio content parts to text-only backends. Only
+        // the explicitly audio-named variants should match.
+        assert!(model_supports("gpt-4o-audio", "audio"));
+        assert!(model_supports("gpt-4o-audio-preview", "audio"));
+        assert!(model_supports("gpt-4o-audio-2024-10-01", "audio"));
+
+        // Critical: these MUST NOT match.
+        assert!(!model_supports("gpt-4o", "audio"));
+        assert!(!model_supports("gpt-4o-mini", "audio"));
+        assert!(!model_supports("gpt-4o-2024-08-06", "audio"));
+        assert!(!model_supports("gpt-4o-2024-11-20", "audio"));
+
+        // Positive cases for other audio families still work.
+        assert!(model_supports("qwen-omni-turbo", "audio"));
+        assert!(model_supports("qwen2-audio-7b", "audio"));
+        assert!(model_supports("whisper-large-v3", "audio"));
+        assert!(model_supports("tts-1", "audio"));
+
+        // Sanity: non-audio models stay negative.
+        assert!(!model_supports("gpt-4-turbo", "audio"));
+        assert!(!model_supports("claude-3-5-sonnet", "audio"));
+        assert!(!model_supports("qwen-max", "audio"));
+        assert!(!model_supports("deepseek-chat", "audio"));
     }
 
     #[test]

@@ -798,6 +798,12 @@ impl BackendCapabilitiesBuilder {
         self
     }
 
+    /// Enable audio input.
+    pub fn audio(mut self) -> Self {
+        self.capabilities.supports_audio = true;
+        self
+    }
+
     /// Build the capabilities.
     pub fn build(self) -> BackendCapabilities {
         self.capabilities

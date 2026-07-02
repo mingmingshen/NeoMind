@@ -885,6 +885,7 @@ impl Agent {
                         caps.thinking_display,
                         caps.function_calling,
                         caps.max_context.unwrap_or(128000),
+                        caps.supports_audio,
                     );
                 } else {
                     tracing::debug!(
@@ -1126,6 +1127,7 @@ impl Agent {
                         caps.thinking_display,
                         caps.function_calling,
                         caps.max_context.unwrap_or(128000),
+                        caps.supports_audio,
                     );
                 }
 
@@ -2964,6 +2966,7 @@ fn apply_cloud_capabilities(
             caps.thinking_display,
             caps.function_calling,
             caps.max_context.unwrap_or(128000),
+            caps.supports_audio,
         );
     } else {
         tracing::debug!(

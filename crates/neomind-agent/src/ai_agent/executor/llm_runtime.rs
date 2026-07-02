@@ -35,6 +35,7 @@ impl AgentExecutor {
                 capabilities.supports_thinking,
                 capabilities.supports_tools,
                 capabilities.max_context,
+                capabilities.supports_audio,
             );
             Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
         })
@@ -137,6 +138,7 @@ impl AgentExecutor {
                                     backend.capabilities.supports_thinking,
                                     backend.capabilities.supports_tools,
                                     backend.capabilities.max_context,
+                                    backend.capabilities.supports_audio,
                                 );
                                 Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
                             })
@@ -259,6 +261,7 @@ impl AgentExecutor {
                                         backend.capabilities.supports_thinking,
                                         backend.capabilities.supports_tools,
                                         backend.capabilities.max_context,
+                                        backend.capabilities.supports_audio,
                                     );
                                     std::sync::Arc::new(rt)
                                         as std::sync::Arc<

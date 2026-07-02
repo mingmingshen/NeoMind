@@ -36,7 +36,7 @@ fn convert_capabilities(
         multiple_models: false,
         modalities: Vec::new(),
         supports_images: storage_caps.supports_multimodal,
-        supports_audio: false,
+        supports_audio: storage_caps.supports_audio,
     }
 }
 
