@@ -101,6 +101,11 @@ pub struct Dashboard {
     pub updated_at: i64,
     #[serde(skip_serializing_if = "Option::is_none", alias = "is_default")]
     pub is_default: Option<bool>,
+    /// Manual sort order for sidebar display. Lower = higher up. `None` for
+    /// legacy rows created before this field existed — they fall to the bottom
+    /// of the list via `i32::MAX` tiebreak at the API layer.
+    #[serde(skip_serializing_if = "Option::is_none", alias = "sort_order")]
+    pub sort_order: Option<i32>,
 }
 
 /// Dashboard template.
@@ -141,6 +146,7 @@ impl Dashboard {
             created_at: now,
             updated_at: now,
             is_default: None,
+            sort_order: None,
         }
     }
 
@@ -437,6 +443,57 @@ impl DashboardStore {
         Ok(())
     }
 
+    /// Return the highest `sort_order` across all dashboards, or 0 if none
+    /// have been set / the table is empty. Used to compute the next order
+    /// value for newly-created dashboards (appended at the bottom).
+    pub fn max_sort_order(&self) -> Result<i32, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(DASHBOARDS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
+            Err(e) => return Err(e.into()),
+        };
+        let mut max: i32 = 0;
+        for result in table.iter()? {
+            let (_key, value) = result?;
+            if let Ok(dashboard) = serde_json::from_slice::<Dashboard>(value.value().as_slice()) {
+                if let Some(order) = dashboard.sort_order {
+                    if order > max {
+                        max = order;
+                    }
+                }
+            }
+        }
+        Ok(max)
+    }
+
+    /// Batch-assign `sort_order` to the supplied `(dashboard_id, order)` pairs
+    /// in a single transaction. Pattern mirrors `set_default()`. Used by the
+    /// `PUT /api/dashboards/reorder` endpoint.
+    pub fn set_sort_orders(&self, items: &[(String, i32)]) -> Result<(), Error> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(DASHBOARDS_TABLE)?;
+            for (id, order) in items {
+                let bytes: Vec<u8> = {
+                    let row = table
+                        .get(id.as_str())?
+                        .ok_or_else(|| Error::NotFound(format!("Dashboard '{}' not found", id)))?;
+                    row.value().to_vec()
+                };
+                let mut dashboard: Dashboard = serde_json::from_slice(&bytes)?;
+                dashboard.sort_order = Some(*order);
+                let serialized = serde_json::to_vec(&dashboard)?;
+                table.insert(id.as_str(), serialized)?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
     /// Get the default dashboard ID.
     pub fn get_default_id(&self) -> Result<Option<String>, Error> {
         let read_txn = self.db.begin_read()?;
@@ -710,6 +767,7 @@ mod tests {
             created_at: 12345,
             updated_at: 12346,
             is_default: Some(true),
+            sort_order: Some(0),
         };
 
         let serialized = serde_json::to_string(&dashboard).unwrap();
@@ -734,5 +792,51 @@ mod tests {
         let loaded = store.load("mem-test").unwrap();
         assert!(loaded.is_some());
         assert_eq!(loaded.unwrap().name, "Memory Test");
+    }
+
+    #[test]
+    fn test_sort_order_and_reorder() {
+        let store = create_temp_store();
+
+        // Create three dashboards with explicit orders.
+        let mk = |id: &str, order: i32| {
+            let mut d = Dashboard::new(format!("D-{}", id), DashboardLayout::default_layout());
+            d.id = id.to_string();
+            d.sort_order = Some(order);
+            store.save(&d).unwrap();
+        };
+        mk("a", 2);
+        mk("b", 0);
+        mk("c", 1);
+
+        // max_sort_order returns the largest explicit value.
+        assert_eq!(store.max_sort_order().unwrap(), 2);
+
+        // Empty table → 0 (different store, fresh).
+        let empty_store = create_temp_store();
+        assert_eq!(empty_store.max_sort_order().unwrap(), 0);
+
+        // Batch-reorder: assign new contiguous orders.
+        // New desired order: c (top), a, b (bottom).
+        store
+            .set_sort_orders(&[
+                ("c".to_string(), 0),
+                ("a".to_string(), 1),
+                ("b".to_string(), 2),
+            ])
+            .unwrap();
+
+        assert_eq!(store.load("c").unwrap().unwrap().sort_order, Some(0));
+        assert_eq!(store.load("a").unwrap().unwrap().sort_order, Some(1));
+        assert_eq!(store.load("b").unwrap().unwrap().sort_order, Some(2));
+
+        // Reorder with a missing id fails (rolls back the transaction).
+        let err = store.set_sort_orders(&[("missing".to_string(), 0)]);
+        assert!(err.is_err());
+        // Existing data is untouched after rollback.
+        assert_eq!(store.load("c").unwrap().unwrap().sort_order, Some(0));
+
+        // Empty input is a no-op success.
+        assert!(store.set_sort_orders(&[]).is_ok());
     }
 }

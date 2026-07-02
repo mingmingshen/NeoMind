@@ -1,5 +1,6 @@
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import {
@@ -124,9 +125,8 @@ function FormField({ field, value, onChange }: FormFieldProps) {
             {field.label}
             {field.required && <span className="text-error ml-1">*</span>}
           </Label>
-          <Input
+          <PasswordInput
             id={id}
-            type="password"
             placeholder={field.placeholder || '••••••••'}
             value={currentValue as string ?? ''}
             onChange={(e) => onChange(e.target.value)}

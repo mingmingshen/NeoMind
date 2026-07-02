@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { Settings } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/password-input"
 import { fetchAPI } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { FormSectionGroup } from "@/components/ui/form-section"
@@ -169,8 +170,7 @@ export function LLMBackendConfigDialog({
             <FormField
               label={t('settings:llm.apiKey')}
             >
-              <Input
-                type="password"
+              <PasswordInput
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={t('settings:llm.apiKeyPlaceholder', { defaultValue: 'Optional API key' })}

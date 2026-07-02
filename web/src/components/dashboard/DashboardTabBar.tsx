@@ -17,6 +17,7 @@ import {
   PanelLeft,
   MoreVertical,
   ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -47,6 +48,8 @@ export interface DashboardTabBarProps {
   onCreate: (name: string) => void
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  /** Persist a new manual order (array of dashboard IDs, index 0 = leftmost). */
+  onReorder?: (newOrder: string[]) => void
   onSwitchToSidebar: () => void
   className?: string
 }
@@ -58,6 +61,7 @@ export function DashboardTabBar({
   onCreate,
   onRename,
   onDelete,
+  onReorder,
   onSwitchToSidebar,
   className,
 }: DashboardTabBarProps) {
@@ -153,6 +157,24 @@ export function DashboardTabBar({
     setEditingId(null)
     setEditingName('')
   }, [])
+
+  // --- Reordering helpers (icon buttons in tab menus) ---
+  const canReorder = !!onReorder && dashboards.length > 1
+
+  const moveByOne = useCallback(
+    (id: string, direction: -1 | 1) => {
+      if (!onReorder) return
+      const ids = dashboards.map((d) => d.id)
+      const idx = ids.indexOf(id)
+      const target = idx + direction
+      if (idx < 0 || target < 0 || target >= ids.length) return
+      const next = [...ids]
+      next.splice(idx, 1)
+      next.splice(target, 0, id)
+      onReorder(next)
+    },
+    [onReorder, dashboards],
+  )
 
   // Mobile: dropdown switcher. Tap the trigger to pick a dashboard, with
   // rename / delete / create surfaced as menu items — the desktop tab bar's
@@ -269,6 +291,30 @@ export function DashboardTabBar({
             </DropdownMenuItem>
             {current && (
               <>
+                {canReorder && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => moveByOne(current.id, -1)}
+                      disabled={dashboards.findIndex((d) => d.id === current.id) === 0}
+                      className="gap-2"
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                      {t('sidebar.moveUp')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => moveByOne(current.id, 1)}
+                      disabled={
+                        dashboards.findIndex((d) => d.id === current.id) ===
+                        dashboards.length - 1
+                      }
+                      className="gap-2"
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                      {t('sidebar.moveDown')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem
                   onClick={handleRenameCurrent}
                   className="gap-2"
@@ -380,9 +426,7 @@ export function DashboardTabBar({
               )
             } else if (isActive) {
               // Active tab: name + elastically-expanding ⋮ trigger.
-              // On hover (or while the menu is open), the ⋮ slot expands from 0 to
-              // its natural width with a slight overshoot easing — the tab "grows"
-              // to reveal the action button instead of using a floating overlay.
+              const currentIndex = dashboards.findIndex((d) => d.id === dashboard.id)
               elements.push(
                 <div
                   key={dashboard.id}
@@ -425,6 +469,25 @@ export function DashboardTabBar({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="z-[200]">
+                        {canReorder && (
+                          <>
+                            <DropdownMenuItem
+                              onClick={() => moveByOne(dashboard.id, -1)}
+                              disabled={currentIndex === 0}
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                              {t('sidebar.moveUp')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => moveByOne(dashboard.id, 1)}
+                              disabled={currentIndex === dashboards.length - 1}
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                              {t('sidebar.moveDown')}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
                         <DropdownMenuItem onClick={handleRenameCurrent}>
                           <Pencil className="h-4 w-4" />
                           {t('tabBar.rename')}

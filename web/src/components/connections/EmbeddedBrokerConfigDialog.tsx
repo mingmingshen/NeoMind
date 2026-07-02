@@ -21,6 +21,7 @@ import { FormField } from '@/components/ui/field'
 import { FormSection, FormSectionGroup } from '@/components/ui/form-section'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -373,8 +374,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }
                       />
                     </FormField>
                     <FormField label={t('broker.password')}>
-                      <Input
-                        type="password"
+                      <PasswordInput
                         placeholder={t('broker.password')}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}

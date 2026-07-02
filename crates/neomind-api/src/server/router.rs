@@ -911,6 +911,12 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/dashboards",
             post(dashboards::create_dashboard_handler),
         )
+        // Reorder MUST precede /:id to avoid shadowing (literal segments win
+        // over dynamic, but explicit ordering is safer & self-documenting).
+        .route(
+            "/api/dashboards/reorder",
+            put(dashboards::reorder_dashboards_handler),
+        )
         .route(
             "/api/dashboards/:id",
             get(dashboards::get_dashboard_handler),

@@ -161,6 +161,13 @@ pub struct Dashboard {
         rename = "is_default"
     )]
     pub is_default: Option<bool>,
+    /// Manual sort order (lower = higher in the sidebar list).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "sort_order",
+        rename = "sort_order"
+    )]
+    pub sort_order: Option<i32>,
 }
 
 /// Request to create a dashboard
@@ -285,6 +292,7 @@ fn stored_to_api(dashboard: &StoredDashboard) -> Dashboard {
         created_at: dashboard.created_at,
         updated_at: dashboard.updated_at,
         is_default: dashboard.is_default,
+        sort_order: dashboard.sort_order,
     }
 }
 
@@ -418,6 +426,12 @@ pub async fn list_dashboards_handler(
         .list_paginated(Some(limit), Some(offset))
         .map_err(|e| ErrorResponse::internal(format!("Failed to list dashboards: {}", e)))?;
 
+    // Sort by `sort_order` so the sidebar reflects manual reordering. Legacy
+    // rows without `sort_order` fall to the bottom (i32::MAX); stable sort
+    // keeps their relative order intact.
+    let mut dashboards = dashboards;
+    dashboards.sort_by_key(|d| d.sort_order.unwrap_or(i32::MAX));
+
     let api_dashboards: Vec<Dashboard> = dashboards.iter().map(stored_to_api).collect();
     let count = api_dashboards.len();
 
@@ -452,6 +466,7 @@ pub async fn get_dashboard_handler(
             created_at: now,
             updated_at: now,
             is_default: Some(id == "overview"),
+            sort_order: None,
         });
     }
 
@@ -472,6 +487,12 @@ pub async fn create_dashboard_handler(
     let id = format!("dashboard_{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().timestamp();
 
+    let next_order = state
+        .dashboard_store
+        .max_sort_order()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to compute sort order: {}", e)))?
+        + 1;
+
     let stored_dashboard = StoredDashboard {
         id: id.clone(),
         name: req.name,
@@ -491,6 +512,7 @@ pub async fn create_dashboard_handler(
         created_at: now,
         updated_at: now,
         is_default: None,
+        sort_order: Some(next_order),
     };
 
     state
@@ -700,6 +722,56 @@ pub async fn set_default_dashboard_handler(
         "id": id,
         "is_default": true,
     }))
+}
+
+/// Request body for `PUT /api/dashboards/reorder`.
+/// `dashboard_ids` is the desired full ordering (index 0 = top).
+#[derive(Debug, Deserialize)]
+pub struct ReorderDashboardsRequest {
+    pub dashboard_ids: Vec<String>,
+}
+
+/// Response body for the reorder endpoint.
+#[derive(Debug, Serialize)]
+pub struct ReorderDashboardsResponse {
+    pub ok: bool,
+    pub count: usize,
+}
+
+/// Batch-update `sort_order` for a list of dashboards (PUT /api/dashboards/reorder)
+///
+/// Frontend sends the complete desired order as a list of dashboard IDs. We
+/// assign each its index as the new `sort_order` and persist them in a single
+/// transaction. Emits a single `DashboardUpdated` event with action `"reorder"`
+/// so other clients refetch.
+pub async fn reorder_dashboards_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<ReorderDashboardsRequest>,
+) -> HandlerResult<ReorderDashboardsResponse> {
+    if req.dashboard_ids.is_empty() {
+        return Err(ErrorResponse::bad_request("dashboard_ids must not be empty"));
+    }
+
+    let items: Vec<(String, i32)> = req
+        .dashboard_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.clone(), i as i32))
+        .collect();
+
+    let count = items.len();
+    state
+        .dashboard_store
+        .set_sort_orders(&items)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to reorder dashboards: {}", e)))?;
+
+    // Notify other clients. Use the first id as the event target — the SSE
+    // consumer refetches the full list on receipt regardless of which id.
+    if let Some(first_id) = req.dashboard_ids.first() {
+        emit_dashboard_event(&state, first_id, "reorder");
+    }
+
+    ok(ReorderDashboardsResponse { ok: true, count })
 }
 
 /// List dashboard templates

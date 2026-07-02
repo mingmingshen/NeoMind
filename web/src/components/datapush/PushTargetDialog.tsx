@@ -15,6 +15,7 @@ import {
   Search, X, Loader2, ChevronRight, ChevronDown, KeyRound, Link2,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -558,8 +559,7 @@ export function PushTargetDialog() {
                         placeholder={t('common:dataPush.webhookUsername', 'Username')}
                         className={isMobile ? "h-12 text-base" : "h-10"}
                       />
-                      <Input
-                        type="password"
+                      <PasswordInput
                         value={webhookAuthPass}
                         onChange={(e) => setWebhookAuthPass(e.target.value)}
                         placeholder={t('common:dataPush.webhookPassword', 'Password')}
@@ -645,8 +645,7 @@ export function PushTargetDialog() {
                           placeholder={t('common:dataPush.mqttUsername', 'Username')}
                           className={isMobile ? "h-12 text-base" : "h-10"}
                         />
-                        <Input
-                          type="password"
+                        <PasswordInput
                           value={mqttPassword}
                           onChange={(e) => setMqttPassword(e.target.value)}
                           placeholder={t('common:dataPush.mqttPassword', 'Password')}

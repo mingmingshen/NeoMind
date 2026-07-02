@@ -1069,7 +1069,10 @@
     "create": "Create",
     "newDashboard": "New Dashboard",
     "dashboardCount": "{{count}} dashboards",
-    "switchToTabs": "Switch to tab bar"
+    "switchToTabs": "Switch to tab bar",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "dragHint": "Drag to reorder"
   },
   "tabBar": {
     "newDashboard": "New Dashboard",

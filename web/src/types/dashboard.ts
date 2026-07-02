@@ -644,6 +644,8 @@ export interface Dashboard {
   createdAt: number
   updatedAt: number
   isDefault?: boolean
+  /** Manual sort order (lower = higher in the sidebar). Assigned server-side. */
+  sortOrder?: number
 }
 
 export interface DashboardTemplate {

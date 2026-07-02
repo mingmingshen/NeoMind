@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
-import { Languages, Lock, User, Shield, ArrowLeft, Server, Globe, ChevronRight, Check, KeyRound } from "lucide-react"
+import { Languages, Lock, User, Shield, ArrowLeft, Server, Globe, ChevronRight, Check, KeyRound, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -80,6 +80,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -398,14 +399,24 @@ export function LoginPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
                   id="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t('auth:password')}
                   autoComplete="current-password"
                   required
-                  className="pl-9 h-11 bg-bg-70 border-border focus:bg-background dark:focus:bg-bg-50 focus:border-primary transition-colors text-base scroll-mb-32"
+                  className="pl-9 pr-10 h-11 bg-bg-70 border-border focus:bg-background dark:focus:bg-bg-50 focus:border-primary transition-colors text-base scroll-mb-32"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  aria-label={showPassword ? t('auth:hidePassword') : t('auth:showPassword')}
+                  title={showPassword ? t('auth:hidePassword') : t('auth:showPassword')}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
               <label className="flex items-center gap-2 cursor-pointer group">
                 <Checkbox

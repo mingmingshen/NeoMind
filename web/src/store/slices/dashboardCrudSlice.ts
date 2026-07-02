@@ -101,6 +101,8 @@ export interface DashboardCrudSlice {
   deleteDashboard: (id: string) => Promise<void>
   setCurrentDashboard: (id: string | null) => void
   setDefaultDashboard: (id: string) => Promise<void>
+  /** Persist a new manual order (index 0 = top). Rolls back on failure. */
+  reorderDashboards: (newOrder: string[]) => Promise<void>
   clearDashboards: () => void
   persistDashboard: (id?: string) => Promise<void>
   fetchTemplates: () => Promise<void>
@@ -319,6 +321,38 @@ export const createDashboardCrudSlice: StateCreator<
       // Record self-sync for all dashboards since save() bulk-syncs to API
       for (const d of updated) recordSelfSync(d.id)
       await storage.save(updated)
+    },
+
+    reorderDashboards: async (newOrder) => {
+      const { dashboards } = get()
+      const map = new Map(dashboards.map((d: Dashboard) => [d.id, d]))
+      // Build the reordered + reindexed list. Dashboards not in newOrder
+      // (defensive) keep their relative position appended at the end.
+      const inOrder: Dashboard[] = []
+      newOrder.forEach((id, i) => {
+        const d = map.get(id)
+        if (d) inOrder.push({ ...d, sortOrder: i })
+      })
+      const inOrderIds = new Set(newOrder)
+      const leftovers: Dashboard[] = dashboards
+        .filter((d: Dashboard) => !inOrderIds.has(d.id))
+        .map((d: Dashboard, i: number) => ({ ...d, sortOrder: inOrder.length + i }))
+      const reordered: Dashboard[] = [...inOrder, ...leftovers]
+
+      // Optimistic update
+      set({ dashboards: reordered })
+
+      // Suppress SSE echo for every affected dashboard before the API call
+      reordered.forEach((d: Dashboard) => recordSelfSync(d.id))
+
+      try {
+        const result = await storage.reorder?.(newOrder)
+        if (result?.error) throw result.error
+      } catch (err) {
+        // Roll back to the pre-reorder state and surface the error
+        set({ dashboards })
+        logError(err, { operation: 'Reorder dashboards' })
+      }
     },
 
     clearDashboards: () => {

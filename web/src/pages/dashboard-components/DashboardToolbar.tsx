@@ -34,6 +34,8 @@ export interface DashboardToolbarProps {
   onDashboardCreate: (name: string) => Promise<void>
   onDashboardRename: (id: string, name: string) => void
   onDashboardDelete: (id: string) => Promise<void>
+  /** Persist a new manual order (array of dashboard IDs, index 0 = first). */
+  onDashboardReorder?: (newOrder: string[]) => void
   onSwitchToSidebar: () => void
 
   // Edit mode
@@ -85,6 +87,7 @@ export function DashboardToolbar(props: DashboardToolbarProps) {
     onDashboardCreate,
     onDashboardRename,
     onDashboardDelete,
+    onDashboardReorder,
     onSwitchToSidebar,
     editMode,
     setEditMode,
@@ -129,6 +132,7 @@ export function DashboardToolbar(props: DashboardToolbarProps) {
           onCreate={onDashboardCreate}
           onRename={onDashboardRename}
           onDelete={onDashboardDelete}
+          onReorder={onDashboardReorder}
           onSwitchToSidebar={onSwitchToSidebar}
         />
       ) : (

@@ -161,11 +161,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Pre-batch data loading: 1 batch request + telemetry cache warm-up
   useDashboardPrefetch(currentDashboard?.components ?? [])
 
-  // Sort dashboards by creation time (oldest first, newest last).
-  // This ensures a stable, predictable order for both sidebar and tab bar,
-  // independent of backend fetch order or sync remapping.
+  // Sort dashboards by `sortOrder` (manual sidebar order), falling back to
+  // creation time for legacy dashboards without an explicit order. Stable sort
+  // keeps tie-breakers predictable across fetches.
   const sortedDashboards = useMemo(
-    () => [...dashboards].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)),
+    () => [...dashboards].sort((a, b) => {
+      const sa = a.sortOrder ?? Number.MAX_SAFE_INTEGER
+      const sb = b.sortOrder ?? Number.MAX_SAFE_INTEGER
+      if (sa !== sb) return sa - sb
+      return (a.createdAt ?? 0) - (b.createdAt ?? 0)
+    }),
     [dashboards]
   )
 
@@ -967,6 +972,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onCreate={handleDashboardCreate}
           onRename={handleDashboardRename}
           onDelete={handleDashboardDelete}
+          onReorder={(newOrder) => useStore.getState().reorderDashboards(newOrder)}
           open={sidebarOpen}
           onOpenChange={setSidebarOpen}
           isDesktop={isDesktop}
@@ -991,6 +997,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onDashboardCreate={handleDashboardCreate}
           onDashboardRename={handleDashboardRename}
           onDashboardDelete={handleDashboardDelete}
+          onDashboardReorder={(newOrder) => useStore.getState().reorderDashboards(newOrder)}
           onSwitchToSidebar={handleSwitchToSidebar}
           editMode={editMode}
           setEditMode={setEditMode}

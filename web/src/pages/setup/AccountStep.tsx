@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { Lock, User, Shield, Check, ArrowRight, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
@@ -244,9 +245,8 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
                 <Label htmlFor="password" className="text-sm">{t('auth:password')}</Label>
                 <div className="relative mt-1.5">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
+                  <PasswordInput
                     id="password"
-                    type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={t('setup:passwordPlaceholder')}
@@ -263,9 +263,8 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
                 <Label htmlFor="confirmPassword" className="text-sm">{t('setup:confirmPassword')}</Label>
                 <div className="relative mt-1.5">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
+                  <PasswordInput
                     id="confirmPassword"
-                    type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder={t('setup:confirmPasswordPlaceholder')}

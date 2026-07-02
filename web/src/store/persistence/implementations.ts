@@ -142,6 +142,32 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
     }
   }
 
+  async reorder(dashboardIds: string[]): Promise<StorageResult<void>> {
+    try {
+      const result = await this.load()
+      const all = result.data || []
+      // Reindex the supplied order, then append any dashboards not in the
+      // list (defensive — keeps localStorage consistent even if the caller
+      // passed a partial list).
+      const indexById = new Map(dashboardIds.map((id, i) => [id, i]))
+      const reordered = [...all].sort((a, b) => {
+        const ia = indexById.get(a.id)
+        const ib = indexById.get(b.id)
+        if (ia !== undefined && ib !== undefined) return ia - ib
+        if (ia !== undefined) return -1
+        if (ib !== undefined) return 1
+        return 0
+      }).map((d, i) => ({ ...d, sortOrder: i }))
+      await this.save(reordered)
+      return { data: undefined, error: null }
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error : new Error('Failed to reorder in localStorage'),
+      }
+    }
+  }
+
   isAvailable(): boolean {
     try {
       localStorage.setItem('test', 'test')
@@ -308,6 +334,19 @@ export class ApiDashboardStorage implements DashboardStorage {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to delete from API'),
 
+      }
+    }
+  }
+
+  async reorder(dashboardIds: string[]): Promise<StorageResult<void>> {
+    try {
+      const api = await this.getApi()
+      await api.reorderDashboards(dashboardIds)
+      return { data: undefined, error: null }
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error : new Error('Failed to reorder via API'),
       }
     }
   }
@@ -528,6 +567,18 @@ export class HybridDashboardStorage implements DashboardStorage {
       console.warn('[HybridStorage] API delete failed for dashboard:', id)
     })
 
+    return localResult
+  }
+
+  async reorder(dashboardIds: string[]): Promise<StorageResult<void>> {
+    // Local first for instant UI
+    const localResult = await this.localStorage.reorder(dashboardIds)
+    // API second for persistence (awaited so caller can roll back on failure)
+    const apiResult = await this.apiStorage.reorder(dashboardIds)
+    if (apiResult.error) {
+      console.warn('[HybridStorage] API reorder failed:', apiResult.error)
+      return apiResult
+    }
     return localResult
   }
 

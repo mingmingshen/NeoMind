@@ -2129,6 +2129,17 @@ export const api = {
     }),
 
   /**
+   * Reorder dashboards (persist manual sidebar order)
+   * PUT /api/dashboards/reorder
+   * @param dashboardIds Desired order, index 0 = top of list
+   */
+  reorderDashboards: (dashboardIds: string[]) =>
+    fetchAPI<{ ok: boolean; count: number }>('/dashboards/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ dashboard_ids: dashboardIds }),
+    }),
+
+  /**
    * Set default dashboard
    * POST /api/dashboards/:id/default
    */

@@ -15,6 +15,8 @@ import {
   Check,
   X,
   PanelTop,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -38,6 +40,8 @@ export interface DashboardListSidebarProps {
   onCreate: (name: string) => void
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  /** Persist a new manual order (array of dashboard IDs, index 0 = top). */
+  onReorder?: (newOrder: string[]) => void
   /** Open state: false = collapsed (desktop) or closed (mobile), true = expanded (desktop) or open drawer (mobile) */
   open?: boolean
   /** Open/close handler */
@@ -57,6 +61,7 @@ function DashboardSidebarContent({
   onCreate,
   onRename,
   onDelete,
+  onReorder,
   onOpenChange,
   isDesktop,
   onSwitchToTabs,
@@ -102,6 +107,23 @@ function DashboardSidebarContent({
     if (!isDesktop) {
       onOpenChange?.(false)
     }
+  }
+
+  // --- Reordering helpers (arrow buttons) ---
+  // Produces a new ID order array and delegates to onReorder.
+  // No-op when onReorder isn't provided (parent didn't wire it).
+  const idsInOrder = () => dashboards.map(d => d.id)
+
+  const moveByOne = (id: string, direction: -1 | 1) => {
+    if (!onReorder) return
+    const ids = idsInOrder()
+    const idx = ids.indexOf(id)
+    const target = idx + direction
+    if (idx < 0 || target < 0 || target >= ids.length) return
+    const next = [...ids]
+    next.splice(idx, 1)
+    next.splice(target, 0, id)
+    onReorder(next)
   }
 
   return (
@@ -206,10 +228,11 @@ function DashboardSidebarContent({
               </p>
             </div>
           ) : (
-            dashboards.map((dashboard) => {
+            dashboards.map((dashboard, index) => {
               const isActive = dashboard.id === currentDashboardId
               const isEditing = editingId === dashboard.id
               const count = dashboard.components?.length ?? 0
+              const canReorder = !!onReorder && dashboards.length > 1
 
               return (
                 <div
@@ -284,6 +307,28 @@ function DashboardSidebarContent({
 
                       {/* Action buttons */}
                       <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {canReorder && (
+                          <>
+                            <button
+                              className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              disabled={index === 0}
+                              onClick={(e) => { e.stopPropagation(); moveByOne(dashboard.id, -1) }}
+                              title={t('sidebar.moveUp')}
+                              aria-label={t('sidebar.moveUp')}
+                            >
+                              <ChevronUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              disabled={index === dashboards.length - 1}
+                              onClick={(e) => { e.stopPropagation(); moveByOne(dashboard.id, 1) }}
+                              title={t('sidebar.moveDown')}
+                              aria-label={t('sidebar.moveDown')}
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                            </button>
+                          </>
+                        )}
                         <button
                           className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
                           onClick={(e) => { e.stopPropagation(); setEditingId(dashboard.id); setEditingName(dashboard.name) }}
@@ -325,6 +370,7 @@ export function DashboardListSidebar({
   onCreate,
   onRename,
   onDelete,
+  onReorder,
   open = true,
   onOpenChange,
   isDesktop = true,
@@ -351,6 +397,7 @@ export function DashboardListSidebar({
           onCreate={onCreate}
           onRename={onRename}
           onDelete={onDelete}
+          onReorder={onReorder}
           onOpenChange={onOpenChange}
           isDesktop={true}
           onSwitchToTabs={onSwitchToTabs}
@@ -392,6 +439,7 @@ export function DashboardListSidebar({
           onCreate={onCreate}
           onRename={onRename}
           onDelete={onDelete}
+          onReorder={onReorder}
           onOpenChange={onOpenChange}
           isDesktop={false}
         />

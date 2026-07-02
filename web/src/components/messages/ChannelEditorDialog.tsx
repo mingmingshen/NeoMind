@@ -25,6 +25,7 @@ import { useIsMobile } from '@/hooks/useMobile'
 import type { MessageChannel } from '@/types'
 
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -170,8 +171,7 @@ function WebhookConfig({ config, onChange }: {
 
       {(config._authType as string) === 'bearer' && (
         <FormField label={t('messages.channels.bearerToken')} required>
-          <Input
-            type="password"
+          <PasswordInput
             value={(config._bearerToken as string) || ''}
             onChange={(e) => onChange(prev => ({ ...prev, _bearerToken: e.target.value }))}
             placeholder={t('messages.channels.bearerTokenPlaceholder')}
@@ -189,8 +189,7 @@ function WebhookConfig({ config, onChange }: {
             />
           </FormField>
           <FormField label={t('messages.channels.basicPass')} required>
-            <Input
-              type="password"
+            <PasswordInput
               value={(config._basicPass as string) || ''}
               onChange={(e) => onChange(prev => ({ ...prev, _basicPass: e.target.value }))}
               placeholder={t('messages.channels.basicPassPlaceholder')}
@@ -209,8 +208,7 @@ function WebhookConfig({ config, onChange }: {
             />
           </FormField>
           <FormField label={t('messages.channels.apiKeyValue')} required>
-            <Input
-              type="password"
+            <PasswordInput
               value={(config._apiKeyValue as string) || ''}
               onChange={(e) => onChange(prev => ({ ...prev, _apiKeyValue: e.target.value }))}
               placeholder={t('messages.channels.apiKeyValuePlaceholder')}
@@ -322,8 +320,7 @@ function EmailConfig({ config, onChange }: {
         />
       </FormField>
       <FormField label={t('messages.channels.smtpPass')} required>
-        <Input
-          type="password"
+        <PasswordInput
           value={(config.password as string) || ''}
           onChange={(e) => onChange(prev => ({ ...prev, password: e.target.value }))}
           placeholder={t('messages.channels.smtpPassPlaceholder')}
@@ -349,8 +346,7 @@ function TelegramConfig({ config, onChange }: {
   return (
     <div className="space-y-3">
       <FormField label={t('messages.channels.botToken')} required>
-        <Input
-          type="password"
+        <PasswordInput
           value={(config.token as string) || ''}
           onChange={(e) => onChange(prev => ({ ...prev, token: e.target.value }))}
           placeholder="bot123:ABC-xxx"
@@ -402,8 +398,7 @@ function DingTalkConfig({ config, onChange }: {
         />
       </FormField>
       <FormField label={t('messages.channels.secret')}>
-        <Input
-          type="password"
+        <PasswordInput
           value={(config.secret as string) || ''}
           onChange={(e) => onChange(prev => ({ ...prev, secret: e.target.value }))}
           placeholder={t('messages.channels.secretOptional')}
@@ -449,8 +444,7 @@ function FeishuConfig({ config, onChange }: {
         />
       </FormField>
       <FormField label={t('messages.channels.secret')}>
-        <Input
-          type="password"
+        <PasswordInput
           value={(config.secret as string) || ''}
           onChange={(e) => onChange(prev => ({ ...prev, secret: e.target.value }))}
           placeholder={t('messages.channels.secretOptional')}

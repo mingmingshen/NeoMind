@@ -13,6 +13,83 @@ _None yet._
 
 ---
 
+## [0.9.1]
+
+### Overview
+
+A **UX polish patch**: dashboard manual ordering lands as the first
+citizen of the dashboards model (sortable sidebar + tab bar), and
+sensitive inputs across the app get a consistent show/hide toggle.
+
+Themes: (1) **dashboard manual ordering** — `sort_order` field +
+batch reorder API + icon-based controls; (2) **password show/hide** —
+reusable `PasswordInput` component rolled out across all sensitive
+inputs.
+
+### Dashboard manual ordering
+
+Dashboards have until now rendered in storage iteration order, which
+for UUID-keyed redb tables is effectively random. Users with many
+dashboards had no way to pin frequently-used ones at the top. This
+release adds an explicit ordering column end-to-end.
+
+- **`Dashboard.sort_order: Option<i32>`** (`neomind-storage`) with
+  `#[serde(alias = "sort_order")]` so existing rows lacking the field
+  deserialize cleanly. New dashboards are appended at
+  `max_sort_order() + 1`.
+- **`DashboardStore::set_sort_orders(&[(id, order)])`** — single
+  transaction batch update, same pattern as `set_default()`.
+- **`PUT /api/dashboards/reorder`** — body `{ dashboard_ids: [...] }`,
+  response `{ ok, count }`. Emits `DashboardUpdated` with
+  `action: "reorder"` so other clients sync via SSE.
+- **List ordering** — `list_dashboards_handler` now sorts by
+  `sort_order.unwrap_or(i32::MAX)`; legacy rows fall to the bottom in
+  stable order.
+- **Frontend slice** — `reorderDashboards(newOrder)` does an optimistic
+  update, calls `recordSelfSync` for every affected id (SSE echo
+  suppression), and rolls back on API failure.
+- **Icon-only controls (no drag)** — per user request, reordering is
+  surfaced exclusively via `ChevronUp`/`ChevronDown`:
+  - Sidebar (`DashboardListSidebar`) — buttons in the hover action group
+  - Tab bar (`DashboardTabBar`) — items in the active tab's `⋮` menu
+    (desktop) and in the mobile dropdown switcher
+- **DTO round-trip** — `sortOrder` (camel) ↔ `sort_order` (snake)
+  flows through `fromDashboardDTO` / `toDashboardDTO` per the dashboard
+  conversion invariant.
+
+### Password show/hide toggle
+
+Sensitive text inputs across the app (login, setup, broker, push
+targets, LLM API key, message channel secrets, BLE WiFi, plugin
+schema-driven fields) used plain `<Input type="password">` with no
+way for the user to verify what they typed. This release introduces a
+single reusable component and rolls it out everywhere.
+
+- **`<PasswordInput>`** (`web/src/components/ui/password-input.tsx`) —
+  wraps the existing IME-safe `Input` primitive with an
+  `Eye`/`EyeOff` toggle button. Ref-friendly (forwardRef), so existing
+  `editInputRef.focus()` patterns keep working. Labels resolve via the
+  globally-loaded `auth` namespace (`showPassword` / `hidePassword`).
+- **Applied to 9 locations**: login page, setup admin account, BLE
+  WiFi password, data-push webhook + MQTT passwords, LLM backend API
+  key, message channels (email password, bearer token, basic auth
+  pass, API key value, SMTP pass, Telegram bot token, webhook secrets
+  ×2), embedded broker password, plugin schema password fields.
+- **Skipped** `InstanceManagerDialog.tsx` — that field has a custom
+  `ShieldCheck` validation indicator anchored at the same position the
+  eye would occupy; combining the two would require restructuring the
+  overlay layout (out of scope for a toggle).
+
+### Backwards compatibility
+
+- Existing `dashboards.redb` files without `sort_order` load cleanly;
+  those dashboards sort to the bottom until reordered.
+- `Input` primitive behavior unchanged — the password path still
+  disables IME composition (Tauri/WebKit garbled-display fix).
+- No DB migration required.
+
+---
+
 ## [0.9.0]
 
 ### Overview

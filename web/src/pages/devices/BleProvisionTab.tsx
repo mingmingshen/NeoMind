@@ -7,6 +7,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useBleProvision } from '@/hooks/useBleProvision'
@@ -393,7 +394,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
           </div>
           <div>
             <Label>{t('devices:ble.password')}</Label>
-            <Input type="password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} placeholder={t('devices:ble.passwordPlaceholder')} />
+            <PasswordInput value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} placeholder={t('devices:ble.passwordPlaceholder')} />
           </div>
         </div>
       )}

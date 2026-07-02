@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -230,9 +231,8 @@ export function MessageChannelsTab({
             </div>
             <div>
               <Label htmlFor="email-password">{t('messages.channels.emailPassword')}</Label>
-              <Input
+              <PasswordInput
                 id="email-password"
-                type="password"
                 placeholder={t('messages.channels.optionalPlaceholder')}
                 value={(newChannelConfig.password as string) || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, password: e.target.value }))}

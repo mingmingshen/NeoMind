@@ -43,6 +43,12 @@ export interface DashboardStorage {
   delete(id: string): Promise<StorageResult<void>>
 
   /**
+   * Persist a full manual ordering of dashboard IDs (index 0 = top).
+   * Backend assigns each its index as `sort_order`. Returns ok:false on error.
+   */
+  reorder?(dashboardIds: string[]): Promise<StorageResult<void>>
+
+  /**
    * Clear all dashboard data from storage
    */
   clear(): void
@@ -121,6 +127,7 @@ export interface DashboardDTO {
   created_at: number
   updated_at: number
   is_default?: boolean
+  sort_order?: number
 }
 
 export interface CreateDashboardDTO {
@@ -197,7 +204,7 @@ function positionFromDTO(p: ComponentDTO['position'] | undefined | null): Compon
  * Convert internal Dashboard to API DTO format
  * Returns API format with snake_case fields (data_source)
  */
-export function toDashboardDTO(dashboard: Dashboard): CreateDashboardDTO & { id: string; created_at: number; updated_at: number; is_default?: boolean } {
+export function toDashboardDTO(dashboard: Dashboard): CreateDashboardDTO & { id: string; created_at: number; updated_at: number; is_default?: boolean; sort_order?: number } {
   return {
     id: dashboard.id,
     name: dashboard.name,
@@ -206,6 +213,7 @@ export function toDashboardDTO(dashboard: Dashboard): CreateDashboardDTO & { id:
     created_at: dashboard.createdAt,
     updated_at: dashboard.updatedAt,
     is_default: dashboard.isDefault,
+    sort_order: dashboard.sortOrder,
   }
 }
 
@@ -268,6 +276,7 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
     isDefault: dto.is_default,
+    sortOrder: dto.sort_order,
   }
 }
 
