@@ -62,4 +62,6 @@ pub mod keys {
     pub const AGENT_MANAGER: &str = "agent_manager";
     /// Agent store key
     pub const AGENT_STORE: &str = "agent_store";
+    /// Session manager key (for ChatStream capability)
+    pub const SESSION_MANAGER: &str = "session_manager";
 }

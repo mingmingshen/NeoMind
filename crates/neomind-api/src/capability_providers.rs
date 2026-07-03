@@ -1369,6 +1369,222 @@ impl ExtensionCapabilityProvider for AgentCapabilityProvider {
 }
 
 // ============================================================================
+// Chat Stream Capability Provider
+// ============================================================================
+
+use neomind_agent::session::SessionManager;
+use neomind_agent::agent::types::AgentEvent;
+use futures::StreamExt;
+use neomind_core::event::NeoMindEvent;
+
+/// Late-binding holder for SessionManager.
+///
+/// `ChatStreamCapabilityProvider` is constructed during ServerState::new() before
+/// `AgentState` (and therefore `SessionManager`) exists. We pass this holder in
+/// at construction time and fill it in once `agents` is built. Invoke-time reads
+/// lock the RwLock and fail with a clear error if the manager isn't populated yet.
+pub type SessionManagerHolder = Arc<tokio::sync::RwLock<Option<Arc<SessionManager>>>>;
+
+/// Provider for `ChatStream` capability.
+///
+/// On invoke, kicks off `SessionManager::process_message_events` in a background
+/// task and publishes each `AgentEvent` onto the EventBus as
+/// `NeoMindEvent::AgentStreamChunk`, tagged with the session_id. The synchronous
+/// return value just hands back the session_id so callers can subscribe to the
+/// event stream and filter by it.
+pub struct ChatStreamCapabilityProvider {
+    session_manager: SessionManagerHolder,
+    event_bus: Arc<EventBus>,
+}
+
+impl ChatStreamCapabilityProvider {
+    pub fn new(session_manager: SessionManagerHolder, event_bus: Arc<EventBus>) -> Self {
+        Self {
+            session_manager,
+            event_bus,
+        }
+    }
+}
+
+#[async_trait]
+impl ExtensionCapabilityProvider for ChatStreamCapabilityProvider {
+    fn capability_manifest(&self) -> CapabilityManifest {
+        CapabilityManifest {
+            capabilities: vec![ExtensionCapability::ChatStream],
+            api_version: "v1".to_string(),
+            min_core_version: env!("CARGO_PKG_VERSION").to_string(),
+            package_name: "neomind-api::chat_stream".to_string(),
+        }
+    }
+
+    async fn invoke_capability(
+        &self,
+        capability: ExtensionCapability,
+        params: &Value,
+    ) -> Result<Value, CapabilityError> {
+        match capability {
+            ExtensionCapability::ChatStream => self.handle_chat_stream(params).await,
+            _ => Err(CapabilityError::NotAvailable(capability)),
+        }
+    }
+}
+
+impl ChatStreamCapabilityProvider {
+    async fn handle_chat_stream(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let message = params
+            .get("message")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing 'message' string field".to_string())
+            })?;
+
+        let existing_session_id = params.get("session_id").and_then(|v| v.as_str());
+
+        // Resolve SessionManager via late-binding holder.
+        let session_manager = {
+            let guard = self.session_manager.read().await;
+            guard
+                .clone()
+                .ok_or_else(|| {
+                    CapabilityError::ProviderError(
+                        "SessionManager not initialized yet (still starting up)".to_string(),
+                    )
+                })?
+        };
+
+        // Pick or create session.
+        let (session_id, created) = match existing_session_id {
+            Some(sid) if !sid.is_empty() => {
+                // Caller specified — ensure it exists (create/restore if missing).
+                let id = session_manager
+                    .get_or_create_session(Some(sid.to_string()))
+                    .await;
+                (id, false)
+            }
+            _ => {
+                // Fresh session — let SessionManager allocate a new UUID.
+                let id = session_manager.get_or_create_session(None).await;
+                (id, true)
+            }
+        };
+
+        // Spawn background task that drives the stream and publishes each chunk.
+        let mgr = session_manager.clone();
+        let bus = self.event_bus.clone();
+        let sid = session_id.clone();
+        let msg = message.to_string();
+        tokio::spawn(async move {
+            let stream = match mgr.process_message_events(&sid, &msg).await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(
+                        session_id = %sid,
+                        error = %e,
+                        "ChatStream: process_message_events failed"
+                    );
+                    // Publish a terminal Error chunk so subscribers don't hang.
+                    let _ = bus.publish(NeoMindEvent::AgentStreamChunk {
+                        session_id: sid.clone(),
+                        chunk: serde_json::json!({
+                            "type": "Error",
+                            "message": format!("upstream error: {}", e),
+                        }),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    });
+                    return;
+                }
+            };
+
+            let mut s = stream;
+            let mut event_count: u32 = 0;
+            while let Some(event) = s.next().await {
+                event_count += 1;
+                let chunk_json = agent_event_to_json(&event);
+                let chunk_type = chunk_json.get("type").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                let delivered = bus.publish(NeoMindEvent::AgentStreamChunk {
+                    session_id: sid.clone(),
+                    chunk: chunk_json,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                }).await;
+                if event_count <= 3 || !delivered {
+                    tracing::info!(
+                        session_id = %sid,
+                        event_count,
+                        chunk_type = %chunk_type,
+                        delivered,
+                        "ChatStream: published AgentStreamChunk"
+                    );
+                }
+            }
+            tracing::info!(
+                session_id = %sid,
+                total_events = event_count,
+                "ChatStream: stream completed"
+            );
+        });
+
+        Ok(json!({
+            "session_id": session_id,
+            "created": created,
+        }))
+    }
+}
+
+/// Serialize an AgentEvent into the same JSON shape the chat WebSocket handler
+/// emits (see `handlers/sessions.rs::process_stream_to_channel`). Centralizing
+/// this here means subscribers consume the exact same schema as the browser.
+fn agent_event_to_json(event: &AgentEvent) -> Value {
+    match event {
+        AgentEvent::Thinking { content } => json!({ "type": "Thinking", "content": content }),
+        AgentEvent::Content { content } => json!({ "type": "Content", "content": content }),
+        AgentEvent::ToolCallStart { tool, arguments, round } => {
+            let mut v = json!({ "type": "ToolCallStart", "tool": tool, "arguments": arguments });
+            if let Some(r) = round {
+                v["round"] = json!(r);
+            }
+            v
+        }
+        AgentEvent::ToolCallEnd { tool, result, success, round } => {
+            let mut v = json!({
+                "type": "ToolCallEnd",
+                "tool": tool,
+                "result": result,
+                "success": success,
+            });
+            if let Some(r) = round {
+                v["round"] = json!(r);
+            }
+            v
+        }
+        AgentEvent::Error { message } => json!({ "type": "Error", "message": message }),
+        AgentEvent::Warning { message } => json!({ "type": "Warning", "message": message }),
+        AgentEvent::Intent { category, display_name, confidence, keywords } => json!({
+            "type": "Intent",
+            "category": category,
+            "displayName": display_name,
+            "confidence": confidence,
+            "keywords": keywords,
+        }),
+        AgentEvent::Plan { step, stage } => json!({ "type": "Plan", "step": step, "stage": stage }),
+        AgentEvent::IntermediateEnd => json!({ "type": "intermediate_end" }),
+        AgentEvent::End { prompt_tokens } => {
+            let mut v = json!({ "type": "end" });
+            if let Some(pt) = prompt_tokens {
+                v["tokenUsage"] = json!({ "promptTokens": pt });
+            }
+            v
+        }
+        AgentEvent::Progress { message, stage, elapsed_ms, .. } => json!({
+            "type": "Progress",
+            "message": message,
+            "stage": stage,
+            "elapsed_ms": elapsed_ms,
+        }),
+        AgentEvent::Heartbeat { timestamp } => json!({ "type": "Heartbeat", "timestamp": timestamp }),
+    }
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -1379,8 +1595,16 @@ pub async fn register_builtin_providers(
     context: &ExtensionContext,
     services: CapabilityServices,
     event_bus: Arc<EventBus>,
+    session_manager_holder: SessionManagerHolder,
 ) {
-    register_builtin_providers_with_dispatcher(context, services, event_bus, None).await;
+    register_builtin_providers_with_dispatcher(
+        context,
+        services,
+        event_bus,
+        None,
+        session_manager_holder,
+    )
+    .await;
 }
 
 /// Register all built-in capability providers with event dispatcher support
@@ -1389,7 +1613,11 @@ pub async fn register_builtin_providers_with_dispatcher(
     services: CapabilityServices,
     event_bus: Arc<EventBus>,
     event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
+    session_manager_holder: SessionManagerHolder,
 ) {
+    // Clone event_bus for ChatStream provider before it's moved into EventCapabilityProvider.
+    let event_bus_for_chat = event_bus.clone();
+
     let device_provider = Arc::new(DeviceCapabilityProvider::new(services.clone()));
     context
         .register_provider("neomind-api::device".to_string(), device_provider)
@@ -1432,7 +1660,15 @@ pub async fn register_builtin_providers_with_dispatcher(
         .register_provider("neomind-api::agent".to_string(), agent_provider)
         .await;
 
-    tracing::info!("Registered all built-in capability providers (7 providers, 11 capabilities)");
+    let chat_stream_provider = Arc::new(ChatStreamCapabilityProvider::new(
+        session_manager_holder,
+        event_bus_for_chat,
+    ));
+    context
+        .register_provider("neomind-api::chat_stream".to_string(), chat_stream_provider)
+        .await;
+
+    tracing::info!("Registered all built-in capability providers (8 providers, 12 capabilities)");
 }
 
 // ============================================================================
@@ -1478,8 +1714,12 @@ impl CompositeCapabilityProvider {
         services: CapabilityServices,
         event_bus: Arc<EventBus>,
         event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
+        session_manager_holder: SessionManagerHolder,
     ) -> Self {
         let mut composite = Self::new();
+
+        // Clone event_bus for ChatStream provider before it's moved into EventCapabilityProvider below.
+        let event_bus_for_chat = event_bus.clone();
 
         let device_provider = Arc::new(DeviceCapabilityProvider::new(services.clone()));
         composite
@@ -1521,6 +1761,16 @@ impl CompositeCapabilityProvider {
         composite
             .providers
             .insert("neomind-api::agent".to_string(), agent_provider);
+
+        // ChatStream provider — needs late-binding session_manager holder.
+        let chat_stream_provider = Arc::new(ChatStreamCapabilityProvider::new(
+            session_manager_holder,
+            event_bus_for_chat,
+        ));
+        composite.providers.insert(
+            "neomind-api::chat_stream".to_string(),
+            chat_stream_provider,
+        );
 
         composite
     }
@@ -1585,6 +1835,8 @@ fn capability_to_provider(capability: &ExtensionCapability) -> &'static str {
         ExtensionCapability::StorageQuery => "neomind-api::storage",
 
         ExtensionCapability::AgentTrigger => "neomind-api::agent",
+
+        ExtensionCapability::ChatStream => "neomind-api::chat_stream",
 
         ExtensionCapability::Custom(_) => "neomind-api::custom",
     }

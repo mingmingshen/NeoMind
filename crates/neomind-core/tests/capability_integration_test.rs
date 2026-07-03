@@ -548,8 +548,8 @@ async fn test_capability_metadata() {
 async fn test_all_capabilities() {
     let all_caps = ExtensionCapability::all_capabilities();
 
-    // Verify all 14 standard capabilities are present
-    assert_eq!(all_caps.len(), 14);
+    // Verify all 15 standard capabilities are present
+    assert_eq!(all_caps.len(), 15);
 
     let cap_names: Vec<String> = all_caps.iter().map(|c| c.name()).collect();
 

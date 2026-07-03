@@ -78,6 +78,7 @@ define_capabilities! {
     MetricsAggregate => METRICS_AGGREGATE => "metrics_aggregate" => "Access to aggregate device metrics",
     ExtensionCall => EXTENSION_CALL => "extension_call" => "Access to call other extensions",
     AgentTrigger => AGENT_TRIGGER => "agent_trigger" => "Access to trigger agents",
+    ChatStream => CHAT_STREAM => "chat_stream" => "Access to streaming chat (SessionManager) with token-level events pushed via EventPush",
     RuleTrigger => RULE_TRIGGER => "rule_trigger" => "Access to trigger rules",
     DeviceTemplateRegister => DEVICE_TEMPLATE_REGISTER => "device_template_register" => "Register device type templates",
     DeviceRegister => DEVICE_REGISTER => "device_register" => "Register device instances",
@@ -97,6 +98,7 @@ impl ExtensionCapability {
             ExtensionCapability::MetricsAggregate => "Metrics Aggregate".to_string(),
             ExtensionCapability::ExtensionCall => "Extension Call".to_string(),
             ExtensionCapability::AgentTrigger => "Agent Trigger".to_string(),
+            ExtensionCapability::ChatStream => "Chat Stream".to_string(),
             ExtensionCapability::RuleTrigger => "Rule Trigger".to_string(),
             ExtensionCapability::DeviceTemplateRegister => "Device Template Register".to_string(),
             ExtensionCapability::DeviceRegister => "Device Register".to_string(),
@@ -125,6 +127,10 @@ impl ExtensionCapability {
             }
             ExtensionCapability::ExtensionCall => "Call other extensions".to_string(),
             ExtensionCapability::AgentTrigger => "Trigger AI agent execution".to_string(),
+            ExtensionCapability::ChatStream => {
+                "Invoke streaming chat session (SessionManager); AgentEvent stream pushed via event bus"
+                    .to_string()
+            }
             ExtensionCapability::RuleTrigger => "Trigger rule engine execution".to_string(),
             ExtensionCapability::DeviceTemplateRegister => {
                 "Register device type templates".to_string()
@@ -151,7 +157,9 @@ impl ExtensionCapability {
                 "telemetry".to_string()
             }
             ExtensionCapability::ExtensionCall => "extension".to_string(),
-            ExtensionCapability::AgentTrigger => "agent".to_string(),
+            ExtensionCapability::AgentTrigger | ExtensionCapability::ChatStream => {
+                "agent".to_string()
+            }
             ExtensionCapability::RuleTrigger => "rule".to_string(),
             ExtensionCapability::Custom(_) => "custom".to_string(),
         }
@@ -194,6 +202,162 @@ pub trait ExtensionCapabilityProvider: Send + Sync {
         capability: ExtensionCapability,
         params: &serde_json::Value,
     ) -> std::result::Result<serde_json::Value, CapabilityError>;
+}
+
+// ============================================================================
+// Capability Stream API (Stage 1.2)
+// ============================================================================
+
+/// Reason a stream ended.
+///
+/// Re-exported from `ipc_types::StreamEndReason` for convenience — this is the
+/// same type so values can be compared across the IPC boundary.
+pub type StreamEndReason = crate::ipc_types::StreamEndReason;
+
+/// Handle returned by [`ExtensionStreamProvider::open_stream`].
+///
+/// Owns:
+/// - `lease_id` — unique identifier for the open stream
+/// - `initial_metadata` — capability-specific data captured at open time
+/// - `rx` — receiver for chunks produced by the driver task
+/// - `cancel_tx` — cancellation signal (set to `true` to abort the driver)
+/// - `join` — `JoinHandle` whose task drives the source and resolves to a
+///   [`StreamEndReason`] when done (naturally, cancelled, or errored)
+///
+/// # Cancel semantics
+/// `cancel()` flips the `cancel_tx` watch channel to `true`. The driver task
+/// is responsible for observing the signal via its own `watch::Receiver` and
+/// promptly aborting. `join` will then resolve to
+/// [`StreamEndReason::Cancelled`](crate::ipc_types::StreamEndReason::Cancelled).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct StreamHandle {
+    lease_id: String,
+    initial_metadata: serde_json::Value,
+    rx: tokio::sync::mpsc::Receiver<crate::ipc_types::StreamChunkPayload>,
+    cancel_tx: tokio::sync::watch::Sender<bool>,
+    // Option<JoinHandle> so the Drop impl can `take()` it. `take_join` also
+    // consumes — once taken, the Option is None and Drop becomes a no-op
+    // (the caller owns the task and is responsible for awaiting it).
+    join: Option<tokio::task::JoinHandle<StreamEndReason>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::fmt::Debug for StreamHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamHandle")
+            .field("lease_id", &self.lease_id)
+            .field("cancelled", &(*self.cancel_tx.borrow()))
+            .field("join_taken", &self.join.is_none())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl StreamHandle {
+    /// Construct a new handle. Provider implementations use this after
+    /// spawning their driver task.
+    pub fn new(
+        lease_id: String,
+        initial_metadata: serde_json::Value,
+        rx: tokio::sync::mpsc::Receiver<crate::ipc_types::StreamChunkPayload>,
+        cancel_tx: tokio::sync::watch::Sender<bool>,
+        join: tokio::task::JoinHandle<StreamEndReason>,
+    ) -> Self {
+        Self {
+            lease_id,
+            initial_metadata,
+            rx,
+            cancel_tx,
+            join: Some(join),
+        }
+    }
+
+    /// Lease ID for this stream.
+    pub fn lease_id(&self) -> &str {
+        &self.lease_id
+    }
+
+    /// Initial capability-specific metadata (e.g. `{ session_id, created }`).
+    pub fn initial_metadata(&self) -> &serde_json::Value {
+        &self.initial_metadata
+    }
+
+    /// Mutable borrow of the chunk receiver (driver pumps chunks in here).
+    pub fn rx(&mut self) -> &mut tokio::sync::mpsc::Receiver<crate::ipc_types::StreamChunkPayload> {
+        &mut self.rx
+    }
+
+    /// Mutable borrow of the driver task join handle (host awaits this to
+    /// detect natural completion vs cancellation vs error). Returns None if
+    /// [`take_join`] has already been called.
+    pub fn join_mut(
+        &mut self,
+    ) -> Option<&mut tokio::task::JoinHandle<StreamEndReason>> {
+        self.join.as_mut()
+    }
+
+    /// Whether `cancel()` has been called.
+    pub fn is_cancelled(&self) -> bool {
+        *self.cancel_tx.borrow()
+    }
+
+    /// Trigger cancellation. Idempotent — subsequent calls are no-ops.
+    pub fn cancel(&self) {
+        let _ = self.cancel_tx.send(true);
+    }
+
+    /// Take ownership of the join handle (useful when forwarding to a
+    /// dedicated awaiter task). The handle must not be re-used after this.
+    /// Caller becomes responsible for awaiting the driver to completion.
+    /// After this call, [`join_mut`] returns None and Drop will NOT abort
+    /// the driver (the caller owns it now).
+    pub fn take_join(mut self) -> Option<tokio::task::JoinHandle<StreamEndReason>> {
+        self.join.take()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for StreamHandle {
+    fn drop(&mut self) {
+        // Signal cancel first so well-behaved drivers abort promptly.
+        let _ = self.cancel_tx.send(true);
+        // Hard-abort the driver task as a backstop — covers drivers that
+        // miss the cancel signal or hang on a blocking call. Without this,
+        // dropping a StreamHandle without `take_join` would leak the task
+        // indefinitely. If `take_join` was called, `self.join` is None and
+        // the caller owns the task — Drop is a no-op for the join.
+        if let Some(join) = self.join.take() {
+            join.abort();
+        }
+    }
+}
+
+/// Provider trait for streaming capabilities.
+///
+/// Implement alongside [`ExtensionCapabilityProvider`] for capabilities that
+/// emit a stream of chunks (e.g. chat_stream, asr_stream). The provider is
+/// responsible for:
+///
+/// 1. Spawning a driver task that pushes chunks onto the per-stream mpsc.
+/// 2. Honoring the cancel signal (delivered via the
+///    [`StreamHandle`]'s `cancel_tx` watch channel) by aborting promptly.
+/// 3. Returning the join handle so the host can detect completion.
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait::async_trait]
+pub trait ExtensionStreamProvider: Send + Sync {
+    /// Open a new stream and return a handle.
+    ///
+    /// `buffer_size` is the desired mpsc channel depth (in chunks).
+    /// `drop_policy` tells the provider how to react when the channel is full.
+    /// `transport` requests a specific data-plane transport; the provider may
+    /// downgrade (e.g. WASM providers always behave as `IpcJson`).
+    async fn open_stream(
+        &self,
+        params: &serde_json::Value,
+        buffer_size: u32,
+        drop_policy: crate::ipc_types::StreamDropPolicy,
+        transport: crate::ipc_types::StreamTransport,
+    ) -> std::result::Result<StreamHandle, String>;
 }
 
 // ============================================================================

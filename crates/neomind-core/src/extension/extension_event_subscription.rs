@@ -152,10 +152,11 @@ impl ExtensionEventSubscriptionService {
         // Convert NeoMindEvent to extension format (automatic)
         let (event_type, payload) = Self::convert_to_extension_format(&event);
 
-        trace!(
-            event_type = %event_type,
-            "Forwarding event from EventBus to extensions"
-        );
+        if event_type == "AgentStreamChunk" {
+            info!(event_type = %event_type, "Subscription service forwarding AgentStreamChunk to dispatcher");
+        } else {
+            trace!(event_type = %event_type, "Forwarding event from EventBus to extensions");
+        }
 
         // Dispatch to extensions via EventDispatcher (async)
         event_dispatcher.dispatch_event(&event_type, payload).await;

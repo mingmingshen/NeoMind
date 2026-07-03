@@ -54,6 +54,7 @@
 //! ```
 
 pub mod agent;
+pub mod chat;
 pub mod device;
 pub mod event;
 pub mod extension;

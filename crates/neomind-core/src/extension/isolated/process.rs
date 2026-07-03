@@ -1371,6 +1371,56 @@ impl IsolatedExtension {
         }
     }
 
+    /// Refresh the cached descriptor by asking the runner to rebuild it.
+    ///
+    /// Used by the metrics collector so that runtime-discovered dynamic
+    /// metrics (e.g. per-stream `fps.cam1`, `fps.cam2`) become visible
+    /// through `/api/extensions`. Failures are non-fatal: callers fall
+    /// back to the previously cached descriptor.
+    pub async fn refresh_descriptor(&self) -> IsolatedResult<()> {
+        if !self.running.load(Ordering::SeqCst) {
+            return Err(IsolatedExtensionError::NotRunning);
+        }
+
+        let (request_id, rx) = self.in_flight.register();
+
+        self.send_message_with_retry(&IpcMessage::GetDescriptor { request_id })
+            .await?;
+
+        let response = self
+            .in_flight
+            .wait_with_timeout(
+                request_id,
+                rx,
+                Duration::from_secs(self.config.command_timeout_secs),
+            )
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => {
+                    tracing::warn!(
+                        extension_id = %self.extension_id,
+                        timeout_ms = ms,
+                        "refresh_descriptor() timed out"
+                    );
+                    IsolatedExtensionError::Timeout(ms)
+                }
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
+
+        match response {
+            IpcResponse::Descriptor { descriptor, .. } => {
+                *self.descriptor.lock().await = Some(descriptor);
+                Ok(())
+            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::IpcError(error)),
+            _ => Err(IsolatedExtensionError::InvalidResponse(
+                "Expected Descriptor response".to_string(),
+            )),
+        }
+    }
+
     /// Get captured log entries from the ring buffer.
     pub fn get_logs(&self) -> Vec<ExtensionLogEntry> {
         self.log_buffer.snapshot()
@@ -2088,6 +2138,232 @@ impl IsolatedExtension {
             _ => Err(IsolatedExtensionError::InvalidResponse(
                 "Expected PushStarted response".to_string(),
             )),
+        }
+    }
+
+    // ========================================================================
+    // Stage 2 — Capability Stream API (pull-based lease protocol).
+    //
+    // These mirror the runner-side handlers in `neomind-extension-runner` and
+    // follow the same `register → send → wait_with_timeout → parse` pattern
+    // as `start_push`. Each method returns a typed result so callers don't
+    // have to touch raw IPC JSON.
+    // ========================================================================
+
+    /// Open a streaming capability session on the extension.
+    ///
+    /// Returns a [`StreamOpenedInfo`] containing the new lease_id plus the
+    /// negotiated transport. The host then drives the stream by calling
+    /// [`stream_pull`] until a terminal result arrives.
+    pub async fn stream_open(
+        &self,
+        capability: &str,
+        params: &Value,
+        buffer_size: u32,
+        drop_policy: neomind_extension_sdk::ipc::StreamDropPolicy,
+        transport: neomind_extension_sdk::ipc::StreamTransport,
+    ) -> IsolatedResult<neomind_extension_sdk::StreamOpenedInfo> {
+        if !self.running.load(Ordering::SeqCst) {
+            return Err(IsolatedExtensionError::NotRunning);
+        }
+
+        let (request_id, rx) = self.in_flight.register();
+
+        debug!(
+            extension_id = %self.extension_id,
+            request_id,
+            capability,
+            buffer_size,
+            "Sending StreamOpen"
+        );
+
+        self.send_message(&IpcMessage::StreamOpen {
+            request_id,
+            capability: capability.to_string(),
+            params: params.clone(),
+            buffer_size,
+            drop_policy,
+            transport,
+        })
+        .await?;
+
+        let response = self
+            .in_flight
+            .wait_with_timeout(request_id, rx, Duration::from_secs(10))
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
+
+        match response {
+            IpcResponse::StreamOpened {
+                lease_id,
+                initial_metadata,
+                transport,
+                ..
+            } => {
+                debug!(
+                    extension_id = %self.extension_id,
+                    request_id,
+                    lease_id = %lease_id,
+                    "StreamOpen succeeded"
+                );
+                Ok(neomind_extension_sdk::StreamOpenedInfo {
+                    lease_id,
+                    initial_metadata,
+                    transport,
+                })
+            }
+            IpcResponse::Error { error, .. } => {
+                Err(IsolatedExtensionError::ExecutionFailed(error))
+            }
+            other => Err(IsolatedExtensionError::InvalidResponse(format!(
+                "Expected StreamOpened, got {:?}",
+                other
+            ))),
+        }
+    }
+
+    /// Pull the next chunk from an open stream lease.
+    ///
+    /// Times out after `timeout_ms` (plus a small grace period for IPC
+    /// transit) and returns [`StreamPullResult::Timeout`] — the lease stays
+    /// open and the caller can pull again.
+    pub async fn stream_pull(
+        &self,
+        lease_id: &str,
+        timeout_ms: u64,
+    ) -> IsolatedResult<neomind_extension_sdk::StreamPullResult> {
+        if !self.running.load(Ordering::SeqCst) {
+            return Err(IsolatedExtensionError::NotRunning);
+        }
+
+        let (request_id, rx) = self.in_flight.register();
+
+        self.send_message(&IpcMessage::StreamPull {
+            request_id,
+            lease_id: lease_id.to_string(),
+            timeout_ms,
+        })
+        .await?;
+
+        // Give the runner timeout_ms + a 2s IPC grace period to respond.
+        let wait = Duration::from_millis(timeout_ms.saturating_add(2_000));
+        let response = self
+            .in_flight
+            .wait_with_timeout(request_id, rx, wait)
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(_) => {
+                    // Host-side wait expired before the runner replied.
+                    IsolatedExtensionError::Timeout(timeout_ms)
+                }
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
+
+        match response {
+            IpcResponse::Success { data, .. } => {
+                serde_json::from_value::<neomind_extension_sdk::StreamPullResult>(data)
+                    .map_err(|e| {
+                        IsolatedExtensionError::InvalidResponse(format!(
+                            "Failed to deserialize StreamPullResult: {e}"
+                        ))
+                    })
+            }
+            IpcResponse::Error { error, .. } => {
+                Err(IsolatedExtensionError::ExecutionFailed(error))
+            }
+            other => Err(IsolatedExtensionError::InvalidResponse(format!(
+                "Expected Success(StreamPullResult), got {:?}",
+                other
+            ))),
+        }
+    }
+
+    /// Cancel an open stream lease. Real cancel — the runner flips the cancel
+    /// watch and the capability provider aborts. Returns `true` if the lease
+    /// was open and a cancel was triggered.
+    pub async fn stream_cancel(&self, lease_id: &str, reason: &str) -> IsolatedResult<bool> {
+        if !self.running.load(Ordering::SeqCst) {
+            return Err(IsolatedExtensionError::NotRunning);
+        }
+
+        let (request_id, rx) = self.in_flight.register();
+        self.send_message(&IpcMessage::StreamCancel {
+            request_id,
+            lease_id: lease_id.to_string(),
+            reason: reason.to_string(),
+        })
+        .await?;
+
+        let response = self
+            .in_flight
+            .wait_with_timeout(request_id, rx, Duration::from_secs(5))
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
+
+        match response {
+            IpcResponse::Success { data, .. } => Ok(data
+                .get("cancelled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)),
+            IpcResponse::Error { error, .. } => {
+                Err(IsolatedExtensionError::ExecutionFailed(error))
+            }
+            other => Err(IsolatedExtensionError::InvalidResponse(format!(
+                "Expected Success(cancelled), got {:?}",
+                other
+            ))),
+        }
+    }
+
+    /// Close and release a stream lease. Idempotent. Returns `true` if the
+    /// lease was open (and is now closed), `false` if it was already gone.
+    pub async fn stream_close(&self, lease_id: &str) -> IsolatedResult<bool> {
+        if !self.running.load(Ordering::SeqCst) {
+            // Extension gone — lease is effectively closed.
+            return Ok(false);
+        }
+
+        let (request_id, rx) = self.in_flight.register();
+        self.send_message(&IpcMessage::StreamClose {
+            request_id,
+            lease_id: lease_id.to_string(),
+        })
+        .await?;
+
+        let response = self
+            .in_flight
+            .wait_with_timeout(request_id, rx, Duration::from_secs(5))
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
+
+        match response {
+            IpcResponse::Success { data, .. } => {
+                Ok(data.get("closed").and_then(|v| v.as_bool()).unwrap_or(false))
+            }
+            IpcResponse::Error { error, .. } => {
+                Err(IsolatedExtensionError::ExecutionFailed(error))
+            }
+            other => Err(IsolatedExtensionError::InvalidResponse(format!(
+                "Expected Success(closed), got {:?}",
+                other
+            ))),
         }
     }
 

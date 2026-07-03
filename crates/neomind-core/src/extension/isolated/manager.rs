@@ -1020,6 +1020,18 @@ impl IsolatedExtensionManager {
         isolated.health_check().await
     }
 
+    /// Refresh the cached descriptor of an isolated extension so that
+    /// runtime-discovered dynamic metrics become visible.
+    pub async fn refresh_descriptor(&self, id: &str) -> IsolatedResult<()> {
+        let extensions = self.extensions.read().await;
+
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+
+        isolated.refresh_descriptor().await
+    }
+
     /// Send config hot-reload update to a running extension
     pub async fn send_config_update(
         &self,

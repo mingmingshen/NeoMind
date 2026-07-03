@@ -862,6 +862,13 @@ impl ServerState {
 
         // Set up capability provider for isolated extensions
         // This allows isolated extensions to invoke capabilities on the host process
+        //
+        // The SessionManager isn't built yet at this point in `new()`, so we
+        // create a late-binding holder that gets populated after `agents`
+        // construction below. ChatStreamCapabilityProvider reads from this
+        // holder at invocation time.
+        let session_manager_holder: crate::capability_providers::SessionManagerHolder =
+            Arc::new(tokio::sync::RwLock::new(None));
         {
             use crate::capability_providers::CompositeCapabilityProvider;
             use neomind_core::extension::CapabilityServices;
@@ -897,6 +904,7 @@ impl ServerState {
                     .clone()
                     .unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())),
                 event_dispatcher,
+                session_manager_holder.clone(),
             ));
 
             extensions.set_capability_provider(composite_provider).await;
@@ -1042,6 +1050,10 @@ impl ServerState {
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
         );
+
+        // Late-bind SessionManager into the ChatStream capability holder so
+        // ChatStream invocations from isolated extensions can resolve it.
+        *session_manager_holder.write().await = Some(agents.session_manager.clone());
 
         // ========== Build AUTH STATE ==========
         let auth = AuthState {

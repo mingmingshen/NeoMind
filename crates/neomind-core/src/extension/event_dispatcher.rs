@@ -150,6 +150,19 @@ impl EventDispatcher {
         let subscriptions = self.subscriptions.read().clone();
         let isolated_event_senders = self.isolated_event_senders.read().clone();
 
+        // Diagnostic: log every dispatch call with subscription state
+        let subscriber_count: usize = subscriptions
+            .iter()
+            .filter(|(_, ets)| ets.iter().any(|et| et == "all" || et == event_type))
+            .count();
+        info!(
+            event_type = %event_type,
+            total_subscribers = subscriber_count,
+            registered_extensions = subscriptions.len(),
+            isolated_senders = isolated_event_senders.len(),
+            "EventDispatcher: dispatch_event called"
+        );
+
         // Find all extensions that have subscribed to this event type
         for (extension_id, event_types) in subscriptions.iter() {
             // Check if this extension should receive this event
@@ -183,10 +196,10 @@ impl EventDispatcher {
                     // Send event to isolated extension via channel
                     match sender.send((event_type.to_string(), payload.clone())).await {
                         Ok(_) => {
-                            trace!(
+                            info!(
                                 extension_id = %extension_id,
                                 event_type = %event_type,
-                                "Event sent to isolated extension"
+                                "EventDispatcher: delivered to isolated extension"
                             );
                         }
                         Err(e) => {
@@ -279,10 +292,10 @@ impl EventDispatcher {
                     // Send event to isolated extension via channel
                     match sender.send((event_type.to_string(), payload.clone())).await {
                         Ok(_) => {
-                            trace!(
+                            info!(
                                 extension_id = %extension_id,
                                 event_type = %event_type,
-                                "Event sent to isolated extension"
+                                "EventDispatcher: delivered to isolated extension"
                             );
                         }
                         Err(e) => {

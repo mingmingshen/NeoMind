@@ -17,6 +17,7 @@ pub mod capabilities {
     pub const METRICS_AGGREGATE: &str = "metrics_aggregate";
     pub const EXTENSION_CALL: &str = "extension_call";
     pub const AGENT_TRIGGER: &str = "agent_trigger";
+    pub const CHAT_STREAM: &str = "chat_stream";
     pub const RULE_TRIGGER: &str = "rule_trigger";
 }
 

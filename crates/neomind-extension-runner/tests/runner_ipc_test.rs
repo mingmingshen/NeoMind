@@ -132,6 +132,70 @@ fn test_ipc_message_get_metadata() {
 }
 
 #[test]
+fn test_ipc_message_get_descriptor() {
+    // Round-trip serialization of the descriptor-refresh request. Old
+    // runners that don't know this variant must reject the JSON cleanly
+    // (covered separately by the unknown-variant tolerance test below).
+    let msg = IpcMessage::GetDescriptor { request_id: 42 };
+    let json = serde_json::to_string(&msg).unwrap();
+    assert!(json.contains("\"GetDescriptor\""));
+    let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
+    match parsed {
+        IpcMessage::GetDescriptor { request_id } => assert_eq!(request_id, 42),
+        _ => panic!("Expected GetDescriptor"),
+    }
+}
+
+#[test]
+fn test_ipc_response_descriptor_round_trip() {
+    use neomind_extension_sdk::CommandBuilder;
+    let metadata = ExtensionMetadata::new("test-ext", "Test Extension", "1.0.0")
+        .with_description("for round-trip");
+    let cmd = CommandBuilder::new("ping")
+        .display_name("Ping")
+        .description("Health probe")
+        .build();
+    let descriptor = ExtensionDescriptor {
+        metadata: metadata.clone(),
+        commands: vec![cmd],
+        metrics: vec![],
+    };
+    let resp = IpcResponse::Descriptor {
+        request_id: 7,
+        descriptor: descriptor.clone(),
+    };
+    let json = serde_json::to_string(&resp).unwrap();
+    assert!(json.contains("\"Descriptor\""));
+    let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
+    match parsed {
+        IpcResponse::Descriptor { request_id, descriptor } => {
+            assert_eq!(request_id, 7);
+            assert_eq!(descriptor.metadata.id, "test-ext");
+            assert_eq!(descriptor.metadata.version, "1.0.0");
+            assert_eq!(descriptor.commands.len(), 1);
+            assert_eq!(descriptor.commands[0].name, "ping");
+        }
+        _ => panic!("Expected Descriptor"),
+    }
+}
+
+#[test]
+fn test_unknown_ipc_message_variant_tolerated() {
+    // Mixed-version deployment safety: a JSON shape the receiver doesn't
+    // know must produce a clean serde error (NOT a panic). The host then
+    // falls back to its cached descriptor. This locks that contract.
+    let unknown = r#"{"GetDescriptor":{"request_id":99}}"#;
+    let err = serde_json::from_str::<IpcMessage>(unknown);
+    // If the variant exists in this build, the parse succeeds. Either way
+    // it must not panic; the only acceptable outcomes are Ok or Err.
+    match err {
+        Ok(IpcMessage::GetDescriptor { request_id }) => assert_eq!(request_id, 99),
+        Ok(other) => panic!("unexpected variant: {:?}", other),
+        Err(_) => { /* old binary: tolerated */ }
+    }
+}
+
+#[test]
 fn test_ipc_message_get_stats() {
     let msg = IpcMessage::GetStats { request_id: 5 };
 

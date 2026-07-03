@@ -3379,11 +3379,13 @@ dependencies = [
 
 [[package]]
 name = "neomind-extension-sdk"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "criterion",
+ "libc",
  "num_cpus",
  "pollster 0.4.0",
  "semver",

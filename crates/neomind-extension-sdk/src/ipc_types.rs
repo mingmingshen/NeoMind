@@ -1064,6 +1064,154 @@ impl From<ExtensionError> for ErrorKind {
     }
 }
 
+// ============================================================================
+// Capability Stream API — supporting types (Stage 1.1)
+// ============================================================================
+
+/// Per-stream behavior when the bounded queue is full.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamDropPolicy {
+    /// Block the producer until space is available (back-pressure).
+    Block,
+    /// Drop the oldest queued chunk to make room for the new one.
+    DropOldest,
+    /// Drop the newly-produced chunk (keep what's queued).
+    DropNewest,
+}
+
+/// One chunk of stream data flowing host → extension.
+///
+/// Uses serde's default externally-tagged representation so newtype variants
+/// holding `Vec<u8>` / `String` serialize cleanly. JSON shape:
+/// - `Json(v)`      → `{"Json": v}`
+/// - `Binary(b)`    → `{"Binary": "<base64>"}`  (Stage 2; was integer array in Stage 1)
+/// - `Text(s)`      → `{"Text": "..."}`
+/// - `EndOfStream`  → `"EndOfStream"`
+///
+/// The `Binary` variant uses a custom serializer so the byte payload is
+/// emitted as a base64 STRING (~1.33x overhead) instead of a JSON integer
+/// array (~2.8x overhead for typical PCM). The deserializer accepts BOTH
+/// forms for backward compatibility with Stage 1 fixtures.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum StreamChunkPayload {
+    /// Structured (e.g. JSON AgentEvent for chat_stream).
+    Json(serde_json::Value),
+    /// Raw bytes (e.g. PCM audio, video NAL). Serialized as base64 string.
+    #[serde(with = "binary_base64")]
+    Binary(Vec<u8>),
+    /// Plain text token (rare; usually use Json).
+    Text(String),
+    /// Sentinel: marks end-of-stream inside a `StreamChunk` message.
+    /// Distinct from `StreamEnd` (control-plane terminator) — this lets the
+    /// data plane forward a "final chunk + done" pair atomically.
+    EndOfStream,
+}
+
+/// Custom serde for `StreamChunkPayload::Binary` — base64 string on the wire.
+///
+/// Serialize emits `{"Binary": "<base64>"}` (compact). Deserialize accepts:
+/// - JSON string → base64-decode to bytes (new form)
+/// - JSON array of integers → legacy Stage 1 form (backward compat)
+mod binary_base64 {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &Vec<u8>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        STANDARD.encode(bytes).serialize(ser)
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde_json::Value;
+
+        let v = Value::deserialize(de)?;
+        match v {
+            // New form: base64 string.
+            Value::String(s) => STANDARD
+                .decode(s.as_bytes())
+                .map_err(serde::de::Error::custom),
+            // Legacy form: JSON integer array.
+            Value::Array(arr) => {
+                let mut out = Vec::with_capacity(arr.len());
+                for n in arr {
+                    let n = n.as_u64().ok_or_else(|| {
+                        serde::de::Error::custom(
+                            "Binary legacy array form expects unsigned integers",
+                        )
+                    })?;
+                    if n > u8::MAX as u64 {
+                        return Err(serde::de::Error::custom(
+                            "Binary legacy array form expects bytes (0-255)",
+                        ));
+                    }
+                    out.push(n as u8);
+                }
+                Ok(out)
+            }
+            other => Err(serde::de::Error::custom(format!(
+                "Binary payload expects string (base64) or integer array, got {}",
+                other
+            ))),
+        }
+    }
+}
+
+/// Why a stream ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamEndReason {
+    /// Source completed naturally.
+    Completed,
+    /// Cancelled by the extension (or host-driven barge-in).
+    Cancelled,
+    /// Source produced an error.
+    Error,
+    /// Host is shutting down — all streams torn down.
+    HostShutdown,
+    /// Lease expired (idle + grace_period elapsed, consumer gone).
+    LeaseExpired,
+}
+
+/// Data-plane transport negotiation — extension's requested transport.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StreamTransport {
+    /// Default: chunks serialized as JSON and shipped via `StreamChunk` IPC.
+    IpcJson,
+    /// Fast path: shared-memory SPSC ring buffer.
+    /// Extension supplies desired geometry; host may downgrade to `IpcJson`.
+    SharedMemRing {
+        /// Max bytes per frame (e.g. 640 for 16kHz/mono/16bit/20ms PCM).
+        frame_size_max: u32,
+        /// How many frames the ring holds.
+        frame_count_max: u32,
+    },
+}
+
+/// Negotiated transport returned by host in `StreamOpened`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StreamTransportInfo {
+    /// JSON-over-IPC transport (fallback / WASM / sandbox).
+    IpcJson,
+    /// Shared memory transport negotiated successfully.
+    /// `shm_name` is the host-generated identifier to `shm_open`.
+    SharedMemRing {
+        /// POSIX shm name (e.g. `/neomind-pcm-<uuid>`).
+        shm_name: String,
+        /// Agreed max bytes per frame.
+        frame_size_max: u32,
+        /// Agreed frame count.
+        frame_count_max: u32,
+    },
+}
+
 /// IPC message sent from host to extension process
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcMessage {
@@ -1085,6 +1233,18 @@ pub enum IpcMessage {
 
     /// Get metrics
     ProduceMetrics {
+        /// Request ID for tracking
+        request_id: u64,
+    },
+
+    /// Get a fresh full descriptor (metadata + commands + metrics).
+    ///
+    /// Used by the host to refresh its cached descriptor so that
+    /// runtime-discovered dynamic metrics become visible through
+    /// `/api/extensions`. Extensions that don't override `metrics()`
+    /// simply return the same Vec on every call, so the cost is one
+    /// extra IPC round-trip per refresh with no behavioral change.
+    GetDescriptor {
         /// Request ID for tracking
         request_id: u64,
     },
@@ -1111,6 +1271,57 @@ pub enum IpcMessage {
     GetStats {
         /// Request ID for tracking
         request_id: u64,
+    },
+
+    // =========================================================================
+    // Capability Stream API (Stage 1.1)
+    // =========================================================================
+    /// Extension requests host to open a streaming capability session.
+    ///
+    /// Returns `IpcResponse::StreamOpened` with a `lease_id` that the extension
+    /// uses for subsequent `StreamPull` / `StreamCancel` / `StreamClose` calls.
+    StreamOpen {
+        /// Request ID (matches the resulting `StreamOpened` response)
+        request_id: u64,
+        /// Capability name, e.g. `"chat_stream"`, `"asr_stream"`.
+        capability: String,
+        /// Capability-specific parameters (same shape as `invoke_capability`).
+        params: serde_json::Value,
+        /// Per-stream bounded queue capacity (in chunks).
+        buffer_size: u32,
+        /// What to do when the queue is full.
+        drop_policy: StreamDropPolicy,
+        /// Data-plane transport selection.
+        transport: StreamTransport,
+    },
+
+    /// Extension pulls the next chunk from an opened stream.
+    StreamPull {
+        /// Request ID for response correlation (Stage 2). The runner replies
+        /// with `IpcResponse::Success { request_id, data: StreamPullResult }`.
+        request_id: u64,
+        /// Lease ID returned by `StreamOpened`.
+        lease_id: String,
+        /// How long to wait for the next chunk before returning a timeout.
+        timeout_ms: u64,
+    },
+
+    /// Extension cancels an open stream (real cancel — host aborts the work).
+    StreamCancel {
+        /// Request ID for response correlation (Stage 2).
+        request_id: u64,
+        /// Lease ID returned by `StreamOpened`.
+        lease_id: String,
+        /// Free-form reason: `"barge_in"`, `"user_stop"`, etc.
+        reason: String,
+    },
+
+    /// Extension closes and releases a stream lease (idempotent).
+    StreamClose {
+        /// Request ID for response correlation (Stage 2).
+        request_id: u64,
+        /// Lease ID returned by `StreamOpened`.
+        lease_id: String,
     },
 
     /// Graceful shutdown
@@ -1312,6 +1523,14 @@ pub enum IpcResponse {
         request_id: u64,
         /// Metric values
         metrics: Vec<ExtensionMetricValue>,
+    },
+
+    /// Fresh descriptor response (for `GetDescriptor`).
+    Descriptor {
+        /// Request ID
+        request_id: u64,
+        /// Complete extension descriptor freshly rebuilt by the runner
+        descriptor: ExtensionDescriptor,
     },
 
     /// Health check response
@@ -1542,6 +1761,48 @@ pub enum IpcResponse {
         params: serde_json::Value,
     },
 
+    // =========================================================================
+    // Capability Stream API (Stage 1.1)
+    // =========================================================================
+    /// Acknowledges `IpcMessage::StreamOpen` and returns the new lease ID.
+    StreamOpened {
+        /// Matches the original `StreamOpen` request_id.
+        request_id: u64,
+        /// Newly minted lease identifier.
+        lease_id: String,
+        /// Capability-specific initial metadata, e.g. `{ "session_id": "..." }`.
+        initial_metadata: serde_json::Value,
+        /// Negotiated data-plane transport info (host may downgrade).
+        transport: StreamTransportInfo,
+    },
+
+    /// A single chunk pushed from host to extension for an open stream.
+    StreamChunk {
+        /// Lease ID this chunk belongs to.
+        lease_id: String,
+        /// The chunk payload (binary / text / json / end-of-stream sentinel).
+        chunk: StreamChunkPayload,
+    },
+
+    /// Final signal for a stream — sent after the last chunk (if any).
+    StreamEnd {
+        /// Lease ID that ended.
+        lease_id: String,
+        /// Why the stream ended.
+        reason: StreamEndReason,
+        /// Optional error message (set when `reason == Error`).
+        error: Option<String>,
+    },
+
+    /// Acknowledges `IpcMessage::StreamCancel`.
+    StreamCancelAck {
+        /// Lease ID that was cancelled (or attempted).
+        lease_id: String,
+        /// `true` if the lease was open and a cancel was actually triggered.
+        /// `false` if the lease was already gone when cancel arrived.
+        cancelled: bool,
+    },
+
     /// Acknowledgment of shutdown — extension is shutting down gracefully
     ShutdownAck,
 
@@ -1592,6 +1853,7 @@ impl IpcResponse {
             Self::Success { request_id, .. } => Some(*request_id),
             Self::Error { request_id, .. } => Some(*request_id),
             Self::Metrics { request_id, .. } => Some(*request_id),
+            Self::Descriptor { request_id, .. } => Some(*request_id),
             Self::Health { request_id, .. } => Some(*request_id),
             Self::Metadata { request_id, .. } => Some(*request_id),
             Self::EventSubscriptions { request_id, .. } => Some(*request_id),
@@ -1611,6 +1873,10 @@ impl IpcResponse {
             Self::EventSubscriptionResult { request_id, .. } => Some(*request_id),
             Self::EventPollResult { request_id, .. } => Some(*request_id),
             Self::CapabilityRequest { request_id, .. } => Some(*request_id),
+            Self::StreamOpened { request_id, .. } => Some(*request_id),
+            Self::StreamChunk { .. } => None,
+            Self::StreamEnd { .. } => None,
+            Self::StreamCancelAck { .. } => None,
             Self::ShutdownAck => None,
             Self::ConfigUpdated { .. } => None,
         }

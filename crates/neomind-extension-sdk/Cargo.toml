@@ -1,6 +1,6 @@
 [package]
 name = "neomind-extension-sdk"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2021"
 authors = ["NeoMind Team"]
 license = "MIT OR Apache-2.0"
@@ -41,6 +41,11 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "fs", "n
 tracing = "0.1"
 num_cpus = { version = "1", optional = true }
 
+# Optional: POSIX shared-memory primitives for the PCM fast path.
+# Unix-only — enabled by the `shm-ring` feature.
+[target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
+libc = { version = "0.2", optional = true }
+
 # WASM-only dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Use pollster for WASM-compatible block_on - it's lightweight and works on wasm32-unknown-unknown
@@ -48,9 +53,20 @@ pollster = "0.4"
 
 [features]
 default = []
+# Stage 2 / B.0 — fold neomind-shared-memory into the SDK behind a feature
+# flag. Pulls in libc and exposes the `shm_ring` module (POSIX shm_open +
+# SPSC ring buffer). Unix-only; no-op on WASM / Windows.
+shm-ring = ["dep:libc"]
 
 [dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-test = "0.4"
+criterion = "0.5"
+
+[[bench]]
+name = "stream_bench"
+harness = false
+required-features = ["shm-ring"]
 
 [package.metadata.docs.rs]
 all-features = true

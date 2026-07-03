@@ -44,7 +44,8 @@ use neomind_extension_sdk::{
     capability_constants as cap, BatchCommand, BatchResult, DataChunk, ErrorKind, ExtensionCommand,
     ExtensionDescriptor, ExtensionMetadata, ExtensionMetricValue, ExtensionStats, IpcFrame,
     IpcMessage, IpcResponse, MetricDataType, MetricDescriptor, ParameterDefinition, SessionStats,
-    StreamCapability, StreamDataChunk, StreamDataType, StreamResult, ABI_VERSION,
+    StreamCapability, StreamChunkPayload, StreamDataChunk, StreamDataType, StreamDropPolicy,
+    StreamEndReason, StreamResult, StreamTransport, StreamTransportInfo, ABI_VERSION,
 };
 
 // Resource limits module
@@ -65,6 +66,10 @@ use ipc_routing::{
     complete_pending_request, create_event_channel, get_pending_requests, register_pending_request,
     safe_ffi_call, safe_ffi_call_with_timeout, start_stdin_reader, SendPtr, STDOUT_WRITE_MUTEX,
 };
+
+// Stage 2 — pull-based stream lease registry.
+mod stream_registry;
+use stream_registry::StreamLeaseRegistry;
 
 // ============================================================================
 // Message routing for capability invocation
@@ -106,8 +111,12 @@ struct Args {
     #[arg(long, short = 'v')]
     verbose: bool,
 
-    /// Memory limit in MB (0 = no limit)
-    #[arg(long = "memory-limit", default_value = "2048")]
+    /// Memory limit in MB (0 = no limit).
+    ///
+    /// Default is 0 (unlimited) so GPU extensions don't OOM on startup. If a
+    /// deployment needs to bound extension memory, override via CLI flag or
+    /// systemd `MemoryMax=`.
+    #[arg(long = "memory-limit", default_value = "0")]
     memory_limit_mb: u64,
 
     /// Hard memory limit in MB (0 = 2x soft limit)
@@ -135,6 +144,10 @@ struct Runner {
     running: bool,
     /// IPC client for WASM capability forwarding
     ipc_client: Option<Arc<SyncIpcClient>>,
+    /// Stage 2 — pull-based stream leases, shared between the main IPC task
+    /// (which routes AgentStreamChunk events to leases) and any background
+    /// tasks spawned by `handle_stream_open`.
+    stream_registry: Arc<StreamLeaseRegistry>,
 }
 
 type JsonFn0 = unsafe extern "C" fn() -> *mut c_char;
@@ -163,6 +176,7 @@ const ALLOWED_CAPABILITIES: &[&str] = &[
     cap::METRICS_AGGREGATE,
     cap::EXTENSION_CALL,
     cap::AGENT_TRIGGER,
+    cap::CHAT_STREAM,
     cap::RULE_TRIGGER,
 ];
 
@@ -550,6 +564,28 @@ impl NativeExtensionBridge {
         let response = self.call_json0(self.produce_metrics_json)?;
         let metrics = Self::extract_success_value(&response, "metrics")?;
         serde_json::from_value(metrics).map_err(|e| format!("Failed to parse metrics JSON: {}", e))
+    }
+
+    /// Re-fetch a fresh descriptor from the extension by re-invoking the
+    /// `descriptor_json` FFI symbol. The macro-generated implementation
+    /// rebuilds the descriptor on every call, so any runtime changes to
+    /// `metrics()` / `commands()` are reflected. Used to support dynamic
+    /// metrics discovery.
+    fn get_descriptor_fresh(&self) -> Result<ExtensionDescriptor, String> {
+        let descriptor_response = self.call_json0(self.descriptor_json)?;
+        let descriptor_json = if descriptor_response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            descriptor_response
+                .get("descriptor")
+                .cloned()
+                .ok_or("Missing descriptor in native response".to_string())?
+        } else {
+            return Err(Self::extract_error(&descriptor_response));
+        };
+        WasmRuntime::parse_descriptor_json(&descriptor_json)
     }
 
     fn configure(&self, config: &serde_json::Value) -> Result<(), String> {
@@ -2164,6 +2200,7 @@ impl Runner {
             runtime: runtime_handle,
             running: true,
             ipc_client,
+            stream_registry: Arc::new(StreamLeaseRegistry::new()),
         })
     }
 
@@ -2630,6 +2667,10 @@ impl Runner {
                 self.handle_produce_metrics(request_id).await;
             }
 
+            IpcMessage::GetDescriptor { request_id } => {
+                self.handle_get_descriptor(request_id).await;
+            }
+
             IpcMessage::HealthCheck { request_id } => {
                 self.handle_health_check(request_id);
             }
@@ -2811,6 +2852,16 @@ impl Runner {
                     "Received event push from host"
                 );
 
+                // Stage 2 — Route AgentStreamChunk events to any matching
+                // stream lease BEFORE forwarding to the extension. This lets
+                // the pull-based lease protocol consume capability output
+                // independently of the extension's own event handler (which
+                // is used by extensions that opt in to direct event handling
+                // like the voice-assistant's chat_stream integration).
+                if event_type == "AgentStreamChunk" {
+                    self.route_agent_stream_chunk(&payload).await;
+                }
+
                 // Forward event pushes to the native JSON bridge when available.
                 if let Some(extension) = &self.extension {
                     match extension.handle_event(&event_type, &payload) {
@@ -2861,6 +2912,376 @@ impl Runner {
                     error,
                 };
                 complete_pending_request(request_id, response);
+            }
+            // =================================================================
+            // Stage 2 — Capability Stream API (pull-based lease protocol).
+            // =================================================================
+            IpcMessage::StreamOpen {
+                request_id,
+                capability,
+                params,
+                buffer_size,
+                transport,
+                ..
+            } => {
+                self.handle_stream_open(
+                    request_id,
+                    capability,
+                    params,
+                    buffer_size,
+                    transport,
+                )
+                .await;
+            }
+            IpcMessage::StreamPull {
+                request_id,
+                lease_id,
+                timeout_ms,
+            } => {
+                self.handle_stream_pull(request_id, lease_id, timeout_ms).await;
+            }
+            IpcMessage::StreamCancel {
+                request_id,
+                lease_id,
+                reason,
+            } => {
+                self.handle_stream_cancel(request_id, lease_id, reason).await;
+            }
+            IpcMessage::StreamClose {
+                request_id,
+                lease_id,
+            } => {
+                self.handle_stream_close(request_id, lease_id).await;
+            }
+        }
+    }
+
+    // ========================================================================
+    // Stage 2 — Pull-based stream lease handlers
+    // ========================================================================
+
+    /// Host requested a stream open. Mint a lease, reply with StreamOpened,
+    /// then asynchronously invoke the underlying capability (e.g.
+    /// `chat_stream`) to kick off chunk production. The capability's output
+    /// arrives later as `AgentStreamChunk` events and is routed to the lease
+    /// by [`route_agent_stream_chunk`].
+    async fn handle_stream_open(
+        &mut self,
+        request_id: u64,
+        capability: String,
+        params: serde_json::Value,
+        buffer_size: u32,
+        transport: StreamTransport,
+    ) {
+        // Validate capability against the allowlist before doing anything.
+        if !ALLOWED_CAPABILITIES.iter().any(|c| *c == capability.as_str()) {
+            warn!(
+                %request_id,
+                %capability,
+                "StreamOpen rejected: capability not in allowlist"
+            );
+            let _ = self.send_response(IpcResponse::Error {
+                request_id,
+                error: format!("capability '{capability}' not allowed for streaming"),
+                kind: ErrorKind::InvalidArguments,
+            });
+            return;
+        }
+
+        // Mint lease_id and create the lease. Lease is created BEFORE the
+        // capability is invoked so that events arriving immediately after
+        // the CapabilityResult can find a home.
+        let lease_id = format!("stream-{}", uuid::Uuid::new_v4());
+        self.stream_registry
+            .open(lease_id.clone(), buffer_size)
+            .await;
+
+        // Negotiate transport. For IpcJson, no extra setup. For SharedMemRing
+        // (B.1 fast path), create the ring on the runner side (writer) and
+        // attach it to the lease so route_by_session pushes bytes directly.
+        // The host opens its own reader using the shm_name we return.
+        let transport_info = match &transport {
+            StreamTransport::IpcJson => StreamTransportInfo::IpcJson,
+            StreamTransport::SharedMemRing {
+                frame_size_max,
+                frame_count_max,
+            } => {
+                #[cfg(all(unix, feature = "shm-ring"))]
+                {
+                    use neomind_extension_sdk::shm_ring::{DropPolicy as RingDropPolicy, RingHandle};
+                    // POSIX shm names: short. macOS limit ~31 chars.
+                    // Strip the "stream-" prefix from lease_id to keep it small.
+                    let short_id = lease_id
+                        .trim_start_matches("stream-")
+                        .chars()
+                        .take(13)
+                        .collect::<String>();
+                    let shm_name = format!("/nm-s-{short_id}");
+                    match RingHandle::create(
+                        &shm_name,
+                        *frame_size_max,
+                        *frame_count_max,
+                        RingDropPolicy::DropOldest,
+                    ) {
+                        Ok(handle) => {
+                            let arc = Arc::new(handle);
+                            self.stream_registry
+                                .attach_ring(&lease_id, arc.clone())
+                                .await;
+                            info!(
+                                %lease_id,
+                                %shm_name,
+                                frame_size_max, frame_count_max,
+                                "StreamOpen: SHM ring created (B.1 fast path)"
+                            );
+                            StreamTransportInfo::SharedMemRing {
+                                shm_name,
+                                frame_size_max: *frame_size_max,
+                                frame_count_max: *frame_count_max,
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                %lease_id,
+                                error = %e,
+                                "Failed to create SHM ring — downgrading to IpcJson"
+                            );
+                            StreamTransportInfo::IpcJson
+                        }
+                    }
+                }
+                #[cfg(not(all(unix, feature = "shm-ring")))]
+                {
+                    debug!(
+                        %lease_id,
+                        frame_size_max, frame_count_max,
+                        "SharedMemRing unavailable on this platform — downgrading to IpcJson"
+                    );
+                    StreamTransportInfo::IpcJson
+                }
+            }
+        };
+
+        info!(
+            %request_id,
+            %lease_id,
+            %capability,
+            "StreamOpen: lease created, invoking capability"
+        );
+
+        // Reply immediately so the host can start pulling. Initial metadata
+        // is empty; session_id arrives later via CapabilityResult and is
+        // attached to the lease for event filtering.
+        let _ = self.send_response(IpcResponse::StreamOpened {
+            request_id,
+            lease_id: lease_id.clone(),
+            initial_metadata: serde_json::json!({}),
+            transport: transport_info,
+        });
+
+        // Spawn a background task that invokes the capability. SyncIpcClient
+        // is sync, so wrap in spawn_blocking. The task updates the lease's
+        // session_id when the result returns and signals End on error.
+        let registry = self.stream_registry.clone();
+        let ipc_client = self.ipc_client.clone();
+        let lease_id_for_task = lease_id.clone();
+        let cap_for_task = capability.clone();
+        let params_for_task = params.clone();
+        self.runtime.spawn(async move {
+            let ipc = match ipc_client {
+                Some(c) => c,
+                None => {
+                    error!(%lease_id_for_task, "No IPC client available for stream capability");
+                    registry
+                        .signal_end(
+                            &lease_id_for_task,
+                            StreamEndReason::Error,
+                            Some("IPC client not available".into()),
+                        )
+                        .await;
+                    return;
+                }
+            };
+            let ipc_clone = ipc.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                ipc_clone.invoke(&cap_for_task, &params_for_task)
+            })
+            .await;
+
+            match result {
+                Ok(value) => {
+                    let success = value
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if !success {
+                        let err = value
+                            .get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("capability invocation failed")
+                            .to_string();
+                        warn!(%lease_id_for_task, error = %err, "Stream capability failed");
+                        registry
+                            .signal_end(&lease_id_for_task, StreamEndReason::Error, Some(err))
+                            .await;
+                        return;
+                    }
+                    // Extract session_id (host capability returns { success, session_id, ... }).
+                    if let Some(session_id) = value.get("session_id") {
+                        let session_str = match session_id {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        debug!(
+                            %lease_id_for_task,
+                            session_id = %session_str,
+                            "Stream lease bound to capability session"
+                        );
+                        registry
+                            .set_session_id(&lease_id_for_task, session_str)
+                            .await;
+                    } else {
+                        // No session_id returned — capability likely doesn't
+                        // emit AgentStreamChunk events. Mark the lease ended
+                        // so the host doesn't wait forever.
+                        warn!(
+                            %lease_id_for_task,
+                            "Stream capability returned no session_id — ending lease"
+                        );
+                        registry
+                            .signal_end(
+                                &lease_id_for_task,
+                                StreamEndReason::Completed,
+                                None,
+                            )
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        %lease_id_for_task,
+                        error = %e,
+                        "Capability invoke task panicked"
+                    );
+                    registry
+                        .signal_end(
+                            &lease_id_for_task,
+                            StreamEndReason::Error,
+                            Some(format!("invoke task failed: {e}")),
+                        )
+                        .await;
+                }
+            }
+        });
+    }
+
+    /// Host pulls the next chunk. Returns Chunk / End / Timeout / LeaseGone
+    /// wrapped in `IpcResponse::Success` so the host's `request_id`-based
+    /// router can correlate the response.
+    async fn handle_stream_pull(
+        &mut self,
+        request_id: u64,
+        lease_id: String,
+        timeout_ms: u64,
+    ) {
+        let result = self.stream_registry.pull(&lease_id, timeout_ms).await;
+        let data = match serde_json::to_value(&result) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(%lease_id, %request_id, error = %e, "Failed to serialize StreamPullResult");
+                let _ = self.send_response(IpcResponse::Error {
+                    request_id,
+                    error: format!("Failed to serialize pull result: {e}"),
+                    kind: ErrorKind::Internal,
+                });
+                return;
+            }
+        };
+        let _ = self.send_response(IpcResponse::Success {
+            request_id,
+            data,
+        });
+    }
+
+    /// Host cancels an open stream. Flips the cancel watch; the capability
+    /// provider observes it and aborts. The lease stays alive so the next
+    /// pull can observe cancellation / End.
+    async fn handle_stream_cancel(
+        &mut self,
+        request_id: u64,
+        lease_id: String,
+        reason: String,
+    ) {
+        info!(%lease_id, %reason, "Stream cancel requested");
+        let cancelled = self.stream_registry.cancel(&lease_id).await;
+        // Also signal End so the host's pull loop unblocks immediately.
+        if cancelled {
+            self.stream_registry
+                .signal_end(&lease_id, StreamEndReason::Cancelled, None)
+                .await;
+        }
+        let _ = self.send_response(IpcResponse::Success {
+            request_id,
+            data: serde_json::json!({ "cancelled": cancelled }),
+        });
+    }
+
+    /// Host closes the lease. Removes it from the registry and aborts the
+    /// pump task. Idempotent.
+    async fn handle_stream_close(&mut self, request_id: u64, lease_id: String) {
+        let closed = self.stream_registry.close(&lease_id).await;
+        let _ = self.send_response(IpcResponse::Success {
+            request_id,
+            data: serde_json::json!({ "closed": closed }),
+        });
+    }
+
+    /// Route an `AgentStreamChunk` event to any lease whose session_id
+    /// matches. Called from the EventPush handler.
+    ///
+    /// Payload shape (from `ExtensionEventSubscriptionService`):
+    /// `{ session_id, chunk: { ... }, timestamp }` — `session_id` may be a
+    /// number or string. The chunk's `type` field discriminates between
+    /// content (`token`/`text`/etc.) and terminal (`end`).
+    async fn route_agent_stream_chunk(&self, payload: &serde_json::Value) {
+        let Some(session_id) = payload.get("session_id").map(|v| match v {
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        }) else {
+            debug!("AgentStreamChunk without session_id — dropping");
+            return;
+        };
+
+        // Pull the chunk value out of the payload. If chunk.type == "end",
+        // this is the terminal signal for the lease.
+        let chunk_value = payload.get("chunk").cloned().unwrap_or(serde_json::json!({}));
+        let is_end = chunk_value
+            .get("type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.eq_ignore_ascii_case("end"))
+            .unwrap_or(false);
+
+        // Route via the registry's session_id index (O(1)).
+        let matched = self
+            .stream_registry
+            .route_by_session(&session_id, chunk_value)
+            .await;
+
+        if matched.is_empty() {
+            trace!(
+                %session_id,
+                "AgentStreamChunk arrived but no lease matches (yet)"
+            );
+        }
+
+        if is_end {
+            for lease_id in matched {
+                debug!(%lease_id, %session_id, "Terminal chunk — signaling End");
+                self.stream_registry
+                    .signal_end(&lease_id, StreamEndReason::Completed, None)
+                    .await;
             }
         }
     }
@@ -3032,6 +3453,59 @@ impl Runner {
     fn produce_wasm_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
         let runtime = self.wasm_runtime.as_ref().ok_or("No WASM runtime loaded")?;
         runtime.produce_metrics()
+    }
+
+    /// Build a fresh descriptor by asking the extension (native FFI or WASM)
+    /// to regenerate metadata/commands/metrics. The returned descriptor
+    /// reflects the extension's current runtime state, enabling dynamic
+    /// metrics discovery.
+    fn build_descriptor_fresh(&self) -> Result<ExtensionDescriptor, String> {
+        match self.extension_type {
+            ExtensionType::Native => {
+                let ext = self
+                    .extension
+                    .as_ref()
+                    .ok_or("No native extension loaded")?;
+                ext.get_descriptor_fresh()
+            }
+            ExtensionType::Wasm => {
+                let runtime = self
+                    .wasm_runtime
+                    .as_ref()
+                    .ok_or("No WASM runtime loaded")?;
+                runtime.get_descriptor_blocking()
+            }
+        }
+    }
+
+    /// Handler for `IpcMessage::GetDescriptor`. Rebuilds the descriptor and
+    /// updates the runner's cached copy so subsequent `GetMetadata` and
+    /// `Ready` responses also reflect the latest state.
+    async fn handle_get_descriptor(&mut self, request_id: u64) {
+        debug!(request_id, "Refreshing descriptor");
+        match self.build_descriptor_fresh() {
+            Ok(descriptor) => {
+                let metrics_count = descriptor.metrics.len();
+                let commands_count = descriptor.commands.len();
+                self.descriptor = descriptor.clone();
+                debug!(
+                    request_id,
+                    metrics_count, commands_count, "Descriptor refreshed"
+                );
+                self.send_response(IpcResponse::Descriptor {
+                    request_id,
+                    descriptor,
+                });
+            }
+            Err(e) => {
+                warn!(request_id, error = %e, "Failed to refresh descriptor");
+                self.send_response(IpcResponse::Error {
+                    request_id,
+                    error: e,
+                    kind: ErrorKind::Internal,
+                });
+            }
+        }
     }
 
     fn handle_health_check(&mut self, request_id: u64) {

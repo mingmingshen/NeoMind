@@ -418,6 +418,25 @@ pub enum NeoMindEvent {
         /// Event data as JSON value
         data: serde_json::Value,
     },
+
+    // ========== Chat Stream Events (SessionManager → Extensions) ==========
+    /// One chunk of an `AgentEvent` stream produced by
+    /// `SessionManager::process_message_events`, published so that extensions
+    /// invoking the `ChatStream` capability can consume the stream via the
+    /// existing `EventSubscribe` mechanism.
+    ///
+    /// `chunk` carries the AgentEvent serialized as JSON (same shape as the
+    /// WebSocket frames emitted by the chat WS handler), e.g.:
+    /// `{ "type": "Content", "content": "hello" }`
+    AgentStreamChunk {
+        /// Session ID the chunk belongs to (returned in the ChatStream
+        /// capability response). Subscribers filter on this.
+        session_id: String,
+        /// The AgentEvent JSON payload (with its own `type` field inside).
+        chunk: serde_json::Value,
+        /// Timestamp (millis since epoch).
+        timestamp: i64,
+    },
 }
 
 impl NeoMindEvent {
@@ -460,6 +479,7 @@ impl NeoMindEvent {
             Self::ExtensionCommandFailed { .. } => "ExtensionCommandFailed",
             Self::DashboardUpdated { .. } => "DashboardUpdated",
             Self::Custom { .. } => "Custom",
+            Self::AgentStreamChunk { .. } => "AgentStreamChunk",
         }
     }
 
@@ -510,7 +530,8 @@ impl NeoMindEvent {
             | Self::ExtensionCommandStarted { timestamp, .. }
             | Self::ExtensionCommandCompleted { timestamp, .. }
             | Self::ExtensionCommandFailed { timestamp, .. }
-            | Self::DashboardUpdated { timestamp, .. } => *timestamp,
+            | Self::DashboardUpdated { timestamp, .. }
+            | Self::AgentStreamChunk { timestamp, .. } => *timestamp,
             Self::Custom { .. } => {
                 // Custom events don't have a timestamp, use current time
                 chrono::Utc::now().timestamp()

@@ -170,6 +170,24 @@ impl ExtensionRuntime {
         }
     }
 
+    /// Refresh an extension's cached descriptor so runtime-discovered
+    /// dynamic metrics become visible through `/api/extensions`.
+    /// Failures are logged and swallowed — the caller (collector) treats
+    /// this as best-effort and continues with the previous cache.
+    pub async fn refresh_descriptor(&self, id: &str) -> Result<(), ExtensionError> {
+        match self.isolated_manager.refresh_descriptor(id).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                tracing::warn!(
+                    extension_id = %id,
+                    error = %e,
+                    "Failed to refresh descriptor (using cached)"
+                );
+                Err(ExtensionError::ExecutionFailed(e.to_string()))
+            }
+        }
+    }
+
     /// Check extension health.
     pub async fn health_check(&self, id: &str) -> Result<bool, ExtensionError> {
         self.isolated_manager

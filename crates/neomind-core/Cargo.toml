@@ -10,7 +10,7 @@ redb = ["dep:redb"]
 
 [dependencies]
 # Extension SDK (unified - replaces api and host-api)
-neomind-extension-sdk = { path = "../neomind-extension-sdk" }
+neomind-extension-sdk = { path = "../neomind-extension-sdk", features = ["shm-ring"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

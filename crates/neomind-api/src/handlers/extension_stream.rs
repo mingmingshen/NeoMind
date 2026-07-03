@@ -581,7 +581,202 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 sid
                                             );
 
-                                            // ── Non-blocking push mode ──────────────────────
+                                            // ── Bidirectional Push mode ─────────────────────
+                                            // For Bidirectional extensions (e.g. voice-assistant),
+                                            // every frame matters: audio PCM chunks arriving faster
+                                            // than the socket drains must NOT be dropped. watch's
+                                            // "latest only" semantics would silently discard them.
+                                            // Use a bounded mpsc instead, and also forward inbound
+                                            // binary frames to process_session_chunk (mic PCM).
+                                            if cap.direction == StreamDirection::Bidirectional {
+                                                let (ws_out_tx, mut ws_out_rx) =
+                                                    mpsc::channel::<String>(64);
+                                                let (ws_in_tx, mut ws_in_rx) =
+                                                    mpsc::channel::<String>(8);
+                                                let (binary_in_tx, mut binary_in_rx) =
+                                                    mpsc::channel::<(u64, Vec<u8>)>(64);
+                                                let (ws_done_tx, mut ws_done_rx) =
+                                                    mpsc::channel::<()>(1);
+
+                                                let ws_task = tokio::spawn(async move {
+                                                    let mut frame_count: u64 = 0;
+                                                    let result = async {
+                                                        loop {
+                                                            tokio::select! {
+                                                                msg = socket.recv() => {
+                                                                    match msg {
+                                                                        Some(Ok(WsMessage::Text(text))) => {
+                                                                            let _ = ws_in_tx.send(text).await;
+                                                                        }
+                                                                        Some(Ok(WsMessage::Binary(data))) => {
+                                                                            if let Some((seq, chunk)) = parse_binary_frame(data) {
+                                                                                let _ = binary_in_tx.send((seq, chunk)).await;
+                                                                            }
+                                                                        }
+                                                                        Some(Ok(WsMessage::Close(_))) | None => {
+                                                                            tracing::info!(
+                                                                                frames_sent = frame_count,
+                                                                                "WebSocket closed by client or EOF"
+                                                                            );
+                                                                            return;
+                                                                        }
+                                                                        Some(Ok(WsMessage::Ping(data))) => {
+                                                                            match send_with_timeout(&mut socket, WsMessage::Pong(data)).await {
+                                                                                Ok(_) => {}
+                                                                                Err(_) => {
+                                                                                    tracing::info!(frames_sent = frame_count, "Pong send timeout (2s)");
+                                                                                    return;
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        _ => {}
+                                                                    }
+                                                                }
+                                                                json = ws_out_rx.recv() => {
+                                                                    match json {
+                                                                        Some(json) => {
+                                                                            let send_start = std::time::Instant::now();
+                                                                            match send_with_timeout(&mut socket, WsMessage::Text(json)).await {
+                                                                                Ok(_) => {
+                                                                                    let elapsed = send_start.elapsed();
+                                                                                    if elapsed > std::time::Duration::from_millis(500) {
+                                                                                        tracing::warn!(elapsed_ms = elapsed.as_millis() as u64, "Slow WS send — client throttled");
+                                                                                    }
+                                                                                }
+                                                                                Err(_) => {
+                                                                                    tracing::info!(
+                                                                                        frames_sent = frame_count,
+                                                                                        "WS send timeout (2s) — dead connection"
+                                                                                    );
+                                                                                    return;
+                                                                                }
+                                                                            }
+                                                                            frame_count += 1;
+                                                                        }
+                                                                        None => return,
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }.await;
+                                                    let _ = ws_done_tx.send(()).await;
+                                                    result
+                                                });
+
+                                                let mut frames_received: u64 = 0;
+                                                loop {
+                                                    tokio::select! {
+                                                        output = rx.recv() => {
+                                                            match output {
+                                                                Some(output) => {
+                                                                    frames_received += 1;
+                                                                    let push_msg = ServerMessage::PushOutput {
+                                                                        session_id: output.session_id,
+                                                                        sequence: output.sequence,
+                                                                        data: BASE64_STANDARD.encode(&output.data),
+                                                                        data_type: output.data_type,
+                                                                        timestamp: output.timestamp,
+                                                                        metadata: output.metadata,
+                                                                    };
+                                                                    if let Ok(json) = serde_json::to_string(&push_msg) {
+                                                                        if let Err(e) = ws_out_tx.try_send(json) {
+                                                                            tracing::warn!(
+                                                                                frames_received,
+                                                                                error = %e,
+                                                                                "ws_out_tx full — dropping push frame (client too slow)"
+                                                                            );
+                                                                        }
+                                                                    }
+                                                                }
+                                                                None => {
+                                                                    tracing::debug!("Push output channel closed");
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                        text = ws_in_rx.recv() => {
+                                                            match text {
+                                                                Some(text) => {
+                                                                    if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
+                                                                        if matches!(client_msg, ClientMessage::Close) {
+                                                                            break;
+                                                                        }
+                                                                    }
+                                                                }
+                                                                None => break,
+                                                            }
+                                                        }
+                                                        Some((seq, data)) = binary_in_rx.recv() => {
+                                                            let ext = extension.read().await;
+                                                            let chunk = DataChunk {
+                                                                sequence: seq,
+                                                                data_type: StreamDataType::Binary,
+                                                                data,
+                                                                timestamp: chrono::Utc::now().timestamp_millis(),
+                                                                metadata: None,
+                                                                is_last: false,
+                                                            };
+                                                            let _ = ext.process_session_chunk(&sid, chunk).await;
+                                                        }
+                                                        _ = ws_done_rx.recv() => {
+                                                            tracing::warn!("WebSocket I/O task terminated — connection lost");
+                                                            break;
+                                                        }
+                                                        _ = tokio::time::sleep(PUSH_STALL_TIMEOUT) => {
+                                                            tracing::error!(
+                                                                session_id = %sid,
+                                                                received = frames_received,
+                                                                "Push source stalled for {}s — extension pump dead, closing session",
+                                                                PUSH_STALL_TIMEOUT.as_secs()
+                                                            );
+                                                            let stall_msg = ServerMessage::Error {
+                                                                code: "STREAM_STALLED".to_string(),
+                                                                message: format!(
+                                                                    "No frames received for {} seconds",
+                                                                    PUSH_STALL_TIMEOUT.as_secs()
+                                                                ),
+                                                                retryable: true,
+                                                            };
+                                                            if let Ok(json) = serde_json::to_string(&stall_msg) {
+                                                                let _ = ws_out_tx.try_send(json);
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Cleanup: stop pushing
+                                                let ext = extension.read().await;
+                                                let _ = ext.stop_push(&sid).await;
+                                                drop(ext);
+                                                push_router.unregister(&sid).await;
+
+                                                let ext = extension.read().await;
+                                                if let Ok(stats) = ext.close_session(&sid).await {
+                                                    let msg = ServerMessage::SessionClosed {
+                                                        session_id: sid.clone(),
+                                                        total_frames: stats.input_chunks,
+                                                        duration_ms: (chrono::Utc::now()
+                                                            .timestamp_millis()
+                                                            - stats.last_activity) as u64,
+                                                        stats: SessionStatsDto::from(&stats),
+                                                    };
+                                                    if let Ok(json) = serde_json::to_string(&msg) {
+                                                        let _ = ws_out_tx.try_send(json);
+                                                    }
+                                                }
+
+                                                drop(ws_out_tx);
+                                                let _ = ws_task.await;
+
+                                                tracing::info!(
+                                                    "Extension stream disconnected for: {}",
+                                                    extension_id
+                                                );
+                                                return; // Bidirectional path complete — skip watch-based code
+                                            }
+
+                                            // ── Non-blocking push mode (Outbound-only) ─────
                                             // Spawn a dedicated WebSocket I/O task that owns the
                                             // socket. Uses a watch channel so only the LATEST frame
                                             // is kept — old frames are automatically replaced.
@@ -613,9 +808,12 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                                         return;
                                                                     }
                                                                     Some(Ok(WsMessage::Ping(data))) => {
-                                                                        if socket.send(WsMessage::Pong(data)).await.is_err() {
-                                                                            tracing::info!(frames_sent = frame_count, "Pong send failed");
-                                                                            return;
+                                                                        match send_with_timeout(&mut socket, WsMessage::Pong(data)).await {
+                                                                            Ok(_) => {}
+                                                                            Err(_) => {
+                                                                                tracing::info!(frames_sent = frame_count, "Pong send timeout (2s)");
+                                                                                return;
+                                                                            }
                                                                         }
                                                                     }
                                                                     _ => {}
@@ -623,12 +821,21 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                             }
                                                             _ = ws_out_rx.changed() => {
                                                                 let json = ws_out_rx.borrow_and_update().clone();
-                                                                if socket.send(WsMessage::Text(json)).await.is_err() {
-                                                                    tracing::info!(
-                                                                        frames_sent = frame_count,
-                                                                        "WebSocket send error, connection lost"
-                                                                    );
-                                                                    return;
+                                                                let send_start = std::time::Instant::now();
+                                                                match send_with_timeout(&mut socket, WsMessage::Text(json)).await {
+                                                                    Ok(_) => {
+                                                                        let elapsed = send_start.elapsed();
+                                                                        if elapsed > std::time::Duration::from_millis(500) {
+                                                                            tracing::warn!(elapsed_ms = elapsed.as_millis() as u64, "Slow WS send — client throttled");
+                                                                        }
+                                                                    }
+                                                                    Err(_) => {
+                                                                        tracing::info!(
+                                                                            frames_sent = frame_count,
+                                                                            "WS send timeout (2s) — dead connection"
+                                                                        );
+                                                                        return;
+                                                                    }
                                                                 }
                                                                 frame_count += 1;
                                                             }
@@ -693,6 +900,32 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                     }
                                                     _ = ws_done_rx.recv() => {
                                                         tracing::warn!("WebSocket I/O task terminated — connection lost");
+                                                        break;
+                                                    }
+                                                    // Stall guard: if the extension pump produces no frame for
+                                                    // PUSH_STALL_TIMEOUT, the source (e.g. FFmpeg/YOLO pump) is
+                                                    // dead — no amount of WS-send retrying will help. Closing
+                                                    // the session lets the client reconnect and start fresh.
+                                                    // Each select! iteration restarts the timer, so steady
+                                                    // frame flow never trips it.
+                                                    _ = tokio::time::sleep(PUSH_STALL_TIMEOUT) => {
+                                                        tracing::error!(
+                                                            session_id = %sid,
+                                                            received = frames_received,
+                                                            "Push source stalled for {}s — extension pump dead, closing session",
+                                                            PUSH_STALL_TIMEOUT.as_secs()
+                                                        );
+                                                        let stall_msg = ServerMessage::Error {
+                                                            code: "STREAM_STALLED".to_string(),
+                                                            message: format!(
+                                                                "No frames received for {} seconds",
+                                                                PUSH_STALL_TIMEOUT.as_secs()
+                                                            ),
+                                                            retryable: true,
+                                                        };
+                                                        if let Ok(json) = serde_json::to_string(&stall_msg) {
+                                                            let _ = ws_out_tx.send(json);
+                                                        }
                                                         break;
                                                     }
                                                 }
@@ -893,10 +1126,13 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                         }
                     }
                     WsMessage::Ping(data) => {
-                        // Respond with pong
-                        if let Err(e) = socket.send(WsMessage::Pong(data)).await {
-                            tracing::error!("Failed to send pong: {}", e);
-                            break;
+                        // Respond with pong (with timeout — see send_with_timeout)
+                        match send_with_timeout(&mut socket, WsMessage::Pong(data)).await {
+                            Ok(_) => {}
+                            Err(_) => {
+                                tracing::info!("Pong send timeout (2s) — non-push connection");
+                                break;
+                            }
                         }
                     }
                     WsMessage::Pong(_) => {
@@ -985,9 +1221,45 @@ async fn send_error(socket: &mut WebSocket, code: &str, message: String) {
 /// Send message to client
 async fn send_message(socket: &mut WebSocket, msg: &ServerMessage) {
     if let Ok(json) = serde_json::to_string(msg) {
-        let _ = socket.send(axum::extract::ws::Message::Text(json)).await;
+        let _ = send_with_timeout(socket, axum::extract::ws::Message::Text(json)).await;
     }
 }
+
+/// Maximum time to wait for a WebSocket send to complete.
+///
+/// Background: when a client tab is hidden or its JS main thread is stalled,
+/// the browser stops draining its WS receive buffer → TCP receive window
+/// closes → no ACKs → sender's TCP buffer fills → `socket.send().await`
+/// blocks forever waiting for writable. This 2s timeout turns a permanently
+/// stuck connection into a dead one that the client auto-reconnects from.
+const WS_SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Wrap `socket.send(...)` with a deadline. Returns `Err(Elapsed)` if the send
+/// did not complete within [`WS_SEND_TIMEOUT`].
+async fn send_with_timeout(
+    socket: &mut WebSocket,
+    msg: axum::extract::ws::Message,
+) -> Result<(), tokio::time::error::Elapsed> {
+    // Map `Result<Result<(), axum::Error>, Elapsed>` → `Result<(), Elapsed>`.
+    // The inner axum::Error (send failure) is treated as success here — callers
+    // only care whether the deadline was exceeded. A real send error surfaces
+    // on the next recv() as None / Err, which the I/O loop already handles by
+    // returning.
+    tokio::time::timeout(WS_SEND_TIMEOUT, socket.send(msg))
+        .await
+        .map(|_| ())
+}
+
+/// Maximum time the push loop will wait for a new frame from the extension
+/// pump before declaring the source stalled.
+///
+/// This is distinct from [`WS_SEND_TIMEOUT`]: a stalled extension pump never
+/// produces a frame, so the send timeout never fires. Without this guard a
+/// dead FFmpeg/YOLO pump would keep the session alive forever, holding the
+/// client in a "permanently frozen stream" state until manual refresh.
+/// 30s is chosen to comfortably exceed the slowest legitimate gap (e.g. RTSP
+/// reconnect timeout, model warmup) while still bounded.
+const PUSH_STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 // ============================================================================
 // HTTP Endpoints (for capability checking without WebSocket)
