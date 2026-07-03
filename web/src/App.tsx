@@ -219,6 +219,31 @@ function App() {
   useEffect(() => {
     extensionSyncRef.current = extensionComponents.sync
   }, [extensionComponents.sync])
+
+  // Expose a scoped stream-URL helper to extension UMD bundles.
+  // Extensions cannot import host modules, and we deliberately avoid
+  // exposing the raw JWT via a window getter. The helper returns a
+  // ready-to-use ws:// URL only, keeping the token embedded in the URL
+  // (same exposure surface as any fetch with ?token=).
+  useEffect(() => {
+    const buildStreamUrl = (extensionId: string): string | null => {
+      const token = tokenManager.getToken()
+      if (!token) return null
+      const apiBase = getApiBase()
+      try {
+        // getApiBase() already includes the '/api' prefix in all modes
+        // (Tauri: 'http://localhost:9375/api', web: '/api'). Don't add another.
+        const httpUrl = `${apiBase}/extensions/${encodeURIComponent(extensionId)}/stream?token=${encodeURIComponent(token)}`
+        return httpUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
+      } catch {
+        return null
+      }
+    }
+    ;(window as any).NeoMindStream = { urlFor: buildStreamUrl }
+    return () => {
+      delete (window as any).NeoMindStream
+    }
+  }, [])
   const { isAuthenticated, checkAuthStatus, setWsConnected, updateDialogOpen } = useStore((s) => ({
     isAuthenticated: s.isAuthenticated,
     checkAuthStatus: s.checkAuthStatus,

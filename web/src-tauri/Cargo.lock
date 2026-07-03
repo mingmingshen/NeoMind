@@ -3862,7 +3862,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-agent"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3901,7 +3901,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-api"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3956,7 +3956,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-cli-ops"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3977,7 +3977,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4003,7 +4003,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-data-push"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4024,7 +4024,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-devices"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -4055,11 +4055,12 @@ dependencies = [
 
 [[package]]
 name = "neomind-extension-sdk"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "libc",
  "pollster 0.4.0",
  "semver",
  "serde",
@@ -4071,7 +4072,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-messages"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4095,7 +4096,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-rules"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4118,7 +4119,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-storage"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4142,7 +4143,7 @@ dependencies = [
 
 [[package]]
 name = "neomind-tauri"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "chrono",
