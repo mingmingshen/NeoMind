@@ -6,17 +6,13 @@ description = "Standalone extension process runner for process-isolated extensio
 authors = ["NeoMind Team"]
 license = "MIT"
 
-[features]
-default = ["shm-ring"]
-shm-ring = ["neomind-extension-sdk/shm-ring"]
-
 [[bin]]
 name = "neomind-extension-runner"
 path = "src/main.rs"
 
 [dependencies]
 # Only depends on SDK for ABI stability - no dependency on neomind-core
-neomind-extension-sdk = { path = "../neomind-extension-sdk", features = ["shm-ring"] }
+neomind-extension-sdk = { path = "../neomind-extension-sdk" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

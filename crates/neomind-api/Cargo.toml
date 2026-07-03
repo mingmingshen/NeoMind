@@ -22,6 +22,7 @@ testing = []  # Enable test-only APIs for parallel test execution
 
 [dependencies]
 neomind-core = { path = "../neomind-core" }
+neomind-extension-sdk = { path = "../neomind-extension-sdk" }
 neomind-agent = { path = "../neomind-agent", features = ["cloud", "llamacpp"] }
 neomind-devices = { path = "../neomind-devices", features = ["embedded-broker"] }
 neomind-rules = { path = "../neomind-rules" }

@@ -130,17 +130,6 @@ pub mod ipc {
     pub use crate::ipc_types::*;
 }
 
-/// Stage 2 — stream lease protocol types (pull-based lease API).
-pub mod stream_lease;
-
-// Re-export the lease types at the crate root for ergonomic access.
-pub use stream_lease::{StreamOpenedInfo, StreamPullResult};
-
-/// Stage 2 / B.0 — POSIX shared-memory SPSC ring buffer for the PCM fast
-/// path. Unix-only; gated behind the `shm-ring` feature.
-#[cfg(all(unix, feature = "shm-ring"))]
-pub mod shm_ring;
-
 // ============================================================================
 // Host API (Extension trait + capabilities + streaming)
 // ============================================================================
@@ -179,13 +168,8 @@ pub use ipc_types::{
     PushOutputData,
     PushOutputMessage,
     Result,
-    StreamChunkPayload,
     StreamClientInfo,
     StreamDataChunk,
-    StreamDropPolicy,
-    StreamEndReason,
-    StreamTransport,
-    StreamTransportInfo,
     ValidationRule,
     ABI_VERSION,
 };
@@ -235,10 +219,6 @@ pub use host::{
 // CapabilityContext requires tokio (not available on wasm32)
 #[cfg(not(target_arch = "wasm32"))]
 pub use host::CapabilityContext;
-
-// Capability Stream API (Stage 1.2) — native-only (uses tokio mpsc + watch + JoinHandle)
-#[cfg(not(target_arch = "wasm32"))]
-pub use host::{ExtensionStreamProvider, StreamHandle as HostStreamHandle, StreamEndReason as HostStreamEndReason};
 
 /// Capability name constants - re-exported from host module
 pub mod capability_constants {

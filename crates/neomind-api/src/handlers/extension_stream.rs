@@ -58,8 +58,8 @@ use crate::handlers::common::{ok, HandlerResult};
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 use neomind_core::extension::{
-    DataChunk, PushOutputMessage, SessionStats, StreamCapability, StreamDataType, StreamDirection,
-    StreamError, StreamMode, StreamSession,
+    DataChunk, PushOutputMessage, SessionStats, StreamCapability,
+    StreamDataType, StreamDirection, StreamError, StreamMode, StreamSession,
 };
 
 // ============================================================================
