@@ -15,7 +15,6 @@ import {
   FullScreenDialogContent,
   FullScreenDialogMain,
 } from '@/components/automation/dialog/FullScreenDialog'
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import {
   Select,
   SelectContent,
@@ -23,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Clock, Copy, Check, ChevronDown, Send, Plus } from 'lucide-react'
+import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Clock, Copy, Check, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { isBase64Image, getImageDataUrl } from '@/pages/devices/utils'
 import { cn } from '@/lib/utils'
@@ -34,7 +33,6 @@ import { useAbortController } from '@/hooks/useAbortController'
 import { textNano, textMini } from "@/design-system/tokens/typography"
 import { ExportDataDialog } from '@/components/data/ExportDataDialog'
 import { formatTimestamp } from '@/lib/utils/format'
-import { notifySuccess, notifyError } from '@/lib/notify'
 import { PushTargetsTab } from '@/components/datapush/PushTargetsTab'
 
 type TabValue = 'data' | 'push'
@@ -111,6 +109,8 @@ export function DataExplorerPage() {
   const [historyRange, setHistoryRange] = useState<string>('1h')
   const [historyData, setHistoryData] = useState<Array<{ timestamp: number; value: unknown; quality: number | null }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyPage, setHistoryPage] = useState(1)
+  const historyPageSize = 10
   const [copiedValue, setCopiedValue] = useState(false)
 
   // Abort controller for cancelling in-flight requests on unmount
@@ -190,6 +190,7 @@ export function DataExplorerPage() {
     if (!selectedSource) {
       setHistoryData([])
       setHistoryLoading(false)
+      setHistoryPage(1)
       return
     }
     const rangeSeconds: Record<string, number> = {
@@ -205,6 +206,7 @@ export function DataExplorerPage() {
 
     let stale = false
     setHistoryLoading(true)
+    setHistoryPage(1)
     api.queryTelemetry(source, metric, start, now, 500).then(res => {
       if (stale) return
       setHistoryData((res?.data || []).map(p => ({
@@ -565,8 +567,8 @@ export function DataExplorerPage() {
                 </div>
 
                 {/* Tier 2: History (main body) */}
-                <div className="rounded-xl border overflow-hidden">
-                  <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b bg-muted-30">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <History className="h-4 w-4" />
                       {t('data:history', 'History')}
@@ -601,10 +603,13 @@ export function DataExplorerPage() {
                       { key: 'value', label: t('data:value', 'Value') },
                       ...(hasQuality ? [{ key: 'quality', label: t('data:quality', 'Quality'), width: '80px', align: 'right' as const }] : []),
                     ]
+                    const startIdx = (historyPage - 1) * historyPageSize
+                    const pagedHistoryData = historyData.slice(startIdx, startIdx + historyPageSize)
                     return (
+                      <>
                       <ResponsiveTable
                         columns={columns}
-                        data={historyData as unknown as Record<string, unknown>[]}
+                        data={pagedHistoryData as unknown as Record<string, unknown>[]}
                         rowKey={(row) => String((row as { timestamp: number }).timestamp)}
                         renderCell={(columnKey, rowData) => {
                           const point = rowData as { timestamp: number; value: unknown; quality: number | null }
@@ -644,6 +649,19 @@ export function DataExplorerPage() {
                           }
                         }}
                       />
+                      {historyData.length > historyPageSize && (
+                        <div className="mt-3 flex justify-center">
+                          <Pagination
+                            total={historyData.length}
+                            pageSize={historyPageSize}
+                            currentPage={historyPage}
+                            onPageChange={setHistoryPage}
+                            isLoading={historyLoading}
+                            hideOnMobile={false}
+                          />
+                        </div>
+                      )}
+                      </>
                     )
                   })() : (
                     <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -652,37 +670,6 @@ export function DataExplorerPage() {
                     </div>
                   )}
                 </div>
-
-                {/* Tier 3: Details (collapsed by default) */}
-                <Collapsible className="group">
-                  <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1">
-                    <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-                    {t('data:details', 'Details')}
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="mt-2 rounded-lg border p-3">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className={cn(textMini, "text-muted-foreground")}>ID</span>
-                        <button
-                          type="button"
-                          aria-label={t('common:copy', 'Copy')}
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(selectedSource.id)
-                              notifySuccess(t('data:idCopied', 'ID copied to clipboard'))
-                            } catch {
-                              notifyError(t('data:idCopyFailed', 'Failed to copy ID'))
-                            }
-                          }}
-                          className="text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <code className="text-sm font-mono text-muted-foreground break-all">{selectedSource.id}</code>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
               </div>
             )}
           </FullScreenDialogMain>
