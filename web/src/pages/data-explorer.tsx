@@ -603,8 +603,11 @@ export function DataExplorerPage() {
                       { key: 'value', label: t('data:value', 'Value') },
                       ...(hasQuality ? [{ key: 'quality', label: t('data:quality', 'Quality'), width: '80px', align: 'right' as const }] : []),
                     ]
+                    // Backend returns telemetry ascending (oldest first) — reverse so
+                    // page 1 shows the newest records.
+                    const orderedHistory = [...historyData].sort((a, b) => b.timestamp - a.timestamp)
                     const startIdx = (historyPage - 1) * historyPageSize
-                    const pagedHistoryData = historyData.slice(startIdx, startIdx + historyPageSize)
+                    const pagedHistoryData = orderedHistory.slice(startIdx, startIdx + historyPageSize)
                     return (
                       <>
                       <ResponsiveTable
