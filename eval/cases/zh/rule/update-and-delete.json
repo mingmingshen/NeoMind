@@ -7,7 +7,7 @@
   "description": "多轮：更新规则阈值 → 删除规则（覆盖 `neomind rule update` + `rule delete`，此前未覆盖）",
   "setup": { "fixture": "seed-default" },
   "turns": [
-    { "user": "把 rule-temp-alert 的阈值从 20 改成 15。" },
+    { "user": "把 rule-battery-low 的阈值从 20 改成 15。" },
     { "user": "好的，最后把这个规则删掉。" }
   ],
   "applies": ["tool_accuracy", "task_completion", "context_retention", "language_adherence"],

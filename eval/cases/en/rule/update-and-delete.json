@@ -7,7 +7,7 @@
   "description": "Multi-turn: update rule threshold -> delete rule (covers `neomind rule update` + `rule delete`; previously uncovered).",
   "setup": { "fixture": "seed-default" },
   "turns": [
-    { "user": "Change rule-temp-alert's threshold from 20 to 15." },
+    { "user": "Change rule-battery-low's threshold from 20 to 15." },
     { "user": "OK, finally delete this rule." }
   ],
   "applies": ["tool_accuracy", "task_completion", "context_retention", "language_adherence"],

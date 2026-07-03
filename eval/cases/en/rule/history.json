@@ -7,12 +7,12 @@
   "description": "Query a rule's trigger history (covers `neomind rule history` — the read path for rule executions)",
   "setup": { "fixture": "seed-default" },
   "turns": [
-    { "user": "Show me the trigger history of the rule-temp-alert rule." }
+    { "user": "Show me the trigger history of the rule-battery-low rule." }
   ],
   "applies": ["tool_accuracy", "task_completion", "language_adherence"],
   "expectations": {
     "per_turn": [
-      "Turn 1: Agent invokes `neomind rule history rule-temp-alert` (or GET /api/rules/rule-temp-alert/history)"
+      "Turn 1: Agent invokes `neomind rule history rule-battery-low` (or GET /api/rules/rule-battery-low/history)"
     ],
     "overall": "Must actually query the history; an empty history is valid but must be stated explicitly"
   }

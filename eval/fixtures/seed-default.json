@@ -1,6 +1,6 @@
 {
   "name": "seed-default",
-  "description": "Default seed: 3 ne101 cameras + 1 enabled low-battery alert rule. ne101_camera template exposes values.battery as a real metric, so the rule passes validation. rule-temp-alert is enabled so rule-disable-existing / rule-list-all cases have something real to operate on.",
+  "description": "Default seed: 3 ne101 cameras + 1 enabled low-battery alert rule (rule-battery-low). ne101_camera template exposes values.battery as a real metric, so the rule passes validation.",
   "devices": [
     {
       "device_id": "sensor-001",
@@ -30,8 +30,8 @@
   ],
   "rules": [
     {
-      "name": "rule-temp-alert",
-      "description": "Low-battery alert — fires when sensor-001 reports values.battery < 20. Name kept as rule-temp-alert for backward compatibility with existing case expectations.",
+      "name": "rule-battery-low",
+      "description": "Low-battery alert — fires when sensor-001 reports values.battery < 20.",
       "enabled": true,
       "trigger": { "trigger_type": "data_change" },
       "condition": {
