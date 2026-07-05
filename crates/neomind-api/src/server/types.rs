@@ -1894,6 +1894,13 @@ impl ServerState {
             );
         }
 
+        // Image edit tool — crop, draw, blur. No VLM capability gate:
+        // works on any deployment (pure image manipulation, no model needed).
+        registry.register(Arc::new(neomind_agent::toolkit::ImageEditTool::new(
+            self.data_dir.clone(),
+        )));
+        tracing::info!(category = "ai", "Image edit tool registered");
+
         // Memory tool — persistent memory across sessions
         // Uses per-execution handle swapping for concurrency safety
         {
@@ -1981,6 +1988,11 @@ impl ServerState {
                 "Vision tool skipped: LLM instance manager not available"
             );
         }
+
+        // Image edit tool — crop, draw, blur. No VLM capability gate.
+        registry.register(Arc::new(neomind_agent::toolkit::ImageEditTool::new(
+            self.data_dir.clone(),
+        )));
 
         // Re-register memory tool (per-execution handle swapping for concurrency safety)
         {
