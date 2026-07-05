@@ -176,6 +176,41 @@ pub enum BlurMode {
     Gaussian,
 }
 
+/// Output image format for the encoded result.
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+pub enum OutputFormat {
+    #[serde(rename = "png")]
+    Png,
+    #[serde(rename = "jpeg")]
+    Jpeg,
+    #[serde(rename = "webp")]
+    Webp,
+}
+
+fn default_format() -> OutputFormat {
+    OutputFormat::Png
+}
+
+/// Top-level parameters for the `image_edit` tool.
+#[derive(Debug, serde::Deserialize)]
+pub struct ImageEditParams {
+    pub image: String,
+    pub operations: Vec<Operation>,
+    #[serde(default = "default_format")]
+    pub output_format: OutputFormat,
+    #[serde(default)]
+    pub output_filename: Option<String>,
+    #[serde(default)]
+    pub include_base64: bool,
+}
+
+/// Maximum number of operations in a single `image_edit` call.
+const MAX_OPERATIONS: usize = 50;
+/// Maximum decoded image dimension (width or height) in pixels.
+const MAX_DIM: u32 = 8000;
+/// Maximum input image size in bytes (10 MB). Matches `vision::MAX_IMAGE_SIZE`.
+const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
+
 /// Default functions for serde defaults.
 fn default_rect_color() -> Color {
     Color(image::Rgba([255, 0, 0, 255]))
@@ -250,14 +285,10 @@ pub enum OpError {
     FontParse,
 }
 
-/// Maximum input image size in bytes (10 MB). Matches `vision::MAX_IMAGE_SIZE`.
-#[allow(dead_code)] // Wired into pipeline in Task 14.
-const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
-
+/// Image editing tool entry point. Owns the data directory (where outputs land)
+/// and the HTTP client used to fetch remote image URLs.
 pub struct ImageEditTool {
-    #[allow(dead_code)] // Wired into pipeline in Task 14.
     data_dir: std::path::PathBuf,
-    #[allow(dead_code)] // Wired into pipeline in Task 14.
     http_client: reqwest::Client,
 }
 
@@ -284,25 +315,361 @@ impl Tool for ImageEditTool {
     }
 
     fn description(&self) -> &str {
-        // Filled in by Task 14 (pipeline executor + tool description).
-        "Image editing tool (crop, draw, blur). Schema populated in a later task."
+        "Crop, draw on, or blur images. Returns an absolute file path under data/images/ \
+ that can be passed to the `vision` tool's `image` parameter or chained into \
+ another `image_edit` call.\n\n\
+ Operations are applied in order. Coordinates are pixel-based, origin top-left, \
+ Y-axis down — relative to the current image state (after any previous crop).\n\n\
+ Operation types:\n\
+ - crop: extract sub-region (x, y, width, height)\n\
+ - draw_rect: rectangle outline or fill (x, y, width, height, color, stroke_width?, fill?)\n\
+ - draw_circle: circle outline or fill (cx, cy, radius, color, stroke_width?, fill?)\n\
+ - draw_line: line segment (x1, y1, x2, y2, color, stroke_width?)\n\
+ - draw_arrow: arrow with arrowhead (x1, y1, x2, y2, color, stroke_width?, head_length?)\n\
+ - draw_polygon: open or closed polygon (points: [{x,y}], color, stroke_width?, fill?, closed?)\n\
+ - draw_text: render text (x, y, text, color, font_size?, background?, padding?)\n\
+ - blur_rect: blur region (x, y, width, height, mode?: pixelate|gaussian, intensity?)\n\n\
+ Colors: hex strings like #FF0000 (red) or #FF000080 (semi-transparent red).\n\n\
+ DO NOT use this tool for:\n\
+ - Analyzing image content — use `vision` instead.\n\
+ - Images already in your context — they don't need re-loading.\n\
+ - Generating images from scratch — this tool requires an existing image.\n\n\
+ Common patterns:\n\
+ - Annotate detections: [draw_rect(...), draw_text(label, x, y-20)]\n\
+ - Privacy masking: [blur_rect(face_region)]\n\
+ - Region-focused analysis: image_edit(crop) -> vision(cropped path)"
     }
 
     fn parameters(&self) -> Value {
-        // Filled in by Task 14.
-        serde_json::json!({})
+        serde_json::json!({
+            "type": "object",
+            "required": ["image", "operations"],
+            "properties": {
+                "image": {
+                    "type": "string",
+                    "description": "Source image: data URL (data:image/...;base64,...), http(s) URL, raw base64, or absolute local file path"
+                },
+                "operations": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["crop", "draw_rect", "draw_circle", "draw_line", "draw_arrow", "draw_polygon", "draw_text", "blur_rect"]
+                            }
+                        }
+                    },
+                    "description": "Each operation must have a `type` field. Common fields: x/y/width/height (pixel coords, origin top-left, Y-axis down). Colors are #RRGGBB or #RRGGBBAA hex strings. See tool description for per-operation fields."
+                },
+                "output_format": { "type": "string", "enum": ["png", "jpeg", "webp"], "default": "png" },
+                "output_filename": { "type": "string", "description": "Optional filename (no path). If omitted, a UUID-based name is generated." },
+                "include_base64": { "type": "boolean", "default": false }
+            }
+        })
     }
 
     fn category(&self) -> ToolCategory {
         ToolCategory::System
     }
 
-    async fn execute(&self, _args: Value) -> Result<ToolOutput> {
-        // Pipeline implementation arrives in Task 14.
-        Err(ToolError::InvalidArguments(
-            "image_edit not yet implemented".into(),
-        ))
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let params: ImageEditParams = serde_json::from_value(args)
+            .map_err(|e| ToolError::InvalidArguments(format!("invalid image_edit args: {}", e)))?;
+
+        if params.operations.is_empty() {
+            return Err(ToolError::InvalidArguments(
+                "operations must contain at least one entry".into(),
+            ));
+        }
+        if params.operations.len() > MAX_OPERATIONS {
+            return Err(ToolError::InvalidArguments(format!(
+                "operations exceeds max {}",
+                MAX_OPERATIONS
+            )));
+        }
+
+        // 1. Load input bytes (data URL / HTTP URL / file path / raw base64).
+        let (bytes, _mime) =
+            crate::image_utils::resolve_image(&params.image, &self.http_client, MAX_IMAGE_SIZE)
+                .await
+                .map_err(ToolError::from)?;
+
+        // 2. Decode.
+        let mut img = image::load_from_memory(&bytes)
+            .map_err(|e| ToolError::Execution(format!("image decode failed: {}", e)))?;
+
+        let (w, h) = (img.width(), img.height());
+        if w > MAX_DIM || h > MAX_DIM {
+            return Err(ToolError::InvalidArguments(format!(
+                "decoded image {}x{} exceeds max dimensions {}x{}",
+                w, h, MAX_DIM, MAX_DIM
+            )));
+        }
+
+        // 3. Apply operations atomically (fail -> no file written).
+        for op in &params.operations {
+            apply_operation(&mut img, op)
+                .map_err(|e| ToolError::Execution(format!("operation failed: {:?}", e)))?;
+        }
+
+        // 4. Encode result.
+        let (out_bytes, mime, ext) = encode(&img, params.output_format)?;
+
+        // 5. Write to data/images/<filename>.
+        let path = self.write_output(&out_bytes, ext, params.output_filename.as_deref())?;
+
+        // 6. Build response.
+        let mut resp = serde_json::json!({
+            "path": path.to_string_lossy(),
+            "width": img.width(),
+            "height": img.height(),
+            "size_bytes": out_bytes.len(),
+            "image_type": mime,
+        });
+        if params.include_base64 {
+            let b64 =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &out_bytes);
+            resp["base64"] = serde_json::Value::String(b64);
+        }
+
+        Ok(ToolOutput::success(resp))
     }
+}
+
+impl ImageEditTool {
+    /// Write the encoded image bytes to `<data_dir>/images/<filename>`.
+    ///
+    /// Returns the **absolute** path. CRITICAL: do NOT use
+    /// `std::fs::canonicalize` here — on macOS it resolves `/tmp` to
+    /// `/private/tmp` (which lives under `/var/` in some layouts), and
+    /// `vision.rs` blocklists `/var/`. `current_dir().join(rel)` gives an
+    /// absolute path without resolving symlinks.
+    fn write_output(
+        &self,
+        bytes: &[u8],
+        ext: &str,
+        filename: Option<&str>,
+    ) -> Result<std::path::PathBuf> {
+        let images_dir = self.data_dir.join("images");
+        std::fs::create_dir_all(&images_dir)
+            .map_err(|e| ToolError::Execution(format!("create data/images failed: {}", e)))?;
+
+        let final_name = match filename {
+            None => format!("{}.{}", uuid::Uuid::new_v4(), ext),
+            Some(name) => sanitize_filename(name, ext)?,
+        };
+
+        let mut path = images_dir.join(&final_name);
+        if path.exists() {
+            // Name collision — append a short UUID suffix to avoid clobbering.
+            let suffix: String = uuid::Uuid::new_v4().to_string().chars().take(6).collect();
+            let stem: String = final_name.split('.').next().unwrap_or("img").to_string();
+            let new_name = format!("{}_{}.{}", stem, suffix, ext);
+            path = images_dir.join(new_name);
+        }
+
+        // Write to a .tmp sidecar then rename — atomic on the same filesystem.
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, bytes)
+            .map_err(|e| ToolError::Execution(format!("write failed: {}", e)))?;
+        std::fs::rename(&tmp, &path)
+            .map_err(|e| ToolError::Execution(format!("rename failed: {}", e)))?;
+
+        // Build absolute path WITHOUT canonicalize (see doc comment above).
+        let abs = std::env::current_dir()
+            .map_err(|e| ToolError::Execution(format!("current_dir failed: {}", e)))?
+            .join(&path);
+        Ok(abs)
+    }
+}
+
+/// Sanitize a user-supplied filename: reject path components, strip non-alnum
+/// chars (keeping `_`, `-`, `.`), strip any trailing image extension the user
+/// may have included, then re-attach the canonical `expected_ext`.
+fn sanitize_filename(name: &str, expected_ext: &str) -> Result<String> {
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err(ToolError::InvalidArguments(format!(
+            "output_filename contains path components: {}",
+            name
+        )));
+    }
+    let kept: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        .collect();
+    if kept.is_empty() {
+        return Err(ToolError::InvalidArguments(format!(
+            "output_filename has no valid chars after sanitize: {}",
+            name
+        )));
+    }
+    // Strip any known image extension(s) the user may have included, then
+    // re-attach the canonical one. We match case-insensitively but preserve
+    // the original case of the stem.
+    let lower = kept.to_ascii_lowercase();
+    let stem = lower
+        .strip_suffix(&format!(".{}", expected_ext))
+        .or_else(|| lower.strip_suffix(".png"))
+        .or_else(|| lower.strip_suffix(".jpeg"))
+        .or_else(|| lower.strip_suffix(".jpg"))
+        .or_else(|| lower.strip_suffix(".webp"))
+        .map(|s| kept[..s.len()].to_string())
+        .unwrap_or(kept);
+    Ok(format!("{}.{}", stem, expected_ext))
+}
+
+/// Dispatch a single operation against `img`.
+fn apply_operation(
+    img: &mut image::DynamicImage,
+    op: &Operation,
+) -> std::result::Result<(), OpError> {
+    match op {
+        Operation::Crop {
+            x,
+            y,
+            width,
+            height,
+        } => apply_crop(img, *x, *y, *width, *height),
+        Operation::DrawRect {
+            x,
+            y,
+            width,
+            height,
+            color,
+            stroke_width,
+            fill,
+        } => {
+            apply_draw_rect(
+                img,
+                *x,
+                *y,
+                *width,
+                *height,
+                color.0,
+                *stroke_width,
+                fill.clone().map(|c| c.0),
+            );
+            Ok(())
+        }
+        Operation::DrawCircle {
+            cx,
+            cy,
+            radius,
+            color,
+            stroke_width,
+            fill,
+        } => apply_draw_circle(
+            img,
+            *cx,
+            *cy,
+            *radius,
+            color.0,
+            *stroke_width,
+            fill.clone().map(|c| c.0),
+        ),
+        Operation::DrawLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            color,
+            stroke_width,
+        } => {
+            apply_draw_line(img, *x1, *y1, *x2, *y2, color.0, *stroke_width);
+            Ok(())
+        }
+        Operation::DrawArrow {
+            x1,
+            y1,
+            x2,
+            y2,
+            color,
+            stroke_width,
+            head_length,
+        } => {
+            apply_draw_arrow(
+                img,
+                *x1,
+                *y1,
+                *x2,
+                *y2,
+                color.0,
+                *stroke_width,
+                *head_length,
+            );
+            Ok(())
+        }
+        Operation::DrawPolygon {
+            points,
+            color,
+            stroke_width,
+            fill,
+            closed,
+        } => {
+            apply_draw_polygon(
+                img,
+                points,
+                color.0,
+                *stroke_width,
+                fill.clone().map(|c| c.0),
+                *closed,
+            );
+            Ok(())
+        }
+        Operation::DrawText {
+            x,
+            y,
+            text,
+            color,
+            font_size,
+            background,
+            padding,
+        } => {
+            let font_bytes = probe_font().ok_or(OpError::NoFont)?;
+            apply_draw_text(
+                img,
+                *x,
+                *y,
+                text,
+                color.0,
+                *font_size,
+                background.clone().map(|c| c.0),
+                *padding,
+                font_bytes,
+            )
+        }
+        Operation::BlurRect {
+            x,
+            y,
+            width,
+            height,
+            mode,
+            intensity,
+        } => apply_blur_rect(img, *x, *y, *width, *height, *mode, *intensity),
+    }
+}
+
+/// Encode the image to the requested format. Returns `(bytes, mime, extension)`.
+///
+/// Note: Task 15 will add JPEG alpha compositing (JPEG has no alpha channel).
+/// For now, if JPEG encoding fails because the image has an alpha channel, the
+/// error is surfaced to the caller.
+fn encode(
+    img: &image::DynamicImage,
+    fmt: OutputFormat,
+) -> Result<(Vec<u8>, &'static str, &'static str)> {
+    use image::ImageFormat;
+    let (format, mime, ext) = match fmt {
+        OutputFormat::Png => (ImageFormat::Png, "image/png", "png"),
+        OutputFormat::Jpeg => (ImageFormat::Jpeg, "image/jpeg", "jpeg"),
+        OutputFormat::Webp => (ImageFormat::WebP, "image/webp", "webp"),
+    };
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, format)
+        .map_err(|e| ToolError::Execution(format!("image encode ({}) failed: {}", ext, e)))?;
+    Ok((buf.into_inner(), mime, ext))
 }
 
 fn apply_crop(
@@ -373,6 +740,9 @@ fn probe_font() -> Option<&'static [u8]> {
         .as_deref()
 }
 
+/// Note: `stroke_width` is accepted for API uniformity with other draw operations
+/// but not honored — imageproc 0.27's rect outline is always 1px thick.
+#[allow(clippy::too_many_arguments)]
 fn apply_draw_rect(
     img: &mut image::DynamicImage,
     x: i32,
@@ -383,15 +753,14 @@ fn apply_draw_rect(
     stroke_width: u32,
     fill: Option<image::Rgba<u8>>,
 ) {
-    use imageproc::drawing::draw_hollow_rect_mut;
-    let (w, h) = (w, h);
+    use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
     let rect = imageproc::rect::Rect::at(x, y).of_size(w, h);
-    if let Some(fill) = fill {
-        // For filled rectangles, we need to draw it pixel by pixel or use imageproc's filled rect
-        // Since there's no direct filled_rect_mut, we'll draw the outline
-        let _ = fill; // TODO: implement fill properly
+    if let Some(fill_color) = fill {
+        draw_filled_rect_mut(img, rect, fill_color);
     }
-    let _ = stroke_width; // Used by imageproc's stroke algorithm
+    // Note: imageproc 0.27 does not support stroke_width for rects; the parameter
+    // is accepted for API uniformity but the outline is always 1px thick.
+    let _ = stroke_width;
     draw_hollow_rect_mut(img, rect, color);
 }
 
@@ -416,6 +785,8 @@ fn apply_draw_circle(
     Ok(())
 }
 
+/// Note: `stroke_width` is accepted for API uniformity with other draw operations
+/// but not honored — imageproc 0.27's line drawing is single-pixel width.
 fn apply_draw_line(
     img: &mut image::DynamicImage,
     x1: i32,
@@ -430,6 +801,9 @@ fn apply_draw_line(
     draw_line_segment_mut(img, (x1 as f32, y1 as f32), (x2 as f32, y2 as f32), color);
 }
 
+/// Note: `stroke_width` is accepted for API uniformity with other draw operations
+/// but not honored — imageproc 0.27's line drawing is single-pixel width.
+#[allow(clippy::too_many_arguments)]
 fn apply_draw_arrow(
     img: &mut image::DynamicImage,
     x1: i32,
@@ -462,6 +836,8 @@ fn apply_draw_arrow(
     draw_line_segment_mut(img, (x2 as f32, y2 as f32), (hx2, hy2), color);
 }
 
+/// Note: `stroke_width` is accepted for API uniformity with other draw operations
+/// but not honored — imageproc 0.27's polygon outline is single-pixel width.
 fn apply_draw_polygon(
     img: &mut image::DynamicImage,
     points: &[PolygonPoint],
@@ -470,7 +846,7 @@ fn apply_draw_polygon(
     fill: Option<image::Rgba<u8>>,
     closed: bool,
 ) {
-    use imageproc::drawing::{draw_line_segment_mut, draw_polygon_mut};
+    use imageproc::drawing::draw_line_segment_mut;
     if points.is_empty() {
         return;
     }
@@ -498,14 +874,48 @@ fn apply_draw_polygon(
             }
             return;
         }
-        // Use imageproc's polygon drawer (auto-closes)
-        // Note: imageproc's draw_polygon_mut doesn't support stroke_width
-        if let Some(_fill) = fill {
-            // Draw filled polygon - imageproc handles fill automatically
-            // For now, we just draw the outline
-            draw_polygon_mut(img, &ipoints, color);
-        } else {
-            draw_polygon_mut(img, &ipoints, color);
+        // Fill first (so outline draws on top). imageproc 0.27's
+        // `draw_polygon_mut` fills AND outlines with the SAME color (no
+        // separate fill/outline), so we do a manual bounding-box scanline
+        // fill using a point-in-polygon test. O(area * points) — fine for
+        // annotation-scale polygons.
+        if let Some(fill_color) = fill {
+            use image::{GenericImage, GenericImageView};
+            let min_x = ipoints.iter().map(|p| p.x).min().unwrap();
+            let max_x = ipoints.iter().map(|p| p.x).max().unwrap();
+            let min_y = ipoints.iter().map(|p| p.y).min().unwrap();
+            let max_y = ipoints.iter().map(|p| p.y).max().unwrap();
+            let (iw, ih) = img.dimensions();
+            let xs_lo = min_x.max(0);
+            let xs_hi = max_x.min(iw as i32 - 1);
+            let ys_lo = min_y.max(0);
+            let ys_hi = max_y.min(ih as i32 - 1);
+            for py in ys_lo..=ys_hi {
+                for px in xs_lo..=xs_hi {
+                    if point_in_polygon(px, py, &ipoints) {
+                        // put_pixel overwrites — matches imageproc's filled circle behavior.
+                        if (px as u32) < iw && (py as u32) < ih {
+                            img.put_pixel(px as u32, py as u32, fill_color);
+                        }
+                    }
+                }
+            }
+        }
+        // Outline: draw all edges including the closing edge (last -> first).
+        // We draw edges manually rather than using `draw_polygon_mut` because
+        // the latter FILLS the polygon with the outline color, which would
+        // clobber the fill_color we just laid down (and is wrong for the
+        // `fill: None` case where the user wants outline only).
+        let n = ipoints.len();
+        for i in 0..n {
+            let a = &ipoints[i];
+            let b = &ipoints[(i + 1) % n];
+            draw_line_segment_mut(
+                img,
+                (a.x as f32, a.y as f32),
+                (b.x as f32, b.y as f32),
+                color,
+            );
         }
     } else {
         // Open polygon: draw consecutive lines only (no auto-close)
@@ -520,6 +930,29 @@ fn apply_draw_polygon(
     }
 }
 
+/// Standard ray-casting point-in-polygon test.
+fn point_in_polygon(px: i32, py: i32, pts: &[imageproc::point::Point<i32>]) -> bool {
+    let mut inside = false;
+    let n = pts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = (pts[i].x, pts[i].y);
+        let (xj, yj) = (pts[j].x, pts[j].y);
+        if (yi > py) != (yj > py) {
+            let x_inter = (xj - xi) as f32 * (py - yi) as f32 / (yj - yi) as f32 + xi as f32;
+            if (px as f32) < x_inter {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
+}
+
+#[allow(clippy::too_many_arguments)]
 fn apply_draw_text(
     img: &mut image::DynamicImage,
     x: i32,
@@ -595,7 +1028,7 @@ fn apply_blur_rect(
 
     match mode.unwrap_or(BlurMode::Pixelate) {
         BlurMode::Pixelate => {
-            let block = intensity.unwrap_or(16).max(1).min(256);
+            let block = intensity.unwrap_or(16).clamp(1, 256);
             let mut rgba = img.to_rgba8();
             let mut by = y as u32;
             while by < y2 {
@@ -638,7 +1071,7 @@ fn apply_blur_rect(
             *img = image::DynamicImage::ImageRgba8(rgba);
         }
         BlurMode::Gaussian => {
-            let radius = intensity.unwrap_or(5).max(1).min(100) as f32;
+            let radius = intensity.unwrap_or(5).clamp(1, 100) as f32;
             // CRITICAL: use `crop_imm` to get a sub-image, then blur and overlay.
             // NOTE: crop_imm returns a NEW image, it doesn't mutate the receiver.
             let sub = img.crop_imm(x as u32, y as u32, cw, ch);
@@ -660,14 +1093,76 @@ mod tests {
         assert!(matches!(t.category(), ToolCategory::System));
     }
 
-    #[test]
-    fn execute_returns_not_yet_implemented() {
-        // Until Task 14 lands, execute() surfaces a clear error rather than
-        // panicking or silently succeeding.
+    #[tokio::test]
+    async fn execute_rejects_empty_operations() {
         let t = ImageEditTool::new("/tmp");
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let res = rt.block_on(t.execute(serde_json::json!({})));
+        let res = t
+            .execute(serde_json::json!({
+                "image": "data:image/png;base64,",
+                "operations": []
+            }))
+            .await;
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn sanitize_strips_path_components() {
+        assert!(sanitize_filename("../../../etc/foo", "png").is_err());
+        assert!(sanitize_filename("a/b", "png").is_err());
+        assert!(sanitize_filename("a\\b", "png").is_err());
+    }
+
+    #[test]
+    fn sanitize_replaces_invalid_chars_and_forces_ext() {
+        // Spaces and `!` are dropped; user-supplied `.png` is stripped, `.jpeg` appended.
+        let n = sanitize_filename("Alert Zone!.png", "jpeg").unwrap();
+        assert_eq!(n, "AlertZone.jpeg");
+    }
+
+    #[test]
+    fn sanitize_rejects_empty() {
+        assert!(sanitize_filename("!!!", "png").is_err());
+    }
+
+    #[test]
+    fn sanitize_preserves_dashes_and_underscores() {
+        let n = sanitize_filename("my-snapshot_01", "png").unwrap();
+        assert_eq!(n, "my-snapshot_01.png");
+    }
+
+    #[test]
+    fn write_output_returns_absolute_path() {
+        // Construct data_dir under current_dir() to keep the test hermetic
+        // and avoid macOS /var/folders prefix (which vision.rs blocklists).
+        let test_root = std::env::current_dir().unwrap().join("test-tmp-image-edit");
+        std::fs::create_dir_all(&test_root).unwrap();
+        let tool = ImageEditTool::new(&test_root);
+        // 8-byte PNG header is enough for the writer — we don't decode it back.
+        let png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let path = tool.write_output(&png, "png", None).unwrap();
+        assert!(path.is_absolute(), "path must be absolute, got: {:?}", path);
+        #[cfg(unix)]
+        assert!(path.starts_with("/"), "unix absolute must start with /");
+        let _ = std::fs::remove_dir_all(&test_root);
+    }
+
+    #[test]
+    fn write_output_honors_custom_filename() {
+        let test_root = std::env::current_dir()
+            .unwrap()
+            .join("test-tmp-image-edit-named");
+        std::fs::create_dir_all(&test_root).unwrap();
+        let tool = ImageEditTool::new(&test_root);
+        let png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let path = tool
+            .write_output(&png, "png", Some("custom-name.png"))
+            .unwrap();
+        assert!(
+            path.to_string_lossy().ends_with("custom-name.png"),
+            "expected custom-name.png suffix, got: {:?}",
+            path
+        );
+        let _ = std::fs::remove_dir_all(&test_root);
     }
 }
 
@@ -811,6 +1306,50 @@ mod op_tests {
         // Pixel on the would-be closing edge at (30, 30) should NOT be colored
         let no_edge = img.get_pixel(30, 30);
         assert_eq!(no_edge, image::Rgba([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn draw_polygon_fill_covers_interior() {
+        // Filled triangle: vertices (10,10), (90,10), (50,90).
+        // Centroid (50, ~36) is unambiguously interior — outline-only would
+        // leave it black. This guards against Gap 2 regression (fill branch
+        // identical to outline).
+        let mut img = solid(200, 200, [0, 0, 0, 255]);
+        let points = vec![
+            PolygonPoint { x: 10, y: 10 },
+            PolygonPoint { x: 90, y: 10 },
+            PolygonPoint { x: 50, y: 90 },
+        ];
+        apply_draw_polygon(
+            &mut img,
+            &points,
+            image::Rgba([255, 0, 0, 255]),
+            2,
+            Some(image::Rgba([0, 255, 0, 255])), // green fill
+            true,
+        );
+        // Interior point should be green (fill color).
+        let interior = img.get_pixel(50, 36);
+        assert_eq!(interior, image::Rgba([0, 255, 0, 255]));
+    }
+
+    #[test]
+    fn draw_rect_fill_covers_interior() {
+        // Guards against Gap 1 regression (fill branch did nothing).
+        let mut img = solid(200, 200, [0, 0, 0, 255]);
+        apply_draw_rect(
+            &mut img,
+            10,
+            10,
+            100,
+            80,
+            image::Rgba([255, 0, 0, 255]), // red outline
+            2,
+            Some(image::Rgba([0, 255, 0, 255])), // green fill
+        );
+        // Interior pixel (not on the 1px outline) should be green.
+        let interior = img.get_pixel(50, 50);
+        assert_eq!(interior, image::Rgba([0, 255, 0, 255]));
     }
 
     #[test]
