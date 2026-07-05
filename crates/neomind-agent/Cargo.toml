@@ -48,6 +48,10 @@ cron = "0.12"
 
 # Image processing (resize before VLM dispatch — saves bandwidth on cloud backends)
 image = { workspace = true }
+# Image drawing/editing operations for the `image_edit` tool.
+# imageproc 0.27 depends on image 0.25 + ab_glyph (verified P1).
+imageproc = "0.27"
+ab_glyph = "0.2"
 
 # Memory system dependencies (merged from neomind-memory)
 reqwest = { workspace = true }
