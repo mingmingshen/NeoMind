@@ -9,7 +9,158 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_None yet._
+### Overview
+
+Three workstreams landed together because they all touch the
+extension ↔ agent streaming boundary:
+
+1. **ChatSession capability family (Phase 2 streaming)** — the
+   one-shot `chat_stream` capability is now split into a persistent
+   session-stream API (`chat_session_open` / `send` / `close` /
+   `cancel_turn`) so extensions can hold a long-lived subscription,
+   receive an authoritative stream-termination signal (`AgentStreamEnd`),
+   and disambiguate overlapping turns via `turn_id`.
+2. **Per-session config overrides** — voice-assistant and similar
+   workloads can now bake a `systemPrompt` / `temperature` / `model` /
+   `enableTools` patch into a session at creation time (REST
+   `POST /api/sessions` and WS chat auto-create path) instead of
+   polluting every user message via `pageContext`.
+3. **Extension runtime/tooling polish** — dynamic metrics become
+   visible without per-poll IPC, plugin config dialog supports
+   instance rename + a dedicated thinking toggle, and the asset
+   cache-control is loosened so dev iteration on extension bundles
+   no longer requires a Tauri WKWebView cache flush.
+
+A new system-prompt rule also lands: a strict 3-condition chitchat
+fast path so pure greetings skip tools, while anything that smells
+like domain state still routes through the tool layer.
+
+### ChatSession capability family (Phase 2 streaming)
+
+- **5 new `ExtensionCapability` variants**:
+  `ChatStreamCancel`, `ChatSessionOpen`, `ChatSessionSend`,
+  `ChatSessionClose`, `ChatStreamCancelTurn`. All added to the
+  runner's `ALLOWED_CAPABILITIES` allow-list and routed through the
+  new `ChatSessionCapabilityProvider` (except `ChatStreamCancel`,
+  which extends the existing `ChatStreamCapabilityProvider`).
+- **`NeoMindEvent::AgentStreamEnd`** — authoritative transport-layer
+  terminator published alongside the existing `AgentStreamChunk`.
+  Reason: chunk-internal `type=end` is ambiguous on reasoning models
+  and tool loops (intermediate end-like chunks). Subscribers should
+  treat `AgentStreamEnd` as the only true "no more chunks will
+  arrive" signal. `event_name()` and `timestamp()` plumbing updated.
+- **Direct subscriber routing on `SessionManager`**:
+  `subscribe_events(session_id, buffer)` / `remove_subscriber` /
+  `publish_to_subscribers`. Uses bounded `mpsc` with `try_send` so a
+  slow subscriber never wedges the agent stream (events are dropped
+  rather than buffered). Today 0-or-1 subscribers per session;
+  fan-out is forward-compatible.
+- **`turn_id` injection** — `ChatSessionSend` generates a UUIDv4
+  `turn_id`, returns it immediately (does NOT wait for LLM
+  completion), and tags every chunk wrapper for that turn. Callers
+  can disambiguate rapid consecutive turns without guessing.
+- **SDK surface** (`crates/neomind-extension-sdk/src/capabilities/chat.rs`):
+  `open_session` / `send_message` / `close_session` / `cancel_turn`
+  async helpers + capability constants on the host.
+- **`ChatStream` hardening** — the spawn task now publishes a
+  terminal `AgentStreamEnd{reason="error"}` + chunk on upstream
+  `process_message_events` failure (previously a silent hang), and
+  `ChatStreamCancel` is exposed as a first-class capability instead
+  of relying on extension shutdown to free the LLM generation slot.
+- **Manifest / allow-list wiring** — `ChatSessionCapabilityProvider`
+  registered in `ServerState`; `extension-runner/main.rs`
+  `ALLOWED_CAPABILITIES` extended with the 5 new names.
+
+### Per-session config overrides
+
+- **`neomind_agent::CreateSessionOptions`** — small Option-struct
+  (`system_prompt`, `temperature`, `model`, `enable_tools`). Applied
+  **only** on newly-created sessions; existing sessions reused via
+  `get_or_create_session_with_options` keep their original config
+  (override silently ignored). Re-exported from `neomind_agent`.
+- **`SessionManager::create_session_with_options(opts)`** — side-by
+  side with `create_session()`; default path unchanged.
+- **REST: `POST /api/sessions`** — body is now optional
+  (`Option<Json<Option<CreateSessionRequest>>>`). Honors both legacy
+  `{config: AgentConfig}` (translated to the patch) and the new
+  granular patch shape.
+- **WS chat** — `ChatRequest.sessionConfig` (camelCase) is honored
+  only at the moment of session auto-creation; subsequent frames
+  targeting an existing session ignore the field by design.
+- **`models::SessionConfigPatch`** + `From<SessionConfigPatch> for
+  CreateSessionOptions` — keeps the boundary type in `neomind-api`
+  and translates into the agent-side type at the call site.
+
+### Plugin / LLM backend dialog UX
+
+- **Instance rename** — `UniversalPluginConfigDialog` now pre-fills
+  the instance name in edit mode and validates non-empty before
+  submit; `handleUpdate` propagates `name` through
+  `UpdateLlmBackendRequest`. Previously the name rendered as a
+  read-only `<h3>`, making rename impossible.
+- **Thinking toggle as a first-class switch** — separate from the
+  multimodal override (which is a user override on top of runtime
+  detection). Thinking is a plain backend config field, so the
+  dialog PATCHes `thinking_enabled` directly via `api.updateLlmBackend`
+  with optimistic update + rollback, mirroring the multimodal flow.
+  Initial value is read from `instance.config.thinking_enabled`,
+  defaulting to `true` (matches `default_thinking_enabled()`).
+- **`ConfigFormBuilder` footer pattern** — new `formId` and
+  `hideSubmitButton` props let a parent place the submit button in
+  a dialog footer (bound via the HTML `form` attribute) instead of
+  the inline bottom-of-form Button.
+- **Backend logging** — `update_backend_handler` now emits a
+  dedicated `User thinking_enabled setting updated` log line with
+  `prev`/`new` values, distinct from the capabilities-support log
+  (which reports `supports_thinking` — a model capability from
+  `/api/show`, not the user's enable/disable choice).
+
+### Extension runtime polish
+
+- **Dynamic metric descriptor refresh** —
+  `ExtensionMetricsCollector` now refreshes the cached descriptor
+  from the extension every TTL window (default 60s) bounded by a
+  hard timeout (default 10s). Without this, dynamically-added
+  metrics (e.g. `fps.cam1`, `latency_ms.task-42` — see new
+  `crates/neomind-extension-sdk/src/dynamic_metrics.rs` helper)
+  stayed invisible to `/api/extensions` until the runner restarted.
+  The timeout is a safety bound against mixed deployments where the
+  runner may not recognize the `GetDescriptor` IPC message (would
+  otherwise stall for the full `command_timeout_secs` = 300s).
+  Both durations are configurable via
+  `with_descriptor_ttl` / `with_descriptor_refresh_timeout`.
+- **Asset cache-control loosened** — `serve_extension_asset_handler`
+  switched from `public, max-age=3600` to `no-cache`. Tauri WKWebView
+  was serving 1-hour-stale bundles in dev after a rebuild; bundles
+  are small (tens of KB) so re-fetch on each navigation is
+  negligible.
+- **`install_sync` step-by-step logging** — `upload_extension_file_handler`
+  and `ExtensionPackage::install_sync` now emit numbered step logs
+  plus a dedicated `tracing::error!` on task-join / install failure
+  with `extension_id` and `kind`, replacing bare
+  `format!("Installation failed: {}")` strings.
+
+### System prompt
+
+- **Chitchat fast path** — three conjunctive conditions for skipping
+  tools: (a) pure greeting/identity/courtesy phrase, (b) no reference
+  to any domain entity (devices/metrics/rules/agents/dashboards/etc.),
+  (c) a direct text reply fully satisfies the request. Includes a
+  concrete "DO call tools" list for ambiguous-looking messages
+  ("anything happening today?", "everything normal?", "any anomalies?")
+  so the model defaults to tool-calling when in doubt. Rule applies
+  by intent, not by language (English / Chinese).
+
+### Tests / fixtures
+
+- **`crates/neomind-core/tests/fixtures/smoke-extension/build.rs`** —
+  sets the macOS dylib install name to `@rpath/extension.dylib` at
+  link time so the runner's dylib validation accepts this fixture.
+- **`crates/neomind-cli/test-extension/Cargo.lock`** — generated
+  lockfile for the in-tree test extension example.
+- **`crates/neomind-extension-sdk/src/dynamic_metrics.rs`** —
+  reusable helper for multi-instance extensions to register base
+  metric templates × runtime labels (e.g. `fps.cam1`).
 
 ---
 

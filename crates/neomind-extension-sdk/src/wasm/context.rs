@@ -18,6 +18,11 @@ pub mod capabilities {
     pub const EXTENSION_CALL: &str = "extension_call";
     pub const AGENT_TRIGGER: &str = "agent_trigger";
     pub const CHAT_STREAM: &str = "chat_stream";
+    pub const CHAT_STREAM_CANCEL: &str = "chat_stream_cancel";
+    pub const CHAT_SESSION_OPEN: &str = "chat_session_open";
+    pub const CHAT_SESSION_SEND: &str = "chat_session_send";
+    pub const CHAT_SESSION_CLOSE: &str = "chat_session_close";
+    pub const CHAT_STREAM_CANCEL_TURN: &str = "chat_stream_cancel_turn";
     pub const RULE_TRIGGER: &str = "rule_trigger";
 }
 

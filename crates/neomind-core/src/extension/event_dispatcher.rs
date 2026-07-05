@@ -150,12 +150,15 @@ impl EventDispatcher {
         let subscriptions = self.subscriptions.read().clone();
         let isolated_event_senders = self.isolated_event_senders.read().clone();
 
-        // Diagnostic: log every dispatch call with subscription state
+        // Diagnostic: log every dispatch call with subscription state.
+        // High-frequency (fires per event — bursts of 20+ Hz when device
+        // metrics are polled), so debug rather than info to avoid log
+        // flooding in production.
         let subscriber_count: usize = subscriptions
             .iter()
             .filter(|(_, ets)| ets.iter().any(|et| et == "all" || et == event_type))
             .count();
-        info!(
+        debug!(
             event_type = %event_type,
             total_subscribers = subscriber_count,
             registered_extensions = subscriptions.len(),
@@ -196,7 +199,7 @@ impl EventDispatcher {
                     // Send event to isolated extension via channel
                     match sender.send((event_type.to_string(), payload.clone())).await {
                         Ok(_) => {
-                            info!(
+                            debug!(
                                 extension_id = %extension_id,
                                 event_type = %event_type,
                                 "EventDispatcher: delivered to isolated extension"
@@ -292,7 +295,7 @@ impl EventDispatcher {
                     // Send event to isolated extension via channel
                     match sender.send((event_type.to_string(), payload.clone())).await {
                         Ok(_) => {
-                            info!(
+                            debug!(
                                 extension_id = %extension_id,
                                 event_type = %event_type,
                                 "EventDispatcher: delivered to isolated extension"

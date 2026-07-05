@@ -79,6 +79,11 @@ define_capabilities! {
     ExtensionCall => EXTENSION_CALL => "extension_call" => "Access to call other extensions",
     AgentTrigger => AGENT_TRIGGER => "agent_trigger" => "Access to trigger agents",
     ChatStream => CHAT_STREAM => "chat_stream" => "Access to streaming chat (SessionManager) with token-level events pushed via EventPush",
+    ChatStreamCancel => CHAT_STREAM_CANCEL => "chat_stream_cancel" => "Cancel an in-flight ChatStream session via SessionManager.cancel_session()",
+    ChatSessionOpen => CHAT_SESSION_OPEN => "chat_session_open" => "Open a persistent chat session subscription (SessionManager); AgentEvents for this session are routed to the caller via AgentStreamChunk events tagged with session_id",
+    ChatSessionSend => CHAT_SESSION_SEND => "chat_session_send" => "Send a message to an open chat session; returns turn_id immediately. LLM events arrive via AgentStreamChunk (chunk.turn_id == returned turn_id)",
+    ChatSessionClose => CHAT_SESSION_CLOSE => "chat_session_close" => "Close a chat session subscription and cancel any in-flight turn",
+    ChatStreamCancelTurn => CHAT_STREAM_CANCEL_TURN => "chat_stream_cancel_turn" => "Cancel a specific turn within an open chat session (does not close the session)",
     RuleTrigger => RULE_TRIGGER => "rule_trigger" => "Access to trigger rules",
     DeviceTemplateRegister => DEVICE_TEMPLATE_REGISTER => "device_template_register" => "Register device type templates",
     DeviceRegister => DEVICE_REGISTER => "device_register" => "Register device instances",
@@ -99,6 +104,11 @@ impl ExtensionCapability {
             ExtensionCapability::ExtensionCall => "Extension Call".to_string(),
             ExtensionCapability::AgentTrigger => "Agent Trigger".to_string(),
             ExtensionCapability::ChatStream => "Chat Stream".to_string(),
+            ExtensionCapability::ChatStreamCancel => "Chat Stream Cancel".to_string(),
+            ExtensionCapability::ChatSessionOpen => "Chat Session Open".to_string(),
+            ExtensionCapability::ChatSessionSend => "Chat Session Send".to_string(),
+            ExtensionCapability::ChatSessionClose => "Chat Session Close".to_string(),
+            ExtensionCapability::ChatStreamCancelTurn => "Chat Stream Cancel Turn".to_string(),
             ExtensionCapability::RuleTrigger => "Rule Trigger".to_string(),
             ExtensionCapability::DeviceTemplateRegister => "Device Template Register".to_string(),
             ExtensionCapability::DeviceRegister => "Device Register".to_string(),
@@ -131,6 +141,26 @@ impl ExtensionCapability {
                 "Invoke streaming chat session (SessionManager); AgentEvent stream pushed via event bus"
                     .to_string()
             }
+            ExtensionCapability::ChatStreamCancel => {
+                "Cancel an in-flight ChatStream session (SessionManager.cancel_session)"
+                    .to_string()
+            }
+            ExtensionCapability::ChatSessionOpen => {
+                "Open a persistent chat session subscription. After this call, all AgentEvents on this session are routed to the caller via AgentStreamChunk events tagged with the session_id."
+                    .to_string()
+            }
+            ExtensionCapability::ChatSessionSend => {
+                "Send a message to an open chat session; returns turn_id immediately. LLM events arrive via AgentStreamChunk (chunk.turn_id == returned turn_id)."
+                    .to_string()
+            }
+            ExtensionCapability::ChatSessionClose => {
+                "Close a chat session subscription and cancel any in-flight turn (SessionManager.cancel_session)"
+                    .to_string()
+            }
+            ExtensionCapability::ChatStreamCancelTurn => {
+                "Cancel a specific turn within an open chat session without closing the session"
+                    .to_string()
+            }
             ExtensionCapability::RuleTrigger => "Trigger rule engine execution".to_string(),
             ExtensionCapability::DeviceTemplateRegister => {
                 "Register device type templates".to_string()
@@ -157,7 +187,13 @@ impl ExtensionCapability {
                 "telemetry".to_string()
             }
             ExtensionCapability::ExtensionCall => "extension".to_string(),
-            ExtensionCapability::AgentTrigger | ExtensionCapability::ChatStream => {
+            ExtensionCapability::AgentTrigger
+            | ExtensionCapability::ChatStream
+            | ExtensionCapability::ChatStreamCancel
+            | ExtensionCapability::ChatSessionOpen
+            | ExtensionCapability::ChatSessionSend
+            | ExtensionCapability::ChatSessionClose
+            | ExtensionCapability::ChatStreamCancelTurn => {
                 "agent".to_string()
             }
             ExtensionCapability::RuleTrigger => "rule".to_string(),

@@ -176,6 +176,10 @@ function toPluginInstance(instance: LlmBackendInstance, activeId: string | null)
       max_tokens: instance.max_tokens,
       // Include capabilities so they can be accessed in the dialog
       capabilities: instance.capabilities,
+      // Pass thinking_enabled so the dialog Switch can read it back in edit mode.
+      // Mutated via direct PATCH (not the form Save), mirroring the multimodal
+      // override pattern.
+      thinking_enabled: instance.thinking_enabled,
     },
     status: {
       active: instance.id === activeId,

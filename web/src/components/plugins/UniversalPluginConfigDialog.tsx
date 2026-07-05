@@ -162,6 +162,14 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     pending: boolean
   }>({ override: null, effective: false, source: null, pending: false })
 
+  // Thinking toggle state. Unlike multimodal, thinking is a plain backend
+  // config field (not an override) — the user choice IS the effective value.
+  // Default true (matches backend storage default_thinking_enabled()).
+  const [thinkingState, setThinkingState] = useState<{ enabled: boolean; pending: boolean }>({
+    enabled: true,
+    pending: false,
+  })
+
   const testResults = externalTestResults ?? internalTestResults
   const setTestResults = setExternalTestResults ?? setInternalTestResults
   const isOllamaBackend = pluginType.type === "llm_backend" && pluginType.id === "ollama"
@@ -225,12 +233,18 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   useEffect(() => {
     // Only reset when dialog transitions from closed to open
     if (open && !prevOpenRef.current) {
-      setNewInstanceName("")
+      // Create mode: blank name; Edit mode: pre-fill with current name so
+      // the field is editable (rename supported). Backend accepts name in
+      // UpdateLlmBackendRequest, but the form previously rendered it as a
+      // read-only <h3>, making rename impossible.
+      setNewInstanceName(editingInstance ? editingInstance.name : "")
       setSelectedModel("")
       setNameError(null)
       // Reset override state on every dialog open; the edit-mode branch below
       // will re-initialise it from the editing instance's saved capabilities.
       setOverrideState({ override: null, effective: false, source: null, pending: false })
+      // Reset thinking state too; re-initialised below from instance config.
+      setThinkingState({ enabled: true, pending: false })
 
       if (editingInstance && (editingInstance as any).capabilities) {
         const existingCaps = (editingInstance as any).capabilities
@@ -247,6 +261,13 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           override: existingCaps.multimodal_user_override ?? null,
           effective: existingCaps.supports_multimodal ?? false,
           source: existingCaps.multimodal_source ?? null,
+          pending: false,
+        })
+        // Initialise thinking state from saved backend config (defaults to true
+        // if the field is absent — matches backend storage default).
+        const savedThinking = (editingInstance.config as any)?.thinking_enabled
+        setThinkingState({
+          enabled: typeof savedThinking === "boolean" ? savedThinking : true,
           pending: false,
         })
         if (pluginType.id === "ollama") {
@@ -368,12 +389,23 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const handleUpdate = async (values: Record<string, unknown>) => {
     if (!editingInstance) return
 
+    // Validate rename: instance name is required (mirrors create mode).
+    if (!newInstanceName.trim()) {
+      setNameError(t("plugins:instanceNameRequired", { defaultValue: "Instance name is required" }))
+      return
+    }
+
     setSaving(true)
     try {
-      let configWithCaps = values
+      let configWithCaps: Record<string, unknown> = {
+        ...values,
+        // Include the (possibly renamed) instance name. The parent extracts
+        // this and sends it as UpdateLlmBackendRequest.name.
+        name: newInstanceName.trim(),
+      }
       if (pluginType.type === "llm_backend") {
         configWithCaps = {
-          ...values,
+          ...configWithCaps,
           capabilities: detectedCapabilities,
           ...(isOllamaBackend && selectedModel ? { model: selectedModel } : {}),
           ...(isOllamaBackend ? { endpoint: ollamaEndpoint } : {}),
@@ -487,6 +519,39 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     patchMultimodalOverride(!overrideState.effective)
   const handleResetMultimodalOverride = () => patchMultimodalOverride(null)
 
+  // PATCH thinking_enabled directly on the backend (not via capabilities
+  // override endpoint — thinking is a plain config field, not an override).
+  // Optimistic update with rollback on error, mirroring patchMultimodalOverride.
+  //
+  // After success, refresh the parent list so the next dialog open sees the
+  // persisted value. The dialog is rendered via portal as a sibling of the
+  // list, so refreshing the list does not unmount this dialog mid-interaction.
+  const patchThinking = async (value: boolean) => {
+    if (!editingInstance || thinkingState.pending) return
+    const prev = thinkingState
+    setThinkingState({ enabled: value, pending: true })
+    try {
+      await api.updateLlmBackend(editingInstance.id, { thinking_enabled: value })
+      setThinkingState({ enabled: value, pending: false })
+      showSuccess(t("plugins:llm.thinkingSavedToast"))
+      // Refresh parent so reopen-without-Save shows the persisted value.
+      // Patched into thinking (and intentionally NOT into patchMultimodalOverride
+      // to limit scope); if multimodal needs the same fix later, mirror this.
+      if (onRefresh) {
+        try { await onRefresh() } catch { /* parent refresh is best-effort */ }
+      }
+    } catch (error) {
+      setThinkingState(prev)
+      const isNotFound = (error as { status?: number })?.status === 404
+      handleError(error as Error, {
+        operation: "Update thinking mode",
+        userMessage: isNotFound
+          ? t("plugins:llm.backendNotFound")
+          : t("plugins:llm.thinkingSaveFailed", { message: extractErrorMessage(error) }),
+      })
+    }
+  }
+
   const renderCapabilityBadges = () => (
     <div className="flex flex-wrap gap-2 mt-2 items-center">
       {/* Multimodal / Vision — interactive override in edit mode, read-only badge in create mode */}
@@ -550,12 +615,39 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           </div>
         )
       })()}
-      {detectedCapabilities.supports_thinking && (
-        <Badge variant="outline" className="text-xs">
-          <Brain className="h-4 w-4 mr-1" />
-          Thinking
-        </Badge>
-      )}
+      {(() => {
+        // Same pattern as multimodal above: read-only badge in create mode,
+        // interactive Switch in edit mode. Hidden entirely when the model
+        // doesn't support thinking — no point showing a disabled control.
+        if (!detectedCapabilities.supports_thinking) return null
+        if (!isEditing) {
+          return (
+            <Badge variant="outline" className="text-xs">
+              <Brain className="h-4 w-4 mr-1" />
+              {t("plugins:llm.capabilityThinking")}
+            </Badge>
+          )
+        }
+        return (
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={thinkingState.enabled}
+              onCheckedChange={patchThinking}
+              disabled={thinkingState.pending}
+              aria-label={t("plugins:llm.capabilityThinking")}
+              title={t("plugins:llm.thinkingToggleHint")}
+            />
+            <span className="text-xs">
+              {thinkingState.enabled
+                ? t("plugins:llm.thinkingOnLabel")
+                : t("plugins:llm.thinkingOffLabel")}
+            </span>
+            {thinkingState.pending && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            )}
+          </div>
+        )
+      })()}
       {detectedCapabilities.supports_tools && (
         <Badge variant="outline" className="text-xs">
           <Wrench className="h-4 w-4 mr-1" />
@@ -586,6 +678,13 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     [pluginType.id, editingInstance?.id, open]
   )
 
+  // Stable form id so the footer Submit button can bind to this form via the
+  // HTML `form` attribute (button lives in dialog footer, form lives in body).
+  const formId = useMemo(() => `plugin-config-form-${formKey}`, [formKey])
+  const submitLabel = isEditing
+    ? t("common:save", { defaultValue: "Save" })
+    : t("common:create", { defaultValue: "Create" })
+
   return (
     <UnifiedFormDialog
       open={open}
@@ -602,9 +701,29 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
       }
       icon={<span className={pluginType.color}>{pluginType.icon}</span>}
       width="xl"
-      hideFooter={true}
       isSubmitting={saving}
       preventCloseOnSubmit={false}
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="min-w-[80px]"
+          >
+            {t("common:cancel", { defaultValue: "Cancel" })}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={saving}
+            className="min-w-[80px]"
+          >
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {submitLabel}
+          </Button>
+        </>
+      }
     >
       <FormSectionGroup key={formKey}>
         {/* Instance Name Field (only for create mode) */}
@@ -626,21 +745,32 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           </FormField>
         )}
 
-        {/* Edit Mode: Show instance info */}
+        {/* Edit Mode: Editable name + status badge (rename supported) */}
         {isEditing && (
-          <div className="flex items-center justify-between p-3 bg-muted-30 rounded-lg">
-            <div>
-              <h3 className="font-medium">{editingInstance.name}</h3>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
-                  {getInstanceStatus(editingInstance)
-                    ? t("plugins:active", { defaultValue: "Active" })
-                    : t("plugins:inactive", { defaultValue: "Inactive" })
-                  }
-                </Badge>
-              </div>
+          <FormField
+            label={t("plugins:instanceName", { defaultValue: "Instance Name" })}
+            required
+            error={nameError || undefined}
+          >
+            <div className="flex items-center gap-3">
+              <Input
+                value={newInstanceName}
+                onChange={(e) => {
+                  setNewInstanceName(e.target.value)
+                  if (nameError) setNameError(null)
+                }}
+                placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
+                disabled={saving}
+                className="flex-1"
+              />
+              <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"} className="shrink-0">
+                {getInstanceStatus(editingInstance)
+                  ? t("plugins:active", { defaultValue: "Active" })
+                  : t("plugins:inactive", { defaultValue: "Inactive" })
+                }
+              </Badge>
             </div>
-          </div>
+          </FormField>
         )}
 
         {/* Ollama endpoint configuration */}
@@ -827,10 +957,8 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             schema={schema}
             onSubmit={isEditing ? handleUpdate : handleCreate}
             loading={saving}
-            submitLabel={isEditing
-              ? t("common:save", { defaultValue: "Save" })
-              : t("common:create", { defaultValue: "Create" })
-            }
+            formId={formId}
+            hideSubmitButton
           />
         </div>
       </FormSectionGroup>

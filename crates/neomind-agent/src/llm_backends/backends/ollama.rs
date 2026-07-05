@@ -1207,14 +1207,21 @@ impl LlmRuntime for OllamaRuntime {
                                                 }
                                             }
 
-                                            // If thinking was skipped but model keeps producing thinking for too long, terminate
+                                            // If thinking was skipped but model keeps producing
+                                            // thinking for too long, terminate. 30s grace window
+                                            // after skip: if no content arrives in that window,
+                                            // the model is in a thinking loop and will burn the
+                                            // full stream timeout (default ~20min) before the
+                                            // outer guard fires. Cut it short so the caller sees
+                                            // a fast failure and can recover (e.g. voice-assistant
+                                            // FSM returns to LISTENING, user can retry).
                                             if skip_remaining_thinking {
                                                 if let Some(skip_start) = thinking_skip_start {
                                                     if skip_start.elapsed()
-                                                        > Duration::from_secs(180)
+                                                        > Duration::from_secs(30)
                                                     {
                                                         tracing::warn!(
-                                                                "[ollama.rs] Model still producing thinking 180s after timeout. Terminating stream."
+                                                                "[ollama.rs] Model still producing thinking 30s after skip. Terminating stream."
                                                             );
                                                         terminate_early = true;
                                                         terminate_early_reason = Some("Thinking timeout - model stuck in thinking loop".to_string());

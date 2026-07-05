@@ -1410,7 +1410,10 @@ impl ChatStreamCapabilityProvider {
 impl ExtensionCapabilityProvider for ChatStreamCapabilityProvider {
     fn capability_manifest(&self) -> CapabilityManifest {
         CapabilityManifest {
-            capabilities: vec![ExtensionCapability::ChatStream],
+            capabilities: vec![
+                ExtensionCapability::ChatStream,
+                ExtensionCapability::ChatStreamCancel,
+            ],
             api_version: "v1".to_string(),
             min_core_version: env!("CARGO_PKG_VERSION").to_string(),
             package_name: "neomind-api::chat_stream".to_string(),
@@ -1424,6 +1427,7 @@ impl ExtensionCapabilityProvider for ChatStreamCapabilityProvider {
     ) -> Result<Value, CapabilityError> {
         match capability {
             ExtensionCapability::ChatStream => self.handle_chat_stream(params).await,
+            ExtensionCapability::ChatStreamCancel => self.handle_chat_stream_cancel(params).await,
             _ => Err(CapabilityError::NotAvailable(capability)),
         }
     }
@@ -1474,58 +1478,379 @@ impl ChatStreamCapabilityProvider {
         let sid = session_id.clone();
         let msg = message.to_string();
         tokio::spawn(async move {
-            let stream = match mgr.process_message_events(&sid, &msg).await {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!(
-                        session_id = %sid,
-                        error = %e,
-                        "ChatStream: process_message_events failed"
-                    );
-                    // Publish a terminal Error chunk so subscribers don't hang.
-                    let _ = bus.publish(NeoMindEvent::AgentStreamChunk {
-                        session_id: sid.clone(),
-                        chunk: serde_json::json!({
-                            "type": "Error",
-                            "message": format!("upstream error: {}", e),
-                        }),
-                        timestamp: chrono::Utc::now().timestamp_millis(),
-                    });
-                    return;
-                }
-            };
+            let result = async {
+                let stream = match mgr.process_message_events(&sid, &msg).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!(
+                            session_id = %sid,
+                            error = %e,
+                            "ChatStream: process_message_events failed"
+                        );
+                        // Publish a terminal Error chunk so subscribers don't hang...
+                        let _ = bus.publish(NeoMindEvent::AgentStreamChunk {
+                            session_id: sid.clone(),
+                            chunk: serde_json::json!({
+                                "type": "Error",
+                                "message": format!("upstream error: {}", e),
+                            }),
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        }).await;
+                        // ...then the authoritative terminator.
+                        let _ = bus.publish(NeoMindEvent::AgentStreamEnd {
+                            session_id: sid.clone(),
+                            reason: "error".into(),
+                            error: Some(format!("upstream: {}", e)),
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        }).await;
+                        return Ok::<(), ()>(());
+                    }
+                };
 
-            let mut s = stream;
-            let mut event_count: u32 = 0;
-            while let Some(event) = s.next().await {
-                event_count += 1;
-                let chunk_json = agent_event_to_json(&event);
-                let chunk_type = chunk_json.get("type").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-                let delivered = bus.publish(NeoMindEvent::AgentStreamChunk {
+                let mut s = stream;
+                let mut event_count: u32 = 0;
+                while let Some(event) = s.next().await {
+                    event_count += 1;
+                    let chunk_json = agent_event_to_json(&event);
+                    let chunk_type = chunk_json.get("type").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                    let delivered = bus.publish(NeoMindEvent::AgentStreamChunk {
+                        session_id: sid.clone(),
+                        chunk: chunk_json,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    }).await;
+                    if event_count <= 3 || !delivered {
+                        tracing::info!(
+                            session_id = %sid,
+                            event_count,
+                            chunk_type = %chunk_type,
+                            delivered,
+                            "ChatStream: published AgentStreamChunk"
+                        );
+                    }
+                }
+                tracing::info!(
+                    session_id = %sid,
+                    total_events = event_count,
+                    "ChatStream: stream completed"
+                );
+                // Authoritative stream-end signal. Decouples "agent turn end"
+                // (chunk-internal `type=end`) from "no more chunks will arrive".
+                // Subscribers (e.g. voice-assistant) MUST clean up state on this,
+                // not on chunk-internal end markers — reasoning models/tool loops
+                // can emit intermediate end-like chunks while the stream continues.
+                let _ = bus.publish(NeoMindEvent::AgentStreamEnd {
                     session_id: sid.clone(),
-                    chunk: chunk_json,
+                    reason: "completed".into(),
+                    error: None,
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 }).await;
-                if event_count <= 3 || !delivered {
-                    tracing::info!(
-                        session_id = %sid,
-                        event_count,
-                        chunk_type = %chunk_type,
-                        delivered,
-                        "ChatStream: published AgentStreamChunk"
-                    );
-                }
-            }
-            tracing::info!(
-                session_id = %sid,
-                total_events = event_count,
-                "ChatStream: stream completed"
-            );
+                Ok(())
+            }.await;
+            let _ = result;
         });
 
         Ok(json!({
             "session_id": session_id,
             "created": created,
+        }))
+    }
+
+    /// Cancel an in-flight ChatStream session by delegating to
+    /// `SessionManager::cancel_session`. Returns `{cancelled: bool}` — `true`
+    /// if an active stream was found and interrupted, `false` if there was
+    /// nothing to cancel (already finished, never started, or already
+    /// cancelled). Idempotent.
+    ///
+    /// Required because the spawn task driving `process_message_events` runs
+    /// independently of the extension that started it; without this call,
+    /// barage-in / WS-disconnect / extension-shutdown leave the underlying
+    /// LLM generation running to completion, wasting VRAM/compute.
+    async fn handle_chat_stream_cancel(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let session_id = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing 'session_id' string field".to_string())
+            })?;
+
+        let session_manager = {
+            let guard = self.session_manager.read().await;
+            guard.clone().ok_or_else(|| {
+                CapabilityError::ProviderError(
+                    "SessionManager not initialized yet (still starting up)".to_string(),
+                )
+            })?
+        };
+
+        let cancelled = session_manager.cancel_session(session_id).await;
+        tracing::info!(
+            session_id = %session_id,
+            cancelled,
+            "ChatStreamCancel: invoked cancel_session"
+        );
+        Ok(json!({
+            "session_id": session_id,
+            "cancelled": cancelled,
+        }))
+    }
+}
+
+// ============================================================================
+// ChatSession Capability (Phase 2: persistent session-stream + direct routing)
+// ============================================================================
+
+/// Provider for the `ChatSession` family of capabilities.
+///
+/// Splits the ChatStream lifecycle into three operations:
+///
+///   - `ChatSessionOpen`  — get_or_create_session, returns `{session_id, created}`.
+///   - `ChatSessionSend`  — generate turn_id, spawn task driving
+///     `process_message_events`, inject turn_id into each chunk wrapper,
+///     publish chunks + terminal `AgentStreamEnd`. Returns immediately.
+///   - `ChatSessionClose` — cancel_session + remove_subscriber.
+///   - `ChatStreamCancelTurn` — cancel_session (turn-level; today the host
+///     only has session-level cancel granularity, but the API is forward-
+///     compatible with per-turn mutex tracking).
+///
+/// Compared to ChatStream (Phase 0/1), this decouples "session lifetime"
+/// from "per-turn stream" and gives the caller a `turn_id` to disambiguate
+/// overlapping or rapidly consecutive turns. The terminal signal is the
+/// authoritative `AgentStreamEnd` event (Phase 1) — chunk-internal
+/// `type=end` is NOT used as a terminator here.
+///
+/// **Future work (not wired today):** `handle_open` could register a
+/// direct mpsc subscriber on SessionManager for host-internal low-latency
+/// delivery (skipping the EventBus hop). Today all delivery goes via
+/// `EventBus::publish` → `EventDispatcher` → IPC, same as Phase 1.
+pub struct ChatSessionCapabilityProvider {
+    session_manager: SessionManagerHolder,
+    event_bus: Arc<EventBus>,
+}
+
+impl ChatSessionCapabilityProvider {
+    pub fn new(session_manager: SessionManagerHolder, event_bus: Arc<EventBus>) -> Self {
+        Self {
+            session_manager,
+            event_bus,
+        }
+    }
+}
+
+#[async_trait]
+impl ExtensionCapabilityProvider for ChatSessionCapabilityProvider {
+    fn capability_manifest(&self) -> CapabilityManifest {
+        CapabilityManifest {
+            capabilities: vec![
+                ExtensionCapability::ChatSessionOpen,
+                ExtensionCapability::ChatSessionSend,
+                ExtensionCapability::ChatSessionClose,
+                ExtensionCapability::ChatStreamCancelTurn,
+            ],
+            api_version: "v1".to_string(),
+            min_core_version: env!("CARGO_PKG_VERSION").to_string(),
+            package_name: "neomind-api::chat_session".to_string(),
+        }
+    }
+
+    async fn invoke_capability(
+        &self,
+        capability: ExtensionCapability,
+        params: &Value,
+    ) -> Result<Value, CapabilityError> {
+        match capability {
+            ExtensionCapability::ChatSessionOpen => self.handle_open(params).await,
+            ExtensionCapability::ChatSessionSend => self.handle_send(params).await,
+            ExtensionCapability::ChatSessionClose => self.handle_close(params).await,
+            ExtensionCapability::ChatStreamCancelTurn => self.handle_cancel_turn(params).await,
+            _ => Err(CapabilityError::NotAvailable(capability)),
+        }
+    }
+}
+
+impl ChatSessionCapabilityProvider {
+    async fn session_manager(&self) -> Result<Arc<SessionManager>, CapabilityError> {
+        let guard = self.session_manager.read().await;
+        guard.clone().ok_or_else(|| {
+            CapabilityError::ProviderError(
+                "SessionManager not initialized yet (still starting up)".to_string(),
+            )
+        })
+    }
+
+    async fn handle_open(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let mgr = self.session_manager().await?;
+        let existing = params.get("session_id").and_then(|v| v.as_str());
+
+        // Optional per-session overrides. Built from a small set of
+        // well-known string/number fields under `params`. Voice-assistant
+        // uses `system_prompt` to bake in its "short spoken replies"
+        // instruction at session creation, replacing the previous
+        // approach of polluting every user message via `pageContext`.
+        // For an existing session these are silently ignored (preserves
+        // the session's original config — see
+        // `get_or_create_session_with_options`).
+        let mut opts = neomind_agent::CreateSessionOptions::default();
+        if let Some(sp) = params.get("system_prompt").and_then(|v| v.as_str()) {
+            opts.system_prompt = Some(sp.to_string());
+        }
+        if let Some(t) = params.get("temperature").and_then(|v| v.as_f64()) {
+            opts.temperature = Some(t as f32);
+        }
+        if let Some(m) = params.get("model").and_then(|v| v.as_str()) {
+            opts.model = Some(m.to_string());
+        }
+        if let Some(et) = params.get("enable_tools").and_then(|v| v.as_bool()) {
+            opts.enable_tools = Some(et);
+        }
+
+        let session_id = mgr
+            .get_or_create_session_with_options(
+                existing.map(|s| s.to_string()),
+                opts,
+            )
+            .await;
+        let created = existing.is_none();
+        tracing::info!(
+            session_id = %session_id,
+            created,
+            "ChatSessionOpen: opened session"
+        );
+        Ok(json!({
+            "session_id": session_id,
+            "created": created,
+        }))
+    }
+
+    async fn handle_send(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let session_id = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing 'session_id' string field".to_string())
+            })?
+            .to_string();
+        let message = params
+            .get("message")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing 'message' string field".to_string())
+            })?
+            .to_string();
+        let mgr = self.session_manager().await?;
+        let bus = self.event_bus.clone();
+
+        // Generate turn_id up-front so we can return it immediately and
+        // also inject it into every chunk wrapper. Caller matches incoming
+        // AgentStreamChunk events by `chunk.turn_id == returned_turn_id` to
+        // distinguish overlapping turns (today the voice pipeline issues
+        // turns serially, but the protocol supports concurrency).
+        let turn_id = uuid::Uuid::new_v4().to_string();
+        let sid = session_id.clone();
+        let tid = turn_id.clone();
+
+        tokio::spawn(async move {
+            let stream = match mgr.process_message_events(&sid, &message).await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(
+                        session_id = %sid,
+                        turn_id = %tid,
+                        error = %e,
+                        "ChatSessionSend: process_message_events failed"
+                    );
+                    let _ = bus
+                        .publish(NeoMindEvent::AgentStreamEnd {
+                            session_id: sid,
+                            reason: "error".into(),
+                            error: Some(format!("upstream: {}", e)),
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        })
+                        .await;
+                    return;
+                }
+            };
+            let mut s = stream;
+            let mut event_count: u32 = 0;
+            while let Some(event) = s.next().await {
+                event_count += 1;
+                // Inject turn_id into the wrapper chunk (transport-layer
+                // metadata; AgentEvent itself is unchanged). This is the
+                // only difference from ChatStream's per-chunk publish.
+                let mut chunk = agent_event_to_json(&event);
+                if let Some(obj) = chunk.as_object_mut() {
+                    obj.insert("turn_id".to_string(), json!(tid));
+                }
+                let _ = bus
+                    .publish(NeoMindEvent::AgentStreamChunk {
+                        session_id: sid.clone(),
+                        chunk,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    })
+                    .await;
+                // Best-effort tee to any direct subscribers registered on
+                // the session (future low-latency path; today subscribers
+                // aren't auto-registered, so this is a no-op).
+                mgr.publish_to_subscribers(&sid, event).await;
+            }
+            tracing::info!(
+                session_id = %sid,
+                turn_id = %tid,
+                total_events = event_count,
+                "ChatSessionSend: stream completed"
+            );
+            let _ = bus
+                .publish(NeoMindEvent::AgentStreamEnd {
+                    session_id: sid,
+                    reason: "completed".into(),
+                    error: None,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                })
+                .await;
+        });
+
+        Ok(json!({ "turn_id": turn_id }))
+    }
+
+    async fn handle_close(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let session_id = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing 'session_id' string field".to_string())
+            })?;
+        let mgr = self.session_manager().await?;
+        let cancelled = mgr.cancel_session(session_id).await;
+        mgr.remove_subscriber(session_id).await;
+        tracing::info!(
+            session_id = %session_id,
+            cancelled,
+            "ChatSessionClose: closed session"
+        );
+        Ok(json!({ "closed": true, "cancelled": cancelled }))
+    }
+
+    async fn handle_cancel_turn(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let session_id = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing 'session_id' string field".to_string())
+            })?;
+        // turn_id is accepted but currently advisory: SessionManager's cancel
+        // granularity is per-session, not per-turn. Logged for observability.
+        let turn_id = params.get("turn_id").and_then(|v| v.as_str());
+        let mgr = self.session_manager().await?;
+        let cancelled = mgr.cancel_session(session_id).await;
+        tracing::info!(
+            session_id = %session_id,
+            turn_id = ?turn_id,
+            cancelled,
+            "ChatStreamCancelTurn: invoked cancel_session"
+        );
+        Ok(json!({
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "cancelled": cancelled,
         }))
     }
 }
@@ -1661,14 +1986,22 @@ pub async fn register_builtin_providers_with_dispatcher(
         .await;
 
     let chat_stream_provider = Arc::new(ChatStreamCapabilityProvider::new(
-        session_manager_holder,
-        event_bus_for_chat,
+        session_manager_holder.clone(),
+        event_bus_for_chat.clone(),
     ));
     context
         .register_provider("neomind-api::chat_stream".to_string(), chat_stream_provider)
         .await;
 
-    tracing::info!("Registered all built-in capability providers (8 providers, 12 capabilities)");
+    let chat_session_provider = Arc::new(ChatSessionCapabilityProvider::new(
+        session_manager_holder,
+        event_bus_for_chat,
+    ));
+    context
+        .register_provider("neomind-api::chat_session".to_string(), chat_session_provider)
+        .await;
+
+    tracing::info!("Registered all built-in capability providers (9 providers, 20 capabilities)");
 }
 
 // ============================================================================
@@ -1764,12 +2097,24 @@ impl CompositeCapabilityProvider {
 
         // ChatStream provider — needs late-binding session_manager holder.
         let chat_stream_provider = Arc::new(ChatStreamCapabilityProvider::new(
-            session_manager_holder,
-            event_bus_for_chat,
+            session_manager_holder.clone(),
+            event_bus_for_chat.clone(),
         ));
         composite.providers.insert(
             "neomind-api::chat_stream".to_string(),
             chat_stream_provider,
+        );
+
+        // ChatSession provider (Phase 2: persistent session-stream + direct
+        // routing). Shares the same session_manager holder + event_bus as
+        // ChatStream — they're alternative APIs over the same SessionManager.
+        let chat_session_provider = Arc::new(ChatSessionCapabilityProvider::new(
+            session_manager_holder,
+            event_bus_for_chat,
+        ));
+        composite.providers.insert(
+            "neomind-api::chat_session".to_string(),
+            chat_session_provider,
         );
 
         composite
@@ -1837,6 +2182,13 @@ fn capability_to_provider(capability: &ExtensionCapability) -> &'static str {
         ExtensionCapability::AgentTrigger => "neomind-api::agent",
 
         ExtensionCapability::ChatStream => "neomind-api::chat_stream",
+
+        ExtensionCapability::ChatStreamCancel => "neomind-api::chat_stream_cancel",
+
+        ExtensionCapability::ChatSessionOpen
+        | ExtensionCapability::ChatSessionSend
+        | ExtensionCapability::ChatSessionClose
+        | ExtensionCapability::ChatStreamCancelTurn => "neomind-api::chat_session",
 
         ExtensionCapability::Custom(_) => "neomind-api::custom",
     }

@@ -3542,14 +3542,16 @@ pub async fn serve_extension_asset_handler(
         })
         .unwrap_or("application/octet-stream");
 
-    // Build response
+    // Build response. Use no-cache so the client always revalidates:
+    // extension bundles change on every rebuild and a stale max-age cache
+    // (the previous "public, max-age=3600") made iterating in dev painful —
+    // Tauri WKWebView would serve a 1-hour-stale bundle even after we just
+    // dropped a new one in place. Bundle is small (tens of KB); re-fetch on
+    // each navigation is negligible.
     axum::response::Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, mime_type)
-        .header(
-            header::CACHE_CONTROL,
-            "public, max-age=3600", // Cache for 1 hour
-        )
+        .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from(content))
         .map_err(|e| ErrorResponse::internal(format!("Failed to build response: {}", e)))
 }
@@ -3947,8 +3949,14 @@ pub async fn upload_extension_file_handler(
         ExtensionPackage::install_sync(&body_bytes, &target_dir_clone)
     })
     .await
-    .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
-    .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
+    .map_err(|e| {
+        tracing::error!("install_sync task join error for {}: {}", ext_id, e);
+        ErrorResponse::internal(format!("Task join error: {}", e))
+    })?
+    .map_err(|e| {
+        tracing::error!("install_sync failed for {}: {} (kind={:?})", ext_id, e, e);
+        ErrorResponse::internal(format!("Installation failed: {}", e))
+    })?;
 
     tracing::info!(
         extension_id = %install_result.extension_id,

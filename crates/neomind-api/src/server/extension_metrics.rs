@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 
@@ -39,6 +39,19 @@ pub struct ExtensionMetricsCollector {
     default_interval: Duration,
     /// Per-extension collection state
     extension_states: RwLock<HashMap<String, ExtensionCollectionState>>,
+    /// Per-extension timestamp of last descriptor refresh, used to throttle
+    /// `refresh_descriptor` IPC calls so dynamic metrics become visible
+    /// without imposing a per-poll round-trip on every extension.
+    descriptor_refresh_at: RwLock<HashMap<String, Instant>>,
+    /// Maximum staleness for the cached descriptor. After this duration the
+    /// next collection cycle refreshes the descriptor from the extension.
+    descriptor_ttl: Duration,
+    /// Hard ceiling on a single `refresh_descriptor` IPC round-trip. The
+    /// underlying `command_timeout_secs` default is 300s, which would stall
+    /// the entire collector pipeline against an old runner that does not
+    /// recognize the `GetDescriptor` message. We bound it here so a mixed
+    /// deployment degrades gracefully (skip the refresh, keep stale cache).
+    descriptor_refresh_timeout: Duration,
     /// Event bus for publishing ExtensionOutput events (triggers event-driven agents)
     event_bus: Option<Arc<neomind_core::EventBus>>,
 }
@@ -54,6 +67,9 @@ impl ExtensionMetricsCollector {
             metrics_storage,
             default_interval: Duration::from_secs(60),
             extension_states: RwLock::new(HashMap::new()),
+            descriptor_refresh_at: RwLock::new(HashMap::new()),
+            descriptor_ttl: Duration::from_secs(60),
+            descriptor_refresh_timeout: Duration::from_secs(10),
             event_bus: None,
         }
     }
@@ -67,6 +83,24 @@ impl ExtensionMetricsCollector {
     /// Set the event bus for publishing ExtensionOutput events.
     pub fn with_event_bus(mut self, event_bus: Arc<neomind_core::EventBus>) -> Self {
         self.event_bus = Some(event_bus);
+        self
+    }
+
+    /// Set the descriptor refresh TTL. After this duration the next
+    /// collection cycle asks the extension for a fresh descriptor so
+    /// dynamic metrics become visible. Default: 60s.
+    pub fn with_descriptor_ttl(mut self, ttl: Duration) -> Self {
+        self.descriptor_ttl = ttl;
+        self
+    }
+
+    /// Set the hard timeout for a single `refresh_descriptor` IPC call.
+    /// This is a safety bound against mixed-version deployments where the
+    /// runner may not recognize the request — without this the call would
+    /// block for the full `command_timeout_secs` (default 300s) before
+    /// failing. Default: 10s.
+    pub fn with_descriptor_refresh_timeout(mut self, timeout: Duration) -> Self {
+        self.descriptor_refresh_timeout = timeout;
         self
     }
 
@@ -159,6 +193,69 @@ impl ExtensionMetricsCollector {
         for info in extensions {
             let extension_id = info.metadata.id.clone();
 
+            // Best-effort descriptor refresh so dynamic metrics (e.g.
+            // `fps.cam1`) added since the last TTL window become visible
+            // to `/api/extensions`. Errors and timeouts are non-fatal: the
+            // collector continues with whatever descriptor is currently
+            // cached. The timeout is a hard ceiling that protects the
+            // pipeline against old runners that don't recognize the
+            // `GetDescriptor` IPC message (which would otherwise stall for
+            // the full `command_timeout_secs`).
+            let need_refresh = {
+                let map = self
+                    .descriptor_refresh_at
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
+                map.get(&extension_id)
+                    .map(|t| t.elapsed() >= self.descriptor_ttl)
+                    .unwrap_or(true)
+            };
+            if need_refresh {
+                debug!(
+                    category = "extensions",
+                    extension_id = %extension_id,
+                    "Refreshing descriptor (TTL elapsed)"
+                );
+                match tokio::time::timeout(
+                    self.descriptor_refresh_timeout,
+                    self.runtime.refresh_descriptor(&extension_id),
+                )
+                .await
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => warn!(
+                        category = "extensions",
+                        extension_id = %extension_id,
+                        error = %e,
+                        "Descriptor refresh failed; continuing with cached descriptor"
+                    ),
+                    Err(_) => warn!(
+                        category = "extensions",
+                        extension_id = %extension_id,
+                        timeout_ms = self.descriptor_refresh_timeout.as_millis() as u64,
+                        "Descriptor refresh timed out (old runner or stuck IPC); \
+                         continuing with cached descriptor"
+                    ),
+                }
+                self.descriptor_refresh_at
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(extension_id.clone(), Instant::now());
+            }
+
+            // Re-fetch runtime info after the (possible) refresh so this
+            // cycle uses up-to-date descriptors. The list() call returns
+            // cached info and is cheap. If refresh failed or nothing
+            // changed, this returns the same data.
+            let info = if need_refresh {
+                match self.runtime.list().await.into_iter().find(|i| i.metadata.id == extension_id) {
+                    Some(fresh) => fresh,
+                    None => info,
+                }
+            } else {
+                info
+            };
+
             // Skip extensions with no metrics
             if info.metrics.is_empty() {
                 debug!(
@@ -173,7 +270,7 @@ impl ExtensionMetricsCollector {
                 let mut states = self
                     .extension_states
                     .write()
-                    .expect("extension_states lock poisoned");
+                    .unwrap_or_else(|e| e.into_inner());
                 let state = states.entry(extension_id.clone()).or_insert_with(|| {
                     // Initialize state from extension config
                     let interval = Self::get_collect_interval(&info);

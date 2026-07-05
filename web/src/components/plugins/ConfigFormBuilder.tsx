@@ -98,6 +98,13 @@ interface ConfigFormBuilderProps {
   onSubmit: (values: Record<string, unknown>) => Promise<void>
   loading?: boolean
   submitLabel?: string
+  /** ID to assign to the <form> element. Use when a footer button outside
+   * the form needs to trigger submission via the HTML `form` attribute. */
+  formId?: string
+  /** When true, the inline submit button is not rendered. The parent is
+   * responsible for providing a submit trigger (typically a footer button
+   * bound to `formId`). */
+  hideSubmitButton?: boolean
 }
 
 /**
@@ -501,6 +508,8 @@ export function ConfigFormBuilder({
   onSubmit,
   loading = false,
   submitLabel,
+  formId,
+  hideSubmitButton = false,
 }: ConfigFormBuilderProps) {
   const { t } = useTranslation(['plugins', 'common'])
   const zodSchema = buildZodSchema(schema)
@@ -591,7 +600,7 @@ export function ConfigFormBuilder({
   }
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
       {fieldOrder
         .filter((fieldName: string) => schema.properties[fieldName] && visibleFields.has(fieldName))
         .map((fieldName: string) => {
@@ -613,10 +622,12 @@ export function ConfigFormBuilder({
           )
         })}
 
-      <Button type="submit" disabled={loading} className="w-full">
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {submitLabel}
-      </Button>
+      {!hideSubmitButton && (
+        <Button type="submit" disabled={loading} className="w-full">
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {submitLabel}
+        </Button>
+      )}
     </form>
   )
 }

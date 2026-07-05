@@ -478,7 +478,21 @@ pub async fn update_backend_handler(
         instance.top_p = top_p;
     }
     if let Some(thinking_enabled) = req.thinking_enabled {
+        let prev = instance.thinking_enabled;
         instance.thinking_enabled = thinking_enabled;
+        // Dedicated log so users can verify the toggle took effect.
+        // The "Updated Ollama model capabilities" log above reports
+        // caps.supports_thinking (model capability from /api/show), NOT
+        // the user's enable/disable choice — these are different concepts
+        // and conflating them causes "I turned it off but logs say true"
+        // confusion.
+        tracing::info!(
+            backend_id = %id,
+            model = %instance.model,
+            prev_thinking_enabled = prev,
+            new_thinking_enabled = thinking_enabled,
+            "User thinking_enabled setting updated"
+        );
     }
     if let Some(mut capabilities) = req.capabilities {
         // Preserve fields that the frontend doesn't render.

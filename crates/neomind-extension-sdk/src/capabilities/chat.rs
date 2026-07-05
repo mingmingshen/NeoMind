@@ -83,6 +83,105 @@ pub async fn invoke_for_session_id(
 }
 
 // ============================================================================
+// Persistent session-stream API (Phase 2: Direct Stream Pattern)
+// ============================================================================
+//
+// `chat_stream` (above) wraps each turn into a one-shot capability call:
+// convenient, but spawns a fresh task per turn and uses AgentEvent::End as
+// the terminator — which is ambiguous with reasoning models / tool loops.
+//
+// The `chat_session_*` family decouples session lifetime from per-turn
+// streaming:
+//
+//   open(existing_session_id?)
+//     → get_or_create_session
+//     → returns { session_id, created }
+//     → contract: AgentEvents for this session will be delivered to
+//       subscribers (via AgentStreamChunk events on the bus, plus the
+//       host-internal direct mpsc for low-latency consumers).
+//
+//   send(session_id, message)
+//     → generates turn_id (UUID)
+//     → spawns task driving process_message_events
+//     → injects turn_id into each chunk wrapper
+//     → returns { turn_id } immediately (does NOT wait for LLM completion)
+//
+//   close(session_id)
+//     → cancel_session + remove_subscriber
+//
+//   cancel_turn(session_id, turn_id?) → cancels in-flight turn
+//
+// turn_id is transport-layer metadata injected by the provider; AgentEvent
+// itself is unchanged.
+
+/// Open a persistent chat session subscription.
+///
+/// Returns `{ session_id, created }`. `created=true` means a new session
+/// was allocated; `false` means an existing session was reused.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn open_session(
+    context: &Context,
+    existing_session_id: Option<&str>,
+) -> Result<Value, CapabilityError> {
+    let mut params = json!({});
+    if let Some(sid) = existing_session_id {
+        params["session_id"] = json!(sid);
+    }
+    context
+        .invoke_capability(ExtensionCapability::ChatSessionOpen, &params)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Send a message to an open chat session. Returns immediately with
+/// `{ turn_id }`. LLM events for this turn arrive via AgentStreamChunk
+/// events; each `chunk` carries `turn_id` matching the returned value.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn send_message(
+    context: &Context,
+    session_id: &str,
+    message: &str,
+) -> Result<Value, CapabilityError> {
+    let params = json!({ "session_id": session_id, "message": message });
+    context
+        .invoke_capability(ExtensionCapability::ChatSessionSend, &params)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Close a chat session subscription. Cancels any in-flight turn and
+/// removes the subscriber from the session.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn close_session(
+    context: &Context,
+    session_id: &str,
+) -> Result<Value, CapabilityError> {
+    let params = json!({ "session_id": session_id });
+    context
+        .invoke_capability(ExtensionCapability::ChatSessionClose, &params)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Cancel the in-flight turn within an open chat session. Does NOT close
+/// the session — the caller can immediately `send_message` again.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn cancel_turn(
+    context: &Context,
+    session_id: &str,
+    turn_id: Option<&str>,
+) -> Result<Value, CapabilityError> {
+    let mut params = json!({ "session_id": session_id });
+    if let Some(t) = turn_id {
+        params["turn_id"] = json!(t);
+    }
+    context
+        .invoke_capability(ExtensionCapability::ChatStreamCancelTurn, &params)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

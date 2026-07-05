@@ -47,6 +47,43 @@ pub struct ChatRequest {
     /// Optional page context for first message (short neutral description of current page).
     #[serde(rename = "pageContext", default)]
     pub page_context: Option<String>,
+    /// Optional per-session config overrides. Honored **only** when this
+    /// request triggers creation of a new session (no `sessionId`, or
+    /// `sessionId` not found). For an existing session this field is
+    /// silently ignored — the session keeps the config it was created with.
+    /// Use this for things like the voice-assistant baking in a system
+    /// prompt without polluting every user message via `pageContext`.
+    #[serde(rename = "sessionConfig", default)]
+    pub session_config: Option<SessionConfigPatch>,
+}
+
+/// Patch-style session config: every field is optional, and `None` means
+/// "inherit the platform default". Translated into a
+/// `CreateSessionOptions` on the agent side. Field names use camelCase to
+/// match the JS/TS client convention expected by NeoMind's REST/WS API.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SessionConfigPatch {
+    /// Override the agent's system prompt.
+    #[serde(rename = "systemPrompt")]
+    pub system_prompt: Option<String>,
+    /// Override the LLM sampling temperature.
+    pub temperature: Option<f32>,
+    /// Override the model identifier.
+    pub model: Option<String>,
+    /// Enable or disable tool calling for this session.
+    #[serde(rename = "enableTools")]
+    pub enable_tools: Option<bool>,
+}
+
+impl From<SessionConfigPatch> for neomind_agent::CreateSessionOptions {
+    fn from(p: SessionConfigPatch) -> Self {
+        Self {
+            system_prompt: p.system_prompt,
+            temperature: p.temperature,
+            model: p.model,
+            enable_tools: p.enable_tools,
+        }
+    }
 }
 
 /// Chat response to the web client.

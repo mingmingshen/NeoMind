@@ -548,8 +548,10 @@ async fn test_capability_metadata() {
 async fn test_all_capabilities() {
     let all_caps = ExtensionCapability::all_capabilities();
 
-    // Verify all 15 standard capabilities are present
-    assert_eq!(all_caps.len(), 15);
+    // 15 standard + ChatStreamCancel + 4 ChatSession capabilities
+    // (Open/Send/Close/CancelTurn) added by Phase 2 of the ChatStream
+    // refactor (persistent session-stream + direct routing).
+    assert_eq!(all_caps.len(), 20);
 
     let cap_names: Vec<String> = all_caps.iter().map(|c| c.name()).collect();
 

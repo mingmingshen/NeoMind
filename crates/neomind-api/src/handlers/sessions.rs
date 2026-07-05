@@ -354,7 +354,8 @@ async fn process_stream_to_channel(
     }
 }
 use crate::models::{
-    common::ApiResponse, pagination::Pagination, ChatRequest, ChatResponse, ErrorResponse,
+    common::ApiResponse, pagination::Pagination, ChatRequest, ChatResponse, CreateSessionRequest,
+    ErrorResponse,
 };
 
 use super::ServerState;
@@ -371,15 +372,46 @@ pub struct SessionListItem {
 }
 
 /// Create a new session.
+///
+/// Body is optional for backward compatibility — older callers POST with no
+/// body and get the default-config session. Newer callers may send
+/// `{"config": { ...AgentConfig }}` (legacy field, kept for compat) or the
+/// more granular patch form understood by `CreateSessionRequest`/`ChatRequest`
+/// to override per-session fields like `system_prompt`.
 pub async fn create_session_handler(
     State(state): State<ServerState>,
+    body: Option<Json<Option<CreateSessionRequest>>>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    let session_id = state
-        .agents
-        .session_manager
-        .create_session()
-        .await
-        .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
+    // Unwrap the doubly-optional body: outer Option = "was there a body at
+    // all", inner Option = "did the body parse to a real struct". Either
+    // layer being None means "no override requested" → fall back to default.
+    let req = body.and_then(|Json(b)| b);
+
+    let session_id = match req.and_then(|r| r.config) {
+        Some(cfg) => {
+            // Legacy `config: AgentConfig` path — full struct. Translate to
+            // options patch (only the four commonly-overridden fields flow
+            // through; the rest of AgentConfig stays at platform default).
+            let opts = neomind_agent::CreateSessionOptions {
+                system_prompt: Some(cfg.system_prompt),
+                temperature: Some(cfg.temperature),
+                model: Some(cfg.model),
+                enable_tools: Some(cfg.enable_tools),
+            };
+            state
+                .agents
+                .session_manager
+                .create_session_with_options(opts)
+                .await
+                .map_err(|e| ErrorResponse::with_message(e.to_string()))?
+        }
+        None => state
+            .agents
+            .session_manager
+            .create_session()
+            .await
+            .map_err(|e| ErrorResponse::with_message(e.to_string()))?,
+    };
 
     Ok(Json(ApiResponse::success(json!({
         "sessionId": session_id,
@@ -974,9 +1006,21 @@ async fn handle_ws_socket(
 
                                             req_id.clone()
                                         } else if !has_valid_session {
-                                            // Create new session
-                                            let new_id = state.agents.session_manager.create_session().await
-                                                .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+                                            // Create new session. Honor `sessionConfig`
+                                            // from the request only at this creation
+                                            // moment — subsequent frames targeting an
+                                            // existing session ignore the field (an
+                                            // explicit safety property, see
+                                            // `get_or_create_session_with_options`).
+                                            let new_id = if let Some(patch) = chat_req.session_config.clone() {
+                                                state.agents.session_manager
+                                                    .create_session_with_options(patch.into())
+                                                    .await
+                                                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+                                            } else {
+                                                state.agents.session_manager.create_session().await
+                                                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+                                            };
 
                                             {
                                                 let mut write_guard = current_session_id.write().await;

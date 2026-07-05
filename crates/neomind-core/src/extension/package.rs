@@ -607,8 +607,16 @@ impl ExtensionPackage {
     /// Install the package synchronously (for use in spawn_blocking)
     /// Takes raw package bytes since from_bytes() doesn't store them
     pub fn install_sync(data: &[u8], target_dir: &Path) -> Result<InstallResult, PackageError> {
+        tracing::info!(
+            "install_sync step 1/9: parse zip ({} bytes, target={})",
+            data.len(),
+            target_dir.display()
+        );
         let cursor = Cursor::new(data.to_vec());
-        let mut archive = ZipArchive::new(cursor).map_err(|e| PackageError::Zip(e.to_string()))?;
+        let mut archive = ZipArchive::new(cursor).map_err(|e| {
+            tracing::error!("install_sync FAILED step 1 (zip parse): {}", e);
+            PackageError::Zip(e.to_string())
+        })?;
 
         // Read manifest from archive
         let manifest_content = Self::read_file_from_zip(&mut archive, "manifest.json")?;
@@ -618,6 +626,7 @@ impl ExtensionPackage {
 
         let ext_id = &manifest.id;
         let version = &manifest.version;
+        tracing::info!("install_sync step 2/9: manifest OK ({} v{})", ext_id, version);
 
         // Create extension directory
         let ext_dir = target_dir.join(ext_id);
@@ -636,12 +645,23 @@ impl ExtensionPackage {
             .cloned()
             .ok_or_else(|| {
                 let available_platforms: Vec<String> = manifest.binaries.keys().cloned().collect();
+                tracing::error!(
+                    "install_sync FAILED step 3: no binary for platform '{}' (have: {})",
+                    platform,
+                    available_platforms.join(", ")
+                );
                 PackageError::UnsupportedPlatform(format!(
                     "{}. Available platforms: {}",
                     platform,
                     available_platforms.join(", ")
                 ))
             })?;
+
+        tracing::info!(
+            "install_sync step 3/9: platform {} -> {}",
+            platform,
+            binary_rel_path
+        );
 
         // Extract binary and preserve directory structure.
         // Route through safe_join_within to reject `..` / absolute paths
@@ -650,6 +670,7 @@ impl ExtensionPackage {
         // preserves subdirs for shared libraries, so we must guard instead).
         let binary_file = Self::safe_join_within(&ext_dir, &binary_rel_path)?;
         Self::extract_file_sync(&mut archive, &binary_rel_path, &binary_file)?;
+        tracing::info!("install_sync step 4/9: binary extracted");
 
         // Extract all sibling files in the same directory as the binary
         // These are bundled shared libraries (e.g. libonnxruntime.dylib)
@@ -678,6 +699,13 @@ impl ExtensionPackage {
                         if let Some(parent) = dest.parent() {
                             let _ = std::fs::create_dir_all(parent);
                         }
+                        // macOS: if the destination already exists (re-install),
+                        // code-signed files carry `com.apple.provenance` /
+                        // embedded signatures that block File::create with
+                        // EACCES. Remove first to clear xattrs + inode.
+                        if dest.exists() {
+                            let _ = std::fs::remove_file(&dest);
+                        }
                         let mut out = std::fs::File::create(&dest)?;
                         std::io::copy(&mut file, &mut out)?;
                         tracing::info!("Extracted bundled library: {}", name);
@@ -690,6 +718,7 @@ impl ExtensionPackage {
         // This allows safe discovery without loading native libraries
         let sidecar_json = binary_file.with_extension("json");
         Self::create_sidecar_json_sync(&manifest, &sidecar_json)?;
+        tracing::info!("install_sync step 5/9: sidecar json + sibling libs done");
 
         // Extract frontend directory if exists
         let frontend_dir = if manifest.frontend.is_some() {
@@ -711,6 +740,7 @@ impl ExtensionPackage {
         // Extract config directory if exists (for configuration files)
         let config_path = ext_dir.join("config");
         Self::extract_directory_sync(&mut archive, "config/", &config_path)?;
+        tracing::info!("install_sync step 6/9: resource dirs done");
 
         // 🔧 macOS: Re-sign all extracted dylibs after installation.
         // When a .nep replaces an existing extension, macOS may cache the old code signature
@@ -720,7 +750,9 @@ impl ExtensionPackage {
         #[cfg(target_os = "macos")]
         {
             if let Some(binary_dir) = binary_file.parent() {
+                tracing::info!("install_sync step 7/9: re-signing dylibs (macOS)");
                 Self::resign_dylibs_macos(binary_dir);
+                tracing::info!("install_sync step 7/9: resign done");
             }
         }
 
@@ -748,6 +780,7 @@ impl ExtensionPackage {
             None
         };
 
+        tracing::info!("install_sync step 9/9: success ({} v{})", ext_id, version);
         Ok(InstallResult {
             extension_id: ext_id.clone(),
             version: version.clone(),
@@ -766,40 +799,75 @@ impl ExtensionPackage {
     /// overwriting existing dylibs during .nep installation.
     #[cfg(target_os = "macos")]
     fn resign_dylibs_macos(dir: &Path) {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
+        // Collect dylib paths first so we can dispatch them in parallel.
+        // codesign is an external process — no shared mutable state, so
+        // parallel execution is safe. This matters for bundles like
+        // stream-player which ship 60+ FFmpeg dylibs: serial signing
+        // takes 30-130s and blows past HTTP upload timeouts.
+        let dylibs: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
+            Ok(e) => e
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("dylib"))
+                .collect(),
             Err(_) => return,
         };
 
-        let mut count = 0u32;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("dylib") {
-                // Run codesign --force --sign - <path>
-                let result = std::process::Command::new("codesign")
-                    .args(["--force", "--sign", "-"])
-                    .arg(&path)
-                    .output();
-
-                match result {
-                    Ok(output) if output.status.success() => count += 1,
-                    Ok(output) => {
-                        tracing::warn!(
-                            "codesign failed for {}: {}",
-                            path.display(),
-                            String::from_utf8_lossy(&output.stderr).trim()
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!("codesign failed for {}: {}", path.display(), e);
-                    }
-                }
-            }
+        if dylibs.is_empty() {
+            return;
         }
 
-        if count > 0 {
-            tracing::info!("Re-signed {} dylib(s) after installation", count);
-        }
+        let start = std::time::Instant::now();
+        let total = dylibs.len();
+
+        // Spawn one thread per dylib. codesign is I/O-bound (fork + exec +
+        // Mach IPC to the codesign daemon), so threads stay cheap even for
+        // 60+ files. Capped implicitly by the OS scheduler.
+        let successes = std::thread::scope(|s| {
+            let handles: Vec<_> = dylibs
+                .into_iter()
+                .map(|path| {
+                    s.spawn(move || {
+                        match std::process::Command::new("codesign")
+                            .args(["--force", "--sign", "-"])
+                            .arg(&path)
+                            .output()
+                        {
+                            Ok(output) if output.status.success() => true,
+                            Ok(output) => {
+                                tracing::warn!(
+                                    "codesign failed for {}: {}",
+                                    path.display(),
+                                    String::from_utf8_lossy(&output.stderr).trim()
+                                );
+                                false
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "codesign failed for {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                                false
+                            }
+                        }
+                    })
+                })
+                .collect();
+
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or(false))
+                .filter(|&ok| ok)
+                .count()
+        });
+
+        tracing::info!(
+            "Re-signed {}/{} dylib(s) in {}ms (parallel)",
+            successes,
+            total,
+            start.elapsed().as_millis()
+        );
     }
 
     /// Extract a single file from the archive (synchronous)
@@ -818,6 +886,13 @@ impl ExtensionPackage {
         // Create parent directory
         if let Some(parent) = dst_path.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+
+        // macOS: clear any existing file first — code-signed dylibs with
+        // `com.apple.provenance` xattr reject fs::write with EACCES on
+        // re-install. remove_file clears xattrs + inode.
+        if dst_path.exists() {
+            let _ = std::fs::remove_file(dst_path);
         }
 
         std::fs::write(dst_path, content)?;

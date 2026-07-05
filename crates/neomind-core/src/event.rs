@@ -437,6 +437,30 @@ pub enum NeoMindEvent {
         /// Timestamp (millis since epoch).
         timestamp: i64,
     },
+
+    /// Stream termination signal. Published by `ChatStreamCapabilityProvider`
+    /// (and any future provider driving `process_message_events`) when the
+    /// underlying stream ends — whether by natural completion, error, or
+    /// cancellation.
+    ///
+    /// This decouples "agent turn end" (AgentEvent::End, a per-turn marker
+    /// that may be ambiguous when reasoning models loop, get re-prompted by
+    /// tools, etc.) from "stream termination" (a transport-layer fact: no
+    /// more chunks will arrive for this session_id). Extensions should treat
+    /// AgentStreamEnd as the authoritative terminator and clean up state on
+    /// it, not on chunk-internal `type=end`.
+    AgentStreamEnd {
+        /// Session ID this termination applies to. Same id used in
+        /// AgentStreamChunk.session_id.
+        session_id: String,
+        /// "completed" | "error" | "cancelled"
+        reason: String,
+        /// Human-readable error message when reason == "error".
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        /// Timestamp (millis since epoch).
+        timestamp: i64,
+    },
 }
 
 impl NeoMindEvent {
@@ -480,6 +504,7 @@ impl NeoMindEvent {
             Self::DashboardUpdated { .. } => "DashboardUpdated",
             Self::Custom { .. } => "Custom",
             Self::AgentStreamChunk { .. } => "AgentStreamChunk",
+            Self::AgentStreamEnd { .. } => "AgentStreamEnd",
         }
     }
 
@@ -531,7 +556,8 @@ impl NeoMindEvent {
             | Self::ExtensionCommandCompleted { timestamp, .. }
             | Self::ExtensionCommandFailed { timestamp, .. }
             | Self::DashboardUpdated { timestamp, .. }
-            | Self::AgentStreamChunk { timestamp, .. } => *timestamp,
+            | Self::AgentStreamChunk { timestamp, .. }
+            | Self::AgentStreamEnd { timestamp, .. } => *timestamp,
             Self::Custom { .. } => {
                 // Custom events don't have a timestamp, use current time
                 chrono::Utc::now().timestamp()

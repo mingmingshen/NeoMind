@@ -168,6 +168,11 @@ const ALLOWED_CAPABILITIES: &[&str] = &[
     cap::EXTENSION_CALL,
     cap::AGENT_TRIGGER,
     cap::CHAT_STREAM,
+    cap::CHAT_STREAM_CANCEL,
+    cap::CHAT_SESSION_OPEN,
+    cap::CHAT_SESSION_SEND,
+    cap::CHAT_SESSION_CLOSE,
+    cap::CHAT_STREAM_CANCEL_TURN,
     cap::RULE_TRIGGER,
 ];
 

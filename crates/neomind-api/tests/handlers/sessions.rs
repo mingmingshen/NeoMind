@@ -17,7 +17,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_session_handler() {
         let state = create_test_server_state().await;
-        let result = create_session_handler(State(state)).await;
+        let result = create_session_handler(State(state), None).await;
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
@@ -122,6 +122,7 @@ mod tests {
             backend_id: None,
             selected_skills: vec![],
             page_context: None,
+            session_config: None,
         };
         let result = chat_handler(
             State(state),
@@ -139,7 +140,7 @@ mod tests {
         let state = create_test_server_state().await;
 
         // First create a session
-        let create_result = create_session_handler(State(state.clone())).await.unwrap();
+        let create_result = create_session_handler(State(state.clone()), None).await.unwrap();
         let session_id = create_result
             .0
             .data
@@ -158,6 +159,7 @@ mod tests {
             backend_id: None,
             selected_skills: vec![],
             page_context: None,
+            session_config: None,
         };
         let result = chat_handler(State(state), Path(session_id.clone()), Json(req)).await;
         // Either Ok with timeout message or Err with something other than NOT_FOUND
@@ -213,6 +215,7 @@ mod tests {
             backend_id: None,
             selected_skills: vec![],
             page_context: None,
+            session_config: None,
         };
         assert_eq!(req.message, "Test message");
         assert_eq!(req.session_id.unwrap(), "session123");

@@ -22,6 +22,28 @@ pub use crate::llm_backends::{
 
 use neomind_storage::LlmBackendInstance;
 
+/// Optional overrides applied on top of `SessionManager::default_config` when
+/// creating a new session. All fields are `Option<...>`; `None` means "inherit
+/// the default". Used by callers (e.g. the `chat_session_open` capability, the
+/// WS chat auto-create path) that need to customize a session at creation time
+/// — most notably to inject a `system_prompt` for the voice-assistant without
+/// polluting every user message via `pageContext`.
+///
+/// Only applied to **newly-created** sessions. Existing sessions (reused via
+/// `get_or_create_session` with a known id) keep their original config; the
+/// override is silently ignored for them.
+#[derive(Debug, Clone, Default)]
+pub struct CreateSessionOptions {
+    /// Override the agent's system prompt.
+    pub system_prompt: Option<String>,
+    /// Override the LLM sampling temperature.
+    pub temperature: Option<f32>,
+    /// Override the model identifier (e.g. "qwen3:1.7b").
+    pub model: Option<String>,
+    /// Enable or disable tool calling.
+    pub enable_tools: Option<bool>,
+}
+
 /// Convert an LlmBackendInstance to LlmBackend enum for agent configuration.
 /// Convert storage BackendCapabilities to core BackendCapabilities
 fn convert_capabilities(
@@ -229,6 +251,18 @@ pub struct SessionManager {
     skill_registry: crate::skills::SharedSkillRegistry,
     /// Cancel signal senders for active streaming sessions (session_id → watch::Sender)
     cancel_senders: Arc<RwLock<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
+    /// Per-session direct event subscribers. ChatSessionCapabilityProvider
+    /// registers one mpsc::Sender per session-stream subscription. Each
+    /// AgentEvent yielded by `process_message_events` is teed (best-effort,
+    /// `try_send`) to all subscribers of the session. Voice-assistant and
+    /// other low-latency consumers use this to skip the EventBus hop; the
+    /// EventBus path remains as a fallback for ordinary ChatStream callers.
+    ///
+    /// Typically 0 or 1 subscribers per session; fan-out is a future
+    /// extension. A slow subscriber that fills its channel just drops events
+    /// (deliberate: voice workloads should never accumulate backlog).
+    event_subscribers:
+        Arc<RwLock<HashMap<String, Vec<tokio::sync::mpsc::Sender<AgentEvent>>>>>,
 }
 
 impl SessionManager {
@@ -258,6 +292,7 @@ impl SessionManager {
             tool_registry: Arc::new(RwLock::new(None)),
             skill_registry: crate::skills::create_shared_registry(None),
             cancel_senders: Arc::new(RwLock::new(HashMap::new())),
+            event_subscribers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -277,6 +312,7 @@ impl SessionManager {
             tool_registry: Arc::new(RwLock::new(None)),
             skill_registry: crate::skills::create_shared_registry(Some(data_dir)),
             cancel_senders: Arc::new(RwLock::new(HashMap::new())),
+            event_subscribers: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Restore sessions from database on startup
@@ -596,6 +632,60 @@ impl SessionManager {
         self.cancel_senders.write().await.remove(session_id);
     }
 
+    // ---- Direct event subscribers (Phase 2: ChatSession direct routing) ----
+
+    /// Register a direct subscriber for events on this session. Returns the
+    /// `Receiver` end. The subscriber receives every `AgentEvent` yielded by
+    /// any future `process_message_events` call on this session, until
+    /// dropped via `remove_subscriber` (or until the Sender half is dropped
+    /// when the subscriber holder tears down).
+    ///
+    /// `buffer` is the mpsc channel capacity. Use a small bounded channel
+    /// (e.g. 256): a slow consumer just drops events via `try_send` in
+    /// `publish_to_subscribers` — voice workloads should never accumulate
+    /// backlog, and a stuck subscriber must not wedge the agent stream.
+    pub async fn subscribe_events(
+        &self,
+        session_id: &str,
+        buffer: usize,
+    ) -> tokio::sync::mpsc::Receiver<AgentEvent> {
+        let (tx, rx) = tokio::sync::mpsc::channel(buffer);
+        self.event_subscribers
+            .write()
+            .await
+            .entry(session_id.to_string())
+            .or_insert_with(Vec::new)
+            .push(tx);
+        rx
+    }
+
+    /// Drop the most recently registered subscriber for this session
+    /// (LIFO; today we assume at most one subscriber per session — the
+    /// ChatSessionCapabilityProvider). The dropped `Sender` closes the
+    /// channel; the holder's `Receiver::recv` will return `None`.
+    pub async fn remove_subscriber(&self, session_id: &str) {
+        if let Some(v) = self.event_subscribers.write().await.get_mut(session_id) {
+            v.pop();
+            if v.is_empty() {
+                // Free the empty Vec slot to keep the map tidy.
+                self.event_subscribers.write().await.remove(session_id);
+            }
+        }
+    }
+
+    /// Best-effort tee of one AgentEvent to all direct subscribers of this
+    /// session. Never blocks the agent stream on a slow subscriber: uses
+    /// `try_send`; channel-full / closed errors are silently dropped
+    /// (the subscriber misses that event).
+    pub async fn publish_to_subscribers(&self, session_id: &str, event: AgentEvent) {
+        let subs = self.event_subscribers.read().await;
+        if let Some(v) = subs.get(session_id) {
+            for tx in v.iter() {
+                let _ = tx.try_send(event.clone());
+            }
+        }
+    }
+
     /// Cancel an active streaming session by session ID.
     /// Returns true if a stream was active and interrupted.
     pub async fn cancel_session(&self, session_id: &str) -> bool {
@@ -617,17 +707,33 @@ impl SessionManager {
         sessions.get(session_id).map(|agent| agent.llm_interface())
     }
 
-    /// Create a new session.
+    /// Create a new session using the manager's `default_config`.
+    ///
+    /// Equivalent to `create_session_with_config(self.default_config.clone())`.
+    /// Existing callers (CLI, capability providers, tests) keep this behavior.
     pub async fn create_session(&self) -> Result<String> {
+        self.create_session_with_config(self.default_config.clone())
+            .await
+    }
+
+    /// Create a new session with the given (full) `AgentConfig`.
+    ///
+    /// This is the canonical implementation; the no-arg and options variants
+    /// are thin wrappers. The provided config is used verbatim — no merging
+    /// with `default_config` happens here.
+    pub async fn create_session_with_config(
+        &self,
+        config: AgentConfig,
+    ) -> Result<String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Use tool registry if set, otherwise create default mock tools
         let tool_registry = self.tool_registry.read().await.clone();
 
         let agent = if let Some(tools) = tool_registry {
-            Agent::with_tools(self.default_config.clone(), session_id.clone(), tools)
+            Agent::with_tools(config, session_id.clone(), tools)
         } else {
-            Agent::new(self.default_config.clone(), session_id.clone())
+            Agent::new(config, session_id.clone())
         };
 
         // Configure LLM if a default backend is set
@@ -657,6 +763,38 @@ impl SessionManager {
         self.save_session_id(&session_id)?;
 
         Ok(session_id)
+    }
+
+    /// Create a new session with the supplied options merged on top of the
+    /// manager's `default_config`. Fields left `None` in `opts` fall back to
+    /// the default. Use this when you need per-session overrides (e.g. a
+    /// voice-assistant extension baking in a system prompt) without changing
+    /// global defaults.
+    pub async fn create_session_with_options(
+        &self,
+        opts: CreateSessionOptions,
+    ) -> Result<String> {
+        let config = self.merge_options(opts);
+        self.create_session_with_config(config).await
+    }
+
+    /// Merge `CreateSessionOptions` on top of `default_config`. Any `None`
+    /// field inherits the default; `Some(v)` overrides that single field.
+    fn merge_options(&self, opts: CreateSessionOptions) -> AgentConfig {
+        let mut cfg = self.default_config.clone();
+        if let Some(sp) = opts.system_prompt {
+            cfg.system_prompt = sp;
+        }
+        if let Some(t) = opts.temperature {
+            cfg.temperature = t;
+        }
+        if let Some(m) = opts.model {
+            cfg.model = m;
+        }
+        if let Some(et) = opts.enable_tools {
+            cfg.enable_tools = et;
+        }
+        cfg
     }
 
     /// Get an existing session.
@@ -782,6 +920,35 @@ impl SessionManager {
                 .create_session()
                 .await
                 .unwrap_or_else(|_| Uuid::new_v4().to_string()),
+        }
+    }
+
+    /// Get or create a session with optional per-session config overrides.
+    ///
+    /// **Override semantics**: `opts` is applied **only when a new session is
+    /// created** in this call. If `session_id` references an existing session
+    /// (in memory or DB), the existing session's config is preserved — `opts`
+    /// is silently ignored. This is intentional: callers like the
+    /// `chat_session_open` capability may pass `system_prompt` on every call,
+    /// but we must not silently rewrite the prompt of a long-running session
+    /// just because a client retried the open handshake.
+    ///
+    /// Use this when you want per-session defaults (e.g. voice-assistant
+    /// baking in a system prompt) without losing the idempotent "give me this
+    /// session or make one" property of `get_or_create_session`.
+    pub async fn get_or_create_session_with_options(
+        &self,
+        session_id: Option<String>,
+        opts: CreateSessionOptions,
+    ) -> String {
+        match session_id {
+            // Existing session — explicitly DO NOT apply opts (see doc above).
+            Some(id) => self.get_or_create_session(Some(id)).await,
+            None => {
+                self.create_session_with_options(opts)
+                    .await
+                    .unwrap_or_else(|_| Uuid::new_v4().to_string())
+            }
         }
     }
 
@@ -1529,6 +1696,7 @@ impl Default for SessionManager {
                 tool_registry: Arc::new(RwLock::new(None)),
                 skill_registry: crate::skills::create_shared_registry(None),
                 cancel_senders: Arc::new(RwLock::new(HashMap::new())),
+                event_subscribers: Arc::new(RwLock::new(HashMap::new())),
             }
         })
     }
@@ -1573,6 +1741,80 @@ mod tests {
         // Get existing session
         let existing_id = manager.get_or_create_session(Some(new_id.clone())).await;
         assert_eq!(existing_id, new_id);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_with_options_overrides_only_provided_fields() {
+        // Verify that CreateSessionOptions acts as a patch on top of
+        // default_config: only Some(_) fields override, the rest inherits.
+        let manager = create_temp_manager();
+
+        let opts = CreateSessionOptions {
+            system_prompt: Some("voice-assistant mode: short replies".to_string()),
+            temperature: Some(0.1),
+            model: None,        // inherit default
+            enable_tools: None, // inherit default
+        };
+
+        let session_id = manager.create_session_with_options(opts).await.unwrap();
+        let agent = manager.get_session(&session_id).await.unwrap();
+        let llm = agent.llm_interface();
+        let sp = llm.get_system_prompt().await;
+
+        assert_eq!(sp, "voice-assistant mode: short replies");
+        // We don't have a direct temperature getter on the agent's LLM here
+        // without poking at backend internals; the override is exercised
+        // end-to-end in the API integration tests. The system_prompt check
+        // above is the load-bearing assertion for the patch mechanism.
+    }
+
+    #[tokio::test]
+    async fn test_create_session_default_unchanged() {
+        // Regression guard: callers using the original create_session()
+        // path must observe identical behavior — default_config flows
+        // through to the agent's system prompt.
+        let manager = create_temp_manager();
+        let session_id = manager.create_session().await.unwrap();
+        let agent = manager.get_session(&session_id).await.unwrap();
+        let sp = agent.llm_interface().get_system_prompt().await;
+        // AgentConfig::default() hardcodes this string in agent/types.rs.
+        assert_eq!(sp, AgentConfig::default().system_prompt);
+    }
+
+    #[tokio::test]
+    async fn test_get_or_create_session_with_options_ignores_opts_for_existing() {
+        // Critical safety property: when an existing session_id is passed,
+        // opts MUST be ignored — otherwise a client retrying an open()
+        // handshake could silently overwrite a long-running session's
+        // system_prompt.
+        let manager = create_temp_manager();
+
+        // First call: create with custom prompt
+        let sid = manager
+            .get_or_create_session_with_options(
+                None,
+                CreateSessionOptions {
+                    system_prompt: Some("original prompt".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        // Second call: same id, DIFFERENT prompt. Must NOT override.
+        let sid_again = manager
+            .get_or_create_session_with_options(
+                Some(sid.clone()),
+                CreateSessionOptions {
+                    system_prompt: Some("different prompt".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        assert_eq!(sid, sid_again);
+        let agent = manager.get_session(&sid).await.unwrap();
+        let sp = agent.llm_interface().get_system_prompt().await;
+        assert_eq!(sp, "original prompt");
     }
 
     #[tokio::test]
