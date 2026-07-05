@@ -1,6 +1,5 @@
 //! Vision tool for multi-modal image analysis using VLM backends.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,24 +11,12 @@ use serde_json::Value;
 
 use super::error::{Result, ToolError};
 use super::tool::{object_schema, string_property, Tool, ToolOutput};
-use crate::image_utils::{detect_mime_from_bytes, is_private_host, looks_like_raw_base64};
+use crate::image_utils::{is_private_host, resolve_image};
 use crate::llm_backends::LlmBackendInstanceManager;
 
 /// Maximum image size in bytes (10 MB). VLMs typically downsample to
 /// ~448-672px anyway, so 10 MB is more than sufficient.
 const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
-
-/// Maximum base64 string length (~13.3 MB base64 for 10 MB raw).
-const MAX_BASE64_LEN: usize = MAX_IMAGE_SIZE * 4 / 3 + 4;
-
-/// Allowed image file extensions (lowercase). Only binary raster formats
-/// that pass `detect_mime_from_bytes()` are included. SVG is excluded
-/// because it cannot pass the magic-bytes validation for local files.
-const ALLOWED_IMAGE_EXTENSIONS: &[&str] =
-    &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif"];
-
-/// Allowed MIME subtypes in data URLs (the part after "image/").
-const ALLOWED_DATA_MIME_SUBTYPES: &[&str] = &["png", "jpeg", "jpg", "gif", "webp", "bmp", "tiff"];
 
 /// Configuration for the vision tool.
 #[derive(Debug, Clone)]
@@ -163,287 +150,17 @@ impl VisionTool {
     }
 
     /// Resolve image input to (base64_data, mime_type).
+    ///
+    /// Wraps the free `image_utils::resolve_image` (raw bytes) and applies
+    /// vision's resize-on-input behavior via `process_image_bytes`. The free
+    /// function returns raw bytes; vision base64-encodes (after optional
+    /// Lanczos3 downscale per `config.max_image_dim`) for VLM dispatch.
     async fn resolve_image(&self, image: &str) -> Result<(String, String)> {
-        // 1. Data URL: data:image/png;base64,... (case-insensitive prefix)
-        //    Also handles incomplete data URLs missing the "data:" prefix
-        //    (e.g. "image/jpeg;base64,/9j/...") which some callers produce.
-        let image_lower_prefix = image
-            .chars()
-            .take(11)
-            .collect::<String>()
-            .to_ascii_lowercase();
-        let is_data_image_url = image_lower_prefix == "data:image/";
-        let is_incomplete_data_url = !is_data_image_url
-            && image.contains(";base64,")
-            && image_lower_prefix.starts_with("image/");
-
-        if is_data_image_url || is_incomplete_data_url {
-            let rest = if is_data_image_url {
-                image.get(11..) // skip "data:image/"
-            } else {
-                image.get(6..) // skip "image/"
-            };
-            if let Some(rest) = rest {
-                if let Some((mime_suffix, b64)) = rest.split_once(";base64,") {
-                    if b64.is_empty() {
-                        return Err(ToolError::InvalidArguments(
-                            "Data URL contains empty base64 data".into(),
-                        ));
-                    }
-                    if b64.len() > MAX_BASE64_LEN {
-                        return Err(ToolError::InvalidArguments(format!(
-                            "Data URL base64 data too large ({} chars, max {} chars)",
-                            b64.len(),
-                            MAX_BASE64_LEN
-                        )));
-                    }
-                    let subtype = mime_suffix.to_lowercase();
-                    if !ALLOWED_DATA_MIME_SUBTYPES.contains(&subtype.as_str()) {
-                        return Err(ToolError::InvalidArguments(format!(
-                            "Unsupported image type '{}' in data URL. Allowed: {}",
-                            subtype,
-                            ALLOWED_DATA_MIME_SUBTYPES.join(", ")
-                        )));
-                    }
-                    let mime = format!("image/{}", subtype);
-                    return Ok((b64.to_string(), mime));
-                }
-            }
-        }
-
-        // 2. HTTP/HTTPS URL
-        if image.starts_with("http://") || image.starts_with("https://") {
-            let bytes = self.fetch_http_image(image).await?;
-            let mime = detect_mime_from_bytes(&bytes)
-                .unwrap_or("image/jpeg")
-                .to_string();
-            return Ok(self.process_image_bytes(bytes, &mime).await);
-        }
-
-        // 3. Block non-http URL schemes with a clear error
-        if image.contains("://") {
-            return Err(ToolError::InvalidArguments(format!(
-                "Unsupported URL scheme in '{}'. Only http:// and https:// are supported.",
-                image.split("://").next().unwrap_or("")
-            )));
-        }
-
-        // 4. Raw base64 detection (MUST come before local file path check).
-        //
-        // Why: a stripped JPEG base64 starts with "/9j/" and a PNG base64 starts
-        // with "iVBORw0KGgo". The "/" prefix would otherwise be misclassified
-        // as a local file path, producing "Cannot resolve path '/9j/...'" errors
-        // when the LLM passes raw base64 (no data URL wrapper) into the tool.
-        //
-        // Heuristic: looks_like_raw_base64 returns true when the string is
-        // pure base64 alphabet AND either carries an image magic prefix or is
-        // long enough to plausibly be image data.
-        if looks_like_raw_base64(image) {
-            if image.is_empty() {
-                return Err(ToolError::InvalidArguments("Image data is empty".into()));
-            }
-            if image.len() > MAX_BASE64_LEN {
-                return Err(ToolError::InvalidArguments(format!(
-                    "Base64 data too large ({} chars, max {} chars)",
-                    image.len(),
-                    MAX_BASE64_LEN
-                )));
-            }
-            let mime = infer_mime_from_base64_prefix(image)
-                .unwrap_or("image/jpeg")
-                .to_string();
-            tracing::debug!(
-                len = image.len(),
-                inferred_mime = %mime,
-                "Treating image argument as raw base64"
-            );
-            return Ok((image.to_string(), mime));
-        }
-
-        // 5. Local file path
-        if image.starts_with('/') || image.starts_with("./") {
-            let bytes = self.read_local_image(image).await?;
-            let mime = detect_mime_from_bytes(&bytes)
-                .unwrap_or("image/jpeg")
-                .to_string();
-            return Ok(self.process_image_bytes(bytes, &mime).await);
-        }
-
-        // 6. Fallback: treat as raw base64
-        if image.is_empty() {
-            return Err(ToolError::InvalidArguments("Image data is empty".into()));
-        }
-        if image.len() > MAX_BASE64_LEN {
-            return Err(ToolError::InvalidArguments(format!(
-                "Base64 data too large ({} chars, max {} chars)",
-                image.len(),
-                MAX_BASE64_LEN
-            )));
-        }
-        Ok((image.to_string(), "image/jpeg".to_string()))
-    }
-
-    /// Read a local image file with security checks.
-    async fn read_local_image(&self, path_str: &str) -> Result<Vec<u8>> {
-        let path = Path::new(path_str);
-
-        // Block path traversal
-        for component in path.components() {
-            if component == std::path::Component::ParentDir {
-                return Err(ToolError::PermissionDenied(
-                    "Path traversal (..) is not allowed".into(),
-                ));
-            }
-        }
-
-        // Canonicalize to resolve symlinks, then re-check the real path
-        let canonical = tokio::fs::canonicalize(path).await.map_err(|e| {
-            ToolError::Execution(format!("Cannot resolve path '{}': {}", path_str, e))
-        })?;
-        let canonical_str = canonical.to_string_lossy();
-
-        // Block sensitive system paths (checked against canonical path)
-        let canonical_lower = canonical_str.to_lowercase();
-        let blocked_prefixes = [
-            "/etc/", "/proc/", "/sys/", "/dev/", "/run/", "/boot/", "/root/", "/var/", "/tmp/",
-            "/opt/", "/srv/",
-        ];
-        if blocked_prefixes
-            .iter()
-            .any(|prefix| canonical_lower.starts_with(prefix))
-        {
-            return Err(ToolError::PermissionDenied(
-                "Access to system path is not allowed".to_string(),
-            ));
-        }
-
-        // Block hidden files (dotfiles) in home directories
-        if let Some(name) = canonical.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.')
-                && (canonical_lower.starts_with("/home") || canonical_lower.starts_with("/users"))
-            {
-                return Err(ToolError::PermissionDenied(
-                    "Access to hidden file is not allowed".to_string(),
-                ));
-            }
-        }
-
-        // Validate extension looks like an image
-        if let Some(ext) = canonical.extension().and_then(|e| e.to_str()) {
-            if !ALLOWED_IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
-                return Err(ToolError::PermissionDenied(format!(
-                    "File extension '.{}' is not an image format. Allowed: {}",
-                    ext,
-                    ALLOWED_IMAGE_EXTENSIONS.join(", ")
-                )));
-            }
-        } else {
-            // Files without extension: reject (must have a known image extension)
-            return Err(ToolError::PermissionDenied(
-                "File must have an image extension (e.g., .jpg, .png)".into(),
-            ));
-        }
-
-        // Check file size before reading
-        let metadata = tokio::fs::metadata(&canonical).await.map_err(|e| {
-            ToolError::Execution(format!("Failed to stat file '{}': {}", path_str, e))
-        })?;
-        if metadata.len() as usize > MAX_IMAGE_SIZE {
-            return Err(ToolError::Execution(format!(
-                "File too large: {} bytes (max {} bytes)",
-                metadata.len(),
-                MAX_IMAGE_SIZE
-            )));
-        }
-
-        let bytes = tokio::fs::read(&canonical).await.map_err(|e| {
-            ToolError::Execution(format!("Failed to read file '{}': {}", path_str, e))
-        })?;
-
-        // Validate the file looks like an image by checking magic bytes
-        if detect_mime_from_bytes(&bytes).is_none() {
-            return Err(ToolError::Execution(format!(
-                "File '{}' does not appear to be a valid image (unrecognized header)",
-                path_str
-            )));
-        }
-
-        Ok(bytes)
-    }
-
-    /// Fetch image bytes from an HTTP/HTTPS URL with SSRF protection.
-    async fn fetch_http_image(&self, url: &str) -> Result<Vec<u8>> {
-        // SSRF: validate URL before fetching (redirect hops are validated by custom policy)
-        validate_url(
-            &reqwest::Url::parse(url)
-                .map_err(|e| ToolError::InvalidArguments(format!("Invalid URL: {}", e)))?,
-        )?;
-
-        let response = self
-            .http_client
-            .get(url)
-            .header("User-Agent", "NeoMind-VisionTool/1.0")
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    ToolError::Timeout
-                } else {
-                    ToolError::Execution(format!("HTTP fetch failed: {}", e))
-                }
-            })?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(ToolError::Execution(format!(
-                "HTTP {} fetching image",
-                status.as_u16()
-            )));
-        }
-
-        // Check Content-Length before downloading body
-        if let Some(content_length) = response.headers().get("content-length") {
-            if let Ok(len_str) = content_length.to_str() {
-                if let Ok(len) = len_str.parse::<usize>() {
-                    if len > MAX_IMAGE_SIZE {
-                        return Err(ToolError::Execution(format!(
-                            "Image too large (Content-Length: {} bytes, max: {} bytes)",
-                            len, MAX_IMAGE_SIZE
-                        )));
-                    }
-                }
-            }
-        }
-
-        // Validate Content-Type looks like an image
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_lowercase();
-        let media_type = content_type.split(';').next().unwrap_or("").trim();
-        if !media_type.starts_with("image/") && !media_type.is_empty() {
-            return Err(ToolError::Execution(format!(
-                "URL returned non-image content type: {}. Only image/* is supported.",
-                content_type
-            )));
-        }
-
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| ToolError::Execution(format!("HTTP read failed: {}", e)))?;
-
-        if bytes.len() > MAX_IMAGE_SIZE {
-            return Err(ToolError::Execution(format!(
-                "Image too large: {} bytes (max: {} bytes)",
-                bytes.len(),
-                MAX_IMAGE_SIZE
-            )));
-        }
-
-        Ok(bytes.to_vec())
+        let (bytes, mime): (Vec<u8>, String) =
+            resolve_image(image, &self.http_client, MAX_IMAGE_SIZE)
+                .await
+                .map_err(ToolError::from)?;
+        Ok(self.process_image_bytes(bytes, &mime).await)
     }
 
     /// Process raw image bytes: optionally resize to `max_image_dim`, then
@@ -654,13 +371,6 @@ fn resize_image_if_needed(bytes: Vec<u8>, detected_mime: &str, max_dim: u32) -> 
     }
 }
 
-/// Infer MIME type from the leading bytes of a base64-encoded image.
-/// Thin wrapper around the shared [`crate::image_utils`] implementation
-/// to keep the vision tool self-contained for downstream callers.
-fn infer_mime_from_base64_prefix(s: &str) -> Option<&'static str> {
-    crate::image_utils::infer_mime_from_base64_prefix(s)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -690,47 +400,6 @@ mod tests {
     fn test_validate_url_allows_public() {
         let url = reqwest::Url::parse("https://example.com/photo.jpg").unwrap();
         assert!(validate_url(&url).is_ok());
-    }
-
-    // --- infer_mime_from_base64_prefix tests ---
-
-    #[test]
-    fn test_infer_mime_jpeg() {
-        assert_eq!(
-            infer_mime_from_base64_prefix("/9j/4AAQSkZJRg"),
-            Some("image/jpeg")
-        );
-    }
-
-    #[test]
-    fn test_infer_mime_png() {
-        assert_eq!(
-            infer_mime_from_base64_prefix("iVBORw0KGgoAAAAN"),
-            Some("image/png")
-        );
-    }
-
-    #[test]
-    fn test_infer_mime_webp() {
-        assert_eq!(
-            infer_mime_from_base64_prefix("UklGRiQA"),
-            Some("image/webp")
-        );
-    }
-
-    #[test]
-    fn test_infer_mime_gif() {
-        assert_eq!(infer_mime_from_base64_prefix("R0lGODlh"), Some("image/gif"));
-    }
-
-    #[test]
-    fn test_infer_mime_bmp() {
-        assert_eq!(infer_mime_from_base64_prefix("Qk0+AAAA"), Some("image/bmp"));
-    }
-
-    #[test]
-    fn test_infer_mime_unknown_returns_none() {
-        assert_eq!(infer_mime_from_base64_prefix("randomStuff"), None);
     }
 
     // --- resize_image_if_needed tests ---

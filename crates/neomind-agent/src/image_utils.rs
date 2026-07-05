@@ -103,6 +103,424 @@ pub fn infer_mime_from_base64_prefix(s: &str) -> Option<&'static str> {
 // I/O helpers moved from vision.rs (SSRF protection + MIME detection)
 // ---------------------------------------------------------------------------
 
+/// Image I/O error type for the free functions.
+#[derive(Debug, Clone)]
+pub enum ImageIoError {
+    /// Invalid input arguments (empty data, malformed URL, etc.).
+    InvalidArguments(String),
+    /// Permission denied (path traversal, private host, blocked system path).
+    PermissionDenied(String),
+    /// Execution error (file read failed, HTTP fetch failed, etc.).
+    Execution(String),
+    /// Timeout (HTTP fetch exceeded time limit).
+    Timeout,
+}
+
+impl std::fmt::Display for ImageIoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImageIoError::InvalidArguments(s) => write!(f, "Invalid arguments: {}", s),
+            ImageIoError::PermissionDenied(s) => write!(f, "Permission denied: {}", s),
+            ImageIoError::Execution(s) => write!(f, "Execution error: {}", s),
+            ImageIoError::Timeout => write!(f, "Operation timed out"),
+        }
+    }
+}
+
+impl std::error::Error for ImageIoError {}
+
+/// Maximum image size in bytes (10 MB). Must match vision.rs constant.
+const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
+
+/// Maximum base64 string length (~13.3 MB base64 for 10 MB raw).
+const MAX_BASE64_LEN: usize = MAX_IMAGE_SIZE * 4 / 3 + 4;
+
+/// Allowed image file extensions (lowercase). Only binary raster formats
+/// that pass `detect_mime_from_bytes()` are included. SVG is excluded
+/// because it cannot pass the magic-bytes validation for local files.
+const ALLOWED_IMAGE_EXTENSIONS: &[&str] =
+    &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif"];
+
+/// Allowed MIME subtypes in data URLs (the part after "image/").
+const ALLOWED_DATA_MIME_SUBTYPES: &[&str] = &["png", "jpeg", "jpg", "gif", "webp", "bmp", "tiff"];
+
+/// Resolve image input from various formats to raw bytes + MIME type.
+///
+/// Accepts:
+/// - `data:image/<subtype>;base64,<data>` URLs
+/// - Incomplete data URLs (e.g. `image/jpeg;base64,/9j/...`)
+/// - HTTP/HTTPS URLs (SSRF-protected, public hosts only)
+/// - Raw base64 with magic prefix (`/9j/` JPEG, `iVBORw0KGgo` PNG, etc.)
+/// - Local file paths (must start with `/` or `./`, security checks applied)
+/// - Fallback: treat as raw base64 (JPEG by default)
+///
+/// Returns `(Vec<u8>, String)` where the second element is the MIME type
+/// (e.g., `"image/png"`, `"image/jpeg"`).
+///
+/// # Errors
+///
+/// Returns `ImageIoError` for:
+/// - Invalid arguments (empty data, malformed URL, unsupported MIME type)
+/// - Permission denied (path traversal, private host, blocked system path)
+/// - Execution errors (file read failed, HTTP fetch failed, timeout)
+pub async fn resolve_image(
+    input: &str,
+    client: &reqwest::Client,
+    max_size: usize,
+) -> Result<(Vec<u8>, String), ImageIoError> {
+    // 1. Data URL: data:image/png;base64,... (case-insensitive prefix)
+    //    Also handles incomplete data URLs missing the "data:" prefix
+    //    (e.g. "image/jpeg;base64,/9j/...") which some callers produce.
+    let image_lower_prefix = input
+        .chars()
+        .take(11)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let is_data_image_url = image_lower_prefix == "data:image/";
+    let is_incomplete_data_url = !is_data_image_url
+        && input.contains(";base64,")
+        && image_lower_prefix.starts_with("image/");
+
+    if is_data_image_url || is_incomplete_data_url {
+        let rest = if is_data_image_url {
+            input.get(11..) // skip "data:image/"
+        } else {
+            input.get(6..) // skip "image/"
+        };
+        if let Some(rest) = rest {
+            if let Some((mime_suffix, b64)) = rest.split_once(";base64,") {
+                if b64.is_empty() {
+                    return Err(ImageIoError::InvalidArguments(
+                        "Data URL contains empty base64 data".into(),
+                    ));
+                }
+                if b64.len() > MAX_BASE64_LEN {
+                    return Err(ImageIoError::InvalidArguments(format!(
+                        "Data URL base64 data too large ({} chars, max {} chars)",
+                        b64.len(),
+                        MAX_BASE64_LEN
+                    )));
+                }
+                let subtype = mime_suffix.to_lowercase();
+                if !ALLOWED_DATA_MIME_SUBTYPES.contains(&subtype.as_str()) {
+                    return Err(ImageIoError::InvalidArguments(format!(
+                        "Unsupported image type '{}' in data URL. Allowed: {}",
+                        subtype,
+                        ALLOWED_DATA_MIME_SUBTYPES.join(", ")
+                    )));
+                }
+                let mime = format!("image/{}", subtype);
+                // Decode base64 to raw bytes
+                let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+                    .map_err(|e| {
+                        ImageIoError::InvalidArguments(format!("Invalid base64 in data URL: {}", e))
+                    })?;
+                if bytes.len() > max_size {
+                    return Err(ImageIoError::InvalidArguments(format!(
+                        "Decoded image too large ({} bytes, max {} bytes)",
+                        bytes.len(),
+                        max_size
+                    )));
+                }
+                return Ok((bytes, mime));
+            }
+        }
+    }
+
+    // 2. HTTP/HTTPS URL
+    if input.starts_with("http://") || input.starts_with("https://") {
+        let bytes = fetch_http_image(input, client, max_size).await?;
+        let mime = detect_mime_from_bytes(&bytes)
+            .unwrap_or("image/jpeg")
+            .to_string();
+        return Ok((bytes, mime));
+    }
+
+    // 3. Block non-http URL schemes with a clear error
+    if input.contains("://") {
+        return Err(ImageIoError::InvalidArguments(format!(
+            "Unsupported URL scheme in '{}'. Only http:// and https:// are supported.",
+            input.split("://").next().unwrap_or("")
+        )));
+    }
+
+    // 4. Raw base64 detection (MUST come before local file path check).
+    //
+    // Why: a stripped JPEG base64 starts with "/9j/" and a PNG base64 starts
+    // with "iVBORw0KGgo". The "/" prefix would otherwise be misclassified
+    // as a local file path, producing "Cannot resolve path '/9j/...'" errors
+    // when the LLM passes raw base64 (no data URL wrapper) into the tool.
+    //
+    // Heuristic: looks_like_raw_base64 returns true when the string is
+    // pure base64 alphabet AND either carries an image magic prefix or is
+    // long enough to plausibly be image data.
+    if looks_like_raw_base64(input) {
+        if input.is_empty() {
+            return Err(ImageIoError::InvalidArguments("Image data is empty".into()));
+        }
+        if input.len() > MAX_BASE64_LEN {
+            return Err(ImageIoError::InvalidArguments(format!(
+                "Base64 data too large ({} chars, max {} chars)",
+                input.len(),
+                MAX_BASE64_LEN
+            )));
+        }
+        let mime = infer_mime_from_base64_prefix(input)
+            .unwrap_or("image/jpeg")
+            .to_string();
+        // Decode base64 to raw bytes
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, input)
+            .map_err(|e| ImageIoError::InvalidArguments(format!("Invalid base64 data: {}", e)))?;
+        if bytes.len() > max_size {
+            return Err(ImageIoError::InvalidArguments(format!(
+                "Decoded image too large ({} bytes, max {} bytes)",
+                bytes.len(),
+                max_size
+            )));
+        }
+        tracing::debug!(
+            len = input.len(),
+            inferred_mime = %mime,
+            "Treating image argument as raw base64"
+        );
+        return Ok((bytes, mime));
+    }
+
+    // 5. Local file path
+    if input.starts_with('/') || input.starts_with("./") {
+        let bytes = read_local_image(input, max_size)?;
+        let mime = detect_mime_from_bytes(&bytes)
+            .unwrap_or("image/jpeg")
+            .to_string();
+        return Ok((bytes, mime));
+    }
+
+    // 6. Fallback: treat as raw base64
+    if input.is_empty() {
+        return Err(ImageIoError::InvalidArguments("Image data is empty".into()));
+    }
+    if input.len() > MAX_BASE64_LEN {
+        return Err(ImageIoError::InvalidArguments(format!(
+            "Base64 data too large ({} chars, max {} chars)",
+            input.len(),
+            MAX_BASE64_LEN
+        )));
+    }
+    let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, input)
+        .map_err(|e| ImageIoError::InvalidArguments(format!("Invalid base64 data: {}", e)))?;
+    if bytes.len() > max_size {
+        return Err(ImageIoError::InvalidArguments(format!(
+            "Decoded image too large ({} bytes, max {} bytes)",
+            bytes.len(),
+            max_size
+        )));
+    }
+    Ok((bytes, "image/jpeg".to_string()))
+}
+
+/// Read a local image file with security checks.
+///
+/// Blocks:
+/// - Path traversal (`..` components)
+/// - System paths (`/etc`, `/proc`, `/sys`, etc.)
+/// - Hidden files (dotfiles) in home directories
+/// - Files without allowed image extensions
+/// - Files exceeding `max_size` bytes
+///
+/// Validates the file has image magic bytes before returning.
+pub fn read_local_image(path_str: &str, max_size: usize) -> Result<Vec<u8>, ImageIoError> {
+    use std::path::Path;
+
+    let path = Path::new(path_str);
+
+    // Block path traversal
+    for component in path.components() {
+        if component == std::path::Component::ParentDir {
+            return Err(ImageIoError::PermissionDenied(
+                "Path traversal (..) is not allowed".into(),
+            ));
+        }
+    }
+
+    // Canonicalize to resolve symlinks - use blocking I/O since this is a sync function
+    let canonical = std::fs::canonicalize(path).map_err(|e| {
+        ImageIoError::Execution(format!("Cannot resolve path '{}': {}", path_str, e))
+    })?;
+    let canonical_str = canonical.to_string_lossy();
+
+    // Block sensitive system paths (checked against canonical path)
+    let canonical_lower = canonical_str.to_lowercase();
+    let blocked_prefixes = [
+        "/etc/", "/proc/", "/sys/", "/dev/", "/run/", "/boot/", "/root/", "/var/", "/tmp/",
+        "/opt/", "/srv/",
+    ];
+    if blocked_prefixes
+        .iter()
+        .any(|prefix| canonical_lower.starts_with(prefix))
+    {
+        return Err(ImageIoError::PermissionDenied(
+            "Access to system path is not allowed".to_string(),
+        ));
+    }
+
+    // Block hidden files (dotfiles) in home directories
+    if let Some(name) = canonical.file_name().and_then(|n| n.to_str()) {
+        if name.starts_with('.')
+            && (canonical_lower.starts_with("/home") || canonical_lower.starts_with("/users"))
+        {
+            return Err(ImageIoError::PermissionDenied(
+                "Access to hidden file is not allowed".to_string(),
+            ));
+        }
+    }
+
+    // Validate extension looks like an image
+    if let Some(ext) = canonical.extension().and_then(|e| e.to_str()) {
+        if !ALLOWED_IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
+            return Err(ImageIoError::PermissionDenied(format!(
+                "File extension '.{}' is not an image format. Allowed: {}",
+                ext,
+                ALLOWED_IMAGE_EXTENSIONS.join(", ")
+            )));
+        }
+    } else {
+        // Files without extension: reject (must have a known image extension)
+        return Err(ImageIoError::PermissionDenied(
+            "File must have an image extension (e.g., .jpg, .png)".into(),
+        ));
+    }
+
+    // Check file size before reading
+    let metadata = std::fs::metadata(&canonical).map_err(|e| {
+        ImageIoError::Execution(format!("Failed to stat file '{}': {}", path_str, e))
+    })?;
+    if metadata.len() as usize > max_size {
+        return Err(ImageIoError::Execution(format!(
+            "File too large: {} bytes (max {} bytes)",
+            metadata.len(),
+            max_size
+        )));
+    }
+
+    let bytes = std::fs::read(&canonical).map_err(|e| {
+        ImageIoError::Execution(format!("Failed to read file '{}': {}", path_str, e))
+    })?;
+
+    // Validate the file looks like an image by checking magic bytes
+    if detect_mime_from_bytes(&bytes).is_none() {
+        return Err(ImageIoError::Execution(format!(
+            "File '{}' does not appear to be a valid image (unrecognized header)",
+            path_str
+        )));
+    }
+
+    Ok(bytes)
+}
+
+/// Fetch image bytes from an HTTP/HTTPS URL with SSRF protection.
+///
+/// Validates:
+/// - URL scheme is http or https
+/// - Host is not a private/local address (SSRF protection)
+/// - Content-Type looks like an image
+/// - Content-Length and actual bytes don't exceed `max_size`
+///
+/// Returns the raw image bytes on success.
+pub async fn fetch_http_image(
+    url: &str,
+    client: &reqwest::Client,
+    max_size: usize,
+) -> Result<Vec<u8>, ImageIoError> {
+    // SSRF: validate URL before fetching
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| ImageIoError::InvalidArguments(format!("Invalid URL: {}", e)))?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => {
+            return Err(ImageIoError::PermissionDenied(
+                "Only http:// and https:// URLs are allowed".into(),
+            ))
+        }
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ImageIoError::InvalidArguments("URL has no host".into()))?;
+
+    if is_private_host(host) {
+        return Err(ImageIoError::PermissionDenied(format!(
+            "Access to private address '{}' is not allowed",
+            host
+        )));
+    }
+
+    let response = client
+        .get(url)
+        .header("User-Agent", "NeoMind-ImageUtils/1.0")
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                ImageIoError::Timeout
+            } else {
+                ImageIoError::Execution(format!("HTTP fetch failed: {}", e))
+            }
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(ImageIoError::Execution(format!(
+            "HTTP {} fetching image",
+            status.as_u16()
+        )));
+    }
+
+    // Check Content-Length before downloading body
+    if let Some(content_length) = response.headers().get("content-length") {
+        if let Ok(len_str) = content_length.to_str() {
+            if let Ok(len) = len_str.parse::<usize>() {
+                if len > max_size {
+                    return Err(ImageIoError::Execution(format!(
+                        "Image too large (Content-Length: {} bytes, max: {} bytes)",
+                        len, max_size
+                    )));
+                }
+            }
+        }
+    }
+
+    // Validate Content-Type looks like an image
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+    let media_type = content_type.split(';').next().unwrap_or("").trim();
+    if !media_type.starts_with("image/") && !media_type.is_empty() {
+        return Err(ImageIoError::Execution(format!(
+            "URL returned non-image content type: {}. Only image/* is supported.",
+            content_type
+        )));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| ImageIoError::Execution(format!("HTTP read failed: {}", e)))?;
+
+    if bytes.len() > max_size {
+        return Err(ImageIoError::Execution(format!(
+            "Image too large: {} bytes (max: {} bytes)",
+            bytes.len(),
+            max_size
+        )));
+    }
+
+    Ok(bytes.to_vec())
+}
+
 /// Detect MIME type from image file magic bytes.
 pub fn detect_mime_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() < 4 {
@@ -476,5 +894,77 @@ mod tests {
     fn test_is_private_ipv6_mapped() {
         assert!(is_private_host("::ffff:127.0.0.1"));
         assert!(is_private_host("::ffff:192.168.1.1"));
+    }
+
+    // --- infer_mime_from_base64_prefix tests (moved from vision.rs) ---
+
+    #[test]
+    fn test_infer_mime_jpeg() {
+        assert_eq!(
+            infer_mime_from_base64_prefix("/9j/4AAQSkZJRg"),
+            Some("image/jpeg")
+        );
+    }
+
+    #[test]
+    fn test_infer_mime_png() {
+        assert_eq!(
+            infer_mime_from_base64_prefix("iVBORw0KGgoAAAAN"),
+            Some("image/png")
+        );
+    }
+
+    #[test]
+    fn test_infer_mime_webp() {
+        assert_eq!(
+            infer_mime_from_base64_prefix("UklGRiQA"),
+            Some("image/webp")
+        );
+    }
+
+    #[test]
+    fn test_infer_mime_gif() {
+        assert_eq!(infer_mime_from_base64_prefix("R0lGODlh"), Some("image/gif"));
+    }
+
+    #[test]
+    fn test_infer_mime_bmp() {
+        assert_eq!(infer_mime_from_base64_prefix("Qk0+AAAA"), Some("image/bmp"));
+    }
+
+    #[test]
+    fn test_infer_mime_unknown_returns_none() {
+        assert_eq!(infer_mime_from_base64_prefix("randomStuff"), None);
+    }
+
+    // --- I/O tests (Step 2.1) ---
+
+    mod io_tests {
+        use super::*;
+        use reqwest::Client;
+
+        fn make_client() -> Client {
+            Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .no_proxy()
+                .build()
+                .expect("client")
+        }
+
+        #[tokio::test]
+        async fn resolve_image_data_url_returns_raw_bytes() {
+            // 1×1 PNG: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+            let s = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+            let client = make_client();
+            let (bytes, mime) = resolve_image(s, &client, 10 * 1024 * 1024)
+                .await
+                .expect("resolve");
+            assert_eq!(mime, "image/png");
+            assert!(!bytes.is_empty());
+            assert_eq!(
+                &bytes[..8],
+                &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+            );
+        }
     }
 }

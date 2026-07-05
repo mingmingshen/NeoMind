@@ -78,6 +78,18 @@ impl From<neomind_storage::Error> for ToolError {
     }
 }
 
+// Convert from image_utils::ImageIoError
+impl From<crate::image_utils::ImageIoError> for ToolError {
+    fn from(err: crate::image_utils::ImageIoError) -> Self {
+        match err {
+            crate::image_utils::ImageIoError::InvalidArguments(s) => ToolError::InvalidArguments(s),
+            crate::image_utils::ImageIoError::PermissionDenied(s) => ToolError::PermissionDenied(s),
+            crate::image_utils::ImageIoError::Execution(s) => ToolError::Execution(s),
+            crate::image_utils::ImageIoError::Timeout => ToolError::Timeout,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
