@@ -652,24 +652,58 @@ fn apply_operation(
 }
 
 /// Encode the image to the requested format. Returns `(bytes, mime, extension)`.
-///
-/// Note: Task 15 will add JPEG alpha compositing (JPEG has no alpha channel).
-/// For now, if JPEG encoding fails because the image has an alpha channel, the
-/// error is surfaced to the caller.
 fn encode(
     img: &image::DynamicImage,
     fmt: OutputFormat,
 ) -> Result<(Vec<u8>, &'static str, &'static str)> {
     use image::ImageFormat;
-    let (format, mime, ext) = match fmt {
-        OutputFormat::Png => (ImageFormat::Png, "image/png", "png"),
-        OutputFormat::Jpeg => (ImageFormat::Jpeg, "image/jpeg", "jpeg"),
-        OutputFormat::Webp => (ImageFormat::WebP, "image/webp", "webp"),
-    };
     let mut buf = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut buf, format)
-        .map_err(|e| ToolError::Execution(format!("image encode ({}) failed: {}", ext, e)))?;
-    Ok((buf.into_inner(), mime, ext))
+    match fmt {
+        OutputFormat::Png => {
+            img.write_to(&mut buf, ImageFormat::Png)
+                .map_err(|e| ToolError::Execution(format!("png encode: {}", e)))?;
+            Ok((buf.into_inner(), "image/png", "png"))
+        }
+        OutputFormat::Jpeg => {
+            // JPEG has no alpha channel — composite onto white if any transparency.
+            let to_encode = if has_transparency(img) {
+                composite_onto_white(img)
+            } else {
+                img.clone()
+            };
+            to_encode
+                .write_to(&mut buf, ImageFormat::Jpeg)
+                .map_err(|e| ToolError::Execution(format!("jpeg encode: {}", e)))?;
+            Ok((buf.into_inner(), "image/jpeg", "jpeg"))
+        }
+        OutputFormat::Webp => match img.write_to(&mut buf, ImageFormat::WebP) {
+            Ok(()) => Ok((buf.into_inner(), "image/webp", "webp")),
+            Err(e) => {
+                tracing::warn!(error = %e, "webp encode failed, falling back to png");
+                buf.get_mut().clear();
+                img.write_to(&mut buf, ImageFormat::Png).map_err(|e2| {
+                    ToolError::Execution(format!("png fallback after webp fail: {}", e2))
+                })?;
+                Ok((buf.into_inner(), "image/png", "png"))
+            }
+        },
+    }
+}
+
+fn has_transparency(img: &image::DynamicImage) -> bool {
+    img.as_rgba8()
+        .map(|b| b.pixels().any(|p| p.0[3] < 255))
+        .unwrap_or(false)
+}
+
+fn composite_onto_white(img: &image::DynamicImage) -> image::DynamicImage {
+    let mut bg = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        img.width(),
+        img.height(),
+        image::Rgba([255, 255, 255, 255]),
+    ));
+    image::imageops::overlay(&mut bg, img, 0, 0);
+    bg
 }
 
 fn apply_crop(
@@ -1085,6 +1119,7 @@ fn apply_blur_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{DynamicImage, GenericImageView, RgbaImage};
 
     #[test]
     fn tool_name_and_category() {
@@ -1163,6 +1198,35 @@ mod tests {
             path
         );
         let _ = std::fs::remove_dir_all(&test_root);
+    }
+
+    #[test]
+    fn jpeg_output_composites_alpha_onto_white() {
+        // Fully transparent 10x10 image — would normally encode as black in JPEG.
+        let img = DynamicImage::ImageRgba8(RgbaImage::new(10, 10));
+        let (bytes, mime, _ext) = encode(&img, OutputFormat::Jpeg).unwrap();
+        assert_eq!(mime, "image/jpeg");
+        let decoded = image::load_from_memory(&bytes).unwrap();
+        // After compositing onto white, the top-left pixel must be near-white.
+        let p = decoded.get_pixel(0, 0);
+        assert!(
+            p[0] > 200 && p[1] > 200 && p[2] > 200,
+            "expected white background after alpha compositing, got {:?}",
+            p
+        );
+    }
+
+    #[test]
+    fn png_output_preserves_alpha() {
+        // PNG supports alpha — a transparent image should round-trip without
+        // being composited.
+        let img = DynamicImage::ImageRgba8(RgbaImage::new(10, 10));
+        let (bytes, mime, _ext) = encode(&img, OutputFormat::Png).unwrap();
+        assert_eq!(mime, "image/png");
+        let decoded = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap();
+        let p = decoded.get_pixel(0, 0);
+        // Alpha channel preserved (transparent).
+        assert_eq!(p[3], 0, "png should preserve alpha=0, got {:?}", p);
     }
 }
 
