@@ -1228,6 +1228,69 @@ mod tests {
         // Alpha channel preserved (transparent).
         assert_eq!(p[3], 0, "png should preserve alpha=0, got {:?}", p);
     }
+
+    /// Build a base64-encoded PNG data URL of the given dimensions.
+    fn make_test_png_data_url(w: u32, h: u32) -> String {
+        let img = image::RgbaImage::from_pixel(w, h, image::Rgba([0, 0, 0, 255]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::Png).unwrap();
+        let b64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, buf.into_inner());
+        format!("data:image/png;base64,{}", b64)
+    }
+
+    #[tokio::test]
+    async fn chain_image_edit_to_resolve_image_works() {
+        // Use current_dir()-rooted path (NOT tempfile::tempdir) — on macOS,
+        // tempdir() returns paths under /var/folders/... which image_utils's
+        // read_local_image blocklist rejects, breaking the chain.
+        let test_root = std::env::current_dir()
+            .unwrap()
+            .join("test-tmp-image-edit-chain");
+        std::fs::create_dir_all(&test_root).unwrap();
+        let tool = ImageEditTool::new(&test_root);
+
+        // 1. Build a base64 PNG data URL input.
+        let png_url = make_test_png_data_url(200, 200);
+
+        // 2. Run image_edit with a crop operation.
+        let args = serde_json::json!({
+            "image": png_url,
+            "operations": [{"type": "crop", "x": 10, "y": 10, "width": 100, "height": 80}],
+            "output_filename": "cropped.png"
+        });
+        let out = tool.execute(args).await.expect("execute should succeed");
+        let path_str = out.data["path"]
+            .as_str()
+            .expect("path field in response")
+            .to_string();
+
+        // 3. Path must be absolute.
+        assert!(
+            path_str.starts_with('/'),
+            "path must be absolute, got: {}",
+            path_str
+        );
+
+        // 4. resolve_image should accept the produced path (round-trip).
+        let client = reqwest::Client::new();
+        let (bytes, mime) = crate::image_utils::resolve_image(&path_str, &client, 10 * 1024 * 1024)
+            .await
+            .expect("resolve_image should accept the path");
+        assert_eq!(mime, "image/png");
+        assert!(!bytes.is_empty());
+
+        // 5. The reloaded image should have the cropped dimensions.
+        let reloaded = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(
+            reloaded.dimensions(),
+            (100, 80),
+            "cropped image should be 100x80"
+        );
+
+        // Cleanup.
+        let _ = std::fs::remove_dir_all(&test_root);
+    }
 }
 
 #[cfg(test)]
