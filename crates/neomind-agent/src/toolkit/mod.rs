@@ -6,6 +6,7 @@ pub mod error;
 pub mod extension_tools;
 pub mod file_edit;
 pub mod file_write;
+pub mod image_edit;
 pub mod memory_tool;
 pub mod path_validator;
 pub mod registry;
@@ -34,6 +35,8 @@ pub use memory_tool::MemoryTool;
 pub use file_edit::FileEditTool;
 pub use file_write::FileWriteTool;
 pub use vision::{VisionConfig, VisionTool};
+
+pub use image_edit::ImageEditTool;
 
 pub use web_fetch::WebFetchTool;
 
