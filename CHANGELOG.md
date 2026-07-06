@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.9.1] - 2026-07-06
 
 ### Overview
+
+This release bundles two release batches that landed under the same
+version (the previous `[0.9.1]` section was prepared but never
+tagged). The batch below covers extension ↔ agent streaming,
+per-session config, plugin UX, and a brand-new built-in
+`image_edit` tool. The earlier-prepared dashboard ordering + password
+show/hide work is preserved as a sub-section at the end.
 
 Three workstreams landed together because they all touch the
 extension ↔ agent streaming boundary:
@@ -162,11 +169,59 @@ like domain state still routes through the tool layer.
   reusable helper for multi-instance extensions to register base
   metric templates × runtime labels (e.g. `fps.cam1`).
 
+### Built-in `image_edit` tool
+
+A new agent tool that lets the LLM perform non-destructive image
+editing operations inline — drawing detection boxes, annotations,
+arrows, text, blurs, and crops — without delegating to an extension.
+Designed so a single tool call handles a multi-step pipeline.
+
+- **Pipeline executor** (`crates/neomind-agent/src/toolkit/image_edit.rs`)
+  — accepts `image` + `operations[]` + `output_format`. Operations
+  supported: `crop`, `draw_rect`, `draw_circle`, `draw_line`,
+  `draw_arrow`, `draw_polygon`, `draw_text`, `blur_rect`. Each
+  operation is validated before any pixel is touched
+  (bounds / zero-area / radius > 0 / polygon ≥ 3 vertices).
+- **Encode pipeline with alpha handling** — PNG preserves alpha
+  verbatim; JPEG composites onto white when the source has any
+  transparency (JPEG has no alpha channel); WebP attempts native
+  encode with a PNG fallback (full cursor reset, not just `clear()`).
+- **Output writer** — atomic write (temp + rename on same FS) to
+  `data/images/<uuid>.<ext>`. Filenames are UUID-based (122 bits
+  entropy) → unguessable → enables immutable HTTP cache. Path
+  traversal protected via canonicalize + starts_with on a
+  `current_dir().join()` base (avoids the macOS `/tmp` →
+  `/private/tmp` → `/var/` blocklist trap).
+- **`url` field on result** — the tool returns
+  `"/api/images/<uuid>.png"` so the LLM can embed it in markdown
+  replies (`![annotated](/api/images/foo.png)`), and the browser
+  fetches via the new public route.
+- **`GET /api/images/:filename`** (`crates/neomind-api/src/handlers/images.rs`)
+  — public route (intentional: markdown `<img>` cannot carry auth
+  headers). Safety: `is_safe_filename()` rejects `/`, `\`, `..`,
+  leading dots, null bytes; alphanumeric + `_-_-.` only; extension
+  whitelist (png/jpeg/webp/jpg). Symlink defense via canonicalize +
+  starts_with. 30-day immutable cache headers (`Cache-Control:
+  public, max-age=2592000, immutable`).
+- **`$cached:user_image` integration** — chat-uploaded images are
+  stored in `LargeDataCache` under the `user_image` key. The tool
+  description teaches the LLM to pass `$cached:user_image` as the
+  `image` argument; `resolve_cached_arguments` resolves the
+  reference to the full base64 data URL at call time.
+- **Privacy gate on auto-inject** — when the LLM omits the `image`
+  field entirely, defense-in-depth auto-inject from cache fires
+  **only** for tools in `IMAGE_AWARE_TOOLS` (`image_edit`, `vision`).
+  Prevents user-uploaded images from silently leaking into
+  `file_write` / `shell` / extension tools that log args verbatim.
+  Per-arg inject path (when the LLM does pass `image`) is unchanged.
+- **Single-call pipeline (no chaining)** — the description
+  explicitly discourages multi-call chaining; `operations_applied`
+  + `status: "completed"` fields in the result signal to the LLM
+  that the work is done in one call.
+
 ---
 
-## [0.9.1]
-
-### Overview
+### Earlier-prepared changes (UX polish)
 
 A **UX polish patch**: dashboard manual ordering lands as the first
 citizen of the dashboards model (sortable sidebar + tab bar), and
