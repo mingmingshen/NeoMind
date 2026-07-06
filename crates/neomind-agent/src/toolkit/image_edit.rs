@@ -320,6 +320,13 @@ impl Tool for ImageEditTool {
  another `image_edit` call.\n\n\
  Operations are applied in order. Coordinates are pixel-based, origin top-left, \
  Y-axis down — relative to the current image state (after any previous crop).\n\n\
+ HOW TO PROVIDE THE `image` ARGUMENT:\n\
+ - If the user uploaded an image to chat (it appears in your context): pass \
+   `\"image\": \"$cached:user_image\"`. The runtime replaces this with the \
+   actual image data. For additional uploaded images use `$cached:user_image_1`, \
+   `$cached:user_image_2`, etc.\n\
+ - Otherwise: a data URL (data:image/...;base64,...), http(s) URL, raw base64, \
+   or an absolute local file path (e.g. one returned by a previous image_edit call).\n\n\
  Operation types:\n\
  - crop: extract sub-region (x, y, width, height)\n\
  - draw_rect: rectangle outline or fill (x, y, width, height, color, stroke_width?, fill?)\n\
@@ -332,12 +339,11 @@ impl Tool for ImageEditTool {
  Colors: hex strings like #FF0000 (red) or #FF000080 (semi-transparent red).\n\n\
  DO NOT use this tool for:\n\
  - Analyzing image content — use `vision` instead.\n\
- - Images already in your context — they don't need re-loading.\n\
  - Generating images from scratch — this tool requires an existing image.\n\n\
  Common patterns:\n\
- - Annotate detections: [draw_rect(...), draw_text(label, x, y-20)]\n\
+ - Annotate a chat-uploaded detection: {\"image\": \"$cached:user_image\", \"operations\": [draw_rect(...), draw_text(label, x, y-20)]}\n\
  - Privacy masking: [blur_rect(face_region)]\n\
- - Region-focused analysis: image_edit(crop) -> vision(cropped path)"
+ - Region-focused analysis: image_edit(crop) -> vision(returned path)"
     }
 
     fn parameters(&self) -> Value {
@@ -347,7 +353,7 @@ impl Tool for ImageEditTool {
             "properties": {
                 "image": {
                     "type": "string",
-                    "description": "Source image: data URL (data:image/...;base64,...), http(s) URL, raw base64, or absolute local file path"
+                    "description": "Source image. Use \"$cached:user_image\" to reference the most recent image uploaded to chat by the user (the runtime auto-resolves this). Other accepted forms: data URL (data:image/...;base64,...), http(s) URL, raw base64, or absolute local file path returned by a previous image_edit call."
                 },
                 "operations": {
                     "type": "array",
