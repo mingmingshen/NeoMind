@@ -315,16 +315,23 @@ impl Tool for ImageEditTool {
     }
 
     fn description(&self) -> &str {
-        "Crop, draw on, or blur images. Returns an absolute file path under data/images/ \
- that can be passed to the `vision` tool's `image` parameter or chained into \
- another `image_edit` call.\n\n\
+        "Crop, draw on, or blur images in a SINGLE pipeline call. Returns an \
+ absolute file path under data/images/ that can be passed to the `vision` tool.\n\n\
+ IMPORTANT — ONE CALL HANDLES THE WHOLE PIPELINE:\n\
+ Pass ALL operations for a given image as a single `operations: [...]` array. \
+ The runtime applies them in order atomically. DO NOT chain multiple image_edit \
+ calls for the same logical task — that wastes rounds and overwrites prior \
+ results. Example: to crop AND draw a labeled rectangle, use ONE call with \
+ `operations: [crop(...), draw_rect(...), draw_text(...)]`, not three separate \
+ calls. Only call image_edit again if you genuinely need to inspect an \
+ intermediate result via vision first.\n\n\
  Operations are applied in order. Coordinates are pixel-based, origin top-left, \
  Y-axis down — relative to the current image state (after any previous crop).\n\n\
  HOW TO PROVIDE THE `image` ARGUMENT:\n\
  - If the user uploaded an image to chat (it appears in your context): pass \
    `\"image\": \"$cached:user_image\"`. The runtime replaces this with the \
    actual image data. For additional uploaded images use `$cached:user_image_1`, \
-   `$cached:user_image_2`, etc.\n\
+ `$cached:user_image_2`, etc.\n\
  - Otherwise: a data URL (data:image/...;base64,...), http(s) URL, raw base64, \
    or an absolute local file path (e.g. one returned by a previous image_edit call).\n\n\
  Operation types:\n\
@@ -339,11 +346,14 @@ impl Tool for ImageEditTool {
  Colors: hex strings like #FF0000 (red) or #FF000080 (semi-transparent red).\n\n\
  DO NOT use this tool for:\n\
  - Analyzing image content — use `vision` instead.\n\
- - Generating images from scratch — this tool requires an existing image.\n\n\
+ - Generating images from scratch — this tool requires an existing image.\n\
+ - Re-running the same operations because you can't see the result — the \
+ response includes `operations_applied` and the file IS written; if you need \
+ to verify visually, call `vision` with the returned path ONCE.\n\n\
  Common patterns:\n\
- - Annotate a chat-uploaded detection: {\"image\": \"$cached:user_image\", \"operations\": [draw_rect(...), draw_text(label, x, y-20)]}\n\
+ - Annotate a chat-uploaded detection in ONE call: {\"image\": \"$cached:user_image\", \"operations\": [draw_rect(...), draw_text(label, x, y-20)]}\n\
  - Privacy masking: [blur_rect(face_region)]\n\
- - Region-focused analysis: image_edit(crop) -> vision(returned path)"
+ - Region-focused analysis (2 tools, not 2 image_edit calls): image_edit(crop) then vision(returned path)"
     }
 
     fn parameters(&self) -> Value {
@@ -433,6 +443,8 @@ impl Tool for ImageEditTool {
             "height": img.height(),
             "size_bytes": out_bytes.len(),
             "image_type": mime,
+            "operations_applied": params.operations.len(),
+            "status": "success",
         });
         if params.include_base64 {
             let b64 =
