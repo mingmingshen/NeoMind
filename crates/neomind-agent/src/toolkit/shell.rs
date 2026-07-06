@@ -102,7 +102,12 @@ impl ShellTool {
                 let exe_dir = exe_dir.display().to_string();
                 match std::env::var_os("PATH") {
                     Some(existing) => {
-                        let new_path = format!("{}{}{}", exe_dir, path_delimiter(), existing.to_string_lossy());
+                        let new_path = format!(
+                            "{}{}{}",
+                            exe_dir,
+                            path_delimiter(),
+                            existing.to_string_lossy()
+                        );
                         cmd.env("PATH", new_path);
                     }
                     None => {
@@ -300,44 +305,38 @@ impl ShellTool {
         // on the child's PID, which is guaranteed to still refer to OUR
         // process because the Child handle owns that PID slot in tokio's
         // process table.
-        let mut guard = SubprocessGuard {
-            child: Some(child),
-        };
+        let mut guard = SubprocessGuard { child: Some(child) };
 
-        let result = tokio::time::timeout(
-            timeout,
-            async {
-                // Read stdout/stderr concurrently with wait(). Both pipes
-                // were taken above, so they live independently of the Child.
-                let stdout_fut = async {
-                    if let Some(mut s) = stdout_handle {
-                        let mut buf = Vec::new();
-                        s.read_to_end(&mut buf).await?;
-                        Ok::<_, std::io::Error>(buf)
-                    } else {
-                        Ok(Vec::new())
-                    }
-                };
-                let stderr_fut = async {
-                    if let Some(mut s) = stderr_handle {
-                        let mut buf = Vec::new();
-                        s.read_to_end(&mut buf).await?;
-                        Ok::<_, std::io::Error>(buf)
-                    } else {
-                        Ok(Vec::new())
-                    }
-                };
-                let (out_bytes, err_bytes) =
-                    tokio::try_join!(stdout_fut, stderr_fut)?;
-                let status = guard
-                    .child
-                    .as_mut()
-                    .ok_or_else(|| std::io::Error::other("child disarmed before wait"))?
-                    .wait()
-                    .await?;
-                Ok::<_, std::io::Error>((out_bytes, err_bytes, status))
-            },
-        )
+        let result = tokio::time::timeout(timeout, async {
+            // Read stdout/stderr concurrently with wait(). Both pipes
+            // were taken above, so they live independently of the Child.
+            let stdout_fut = async {
+                if let Some(mut s) = stdout_handle {
+                    let mut buf = Vec::new();
+                    s.read_to_end(&mut buf).await?;
+                    Ok::<_, std::io::Error>(buf)
+                } else {
+                    Ok(Vec::new())
+                }
+            };
+            let stderr_fut = async {
+                if let Some(mut s) = stderr_handle {
+                    let mut buf = Vec::new();
+                    s.read_to_end(&mut buf).await?;
+                    Ok::<_, std::io::Error>(buf)
+                } else {
+                    Ok(Vec::new())
+                }
+            };
+            let (out_bytes, err_bytes) = tokio::try_join!(stdout_fut, stderr_fut)?;
+            let status = guard
+                .child
+                .as_mut()
+                .ok_or_else(|| std::io::Error::other("child disarmed before wait"))?
+                .wait()
+                .await?;
+            Ok::<_, std::io::Error>((out_bytes, err_bytes, status))
+        })
         .await;
 
         match result {
@@ -792,6 +791,47 @@ impl ShellTool {
             _ => None,
         }
     }
+
+    /// Hint for "silent success" commands — exit 0 with empty stdout AND stderr.
+    ///
+    /// GUI launchers (`open`, `xdg-open`, `start`, `explorer`, `see`) and a
+    /// few other commands return no output on success. Without a hint the LLM
+    /// has no feedback to confirm the action took effect and tends to retry
+    /// with cosmetic variants (`open -a Preview`, `open -R`, etc.) hoping for
+    /// output that will never come. Each variant produces a different
+    /// dedup-signature so the cross-round dedup doesn't catch the loop either.
+    ///
+    /// Returns `Some(hint)` only when the command's first token is a known
+    /// silent-success launcher; `None` otherwise (so genuinely empty-output
+    /// commands like `mkdir` keep their plain result).
+    fn silent_success_hint(command: &str) -> Option<String> {
+        // Find the first non-env-assignment token. Skips `KEY=value` prefixes
+        // like `DISPLAY=:0` so the bare-command check lands on the real binary.
+        let first = command
+            .trim()
+            .split_whitespace()
+            .find(|t| !t.contains('='))?
+            .trim_matches('"');
+
+        const LAUNCHERS: &[&str] = &[
+            "open",      // macOS
+            "xdg-open",  // Linux
+            "gio",       // Linux GNOME (gio open)
+            "start",     // Windows (rare via sh -c, but covered)
+            "explorer",  // Windows
+            "see",       // macOS alternative
+            "launchctl", // macOS service loader (load/start substrings)
+        ];
+
+        if !LAUNCHERS.contains(&first) {
+            return None;
+        }
+
+        Some(format!(
+            "Command '{}' completed successfully with no output. This is expected for GUI-launching commands — the application was told to open, but you cannot see its window and cannot perceive the result by retrying. Do NOT call '{}' again or try variants (different flags, -a <app>, -R, etc.); they all return the same empty output. Move on to the next step of your task; if you needed to inspect the visual content, ask the user.",
+            first, first
+        ))
+    }
 }
 
 #[async_trait]
@@ -827,6 +867,13 @@ When the user asks for a domain-specific action, try the matching `neomind <doma
 
 ## Native System Commands
 Runs on host via `/bin/sh -c` (Unix) or `cmd /C` (Windows). Common tools available: ping, traceroute, curl, arp, nmap, ps, df, free, top, uptime, systemctl status, ls, cat, head, tail, grep, find, wc, arp-scan, avahi-browse, bluetoothctl, docker.
+
+## GUI-Launching Commands (IMPORTANT — do NOT loop)
+Commands like `open` (macOS), `xdg-open` (Linux), `start`/`explorer` (Windows), or any app launcher (`preview`, `code`, `safari`) launch a GUI window and return **only** `exit_code: 0` with **empty** stdout/stderr on success.
+
+- An empty-output success means "the launch was accepted" — it does NOT mean the window appeared, and you CANNOT see the window yourself.
+- **Call such a command exactly ONCE**, then move on with your task. Do NOT retry, do NOT try variants (`open -a Preview`, `open -R`, etc.) hoping for output — they all return the same empty result and you will never perceive the GUI.
+- If the user needs to inspect an image's pixels, ask them to look at their screen — do not try to "see" it yourself by re-running `open`.
 
 ## Execution Notes
 - Each command runs in a fresh process — no persistent shell state between calls.
@@ -931,6 +978,13 @@ Runs on host via `/bin/sh -c` (Unix) or `cmd /C` (Windows). Common tools availab
         if is_error {
             if let Some(hint) = Self::recovery_hint(command, &stdout, &stderr) {
                 result["suggestion"] = serde_json::Value::String(hint);
+            }
+        } else if stdout.is_empty() && stderr.is_empty() {
+            // Success but zero output — typical of GUI launchers (`open`,
+            // `xdg-open`, `start`, `explorer`). Without a hint the LLM tends to
+            // retry endlessly because it has no signal the action took effect.
+            if let Some(hint) = Self::silent_success_hint(command) {
+                result["note"] = serde_json::Value::String(hint);
             }
         }
 
@@ -1127,6 +1181,41 @@ mod tests {
         let tool = ShellTool::new(test_config());
         assert_eq!(tool.name(), "shell");
         assert!(matches!(tool.category(), ToolCategory::System));
+    }
+
+    #[test]
+    fn test_silent_success_hint_recognizes_gui_launchers() {
+        // macOS / Linux / Windows launchers all fire the hint.
+        let hint = ShellTool::silent_success_hint("open /tmp/x.png").unwrap();
+        assert!(hint.contains("open"));
+        assert!(hint.contains("Do NOT"));
+
+        assert!(ShellTool::silent_success_hint("xdg-open /tmp/x.png").is_some());
+        assert!(ShellTool::silent_success_hint("explorer C:\\\\Users").is_some());
+        assert!(ShellTool::silent_success_hint("start notepad").is_some());
+    }
+
+    #[test]
+    fn test_silent_success_hint_strips_env_prefix() {
+        // Env-var prefix should not defeat detection.
+        let hint = ShellTool::silent_success_hint("DISPLAY=:0 xdg-open /tmp/x.png");
+        assert!(hint.is_some());
+    }
+
+    #[test]
+    fn test_silent_success_hint_ignores_productive_commands() {
+        // `mkdir`, `rm`, `touch`, `cd` can legitimately produce no output;
+        // we do NOT attach a hint for them — only known GUI launchers.
+        assert!(ShellTool::silent_success_hint("mkdir foo").is_none());
+        assert!(ShellTool::silent_success_hint("touch /tmp/x").is_none());
+        assert!(ShellTool::silent_success_hint("true").is_none());
+        assert!(ShellTool::silent_success_hint("").is_none());
+    }
+
+    #[test]
+    fn test_silent_success_hint_matches_quoted_binary() {
+        // Shell quoting shouldn't trip up detection.
+        assert!(ShellTool::silent_success_hint("\"open\" /tmp/x.png").is_some());
     }
 
     // ====================================================================
