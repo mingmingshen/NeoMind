@@ -65,7 +65,8 @@
     "result": "结果",
     "roundTitle": "第 {{round}} 轮",
     "multiRoundTitle": "工具调用",
-    "rounds": "轮"
+    "rounds": "轮",
+    "toggleDetails": "展开/收起详情"
   },
   "connection": {
     "connected": "已连接",

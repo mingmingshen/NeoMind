@@ -65,7 +65,8 @@
     "result": "Result",
     "roundTitle": "Round {{round}}",
     "multiRoundTitle": "Tool Calls",
-    "rounds": "rounds"
+    "rounds": "rounds",
+    "toggleDetails": "Toggle details"
   },
   "connection": {
     "connected": "Connected",

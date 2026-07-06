@@ -1218,7 +1218,7 @@ export function ChatPage() {
                               {displayContent ? (
                                 <MarkdownMessage content={displayContent} variant="assistant" className="px-3" />
                               ) : isCurrentlyStreaming ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 px-3 py-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '0ms' }} />
                                   <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '150ms' }} />
                                   <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -1241,7 +1241,7 @@ export function ChatPage() {
                             {displayContent ? (
                               <MarkdownMessage content={displayContent} variant="assistant" className="px-3" />
                             ) : isCurrentlyStreaming ? (
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 px-3 py-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '0ms' }} />
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '150ms' }} />
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '300ms' }} />

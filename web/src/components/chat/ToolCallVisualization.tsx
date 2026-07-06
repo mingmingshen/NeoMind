@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils"
 import { textBody, textMini } from "@/design-system/tokens/typography"
 import type { ToolCall } from "@/types"
 import { BuildCard, parseBuildResponse } from "@/components/chat/BuildCard"
-import { IconButton } from "@/components/ui/button"
 
 // ─── Helpers ───
 
@@ -294,9 +293,17 @@ function ToolCallItem({
         )}
         <div className="flex-1" />
         {hasDetails && (
-          <IconButton onClick={() => setIsExpanded(!isExpanded)} className="text-muted-foreground/50 hover:bg-muted-30" size="sm">
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-180")} />
-          </IconButton>
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            // -mr-1 + p-1: pull the button's right edge out by 4px so the
+            // 16px chevron inside (centered with 4px right padding) lands
+            // at exactly parent_right - 12, matching ThinkingBlock /
+            // ToolProcessBlock / RoundContent chevrons.
+            className="-mr-1 p-1 rounded text-muted-foreground/50 hover:bg-muted-30 hover:text-muted-foreground shrink-0 transition-colors"
+            aria-label={t("toolCall.toggleDetails")}
+          >
+            <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", isExpanded && "rotate-180")} />
+          </button>
         )}
       </div>
       {isExpanded && hasDetails && (
