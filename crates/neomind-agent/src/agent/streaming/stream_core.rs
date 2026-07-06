@@ -835,7 +835,12 @@ pub async fn process_stream_events_with_safeguards(
                 // Collect into owned tuples to avoid lifetime issues with async_stream
                 let tool_inputs: Vec<(String, serde_json::Value)> = tool_calls_to_execute
                     .iter()
-                    .map(|tc| (tc.name.clone(), resolve_cached_arguments(&tc.arguments, &large_cache)))
+                    .map(|tc| {
+                        (
+                            tc.name.clone(),
+                            resolve_cached_arguments(&tc.arguments, &large_cache, &tc.name),
+                        )
+                    })
                     .collect();
 
                 let tool_futures = futures::stream::iter(tool_inputs.into_iter().map(|(name, arguments)| {

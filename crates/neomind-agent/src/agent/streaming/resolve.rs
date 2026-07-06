@@ -3,6 +3,12 @@ use super::super::types::LargeDataCache;
 /// Argument names that typically hold image/base64 data.
 const IMAGE_ARG_NAMES: &[&str] = &["image", "image_base64", "base64_data", "image_data", "img"];
 
+/// Tools that legitimately consume an image argument. The omitted-field
+/// auto-inject below is gated on this list to prevent leaking user-uploaded
+/// images into tools that have nothing to do with images (e.g. `file_write`,
+/// `shell`, extension tools that log arguments).
+const IMAGE_AWARE_TOOLS: &[&str] = &["image_edit", "vision"];
+
 /// Resolve `$cached:tool_name` references in tool arguments by replacing them
 /// with the full cached data. Also **auto-injects** cached image data for any
 /// image-related argument — the LLM cannot reliably pass binary image data, so
@@ -12,6 +18,7 @@ const IMAGE_ARG_NAMES: &[&str] = &["image", "image_base64", "base64_data", "imag
 pub(crate) fn resolve_cached_arguments(
     arguments: &serde_json::Value,
     cache: &LargeDataCache,
+    tool_name: &str,
 ) -> serde_json::Value {
     match arguments {
         // Explicit $cached: reference → resolve
@@ -32,7 +39,7 @@ pub(crate) fn resolve_cached_arguments(
             let mut resolved: serde_json::Map<String, serde_json::Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let resolved_val = resolve_cached_arguments(v, cache);
+                    let resolved_val = resolve_cached_arguments(v, cache, tool_name);
                     // Auto-injection for image arguments:
                     // The LLM cannot reliably pass binary image data — it will copy
                     // truncated previews, output MIME types, or invent values.
@@ -63,12 +70,18 @@ pub(crate) fn resolve_cached_arguments(
             // inject it under the canonical `image` key. Without this, tools
             // like `image_edit` fail with "missing field `image`" before any
             // tool-specific logic runs.
-            if !resolved
-                .keys()
-                .any(|k| IMAGE_ARG_NAMES.contains(&k.as_str()))
+            //
+            // CRITICAL: gated on `IMAGE_AWARE_TOOLS` so user-uploaded images
+            // don't leak into tools that have no business receiving image data
+            // (could cause silent privacy leaks via tool arg logging).
+            if IMAGE_AWARE_TOOLS.contains(&tool_name)
+                && !resolved
+                    .keys()
+                    .any(|k| IMAGE_ARG_NAMES.contains(&k.as_str()))
             {
                 if let Some((image_data, source)) = cache.get_latest_image() {
                     tracing::info!(
+                        tool = %tool_name,
                         source = %source,
                         injected_bytes = image_data.len(),
                         "Auto-injected `image` field — LLM omitted all image args but cached user image exists"
@@ -80,7 +93,7 @@ pub(crate) fn resolve_cached_arguments(
         }
         serde_json::Value::Array(arr) => serde_json::Value::Array(
             arr.iter()
-                .map(|v| resolve_cached_arguments(v, cache))
+                .map(|v| resolve_cached_arguments(v, cache, tool_name))
                 .collect(),
         ),
         other => other.clone(),
@@ -105,7 +118,7 @@ mod tests {
     fn test_resolve_cached_arguments_passthrough() {
         let cache = LargeDataCache::new();
         let args = serde_json::json!({"name": "test", "count": 42});
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
         assert_eq!(resolved["name"], "test");
         assert_eq!(resolved["count"], 42);
     }
@@ -114,7 +127,7 @@ mod tests {
     fn test_resolve_cached_arguments_missing_ref() {
         let cache = LargeDataCache::new();
         let args = serde_json::json!("$cached:nonexistent");
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
         // Should pass through as-is when ref not found
         assert_eq!(resolved, serde_json::json!("$cached:nonexistent"));
     }
@@ -123,7 +136,7 @@ mod tests {
     fn test_http_urls_passed_through() {
         let cache = LargeDataCache::new();
         let args = serde_json::json!({"image": "https://example.com/img.png"});
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
         assert_eq!(resolved["image"], "https://example.com/img.png");
     }
 
@@ -150,7 +163,7 @@ mod tests {
         let args = serde_json::json!({
             "operations": [{"type": "crop", "x": 0, "y": 0, "width": 10, "height": 10}]
         });
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
 
         // `image` should now be present, with the cached data URL.
         assert!(
@@ -166,6 +179,27 @@ mod tests {
         );
     }
 
+    /// PRIVACY REGRESSION: a tool that is NOT image-aware (e.g. file_write,
+    /// shell, extension tools) must NOT have a cached user image silently
+    /// injected into its arguments. Such tools may log args verbatim, which
+    /// would leak the user's uploaded image as base64 in their logs.
+    #[test]
+    fn test_no_injection_for_non_image_aware_tool() {
+        let mut cache = LargeDataCache::new();
+        let big_b64: String = "P".repeat(40_000);
+        let data_url = format!("data:image/png;base64,{}", big_b64);
+        cache.store("user_image", &data_url);
+
+        // LLM called file_write with no image arg.
+        let args = serde_json::json!({"path": "/tmp/x", "content": "hi"});
+        let resolved = resolve_cached_arguments(&args, &cache, "file_write");
+        assert!(
+            resolved.get("image").is_none(),
+            "non-image-aware tool must NOT receive auto-injected image data; got: {}",
+            resolved
+        );
+    }
+
     /// Sanity: when LLM already provided an `image` arg (non-URL), the inject
     /// path still overwrites it with the cached value — this is the existing
     /// behavior and the new "missing field" branch must not interfere.
@@ -178,7 +212,7 @@ mod tests {
 
         // LLM passed a garbage/truncated preview.
         let args = serde_json::json!({"image": "data:image/png;base64,AAAA"});
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
         let injected = resolved["image"].as_str().unwrap();
         assert!(
             injected.len() > 100,
@@ -196,7 +230,7 @@ mod tests {
         cache.store("user_image", &data_url);
 
         let args = serde_json::json!({"image": "https://example.com/photo.jpg"});
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
         assert_eq!(resolved["image"], "https://example.com/photo.jpg");
     }
 
@@ -205,7 +239,7 @@ mod tests {
     fn test_no_injection_when_cache_empty() {
         let cache = LargeDataCache::new();
         let args = serde_json::json!({"operations": []});
-        let resolved = resolve_cached_arguments(&args, &cache);
+        let resolved = resolve_cached_arguments(&args, &cache, "image_edit");
         // `image` should NOT be auto-added.
         assert!(resolved.get("image").is_none());
     }

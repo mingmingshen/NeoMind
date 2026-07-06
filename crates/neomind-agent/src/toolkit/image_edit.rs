@@ -705,7 +705,10 @@ fn encode(
             Ok(()) => Ok((buf.into_inner(), "image/webp", "webp")),
             Err(e) => {
                 tracing::warn!(error = %e, "webp encode failed, falling back to png");
-                buf.get_mut().clear();
+                // Replace the cursor entirely. `clear()` only empties the underlying
+                // Vec but leaves the cursor position at N — subsequent writes would
+                // prepend zero-padding up to N before emitting any new bytes.
+                buf = std::io::Cursor::new(Vec::new());
                 img.write_to(&mut buf, ImageFormat::Png).map_err(|e2| {
                     ToolError::Execution(format!("png fallback after webp fail: {}", e2))
                 })?;

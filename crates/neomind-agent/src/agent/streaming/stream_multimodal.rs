@@ -265,7 +265,12 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             // Execute tool calls with bounded concurrency (max 6 parallel)
             let tool_inputs: Vec<(String, serde_json::Value)> = tool_calls_to_execute
                 .iter()
-                .map(|tc| (tc.name.clone(), resolve_cached_arguments(&tc.arguments, &large_cache)))
+                .map(|tc| {
+                    (
+                        tc.name.clone(),
+                        resolve_cached_arguments(&tc.arguments, &large_cache, &tc.name),
+                    )
+                })
                 .collect();
 
             let tool_futures = futures::stream::iter(tool_inputs.into_iter().map(|(name, arguments)| {
@@ -420,7 +425,12 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                         };
                         let cont_inputs: Vec<(String, serde_json::Value)> = cont_tool_calls
                             .iter()
-                            .map(|tc| (tc.name.clone(), resolve_cached_arguments(&tc.arguments, &large_cache_cont)))
+                            .map(|tc| {
+                                (
+                                    tc.name.clone(),
+                                    resolve_cached_arguments(&tc.arguments, &large_cache_cont, &tc.name),
+                                )
+                            })
                             .collect();
                         let cont_futures = futures::stream::iter(cont_inputs.into_iter().map(|(name, arguments)| {
                             let tools_clone = tools.clone();
