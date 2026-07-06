@@ -51,7 +51,12 @@ const MARKDOWN_COMPONENTS: Components = {
   },
   a: ({ node, className, children, href, ...props }) => (
     <a
-      className={cn("text-primary hover:underline", className)}
+      // Inherit color from the surrounding text so links stay readable on
+      // every bubble background. In light theme `--primary` is near-white,
+      // which collides with the user bubble's `--msg-user-bg` (also
+      // near-white) — hardcoding `text-primary` here made user-message URLs
+      // invisible. Rely on underline for link affordance instead of color.
+      className={cn("text-inherit underline underline-offset-2 hover:opacity-80", className)}
       href={href as string}
       target="_blank"
       rel="noopener noreferrer"
@@ -89,7 +94,12 @@ export const MarkdownMessage = React.memo<MarkdownMessageProps>(
           "prose-p:leading-relaxed prose-p:my-1",
           "prose-headings:font-semibold prose-headings:my-2",
           "prose-h1:text-[15px] prose-h2:text-[13px] prose-h3:text-[12px]",
-          "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+          // Links inherit text color (see MARKDOWN_COMPONENTS.a) so they stay
+          // readable on both user and assistant bubble backgrounds. Underline
+          // alone provides the link affordance — do NOT set a prose-a color
+          // here, it would override the inherit and re-introduce the
+          // light-theme invisibility bug on user bubbles.
+          "prose-a:text-inherit prose-a:underline prose-a:underline-offset-2",
           "prose-strong:font-semibold",
           "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono",  // text-[12px] kept for Tailwind prose modifier
           "prose-code:break-all prose-code:whitespace-pre-wrap",

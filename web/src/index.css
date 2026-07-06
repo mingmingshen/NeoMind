@@ -1194,7 +1194,14 @@ html {
   color: var(--msg-ai-text) !important;
 }
 
-/* Keep links readable with primary color */
+/* Links: inherit the per-bubble text color so they stay readable on every
+ * background. We previously hardcoded `var(--primary)`, but in light theme
+ * `--primary` is near-white (oklch 0.95) which collides with the user
+ * bubble's `--msg-user-bg` (also near-white, oklch 0.97) — making URLs in
+ * user messages invisible. The MarkdownMessage component supplies the
+ * underline affordance via Tailwind classes; color just needs to contrast
+ * with the bubble, which `inherit`/`currentColor` guarantees because the
+ * surrounding prose color is already themed per variant above. */
 .message-bubble-user .prose a,
 .message-bubble-user .prose * a,
 .message-bubble-assistant .prose a,
@@ -1204,8 +1211,10 @@ html {
 .dark .message-bubble-assistant .dark\:prose-invert a,
 .dark .message-bubble-assistant .dark\:prose-invert * a,
 .prose[data-variant="user"] a,
-.prose[data-variant="assistant"] a {
-  color: var(--primary) !important;
+.prose[data-variant="user"] * a,
+.prose[data-variant="assistant"] a,
+.prose[data-variant="assistant"] * a {
+  color: inherit !important;
 }
 
 /* Code blocks background - keep readable */
