@@ -154,7 +154,7 @@ export function MergedMessageList({
                 {/* Streaming content with blinking cursor */}
                 {streamingContent ? (
                   <div>
-                    <MarkdownMessage content={streamingContent} />
+                    <MarkdownMessage content={streamingContent} className="px-3" />
                     <span className="inline-block w-0.5 h-[1.1em] ml-0.5 bg-current align-text-bottom animate-pulse" />
                   </div>
                 ) : !streamingThinking && streamingToolCalls.length === 0 && (

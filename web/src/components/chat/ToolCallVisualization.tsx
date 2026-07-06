@@ -179,7 +179,7 @@ export function ToolProcessBlock({
             const roundBg = idx % 2 === 1 ? "bg-muted-30" : ""
 
             return (
-              <div key={step} className={cn("rounded-lg mx-1 mb-1", roundBg)}>
+              <div key={step} className={cn("rounded-lg mb-1", roundBg)}>
                 {/* Round content (intermediate results) */}
                 {roundContent && (
                   <RoundContent content={roundContent} />

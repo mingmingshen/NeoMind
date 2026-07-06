@@ -25,7 +25,6 @@ export {
 } from './TaskProgress'
 
 // New chat components
-export { ChatContainer } from './ChatContainer'
 export { MergedMessageList } from './MergedMessageList'
 export { InputSuggestions } from './InputSuggestions'
 export { WelcomeArea } from './WelcomeArea'

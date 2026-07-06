@@ -1216,7 +1216,7 @@ export function ChatPage() {
                                 isStreaming={isCurrentlyStreaming}
                               />
                               {displayContent ? (
-                                <MarkdownMessage content={displayContent} variant="assistant" />
+                                <MarkdownMessage content={displayContent} variant="assistant" className="px-3" />
                               ) : isCurrentlyStreaming ? (
                                 <div className="flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1239,7 +1239,7 @@ export function ChatPage() {
                               />
                             )}
                             {displayContent ? (
-                              <MarkdownMessage content={displayContent} variant="assistant" />
+                              <MarkdownMessage content={displayContent} variant="assistant" className="px-3" />
                             ) : isCurrentlyStreaming ? (
                               <div className="flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1253,7 +1253,7 @@ export function ChatPage() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-muted-foreground mt-2 px-1">
+                    <p className="text-xs text-muted-foreground mt-2 px-3">
                       {formatTimestamp(message.timestamp, false)}
                     </p>
                   </div>

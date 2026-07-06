@@ -51,11 +51,11 @@ export const MessageItem = React.memo<MessageItemProps>(
 
             {/* Content */}
             {message.content && (
-              <MarkdownMessage content={message.content} variant="assistant" />
+              <MarkdownMessage content={message.content} variant="assistant" className="px-3" />
             )}
 
             {/* Timestamp */}
-            <p className="text-xs text-muted-foreground mt-1.5 px-1">
+            <p className="text-xs text-muted-foreground mt-1.5 px-3">
               {formatTimestamp(message.timestamp, false)}
             </p>
           </div>

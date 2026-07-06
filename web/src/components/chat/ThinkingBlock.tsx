@@ -85,7 +85,7 @@ export function ThinkingBlock({
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-muted-30 transition-colors"
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-muted-30 transition-colors"
       >
         <BrainCircuit className={cn(
           "h-4 w-4",
@@ -114,7 +114,7 @@ export function ThinkingBlock({
 
       {/* Content */}
       {isExpanded && (
-        <div className="px-4 pb-3">
+        <div className="px-3 pb-3">
           {hasRoundThinking ? (
             <PerRoundThinking rounds={roundThinking!} isStreaming={isStreaming} />
           ) : (
