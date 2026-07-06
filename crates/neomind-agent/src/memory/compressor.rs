@@ -149,10 +149,7 @@ mod tests {
             "kept content must be within char budget, got {} chars",
             result.content.chars().count()
         );
-        assert_eq!(
-            result.lines_removed, 1,
-            "should drop exactly the 3rd line"
-        );
+        assert_eq!(result.lines_removed, 1, "should drop exactly the 3rd line");
         // First two lines preserved
         assert_eq!(result.content, format!("{}\n{}", line, line));
     }

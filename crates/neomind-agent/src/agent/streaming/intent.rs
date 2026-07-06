@@ -185,7 +185,7 @@ pub(crate) fn build_list_only_dead_end_prompt(
 
     msg.push_str(
         "DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
-        OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action."
+        OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action.",
     );
     Some(msg)
 }

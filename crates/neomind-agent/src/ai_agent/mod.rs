@@ -220,13 +220,12 @@ impl AiAgentManager {
         // runs with the same triggering context as a real event (instead of
         // having to discover its own inputs via tool calls).
         use neomind_storage::ScheduleType;
-        let synthetic_event = if agent.schedule.schedule_type == ScheduleType::Event
-            && invocation_input.is_none()
-        {
-            self.executor.build_synthetic_event_data(&agent).await
-        } else {
-            None
-        };
+        let synthetic_event =
+            if agent.schedule.schedule_type == ScheduleType::Event && invocation_input.is_none() {
+                self.executor.build_synthetic_event_data(&agent).await
+            } else {
+                None
+            };
 
         // Execute the agent with optional invocation input
         let result = self
@@ -523,7 +522,10 @@ impl AiAgentManager {
                 }
             }
 
-            tracing::info!(reset_count = count, "Stale Executing agents reset to Active");
+            tracing::info!(
+                reset_count = count,
+                "Stale Executing agents reset to Active"
+            );
         }
 
         // Reactivate agents in Error status so they get rescheduled.
@@ -578,7 +580,10 @@ impl AiAgentManager {
             }
         }
 
-        tracing::info!(reactivated_count = count, "Error agents reactivated to Active");
+        tracing::info!(
+            reactivated_count = count,
+            "Error agents reactivated to Active"
+        );
     }
 
     /// Stop the scheduler.

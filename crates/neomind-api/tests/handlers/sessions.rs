@@ -140,7 +140,9 @@ mod tests {
         let state = create_test_server_state().await;
 
         // First create a session
-        let create_result = create_session_handler(State(state.clone()), None).await.unwrap();
+        let create_result = create_session_handler(State(state.clone()), None)
+            .await
+            .unwrap();
         let session_id = create_result
             .0
             .data

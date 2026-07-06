@@ -291,8 +291,9 @@ impl TransformEventService {
                                                     .lock()
                                                     .expect("exec_flush poisoned");
                                                 let last = map.get(tid).copied();
-                                                let do_flush =
-                                                    last.is_none_or(|t| now.duration_since(t) >= FLUSH_INTERVAL);
+                                                let do_flush = last.is_none_or(|t| {
+                                                    now.duration_since(t) >= FLUSH_INTERVAL
+                                                });
                                                 if do_flush {
                                                     map.insert(tid.to_string(), now);
                                                 }
@@ -386,7 +387,8 @@ impl TransformEventService {
                                             }
 
                                             // Secondary: original device namespace (for REST API discovery)
-                                            let device_source_id = format!("device:{}", device_id_clone);
+                                            let device_source_id =
+                                                format!("device:{}", device_id_clone);
                                             if let Err(e) = time_series_storage_inner
                                                 .write(
                                                     &device_source_id,
@@ -414,16 +416,39 @@ impl TransformEventService {
                                             // so that rules referencing `transform:{transform_id}:{metric}` fire.
                                             // Both the DeviceMetric event and the time-series storage now use
                                             // the "transform:{id}" namespace, consistent with rule data source filters.
-                                            if let Some(ref transform_id) = transformed_metric.transform_id {
+                                            if let Some(ref transform_id) =
+                                                transformed_metric.transform_id
+                                            {
                                                 let rv = match &transformed_metric.value {
-                                                    MetricValue::Float(v) => neomind_rules::RuleValue::Number(*v),
-                                                    MetricValue::Integer(v) => neomind_rules::RuleValue::Number(*v as f64),
-                                                    MetricValue::Boolean(v) => neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 }),
-                                                    MetricValue::String(s) => neomind_rules::RuleValue::Text(s.clone()),
-                                                    MetricValue::Json(v) => neomind_rules::RuleValue::Text(v.to_string()),
+                                                    MetricValue::Float(v) => {
+                                                        neomind_rules::RuleValue::Number(*v)
+                                                    }
+                                                    MetricValue::Integer(v) => {
+                                                        neomind_rules::RuleValue::Number(*v as f64)
+                                                    }
+                                                    MetricValue::Boolean(v) => {
+                                                        neomind_rules::RuleValue::Number(if *v {
+                                                            1.0
+                                                        } else {
+                                                            0.0
+                                                        })
+                                                    }
+                                                    MetricValue::String(s) => {
+                                                        neomind_rules::RuleValue::Text(s.clone())
+                                                    }
+                                                    MetricValue::Json(v) => {
+                                                        neomind_rules::RuleValue::Text(
+                                                            v.to_string(),
+                                                        )
+                                                    }
                                                 };
                                                 value_provider_clone
-                                                    .update_rule_value("transform", transform_id, &transformed_metric.metric, rv.clone())
+                                                    .update_rule_value(
+                                                        "transform",
+                                                        transform_id,
+                                                        &transformed_metric.metric,
+                                                        rv.clone(),
+                                                    )
                                                     .await;
                                                 let ds = neomind_core::datasource::DataSourceId::transform(transform_id, &transformed_metric.metric);
                                                 rule_engine_clone.on_data_update(&ds, rv).await;

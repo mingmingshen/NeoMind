@@ -1372,9 +1372,9 @@ impl ExtensionCapabilityProvider for AgentCapabilityProvider {
 // Chat Stream Capability Provider
 // ============================================================================
 
-use neomind_agent::session::SessionManager;
-use neomind_agent::agent::types::AgentEvent;
 use futures::StreamExt;
+use neomind_agent::agent::types::AgentEvent;
+use neomind_agent::session::SessionManager;
 use neomind_core::event::NeoMindEvent;
 
 /// Late-binding holder for SessionManager.
@@ -1447,13 +1447,11 @@ impl ChatStreamCapabilityProvider {
         // Resolve SessionManager via late-binding holder.
         let session_manager = {
             let guard = self.session_manager.read().await;
-            guard
-                .clone()
-                .ok_or_else(|| {
-                    CapabilityError::ProviderError(
-                        "SessionManager not initialized yet (still starting up)".to_string(),
-                    )
-                })?
+            guard.clone().ok_or_else(|| {
+                CapabilityError::ProviderError(
+                    "SessionManager not initialized yet (still starting up)".to_string(),
+                )
+            })?
         };
 
         // Pick or create session.
@@ -1488,21 +1486,25 @@ impl ChatStreamCapabilityProvider {
                             "ChatStream: process_message_events failed"
                         );
                         // Publish a terminal Error chunk so subscribers don't hang...
-                        let _ = bus.publish(NeoMindEvent::AgentStreamChunk {
-                            session_id: sid.clone(),
-                            chunk: serde_json::json!({
-                                "type": "Error",
-                                "message": format!("upstream error: {}", e),
-                            }),
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        }).await;
+                        let _ = bus
+                            .publish(NeoMindEvent::AgentStreamChunk {
+                                session_id: sid.clone(),
+                                chunk: serde_json::json!({
+                                    "type": "Error",
+                                    "message": format!("upstream error: {}", e),
+                                }),
+                                timestamp: chrono::Utc::now().timestamp_millis(),
+                            })
+                            .await;
                         // ...then the authoritative terminator.
-                        let _ = bus.publish(NeoMindEvent::AgentStreamEnd {
-                            session_id: sid.clone(),
-                            reason: "error".into(),
-                            error: Some(format!("upstream: {}", e)),
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        }).await;
+                        let _ = bus
+                            .publish(NeoMindEvent::AgentStreamEnd {
+                                session_id: sid.clone(),
+                                reason: "error".into(),
+                                error: Some(format!("upstream: {}", e)),
+                                timestamp: chrono::Utc::now().timestamp_millis(),
+                            })
+                            .await;
                         return Ok::<(), ()>(());
                     }
                 };
@@ -1512,12 +1514,18 @@ impl ChatStreamCapabilityProvider {
                 while let Some(event) = s.next().await {
                     event_count += 1;
                     let chunk_json = agent_event_to_json(&event);
-                    let chunk_type = chunk_json.get("type").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-                    let delivered = bus.publish(NeoMindEvent::AgentStreamChunk {
-                        session_id: sid.clone(),
-                        chunk: chunk_json,
-                        timestamp: chrono::Utc::now().timestamp_millis(),
-                    }).await;
+                    let chunk_type = chunk_json
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                        .to_string();
+                    let delivered = bus
+                        .publish(NeoMindEvent::AgentStreamChunk {
+                            session_id: sid.clone(),
+                            chunk: chunk_json,
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        })
+                        .await;
                     if event_count <= 3 || !delivered {
                         tracing::info!(
                             session_id = %sid,
@@ -1538,14 +1546,17 @@ impl ChatStreamCapabilityProvider {
                 // Subscribers (e.g. voice-assistant) MUST clean up state on this,
                 // not on chunk-internal end markers — reasoning models/tool loops
                 // can emit intermediate end-like chunks while the stream continues.
-                let _ = bus.publish(NeoMindEvent::AgentStreamEnd {
-                    session_id: sid.clone(),
-                    reason: "completed".into(),
-                    error: None,
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                }).await;
+                let _ = bus
+                    .publish(NeoMindEvent::AgentStreamEnd {
+                        session_id: sid.clone(),
+                        reason: "completed".into(),
+                        error: None,
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    })
+                    .await;
                 Ok(())
-            }.await;
+            }
+            .await;
             let _ = result;
         });
 
@@ -1704,10 +1715,7 @@ impl ChatSessionCapabilityProvider {
         }
 
         let session_id = mgr
-            .get_or_create_session_with_options(
-                existing.map(|s| s.to_string()),
-                opts,
-            )
+            .get_or_create_session_with_options(existing.map(|s| s.to_string()), opts)
             .await;
         let created = existing.is_none();
         tracing::info!(
@@ -1862,14 +1870,23 @@ fn agent_event_to_json(event: &AgentEvent) -> Value {
     match event {
         AgentEvent::Thinking { content } => json!({ "type": "Thinking", "content": content }),
         AgentEvent::Content { content } => json!({ "type": "Content", "content": content }),
-        AgentEvent::ToolCallStart { tool, arguments, round } => {
+        AgentEvent::ToolCallStart {
+            tool,
+            arguments,
+            round,
+        } => {
             let mut v = json!({ "type": "ToolCallStart", "tool": tool, "arguments": arguments });
             if let Some(r) = round {
                 v["round"] = json!(r);
             }
             v
         }
-        AgentEvent::ToolCallEnd { tool, result, success, round } => {
+        AgentEvent::ToolCallEnd {
+            tool,
+            result,
+            success,
+            round,
+        } => {
             let mut v = json!({
                 "type": "ToolCallEnd",
                 "tool": tool,
@@ -1883,7 +1900,12 @@ fn agent_event_to_json(event: &AgentEvent) -> Value {
         }
         AgentEvent::Error { message } => json!({ "type": "Error", "message": message }),
         AgentEvent::Warning { message } => json!({ "type": "Warning", "message": message }),
-        AgentEvent::Intent { category, display_name, confidence, keywords } => json!({
+        AgentEvent::Intent {
+            category,
+            display_name,
+            confidence,
+            keywords,
+        } => json!({
             "type": "Intent",
             "category": category,
             "displayName": display_name,
@@ -1899,13 +1921,20 @@ fn agent_event_to_json(event: &AgentEvent) -> Value {
             }
             v
         }
-        AgentEvent::Progress { message, stage, elapsed_ms, .. } => json!({
+        AgentEvent::Progress {
+            message,
+            stage,
+            elapsed_ms,
+            ..
+        } => json!({
             "type": "Progress",
             "message": message,
             "stage": stage,
             "elapsed_ms": elapsed_ms,
         }),
-        AgentEvent::Heartbeat { timestamp } => json!({ "type": "Heartbeat", "timestamp": timestamp }),
+        AgentEvent::Heartbeat { timestamp } => {
+            json!({ "type": "Heartbeat", "timestamp": timestamp })
+        }
     }
 }
 
@@ -1998,7 +2027,10 @@ pub async fn register_builtin_providers_with_dispatcher(
         event_bus_for_chat,
     ));
     context
-        .register_provider("neomind-api::chat_session".to_string(), chat_session_provider)
+        .register_provider(
+            "neomind-api::chat_session".to_string(),
+            chat_session_provider,
+        )
         .await;
 
     tracing::info!("Registered all built-in capability providers (9 providers, 20 capabilities)");
@@ -2100,10 +2132,9 @@ impl CompositeCapabilityProvider {
             session_manager_holder.clone(),
             event_bus_for_chat.clone(),
         ));
-        composite.providers.insert(
-            "neomind-api::chat_stream".to_string(),
-            chat_stream_provider,
-        );
+        composite
+            .providers
+            .insert("neomind-api::chat_stream".to_string(), chat_stream_provider);
 
         // ChatSession provider (Phase 2: persistent session-stream + direct
         // routing). Shares the same session_manager holder + event_bus as

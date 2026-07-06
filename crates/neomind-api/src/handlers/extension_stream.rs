@@ -58,8 +58,8 @@ use crate::handlers::common::{ok, HandlerResult};
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 use neomind_core::extension::{
-    DataChunk, PushOutputMessage, SessionStats, StreamCapability,
-    StreamDataType, StreamDirection, StreamError, StreamMode, StreamSession,
+    DataChunk, PushOutputMessage, SessionStats, StreamCapability, StreamDataType, StreamDirection,
+    StreamError, StreamMode, StreamSession,
 };
 
 // ============================================================================
@@ -758,7 +758,8 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                         total_frames: stats.input_chunks,
                                                         duration_ms: (chrono::Utc::now()
                                                             .timestamp_millis()
-                                                            - stats.last_activity) as u64,
+                                                            - stats.last_activity)
+                                                            as u64,
                                                         stats: SessionStatsDto::from(&stats),
                                                     };
                                                     if let Ok(json) = serde_json::to_string(&msg) {

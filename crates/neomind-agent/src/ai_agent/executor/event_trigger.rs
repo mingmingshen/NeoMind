@@ -477,10 +477,7 @@ impl AgentExecutor {
     /// of event agents run with the same triggering context as a real event.
     ///
     /// Returns `None` if time-series storage is unavailable or no candidate has data.
-    pub async fn build_synthetic_event_data(
-        &self,
-        agent: &AiAgent,
-    ) -> Option<EventTriggerData> {
+    pub async fn build_synthetic_event_data(&self, agent: &AiAgent) -> Option<EventTriggerData> {
         let ts = self.time_series_storage.as_ref()?;
         let candidates = Self::extract_trigger_candidates(agent);
 

@@ -525,7 +525,10 @@ pub async fn get_memory_file(
     if !matches!(target.as_str(), "user" | "knowledge" | "procedures") {
         return error_response(
             StatusCode::BAD_REQUEST,
-            format!("Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'", target),
+            format!(
+                "Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'",
+                target
+            ),
         );
     }
 
@@ -561,7 +564,10 @@ pub async fn update_memory_file(
     if !matches!(target.as_str(), "user" | "knowledge" | "procedures") {
         return error_response(
             StatusCode::BAD_REQUEST,
-            format!("Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'", target),
+            format!(
+                "Invalid target: {}. Must be 'user', 'knowledge', or 'procedures'",
+                target
+            ),
         );
     }
 

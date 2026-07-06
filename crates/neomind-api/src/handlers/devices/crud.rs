@@ -89,10 +89,11 @@ pub async fn list_devices_handler(
     // Use the globally-configured offline timeout (instead of hardcoded 5 min)
     let global_offline_timeout = state.devices.service.heartbeat_config().offline_timeout;
     // Build device_type → template map for per-device offline-timeout resolution
-    let template_map: std::collections::HashMap<&str, &neomind_devices::DeviceTypeTemplate> = all_templates
-        .iter()
-        .map(|t| (t.device_type.as_str(), t))
-        .collect();
+    let template_map: std::collections::HashMap<&str, &neomind_devices::DeviceTypeTemplate> =
+        all_templates
+            .iter()
+            .map(|t| (t.device_type.as_str(), t))
+            .collect();
     // Resolve per-device effective offline timeout.
     // Priority: device override > template default > global.
     let effective_timeout = |config: &neomind_devices::DeviceConfig| -> u64 {
@@ -286,7 +287,8 @@ pub async fn get_device_handler(
 
     // Resolve per-device effective offline timeout
     // (device override > template default > global)
-    let effective_timeout = config.offline_timeout_secs
+    let effective_timeout = config
+        .offline_timeout_secs
         .or(template.default_offline_timeout_secs)
         .unwrap_or(state.devices.service.heartbeat_config().offline_timeout);
     let online = device_status.is_connected_within(effective_timeout);
@@ -315,8 +317,8 @@ pub async fn get_device_handler(
     } else {
         chrono::DateTime::from_timestamp(effective_last_seen, 0).map(|dt| dt.to_rfc3339())
     };
-    let last_seen_dt = chrono::DateTime::from_timestamp(effective_last_seen, 0)
-        .unwrap_or_else(chrono::Utc::now);
+    let last_seen_dt =
+        chrono::DateTime::from_timestamp(effective_last_seen, 0).unwrap_or_else(chrono::Utc::now);
     let instance = config_to_device_instance(&config, status, last_seen_dt);
 
     // Get plugin info for display
@@ -370,7 +372,8 @@ pub async fn get_device_current_handler(
 
     // Get device status
     let device_status = state.devices.service.get_device_status(&device_id).await;
-    let effective_timeout = config.offline_timeout_secs
+    let effective_timeout = config
+        .offline_timeout_secs
         .or(template.default_offline_timeout_secs)
         .unwrap_or(state.devices.service.heartbeat_config().offline_timeout);
     let online = device_status.is_connected_within(effective_timeout);
@@ -397,8 +400,8 @@ pub async fn get_device_current_handler(
     } else {
         chrono::DateTime::from_timestamp(effective_last_seen, 0).map(|dt| dt.to_rfc3339())
     };
-    let last_seen_dt = chrono::DateTime::from_timestamp(effective_last_seen, 0)
-        .unwrap_or_else(chrono::Utc::now);
+    let last_seen_dt =
+        chrono::DateTime::from_timestamp(effective_last_seen, 0).unwrap_or_else(chrono::Utc::now);
     let instance = config_to_device_instance(&config, status, last_seen_dt);
 
     // Get plugin info
@@ -731,8 +734,8 @@ pub async fn update_device_handler(
 
     // Validate offline_timeout_secs if provided
     if let Some(secs) = req.offline_timeout_secs {
-        const MIN_OFFLINE_TIMEOUT: u64 = 30;      // 30s — below this causes status flicker
-        const MAX_OFFLINE_TIMEOUT: u64 = 86400;    // 24h — beyond this is unreasonable
+        const MIN_OFFLINE_TIMEOUT: u64 = 30; // 30s — below this causes status flicker
+        const MAX_OFFLINE_TIMEOUT: u64 = 86400; // 24h — beyond this is unreasonable
         if !(MIN_OFFLINE_TIMEOUT..=MAX_OFFLINE_TIMEOUT).contains(&secs) {
             return Err(ErrorResponse::bad_request(format!(
                 "offline_timeout_secs must be between {} and {} (got {})",
@@ -786,21 +789,13 @@ pub async fn get_device_state_handler(
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
-    if state
-        .devices
-        .service
-        .get_device(&device_id)
-        .is_none()
-    {
+    if state.devices.service.get_device(&device_id).is_none() {
         return Err(ErrorResponse::not_found("Device"));
     }
 
     // Get device status
     let device_status = state.devices.service.get_device_status(&device_id).await;
-    let effective_timeout = state
-        .devices
-        .service
-        .effective_offline_timeout(&device_id);
+    let effective_timeout = state.devices.service.effective_offline_timeout(&device_id);
 
     ok(json!({
         "device_id": device_id,
@@ -824,20 +819,12 @@ pub async fn get_device_health_handler(
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
-    if state
-        .devices
-        .service
-        .get_device(&device_id)
-        .is_none()
-    {
+    if state.devices.service.get_device(&device_id).is_none() {
         return Err(ErrorResponse::not_found("Device"));
     }
 
     let device_status = state.devices.service.get_device_status(&device_id).await;
-    let effective_timeout = state
-        .devices
-        .service
-        .effective_offline_timeout(&device_id);
+    let effective_timeout = state.devices.service.effective_offline_timeout(&device_id);
     let now = chrono::Utc::now().timestamp();
     let seconds_since_last_seen = now - device_status.last_seen;
 

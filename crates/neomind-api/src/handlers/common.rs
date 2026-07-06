@@ -408,10 +408,7 @@ pub fn resolve_server_url(headers: Option<&axum::http::HeaderMap>) -> (String, S
     // MQTT status already does this correctly via `get_server_host()` — this
     // brings webhook URL resolution in line.
     let host = get_server_host();
-    (
-        format!("http://{}:9375", host),
-        ServerUrlSource::Fallback,
-    )
+    (format!("http://{}:9375", host), ServerUrlSource::Fallback)
 }
 
 #[cfg(test)]
@@ -663,10 +660,7 @@ mod tests {
     // single #[test] to avoid races between parallel tests. Each branch is a
     // labeled block for clarity.
 
-    fn make_headers(
-        host: Option<&str>,
-        xfp: Option<&str>,
-    ) -> axum::http::HeaderMap {
+    fn make_headers(host: Option<&str>, xfp: Option<&str>) -> axum::http::HeaderMap {
         let mut h = axum::http::HeaderMap::new();
         if let Some(host) = host {
             h.insert(axum::http::header::HOST, host.parse().unwrap());
@@ -693,16 +687,18 @@ mod tests {
                 "fallback URL should be http://<host>:9375, got {}",
                 url
             );
-            assert!(!url.contains("localhost"), "fallback should not be localhost: {}", url);
+            assert!(
+                !url.contains("localhost"),
+                "fallback should not be localhost: {}",
+                url
+            );
             assert_eq!(src, ServerUrlSource::Fallback);
         }
 
         // 2. Proxy headers branch (Host + X-Forwarded-Proto).
         {
-            let (url, src) = resolve_server_url(Some(&make_headers(
-                Some("actual.host:8443"),
-                Some("https"),
-            )));
+            let (url, src) =
+                resolve_server_url(Some(&make_headers(Some("actual.host:8443"), Some("https"))));
             assert_eq!(url, "https://actual.host:8443");
             assert_eq!(src, ServerUrlSource::ProxyHeader);
         }
@@ -710,10 +706,8 @@ mod tests {
         // 3. Env var wins over both proxy headers and fallback.
         {
             std::env::set_var(KEY, "https://from-env.example.com");
-            let (url, src) = resolve_server_url(Some(&make_headers(
-                Some("proxy.host"),
-                Some("http"),
-            )));
+            let (url, src) =
+                resolve_server_url(Some(&make_headers(Some("proxy.host"), Some("http"))));
             assert_eq!(url, "https://from-env.example.com");
             assert_eq!(src, ServerUrlSource::Env);
         }

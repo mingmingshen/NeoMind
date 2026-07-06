@@ -248,7 +248,13 @@ impl ExtensionMetricsCollector {
             // cached info and is cheap. If refresh failed or nothing
             // changed, this returns the same data.
             let info = if need_refresh {
-                match self.runtime.list().await.into_iter().find(|i| i.metadata.id == extension_id) {
+                match self
+                    .runtime
+                    .list()
+                    .await
+                    .into_iter()
+                    .find(|i| i.metadata.id == extension_id)
+                {
                     Some(fresh) => fresh,
                     None => info,
                 }

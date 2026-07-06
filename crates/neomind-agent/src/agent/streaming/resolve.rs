@@ -63,17 +63,17 @@ pub(crate) fn resolve_cached_arguments(
             // inject it under the canonical `image` key. Without this, tools
             // like `image_edit` fail with "missing field `image`" before any
             // tool-specific logic runs.
-            if !resolved.keys().any(|k| IMAGE_ARG_NAMES.contains(&k.as_str())) {
+            if !resolved
+                .keys()
+                .any(|k| IMAGE_ARG_NAMES.contains(&k.as_str()))
+            {
                 if let Some((image_data, source)) = cache.get_latest_image() {
                     tracing::info!(
                         source = %source,
                         injected_bytes = image_data.len(),
                         "Auto-injected `image` field — LLM omitted all image args but cached user image exists"
                     );
-                    resolved.insert(
-                        "image".to_string(),
-                        serde_json::Value::String(image_data),
-                    );
+                    resolved.insert("image".to_string(), serde_json::Value::String(image_data));
                 }
             }
             serde_json::Value::Object(resolved)

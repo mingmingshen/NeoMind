@@ -1199,16 +1199,17 @@ impl AgentExecutor {
                 continue;
             }
             // Skip exact source match (e.g. "device:values.image")
-            if item.source
-                == format!("{}:{}", event_source_device, event_source_field)
-            {
+            if item.source == format!("{}:{}", event_source_device, event_source_field) {
                 continue;
             }
             // Skip if this regular item is from the same device AND its
             // data_type is the event field or a sub-field of it (e.g.
             // "values.image" matches event field "values.image", and
             // "values.image.image_base64" is a sub-field → skip).
-            if item.source.starts_with(&format!("{}:", event_source_device)) {
+            if item
+                .source
+                .starts_with(&format!("{}:", event_source_device))
+            {
                 let item_metric = &item.source[event_source_device.len() + 1..];
                 if item_metric == event_source_field
                     || item_metric.starts_with(&format!("{}.", event_source_field))

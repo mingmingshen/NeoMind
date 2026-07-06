@@ -334,8 +334,8 @@ impl LlmBackendInstanceManager {
                 }
             };
 
-            let ollama_runtime =
-                ollama_runtime.with_capabilities_override(multimodal, thinking, tools, max_ctx, audio);
+            let ollama_runtime = ollama_runtime
+                .with_capabilities_override(multimodal, thinking, tools, max_ctx, audio);
 
             Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
         } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
@@ -1074,7 +1074,10 @@ impl LlmBackendInstanceManager {
             // (name, endpoint, model, api_key, ...). Writing back the stale
             // `inst` snapshot would silently revert those edits. Merge ONLY
             // the refreshed capability fields onto the latest snapshot.
-            let Some(mut current) = self.instances.get(&inst.id).map(|item| item.value().clone())
+            let Some(mut current) = self
+                .instances
+                .get(&inst.id)
+                .map(|item| item.value().clone())
             else {
                 // Instance was removed while we were querying Ollama.
                 continue;

@@ -51,7 +51,6 @@ const ACCEPTABLE_CONTENT_TYPES: &[&str] = &[
     "multipart/form-data",
 ];
 
-
 /// Extract webhook token from request headers or query params.
 ///
 /// Checks `Authorization: Bearer <token>` header first, then `?token=xxx` query param.
@@ -132,9 +131,9 @@ fn content_type(headers: &HeaderMap) -> (Option<String>, Option<String>, usize) 
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.trim().to_string());
-    let bare = raw.as_ref().map(|s| {
-        s.split(';').next().unwrap_or(s).trim().to_lowercase()
-    });
+    let bare = raw
+        .as_ref()
+        .map(|s| s.split(';').next().unwrap_or(s).trim().to_lowercase());
     let len = headers
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
@@ -199,7 +198,9 @@ fn parse_body(
             let data_url = encode_image_data_url(c, &body);
             serde_json::json!({ "image": data_url })
         }
-        Some("text/plain") | Some("text/plain;charset=utf-8") | Some("text/plain; charset=utf-8") => {
+        Some("text/plain")
+        | Some("text/plain;charset=utf-8")
+        | Some("text/plain; charset=utf-8") => {
             let text = String::from_utf8_lossy(&body);
             serde_json::json!({ "text": text.as_ref() })
         }
@@ -283,7 +284,10 @@ const MAX_VALUE_STRING_SIZE: usize = 2 * 1024 * 1024;
 /// Returns the path of the first oversized string in the error message so
 /// device firmware authors can locate the offending field. Object keys are
 /// NOT checked (they're almost always short); only string values are.
-fn enforce_max_string_size(value: &serde_json::Value, max_bytes: usize) -> Result<(), ErrorResponse> {
+fn enforce_max_string_size(
+    value: &serde_json::Value,
+    max_bytes: usize,
+) -> Result<(), ErrorResponse> {
     fn walk(v: &serde_json::Value, max_bytes: usize, path: &str) -> Result<(), ErrorResponse> {
         match v {
             serde_json::Value::String(s) => {
@@ -347,7 +351,11 @@ fn parse_form_body(body: &[u8]) -> Option<serde_json::Value> {
 
 fn encode_image_data_url(mime: &str, body: &[u8]) -> String {
     use base64::{engine::general_purpose, Engine};
-    let normalized = if mime == "image/jpg" { "image/jpeg" } else { mime };
+    let normalized = if mime == "image/jpg" {
+        "image/jpeg"
+    } else {
+        mime
+    };
     let b64 = general_purpose::STANDARD.encode(body);
     format!("data:{};base64,{}", normalized, b64)
 }
@@ -390,8 +398,22 @@ fn is_valid_boundary(b: &str) -> bool {
             && c < 0x7f
             && !matches!(
                 c,
-                b'(' | b')' | b'<' | b'>' | b'@' | b',' | b';' | b':' | b'\\' | b'"' | b'/'
-                    | b'[' | b']' | b'?' | b'=' | b'{' | b'}'
+                b'(' | b')'
+                    | b'<'
+                    | b'>'
+                    | b'@'
+                    | b','
+                    | b';'
+                    | b':'
+                    | b'\\'
+                    | b'"'
+                    | b'/'
+                    | b'['
+                    | b']'
+                    | b'?'
+                    | b'='
+                    | b'{'
+                    | b'}'
             )
     })
 }
@@ -450,14 +472,21 @@ fn parse_multipart_parts(body: &[u8], boundary: &str) -> Result<Vec<MultipartPar
         // Find end of part headers
         let header_end = find_subslice(body, b"\r\n\r\n", p)
             .or_else(|| find_subslice(body, b"\n\n", p))
-            .ok_or_else(|| ErrorResponse::bad_request("Malformed multipart: missing header terminator"))?;
-        let sep_len = if body.get(header_end..header_end + 4) == Some(b"\r\n\r\n") { 4 } else { 2 };
+            .ok_or_else(|| {
+                ErrorResponse::bad_request("Malformed multipart: missing header terminator")
+            })?;
+        let sep_len = if body.get(header_end..header_end + 4) == Some(b"\r\n\r\n") {
+            4
+        } else {
+            2
+        };
         let header_bytes = &body[p..header_end];
         let content_start = header_end + sep_len;
 
         // Find next delimiter (preceded by \r\n or \n)
-        let next_delim = find_subslice(body, delim_b, content_start)
-            .ok_or_else(|| ErrorResponse::bad_request("Malformed multipart: missing part terminator"))?;
+        let next_delim = find_subslice(body, delim_b, content_start).ok_or_else(|| {
+            ErrorResponse::bad_request("Malformed multipart: missing part terminator")
+        })?;
         // Walk back trailing CRLF/LF that's part of framing, not content
         let mut content_end = next_delim;
         if content_end >= 2 && &body[content_end - 2..content_end] == b"\r\n" {
@@ -597,7 +626,10 @@ fn parse_multipart_body(
 
     // Ensure payload.data is an object so we can attach extras.
     if !payload.data.is_object() {
-        let prev = std::mem::replace(&mut payload.data, serde_json::Value::Object(serde_json::Map::new()));
+        let prev = std::mem::replace(
+            &mut payload.data,
+            serde_json::Value::Object(serde_json::Map::new()),
+        );
         payload.data["value"] = prev;
     }
     let data_obj = payload.data.as_object_mut().expect("just ensured object");
@@ -698,7 +730,10 @@ fn parse_multipart_body(
 /// Parse a JSON slice into a WebhookPayload, wrapping if necessary. Shared with
 /// the non-multipart JSON path — tolerates both `{...}` with `data` and bare
 /// payloads like `{"temp": 23}` (wrapped to `{"data": {"temp": 23}}`).
-fn parse_json_payload(body: &[u8], device_id_override: Option<&str>) -> Result<WebhookPayload, ErrorResponse> {
+fn parse_json_payload(
+    body: &[u8],
+    device_id_override: Option<&str>,
+) -> Result<WebhookPayload, ErrorResponse> {
     let v = parse_json_body(body)?;
     let mut p: WebhookPayload = if let Some(obj) = v.as_object() {
         if obj.contains_key("data") {
@@ -989,12 +1024,12 @@ mod tests {
     fn parses_camera_multipart_metadata_plus_image() {
         use base64::Engine;
         let boundary = "----testBoundaryXYZ";
-        let metadata = r#"{"device_id":"cam-001","timestamp":1735900000,"data":{"width":640,"height":480}}"#;
+        let metadata =
+            r#"{"device_id":"cam-001","timestamp":1735900000,"data":{"width":640,"height":480}}"#;
         let image = b"\xff\xd8\xff\xe0FAKEJPEGBYTES\xff\xd9";
         let body = build_camera_multipart(boundary, metadata, image);
 
-        let payload =
-            parse_multipart_body(&body, boundary, Some("override-id")).expect("parse ok");
+        let payload = parse_multipart_body(&body, boundary, Some("override-id")).expect("parse ok");
 
         assert_eq!(payload.device_id.as_deref(), Some("override-id"));
         assert_eq!(payload.timestamp, Some(1735900000));
@@ -1003,7 +1038,10 @@ mod tests {
         assert_eq!(data.get("width").and_then(|v| v.as_u64()), Some(640));
         assert_eq!(data.get("height").and_then(|v| v.as_u64()), Some(480));
 
-        let img = data.get("image").and_then(|v| v.as_str()).expect("image present");
+        let img = data
+            .get("image")
+            .and_then(|v| v.as_str())
+            .expect("image present");
         assert!(img.starts_with("data:image/jpeg;base64,"));
         // Verify base64 round-trips back to the original bytes.
         let b64 = &img["data:image/jpeg;base64,".len()..];
@@ -1030,7 +1068,10 @@ mod tests {
         let data = payload.data.as_object().expect("object");
         // When the part has a name, it is preserved as the data key so device-type
         // templates can target a specific metric (e.g. `frame`).
-        let img = data.get("frame").and_then(|v| v.as_str()).expect("frame key");
+        let img = data
+            .get("frame")
+            .and_then(|v| v.as_str())
+            .expect("frame key");
         assert!(img.starts_with("data:image/jpeg;base64,"));
     }
 
@@ -1076,7 +1117,10 @@ mod tests {
             !data.contains_key("image"),
             "hardcoded 'image' key should NOT be set when part has a name"
         );
-        let img = data.get("snapshot").and_then(|v| v.as_str()).expect("snapshot value");
+        let img = data
+            .get("snapshot")
+            .and_then(|v| v.as_str())
+            .expect("snapshot value");
         assert!(img.starts_with("data:image/jpeg;base64,"));
         // Metadata fields still merged alongside.
         assert_eq!(data.get("width").and_then(|v| v.as_u64()), Some(1920));
@@ -1138,7 +1182,10 @@ mod tests {
     fn rejects_malicious_boundaries() {
         // RFC 2046: boundary must be 1-70 chars, no control/whitespace/tspecials.
         // These attack-shaped boundaries should all be rejected.
-        assert_eq!(extract_multipart_boundary("multipart/form-data; boundary="), None);
+        assert_eq!(
+            extract_multipart_boundary("multipart/form-data; boundary="),
+            None
+        );
         // CRLF injection attempt
         assert_eq!(
             extract_multipart_boundary("multipart/form-data; boundary=foo\r\n--evil"),
@@ -1161,19 +1208,13 @@ mod tests {
         // Over 70 chars
         let long_boundary = "x".repeat(71);
         assert_eq!(
-            extract_multipart_boundary(&format!(
-                "multipart/form-data; boundary={}",
-                long_boundary
-            )),
+            extract_multipart_boundary(&format!("multipart/form-data; boundary={}", long_boundary)),
             None
         );
         // 70 chars is OK
         let ok_boundary = "x".repeat(70);
         assert_eq!(
-            extract_multipart_boundary(&format!(
-                "multipart/form-data; boundary={}",
-                ok_boundary
-            )),
+            extract_multipart_boundary(&format!("multipart/form-data; boundary={}", ok_boundary)),
             Some(ok_boundary)
         );
     }
@@ -1202,10 +1243,7 @@ mod tests {
     fn json_with_oversized_string_is_rejected() {
         // A 3MB base64-like string embedded in JSON should fail the 2MB cap.
         let huge_value = "x".repeat(3 * 1024 * 1024);
-        let json_body = format!(
-            r#"{{"data": {{"image": "{}"}}}}"#,
-            huge_value
-        );
+        let json_body = format!(r#"{{"data": {{"image": "{}"}}}}"#, huge_value);
         let len = json_body.len();
         let result = parse_body(
             json_body.into(),
@@ -1216,7 +1254,10 @@ mod tests {
         );
         let err = result.expect_err("3MB string in JSON must be rejected");
         // The error should mention the path so the device firmware dev can find it.
-        assert!(err.message.contains("image"), "error must mention field path");
+        assert!(
+            err.message.contains("image"),
+            "error must mention field path"
+        );
         assert!(err.message.contains("max"), "error must mention size limit");
     }
 
@@ -1253,7 +1294,10 @@ mod tests {
         let data = payload.data.as_object().expect("object");
         let img = data.get("image").and_then(|v| v.as_str()).expect("image");
         assert!(img.starts_with("data:image/jpeg;base64,"));
-        assert!(img.len() > 2 * 1024 * 1024, "base64 should exceed the JSON limit");
+        assert!(
+            img.len() > 2 * 1024 * 1024,
+            "base64 should exceed the JSON limit"
+        );
     }
 
     #[test]

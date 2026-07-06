@@ -306,7 +306,8 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
         .as_ref()
         .map(|r| (r.enabled, r.disabled_commands.clone()))
         .unwrap_or((true, Vec::new()));
-    let disabled_set: std::collections::HashSet<String> = disabled_commands.iter().cloned().collect();
+    let disabled_set: std::collections::HashSet<String> =
+        disabled_commands.iter().cloned().collect();
 
     // Convert commands to DTOs (V2 format)
     let commands: Vec<CommandDescriptorDto> = info
@@ -1219,7 +1220,9 @@ pub async fn set_extension_command_enabled_handler(
 ) -> HandlerResult<serde_json::Value> {
     validate_extension_id(&id)?;
     if cmd.is_empty() {
-        return Err(ErrorResponse::bad_request("Command name required".to_string()));
+        return Err(ErrorResponse::bad_request(
+            "Command name required".to_string(),
+        ));
     }
 
     let store = ExtensionStore::open("data/extensions.redb")
@@ -1249,7 +1252,6 @@ pub async fn set_extension_command_enabled_handler(
     );
     ok(json!({ "id": id, "command": cmd, "enabled": req.enabled }))
 }
-
 
 /// GET /api/extensions/:id/event-subscriptions
 ///

@@ -826,7 +826,9 @@ pub async fn create_agent(
     State(state): State<ServerState>,
     Json(request): Json<CreateAgentRequest>,
 ) -> HandlerResult<Value> {
-    use crate::validator::{validate_required_string, validate_string_length, validate_usize_range};
+    use crate::validator::{
+        validate_required_string, validate_string_length, validate_usize_range,
+    };
 
     // Validate required fields
     validate_required_string(&request.name, "name")?;
@@ -2415,7 +2417,10 @@ pub async fn get_available_resources(
             .cloned()
             .unwrap_or_default();
         let is_connected = status.is_connected_within(
-            state.devices.service.effective_offline_timeout(&device.device_id),
+            state
+                .devices
+                .service
+                .effective_offline_timeout(&device.device_id),
         );
 
         device_resources.push(json!({

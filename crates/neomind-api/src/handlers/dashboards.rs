@@ -749,7 +749,9 @@ pub async fn reorder_dashboards_handler(
     Json(req): Json<ReorderDashboardsRequest>,
 ) -> HandlerResult<ReorderDashboardsResponse> {
     if req.dashboard_ids.is_empty() {
-        return Err(ErrorResponse::bad_request("dashboard_ids must not be empty"));
+        return Err(ErrorResponse::bad_request(
+            "dashboard_ids must not be empty",
+        ));
     }
 
     let items: Vec<(String, i32)> = req
@@ -1084,9 +1086,10 @@ pub async fn share_proxy_handler(
     // Mark as internal proxy so auth middleware bypasses JWT check.
     // MUST include the per-process secret — the auth middleware rejects
     // bypass attempts that lack it (blocks spoofed external requests).
-    req_builder = req_builder
-        .header("x-internal-proxy", "share")
-        .header("x-internal-proxy-secret", state.internal_proxy_secret.as_str());
+    req_builder = req_builder.header("x-internal-proxy", "share").header(
+        "x-internal-proxy-secret",
+        state.internal_proxy_secret.as_str(),
+    );
 
     if !body.is_empty() {
         req_builder = req_builder.body(body.to_vec());
@@ -1137,7 +1140,7 @@ fn is_share_proxy_path_allowed(path: &str) -> bool {
         "devices",
         "device-types", // device type metadata for rendering device widgets; GET only, mutations blocked by method check
         "extensions", // list + metric/outputs subpaths; install/uninstall/write blocked by method check
-        "agents",     // list + execution history + detail; full CRUD blocked by method check in step 4
+        "agents", // list + execution history + detail; full CRUD blocked by method check in step 4
         "llm-backends", // model list for AI analyst widget; DTO exposes only api_key_configured, never the key
         "data-sources",
         "messages", // alerts shown on dashboard (list + detail); channel mutation blocked by method
@@ -1170,7 +1173,10 @@ mod share_proxy_tests {
             "data-sources",
             "telemetry",
         ] {
-            assert!(is_share_proxy_path_allowed(p), "bare `{p}` should be allowed");
+            assert!(
+                is_share_proxy_path_allowed(p),
+                "bare `{p}` should be allowed"
+            );
         }
     }
 
@@ -1189,7 +1195,14 @@ mod share_proxy_tests {
 
     #[test]
     fn rejects_unlisted_paths() {
-        for p in ["users", "api-keys", "settings", "instances", "rules", "dashboards"] {
+        for p in [
+            "users",
+            "api-keys",
+            "settings",
+            "instances",
+            "rules",
+            "dashboards",
+        ] {
             assert!(!is_share_proxy_path_allowed(p), "`{p}` should be blocked");
         }
     }

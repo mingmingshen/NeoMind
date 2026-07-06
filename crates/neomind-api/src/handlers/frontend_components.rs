@@ -121,10 +121,7 @@ const MARKETPLACE_DOWNLOAD_CAP_BYTES: usize = 10 * 1024 * 1024;
 /// than after buffering gigabytes. Returns the bytes accumulated so far are
 /// discarded on cap-overflow so we don't hold a giant allocation while
 /// constructing the error response.
-async fn collect_capped(
-    resp: reqwest::Response,
-    label: &str,
-) -> Result<Vec<u8>, ErrorResponse> {
+async fn collect_capped(resp: reqwest::Response, label: &str) -> Result<Vec<u8>, ErrorResponse> {
     // Fast path: trust server-advertised length when present.
     if let Some(len) = resp.content_length() {
         if len as usize > MARKETPLACE_DOWNLOAD_CAP_BYTES {

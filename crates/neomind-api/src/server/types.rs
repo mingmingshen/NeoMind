@@ -355,9 +355,10 @@ impl ServerState {
                         if username == "__neomind_internal__" {
                             return cache.system_password.as_deref() == Some(password);
                         }
-                        cache.users.get(username).is_some_and(|hash| {
-                            bcrypt::verify(password, hash).unwrap_or(false)
-                        })
+                        cache
+                            .users
+                            .get(username)
+                            .is_some_and(|hash| bcrypt::verify(password, hash).unwrap_or(false))
                     });
                 let rollback_broker = EmbeddedBroker::new(old_cfg.clone(), rollback_validator);
                 if let Some(resolver) = self.build_topic_resolver() {
@@ -558,7 +559,9 @@ impl ServerState {
             return None;
         }
         Some(Arc::new(move |topic: &str| {
-            registry.find_device_by_telemetry_topic(topic).map(|(id, _)| id)
+            registry
+                .find_device_by_telemetry_topic(topic)
+                .map(|(id, _)| id)
         }))
     }
 
@@ -1010,13 +1013,11 @@ impl ServerState {
 
         // Spawn DeviceStatusEmitter — 60s tick that refreshes the
         // __last_seen_age_secs virtual metric for devices referenced by rules.
-        let device_status_emitter = std::sync::Arc::new(
-            DeviceStatusEmitter::new(
-                rule_engine.clone(),
-                value_provider.clone(),
-                devices.service.clone(),
-            ),
-        );
+        let device_status_emitter = std::sync::Arc::new(DeviceStatusEmitter::new(
+            rule_engine.clone(),
+            value_provider.clone(),
+            devices.service.clone(),
+        ));
         let _device_status_emitter_handle = device_status_emitter.start();
         tracing::info!("DeviceStatusEmitter spawned (60s tick for __last_seen_age_secs)");
 
@@ -2195,8 +2196,12 @@ impl ServerState {
                     // Extract value for rule evaluation (numeric or string)
                     let rule_value = match &value {
                         MetricValue::Float(v) => Some(neomind_rules::RuleValue::Number(*v)),
-                        MetricValue::Integer(v) => Some(neomind_rules::RuleValue::Number(*v as f64)),
-                        MetricValue::Boolean(v) => Some(neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 })),
+                        MetricValue::Integer(v) => {
+                            Some(neomind_rules::RuleValue::Number(*v as f64))
+                        }
+                        MetricValue::Boolean(v) => {
+                            Some(neomind_rules::RuleValue::Number(if *v { 1.0 } else { 0.0 }))
+                        }
                         MetricValue::String(s) => Some(neomind_rules::RuleValue::Text(s.clone())),
                         MetricValue::Json(v) => Some(neomind_rules::RuleValue::Text(v.to_string())),
                     };
@@ -2237,7 +2242,9 @@ impl ServerState {
                                 neomind_rules::RuleValue::Text(text_value) => {
                                     // Store with original metric key
                                     value_provider
-                                        .update_string_value("device", &device_id, &metric, text_value)
+                                        .update_string_value(
+                                            "device", &device_id, &metric, text_value,
+                                        )
                                         .await;
 
                                     // Also store with common prefixes stripped for rule matching
@@ -2272,10 +2279,8 @@ impl ServerState {
                         // (e.g. "temperature") must still trigger when the device
                         // publishes with a common prefix (e.g. "values.temperature"),
                         // otherwise the subscription index never matches.
-                        let data_source = neomind_core::datasource::DataSourceId::device(
-                            &device_id,
-                            &metric,
-                        );
+                        let data_source =
+                            neomind_core::datasource::DataSourceId::device(&device_id, &metric);
                         rule_engine_for_update
                             .on_data_update(&data_source, rv.clone())
                             .await;
@@ -2351,8 +2356,10 @@ impl ServerState {
                         .await;
 
                     // Notify rule engine
-                    let data_source =
-                        neomind_core::datasource::DataSourceId::extension(&extension_id, metric_name);
+                    let data_source = neomind_core::datasource::DataSourceId::extension(
+                        &extension_id,
+                        metric_name,
+                    );
                     rule_engine_ext.on_data_update(&data_source, rv).await;
                 }
             }
@@ -2365,9 +2372,7 @@ impl ServerState {
             let agent_manager = self.agents.agent_manager.clone();
             let rule_engine = self.automation.rule_engine.clone();
             let callback: neomind_rules::AgentTriggerCallback = Arc::new(
-                move |agent_id: String,
-                      input: Option<String>,
-                      data: Option<serde_json::Value>| {
+                move |agent_id: String, input: Option<String>, data: Option<serde_json::Value>| {
                     let agent_manager = agent_manager.clone();
                     Box::pin(async move {
                         let mgr_guard = agent_manager.read().await;
@@ -2398,8 +2403,8 @@ impl ServerState {
         {
             let rule_engine = self.automation.rule_engine.clone();
             tokio::spawn(async move {
-                use cron::Schedule;
                 use chrono::Utc;
+                use cron::Schedule;
 
                 tracing::info!("Starting rule cron scheduler (30s tick)");
 

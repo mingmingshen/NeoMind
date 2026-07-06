@@ -220,8 +220,12 @@ mod tests {
             .with_vision(true)
             .with_thinking(true)
             .build_system_prompt();
-        let no_vision = PromptBuilder::new().with_vision(false).build_system_prompt();
-        let no_thinking = PromptBuilder::new().with_thinking(false).build_system_prompt();
+        let no_vision = PromptBuilder::new()
+            .with_vision(false)
+            .build_system_prompt();
+        let no_thinking = PromptBuilder::new()
+            .with_thinking(false)
+            .build_system_prompt();
 
         assert!(with_all.contains("## Vision"));
         assert!(!no_vision.contains("## Vision"));

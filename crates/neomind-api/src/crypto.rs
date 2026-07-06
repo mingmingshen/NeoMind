@@ -311,9 +311,7 @@ mod tests {
         // Ensure the env var doesn't interfere
         std::env::remove_var(ENCRYPTION_KEY_ENV);
 
-        let _crypto = CryptoService::from_env_or_generate_with_data_dir(
-            tmp.to_str().unwrap(),
-        );
+        let _crypto = CryptoService::from_env_or_generate_with_data_dir(tmp.to_str().unwrap());
 
         let key_file = tmp.join("encryption_key");
         assert!(

@@ -195,7 +195,11 @@ impl MemoryTool {
                 .filter(|l| !l.is_empty())
                 .collect();
             for (_, b) in &sections {
-                v.extend(b.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()));
+                v.extend(
+                    b.iter()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| !l.is_empty()),
+                );
             }
             v
         };
@@ -218,7 +222,9 @@ impl MemoryTool {
             if nhead_clean.is_empty() {
                 continue;
             }
-            let idx = sections.iter().position(|(h, _)| Self::clean_header(h) == nhead_clean);
+            let idx = sections
+                .iter()
+                .position(|(h, _)| Self::clean_header(h) == nhead_clean);
             match idx {
                 Some(i) => {
                     // Same section: append only novel body lines in place.
@@ -838,7 +844,11 @@ mod tests {
         let existing = "# Task\n\n## Role\nYou are an agent.\n\n## 2026-06-11 22:00 Analysis\n- temp 25C\n- ok\n";
         let dedup = DedupProcessor::with_defaults();
         let merged = MemoryTool::merge_custom_content(existing, existing, &dedup);
-        assert_eq!(merged.trim(), existing.trim(), "re-merging identical content must be a no-op");
+        assert_eq!(
+            merged.trim(),
+            existing.trim(),
+            "re-merging identical content must be a no-op"
+        );
     }
 
     #[test]
@@ -846,11 +856,15 @@ mod tests {
         // The real-world quadratic blowup: agent re-sends the full Pattern Tracking
         // history plus one new timestamp line on every analysis.
         let existing = "## Pattern Tracking\n- 22:00: temp 25C\n- 21:00: temp 24C\n";
-        let resent = "## Pattern Tracking\n- 22:00: temp 25C\n- 21:00: temp 24C\n- 23:00: temp 26C\n";
+        let resent =
+            "## Pattern Tracking\n- 22:00: temp 25C\n- 21:00: temp 24C\n- 23:00: temp 26C\n";
         let dedup = DedupProcessor::with_defaults();
         let merged = MemoryTool::merge_custom_content(existing, resent, &dedup);
         // Only the genuinely-new line should land — NOT the full resent block.
-        assert!(merged.contains("- 23:00: temp 26C"), "new line must be present");
+        assert!(
+            merged.contains("- 23:00: temp 26C"),
+            "new line must be present"
+        );
         // The two old lines must appear exactly ONCE (not duplicated).
         assert_eq!(
             merged.matches("- 22:00: temp 25C").count(),
@@ -884,7 +898,11 @@ mod tests {
         let dup = "## 2026-06-11 22:00 Analysis 2\nThe temperature sensor reported 25C and everything is within normal range.\n";
         let dedup = DedupProcessor::with_defaults();
         let merged = MemoryTool::merge_custom_content(existing, dup, &dedup);
-        assert_eq!(merged.trim(), existing.trim(), "near-duplicate block must be dropped");
+        assert_eq!(
+            merged.trim(),
+            existing.trim(),
+            "near-duplicate block must be dropped"
+        );
     }
 
     #[tokio::test]
@@ -905,7 +923,12 @@ mod tests {
             .unwrap();
         let body0 = &r.data;
         let chars0 = body0["chars"].as_u64().unwrap();
-        assert!(chars0 < 60, "baseline USER.md should be the template, got {} chars: {:?}", chars0, body0["content"]);
+        assert!(
+            chars0 < 60,
+            "baseline USER.md should be the template, got {} chars: {:?}",
+            chars0,
+            body0["content"]
+        );
 
         // 2. Add new content
         let a = tool
@@ -917,7 +940,11 @@ mod tests {
             .await
             .unwrap();
         let msg = a.data["message"].as_str().unwrap_or("");
-        assert!(msg.starts_with("Added to user"), "add must succeed: {}", msg);
+        assert!(
+            msg.starts_with("Added to user"),
+            "add must succeed: {}",
+            msg
+        );
 
         // 3. Read MUST observe the new content
         let r2 = tool
@@ -935,4 +962,3 @@ mod tests {
         );
     }
 }
-

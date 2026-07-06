@@ -261,8 +261,7 @@ pub struct SessionManager {
     /// Typically 0 or 1 subscribers per session; fan-out is a future
     /// extension. A slow subscriber that fills its channel just drops events
     /// (deliberate: voice workloads should never accumulate backlog).
-    event_subscribers:
-        Arc<RwLock<HashMap<String, Vec<tokio::sync::mpsc::Sender<AgentEvent>>>>>,
+    event_subscribers: Arc<RwLock<HashMap<String, Vec<tokio::sync::mpsc::Sender<AgentEvent>>>>>,
 }
 
 impl SessionManager {
@@ -721,10 +720,7 @@ impl SessionManager {
     /// This is the canonical implementation; the no-arg and options variants
     /// are thin wrappers. The provided config is used verbatim — no merging
     /// with `default_config` happens here.
-    pub async fn create_session_with_config(
-        &self,
-        config: AgentConfig,
-    ) -> Result<String> {
+    pub async fn create_session_with_config(&self, config: AgentConfig) -> Result<String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Use tool registry if set, otherwise create default mock tools
@@ -770,10 +766,7 @@ impl SessionManager {
     /// the default. Use this when you need per-session overrides (e.g. a
     /// voice-assistant extension baking in a system prompt) without changing
     /// global defaults.
-    pub async fn create_session_with_options(
-        &self,
-        opts: CreateSessionOptions,
-    ) -> Result<String> {
+    pub async fn create_session_with_options(&self, opts: CreateSessionOptions) -> Result<String> {
         let config = self.merge_options(opts);
         self.create_session_with_config(config).await
     }
@@ -944,11 +937,10 @@ impl SessionManager {
         match session_id {
             // Existing session — explicitly DO NOT apply opts (see doc above).
             Some(id) => self.get_or_create_session(Some(id)).await,
-            None => {
-                self.create_session_with_options(opts)
-                    .await
-                    .unwrap_or_else(|_| Uuid::new_v4().to_string())
-            }
+            None => self
+                .create_session_with_options(opts)
+                .await
+                .unwrap_or_else(|_| Uuid::new_v4().to_string()),
         }
     }
 
@@ -2087,10 +2079,8 @@ mod tests {
 
         // Simulate natural stream end: explicit removal + mark_cleaned_up
         {
-            let mut guard = CancelSenderGuard::new(
-                manager.cancel_senders.clone(),
-                "clean-session".to_string(),
-            );
+            let mut guard =
+                CancelSenderGuard::new(manager.cancel_senders.clone(), "clean-session".to_string());
             manager.remove_cancel_sender("clean-session").await;
             guard.mark_cleaned_up();
             // guard drops here — Drop should be a no-op
@@ -2098,7 +2088,11 @@ mod tests {
 
         // Map should remain empty for this session
         assert!(
-            !manager.cancel_senders.read().await.contains_key("clean-session"),
+            !manager
+                .cancel_senders
+                .read()
+                .await
+                .contains_key("clean-session"),
             "mark_cleaned_up should suppress the Drop-spawned removal"
         );
     }

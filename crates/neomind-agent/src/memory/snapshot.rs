@@ -38,9 +38,8 @@ impl MemorySnapshot {
         let knowledge = store.read_file_sync("knowledge");
         let procedures = store.read_file_sync("procedures");
 
-        let combined = format!(
-            "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Procedures\n{procedures}"
-        );
+        let combined =
+            format!("## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Procedures\n{procedures}");
 
         let content = if combined.chars().count() <= CHAR_BUDGET {
             combined
@@ -125,7 +124,8 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
             if knowledge_len <= remaining {
                 result.push_str("\n\n## Knowledge\n");
                 result.push_str(knowledge);
-                remaining = remaining.saturating_sub("\n\n## Knowledge\n".chars().count() + knowledge_len);
+                remaining =
+                    remaining.saturating_sub("\n\n## Knowledge\n".chars().count() + knowledge_len);
             } else {
                 let truncated = truncate_chars(knowledge, alloc.saturating_sub(20));
                 result.push_str("\n\n## Knowledge\n");
@@ -402,13 +402,21 @@ mod tests {
             "Procedures section header must be preserved even when truncated"
         );
         // Count only body P's (subtract the one in the "## Procedures" header).
-        let p_count = snapshot.content.chars().filter(|c| *c == 'P').count().saturating_sub(1);
+        let p_count = snapshot
+            .content
+            .chars()
+            .filter(|c| *c == 'P')
+            .count()
+            .saturating_sub(1);
         assert!(
             p_count < 3000,
             "Procedures must be truncated (got {} P chars, expected <3000)",
             p_count
         );
-        assert!(p_count > 0, "some Procedures content should survive truncation");
+        assert!(
+            p_count > 0,
+            "some Procedures content should survive truncation"
+        );
     }
 
     /// Unit-test `truncate_with_priority` directly against aggressive
@@ -460,6 +468,9 @@ mod tests {
             "Procedures must be truncated (got {}, expected <5000)",
             p_count
         );
-        assert!(p_count > 0, "some Procedures content should survive truncation");
+        assert!(
+            p_count > 0,
+            "some Procedures content should survive truncation"
+        );
     }
 }

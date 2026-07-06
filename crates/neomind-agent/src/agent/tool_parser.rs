@@ -452,7 +452,9 @@ mod tests {
     #[test]
     fn test_degenerate_not_triggered_for_real_content() {
         // Prose anywhere → not degenerate.
-        assert!(!is_degenerate_fence_only_output("Done. The file is 45 bytes."));
+        assert!(!is_degenerate_fence_only_output(
+            "Done. The file is 45 bytes."
+        ));
         // Code fence WITH body content → not degenerate.
         assert!(!is_degenerate_fence_only_output("```json\n{\"a\": 1}\n```"));
         assert!(!is_degenerate_fence_only_output(

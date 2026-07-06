@@ -408,7 +408,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     }
                 }
                 "rule" => {
-                    if obj.contains_key("json") || obj.contains_key("condition") || obj.contains_key("actions") {
+                    if obj.contains_key("json")
+                        || obj.contains_key("condition")
+                        || obj.contains_key("actions")
+                    {
                         Some("create")
                     } else if obj.contains_key("enabled") {
                         Some("enable")

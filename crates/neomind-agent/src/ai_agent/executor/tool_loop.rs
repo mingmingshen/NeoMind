@@ -156,7 +156,8 @@ impl AgentExecutor {
                                     round = round_num,
                                     "Transient LLM error, retrying after delay"
                                 );
-                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms))
+                                    .await;
                                 continue;
                             }
 

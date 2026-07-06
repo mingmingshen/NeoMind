@@ -180,14 +180,8 @@ pub async fn get_system_stats_handler(
             };
             RuleStats {
                 total_rules: rules.len(),
-                enabled_rules: rules
-                    .iter()
-                    .filter(|r| r.enabled)
-                    .count(),
-                disabled_rules: rules
-                    .iter()
-                    .filter(|r| !r.enabled)
-                    .count(),
+                enabled_rules: rules.iter().filter(|r| r.enabled).count(),
+                disabled_rules: rules.iter().filter(|r| !r.enabled).count(),
                 triggered_today,
             }
         },
@@ -465,7 +459,10 @@ pub async fn get_device_stats_handler(
             .get_device_status(&config.device_id)
             .await;
         let is_online = device_status.is_connected_within(
-            state.devices.service.effective_offline_timeout(&config.device_id),
+            state
+                .devices
+                .service
+                .effective_offline_timeout(&config.device_id),
         );
 
         devices_with_stats.push(json!({
@@ -501,10 +498,7 @@ pub async fn get_rule_stats_handler(
 ) -> HandlerResult<serde_json::Value> {
     let rules = state.automation.rule_engine.list_rules().await;
 
-    let enabled_count = rules
-        .iter()
-        .filter(|r| r.enabled)
-        .count();
+    let enabled_count = rules.iter().filter(|r| r.enabled).count();
     let disabled_count = rules.len() - enabled_count;
 
     // Group by type if available

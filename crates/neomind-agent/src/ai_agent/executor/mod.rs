@@ -1336,9 +1336,7 @@ impl AgentExecutor {
                 // into context. Same trim pattern as `journal.records`
                 // (memory.rs:49-51) and `user_messages` (storage
                 // MAX_USER_MESSAGES=50).
-                while updated_memory.knowledge_files.len()
-                    > memory::MAX_KNOWLEDGE_FILES
-                {
+                while updated_memory.knowledge_files.len() > memory::MAX_KNOWLEDGE_FILES {
                     let dropped = updated_memory.knowledge_files.remove(0);
                     tracing::info!(
                         agent_id = %agent.id,

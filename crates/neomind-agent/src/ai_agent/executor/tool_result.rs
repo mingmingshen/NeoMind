@@ -29,8 +29,13 @@ fn hallucinated_tool_hint(tool_name: &str) -> Option<String> {
     // 1. Message/alert family — give the exact send syntax (most common hallucination).
     if matches!(
         lower.as_str(),
-        "message" | "notify" | "notification" | "alert" | "send_message"
-            | "send_notification" | "send_alert"
+        "message"
+            | "notify"
+            | "notification"
+            | "alert"
+            | "send_message"
+            | "send_notification"
+            | "send_alert"
     ) {
         return Some(format!(
             " There is NO `{}` tool. To send notifications or alerts, use the `shell` tool with: \
@@ -103,10 +108,7 @@ impl AgentExecutor {
                     // Execution error whose message happens to contain "not found"
                     // (e.g. "Device 'abc' not found") doesn't falsely trigger the
                     // hallucinated-tool redirect.
-                    let hint = if matches!(
-                        e,
-                        crate::toolkit::ToolError::NotFound(_)
-                    ) {
+                    let hint = if matches!(e, crate::toolkit::ToolError::NotFound(_)) {
                         hallucinated_tool_hint(&result.name).unwrap_or_else(|| {
                             let available = self.available_tool_names();
                             format!(
@@ -529,11 +531,18 @@ mod tests {
         // CLI domains used as tool names redirect to the shell tool.
         for name in &["device", "dashboard", "rule", "agent", "widget", "system"] {
             let hint = hallucinated_tool_hint(name);
-            assert!(hint.is_some(), "{:?} should be redirected as a CLI domain", name);
+            assert!(
+                hint.is_some(),
+                "{:?} should be redirected as a CLI domain",
+                name
+            );
             let h = hint.unwrap();
             assert!(h.contains("shell"), "must point to shell: {}", h);
-            assert!(h.contains("neomind"), "must reference the neomind CLI: {}", h);
+            assert!(
+                h.contains("neomind"),
+                "must reference the neomind CLI: {}",
+                h
+            );
         }
     }
 }
-

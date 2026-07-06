@@ -195,4 +195,3 @@ mod tests {
         assert!(!out.contains('\u{FFFD}')); // no replacement char from bad slicing
     }
 }
-

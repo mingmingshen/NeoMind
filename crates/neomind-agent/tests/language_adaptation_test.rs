@@ -10,8 +10,8 @@
 //! Requires: Ollama running on localhost:11434 with a model (e.g., qwen3.5:2b)
 
 use anyhow::Result;
-use neomind_agent::session::SessionManager;
 use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
+use neomind_agent::session::SessionManager;
 use std::sync::Arc;
 use std::time::Instant;
 

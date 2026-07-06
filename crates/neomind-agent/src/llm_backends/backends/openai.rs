@@ -2206,14 +2206,20 @@ mod tests {
         assert!(is_audio_model(&CloudProvider::Qwen, "qwen2-audio-7b"));
         assert!(is_audio_model(&CloudProvider::Qwen, "qwen2.5-omni-7b"));
         assert!(is_audio_model(&CloudProvider::Qwen, "qwen3-omni"));
-        assert!(is_audio_model(&CloudProvider::OpenAI, "gpt-4o-audio-preview"));
+        assert!(is_audio_model(
+            &CloudProvider::OpenAI,
+            "gpt-4o-audio-preview"
+        ));
         assert!(is_audio_model(&CloudProvider::OpenAI, "gpt-4o-audio"));
         assert!(is_audio_model(&CloudProvider::Custom, "step-audio-1"));
 
         // Text-only / vision-only — MUST stay false.
         assert!(!is_audio_model(&CloudProvider::OpenAI, "gpt-4-turbo"));
         assert!(!is_audio_model(&CloudProvider::OpenAI, "gpt-4.1"));
-        assert!(!is_audio_model(&CloudProvider::Anthropic, "claude-3-5-sonnet"));
+        assert!(!is_audio_model(
+            &CloudProvider::Anthropic,
+            "claude-3-5-sonnet"
+        ));
         assert!(!is_audio_model(&CloudProvider::Qwen, "qwen-max"));
         assert!(!is_audio_model(&CloudProvider::Qwen, "qwen-plus"));
         assert!(!is_audio_model(&CloudProvider::Qwen, "qwen3-vl-plus"));
@@ -2228,10 +2234,9 @@ mod tests {
     /// `supports_multimodal()` is false.
     #[test]
     fn test_messages_to_api_strips_images_for_text_model() {
-        let runtime = CloudRuntime::new(
-            CloudConfig::deepseek("sk-test").with_model("deepseek-chat"),
-        )
-        .expect("runtime builds");
+        let runtime =
+            CloudRuntime::new(CloudConfig::deepseek("sk-test").with_model("deepseek-chat"))
+                .expect("runtime builds");
         // Sanity: this is a text-only model.
         assert!(
             !runtime.supports_multimodal(),
@@ -2279,8 +2284,9 @@ mod tests {
             if let ApiContent::Parts(parts) = &msg.content {
                 for part in parts {
                     match part {
-                        ApiContentPart::ImageUrl { .. }
-                        | ApiContentPart::AnthropicImage { .. } => saw_image = true,
+                        ApiContentPart::ImageUrl { .. } | ApiContentPart::AnthropicImage { .. } => {
+                            saw_image = true
+                        }
                         ApiContentPart::Text { text } => {
                             if text.starts_with("[image content omitted") {
                                 saw_placeholder = true;
@@ -2312,9 +2318,8 @@ mod tests {
     /// Counter-test: a vision-capable model keeps the image parts intact.
     #[test]
     fn test_messages_to_api_keeps_images_for_vision_model() {
-        let runtime =
-            CloudRuntime::new(CloudConfig::openai("sk-test").with_model("gpt-4o"))
-                .expect("runtime builds");
+        let runtime = CloudRuntime::new(CloudConfig::openai("sk-test").with_model("gpt-4o"))
+            .expect("runtime builds");
         assert!(
             runtime.supports_multimodal(),
             "gpt-4o must be detected as multimodal for this test to be meaningful"
@@ -2366,10 +2371,8 @@ mod tests {
 
     #[test]
     fn test_qwen_request_emits_enable_thinking_when_disabled() {
-        let runtime = CloudRuntime::new(
-            CloudConfig::qwen("sk-test").with_model("qwen3.7-plus"),
-        )
-        .expect("runtime builds");
+        let runtime = CloudRuntime::new(CloudConfig::qwen("sk-test").with_model("qwen3.7-plus"))
+            .expect("runtime builds");
 
         let input = LlmInput {
             messages: vec![Message::new(MessageRole::User, Content::text("hi"))],
@@ -2393,10 +2396,8 @@ mod tests {
         // When thinking_enabled is None, the field MUST be skipped — letting
         // the model use its default. Hard-coding enable_thinking:false would
         // silently turn off vision reasoning for qwen3.7-plus dashboards.
-        let runtime = CloudRuntime::new(
-            CloudConfig::qwen("sk-test").with_model("qwen3.7-plus"),
-        )
-        .expect("runtime builds");
+        let runtime = CloudRuntime::new(CloudConfig::qwen("sk-test").with_model("qwen3.7-plus"))
+            .expect("runtime builds");
 
         let input = LlmInput {
             messages: vec![Message::new(MessageRole::User, Content::text("hi"))],
@@ -2409,7 +2410,9 @@ mod tests {
         let request = runtime.build_chat_request(input, false);
         let json = serde_json::to_value(&request).expect("serialize");
         assert!(
-            json.get("enable_thinking").map(|v| v.is_null()).unwrap_or(true),
+            json.get("enable_thinking")
+                .map(|v| v.is_null())
+                .unwrap_or(true),
             "enable_thinking must be absent when thinking_enabled is None"
         );
     }
@@ -2419,10 +2422,9 @@ mod tests {
         // DeepSeek / GLM / OpenAI / etc. don't accept `enable_thinking`.
         // Sending it could break strict validators on custom OpenAI-compatible
         // servers. The field is DashScope-specific.
-        let runtime = CloudRuntime::new(
-            CloudConfig::deepseek("sk-test").with_model("deepseek-chat"),
-        )
-        .expect("runtime builds");
+        let runtime =
+            CloudRuntime::new(CloudConfig::deepseek("sk-test").with_model("deepseek-chat"))
+                .expect("runtime builds");
 
         let input = LlmInput {
             messages: vec![Message::new(MessageRole::User, Content::text("hi"))],
@@ -2438,7 +2440,9 @@ mod tests {
         let request = runtime.build_chat_request(input, false);
         let json = serde_json::to_value(&request).expect("serialize");
         assert!(
-            json.get("enable_thinking").map(|v| v.is_null()).unwrap_or(true),
+            json.get("enable_thinking")
+                .map(|v| v.is_null())
+                .unwrap_or(true),
             "non-Qwen providers must not receive enable_thinking field"
         );
     }

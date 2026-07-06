@@ -284,7 +284,11 @@ impl From<&CompiledRule> for RuleDetailDto {
             trigger: trigger_json,
             condition: condition_json,
             actions: actions_json,
-            tags: if rule.tags.is_empty() { None } else { Some(rule.tags.clone()) },
+            tags: if rule.tags.is_empty() {
+                None
+            } else {
+                Some(rule.tags.clone())
+            },
             cooldown: Some(rule.cooldown.as_millis() as u64),
             for_duration: rule.for_duration.map(|d| d.as_millis() as u64),
             dsl_preview: rule.dsl_preview.clone(),
@@ -335,7 +339,11 @@ pub async fn list_rules_handler(
                 trigger: trigger_json,
                 condition: condition_json,
                 actions: actions_json,
-                tags: if r.tags.is_empty() { None } else { Some(r.tags.clone()) },
+                tags: if r.tags.is_empty() {
+                    None
+                } else {
+                    Some(r.tags.clone())
+                },
                 cooldown: Some(r.cooldown.as_millis() as u64),
                 for_duration: r.for_duration.map(|d| d.as_millis() as u64),
                 dsl_preview: r.dsl_preview.clone(),
@@ -394,7 +402,10 @@ pub async fn update_rule_handler(
 
     // Extract fields from request (clone before potential move)
     let name = req.get("name").and_then(|v| v.as_str()).map(String::from);
-    let description = req.get("description").and_then(|v| v.as_str()).map(String::from);
+    let description = req
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let enabled = req.get("enabled").and_then(|v| v.as_bool());
     let source = req.get("source").cloned();
 
@@ -441,8 +452,8 @@ pub async fn update_rule_handler(
             rule.state = old.state.clone();
             rule.created_at = old.created_at;
         }
-        rule.enabled = enabled
-            .unwrap_or_else(|| existing.as_ref().map(|r| r.enabled).unwrap_or(true));
+        rule.enabled =
+            enabled.unwrap_or_else(|| existing.as_ref().map(|r| r.enabled).unwrap_or(true));
         rule.updated_at = chrono::Utc::now();
 
         // Finalize: auto-generate dsl_preview, extract trigger sources
@@ -467,7 +478,10 @@ pub async fn update_rule_handler(
                         format!(
                             "- {}{}",
                             e.message,
-                            e.field.as_ref().map(|f| format!(" ({})", f)).unwrap_or_default()
+                            e.field
+                                .as_ref()
+                                .map(|f| format!(" ({})", f))
+                                .unwrap_or_default()
                         )
                     })
                     .collect::<Vec<_>>()
@@ -656,13 +670,9 @@ pub async fn test_rule_handler(
     // `--input '{"value": <num>}'` (or a raw number) as JSON body. Without
     // this, the handler silently dropped the body and always fell back to
     // historical telemetry — making `rule test` useless for what-if testing.
-    let input_value: Option<f64> = body
-        .as_ref()
-        .and_then(|b| extract_input_number(&b.0));
+    let input_value: Option<f64> = body.as_ref().and_then(|b| extract_input_number(&b.0));
 
-    let input_text: Option<String> = body
-        .as_ref()
-        .and_then(|b| extract_input_text(&b.0));
+    let input_text: Option<String> = body.as_ref().and_then(|b| extract_input_text(&b.0));
 
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
@@ -694,7 +704,12 @@ pub async fn test_rule_handler(
             operator,
             threshold,
             threshold_value,
-        } => (source.clone(), *operator, *threshold, threshold_value.clone()),
+        } => (
+            source.clone(),
+            *operator,
+            *threshold,
+            threshold_value.clone(),
+        ),
         RuleCondition::Range {
             source,
             min: _,
@@ -739,7 +754,11 @@ pub async fn test_rule_handler(
     };
 
     // Get current value from the value provider
-    let mut current_value = state.automation.rule_engine.get_value_provider().get_by_source(&query_source);
+    let mut current_value = state
+        .automation
+        .rule_engine
+        .get_value_provider()
+        .get_by_source(&query_source);
 
     // User-supplied test input takes priority over live/historical data.
     // This is the whole point of `rule test --input`: what-if evaluation
@@ -766,10 +785,18 @@ pub async fn test_rule_handler(
         && neomind_rules::VIRTUAL_METRICS.contains(&query_source.field_path.as_str())
         && query_source.field_path == "__last_seen_age_secs"
     {
-        let last_seen = state.devices.service.get_device_last_seen(&query_source.source_id).await;
+        let last_seen = state
+            .devices
+            .service
+            .get_device_last_seen(&query_source.source_id)
+            .await;
         if last_seen > 0 {
             let age = (chrono::Utc::now().timestamp() - last_seen).max(0) as f64;
-            let offline_timeout = state.devices.service.effective_offline_timeout(&query_source.source_id) as f64;
+            let offline_timeout = state
+                .devices
+                .service
+                .effective_offline_timeout(&query_source.source_id)
+                as f64;
             let metric_value = if age >= offline_timeout { age } else { 0.0 };
             tracing::debug!(
                 device_id = %query_source.source_id,
@@ -796,9 +823,15 @@ pub async fn test_rule_handler(
     // Fallback: query historical data from time series storage.
     // Try multiple common metric prefixes in case the field path differs from storage key.
     let telemetry_source_id = match query_source.source_type {
-        neomind_core::datasource::DataSourceType::Device => format!("device:{}", query_source.source_id),
-        neomind_core::datasource::DataSourceType::Extension => format!("extension:{}", query_source.source_id),
-        neomind_core::datasource::DataSourceType::Transform => format!("transform:{}", query_source.source_id),
+        neomind_core::datasource::DataSourceType::Device => {
+            format!("device:{}", query_source.source_id)
+        }
+        neomind_core::datasource::DataSourceType::Extension => {
+            format!("extension:{}", query_source.source_id)
+        }
+        neomind_core::datasource::DataSourceType::Transform => {
+            format!("transform:{}", query_source.source_id)
+        }
     };
     let metric_variants = vec![
         metric.clone(),
@@ -873,21 +906,18 @@ pub async fn test_rule_handler(
 
     let condition_met = if let Some(rv) = used_value.as_ref() {
         match condition {
-            RuleCondition::Comparison { .. } => {
-                match rv {
-                    neomind_rules::RuleValue::Number(v) => operator.evaluate(*v, threshold),
-                    neomind_rules::RuleValue::Text(s) => {
-                        let fallback = threshold.to_string();
-                        let t = threshold_value.as_deref().unwrap_or(&fallback);
-                        operator.evaluate_str(s, t)
-                    }
+            RuleCondition::Comparison { .. } => match rv {
+                neomind_rules::RuleValue::Number(v) => operator.evaluate(*v, threshold),
+                neomind_rules::RuleValue::Text(s) => {
+                    let fallback = threshold.to_string();
+                    let t = threshold_value.as_deref().unwrap_or(&fallback);
+                    operator.evaluate_str(s, t)
                 }
-            }
-            RuleCondition::Range { min, max, .. } => {
-                rv.as_number()
-                    .map(|v| v >= *min && v <= *max)
-                    .unwrap_or(false)
-            }
+            },
+            RuleCondition::Range { min, max, .. } => rv
+                .as_number()
+                .map(|v| v >= *min && v <= *max)
+                .unwrap_or(false),
             RuleCondition::Logical { .. } => unreachable!(), // Returned error above
         }
     } else {
@@ -962,10 +992,7 @@ pub async fn trigger_rule_handler(
 
     let result = state.automation.rule_engine.execute_rule(&rule_id).await;
     if !result.success && result.error.as_deref() == Some("Rule not found") {
-        return Err(ErrorResponse::not_found(format!(
-            "Rule '{}' not found",
-            id
-        )));
+        return Err(ErrorResponse::not_found(format!("Rule '{}' not found", id)));
     }
     ok(json!({
         "rule_id": id,
@@ -1057,11 +1084,8 @@ pub async fn create_rule_handler(
     // non-existent devices/metrics/agents at creation time)
     {
         let context = build_validation_context(&state);
-        let result = neomind_rules::RuleValidator::validate_rule(
-            &rule.condition,
-            &rule.actions,
-            &context,
-        );
+        let result =
+            neomind_rules::RuleValidator::validate_rule(&rule.condition, &rule.actions, &context);
         if !result.is_valid {
             let detail = result
                 .errors
@@ -1070,7 +1094,10 @@ pub async fn create_rule_handler(
                     format!(
                         "- {}{}",
                         e.message,
-                        e.field.as_ref().map(|f| format!(" ({})", f)).unwrap_or_default()
+                        e.field
+                            .as_ref()
+                            .map(|f| format!(" ({})", f))
+                            .unwrap_or_default()
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1130,10 +1157,20 @@ pub async fn get_rule_history_handler(
     let history = if let Some(ref store) = state.automation.rule_store {
         match store.load_history(&rule_id) {
             Ok(h) if !h.is_empty() => h,
-            _ => state.automation.rule_engine.get_rule_history(&rule_id).await,
+            _ => {
+                state
+                    .automation
+                    .rule_engine
+                    .get_rule_history(&rule_id)
+                    .await
+            }
         }
     } else {
-        state.automation.rule_engine.get_rule_history(&rule_id).await
+        state
+            .automation
+            .rule_engine
+            .get_rule_history(&rule_id)
+            .await
     };
 
     ok(json!({
@@ -1425,15 +1462,20 @@ fn build_device_metrics_for_validation(
                 .map(|m| MetricInfo {
                     name: m.name.clone(),
                     data_type: match m.data_type {
-                        DevicesMetricDataType::Float
-                        | DevicesMetricDataType::Integer => MetricDataType::Number,
+                        DevicesMetricDataType::Float | DevicesMetricDataType::Integer => {
+                            MetricDataType::Number
+                        }
                         DevicesMetricDataType::Boolean => MetricDataType::Boolean,
                         // String / Array / Binary / Enum all map to String for
                         // rule-validation purposes (rules compare against the
                         // string representation of the value).
                         _ => MetricDataType::String,
                     },
-                    unit: if m.unit.is_empty() { None } else { Some(m.unit.clone()) },
+                    unit: if m.unit.is_empty() {
+                        None
+                    } else {
+                        Some(m.unit.clone())
+                    },
                     min_value: m.min,
                     max_value: m.max,
                 })
@@ -1523,14 +1565,15 @@ pub async fn validate_rule_handler(
     let context = build_validation_context(&state);
 
     // Parse actions if present — v2 uses tagged enum format
-    let actions: Vec<RuleAction> = if let Some(actions_arr) = req.get("actions").and_then(|v| v.as_array()) {
-        actions_arr
-            .iter()
-            .filter_map(|av| serde_json::from_value(av.clone()).ok())
-            .collect()
-    } else {
-        vec![]
-    };
+    let actions: Vec<RuleAction> =
+        if let Some(actions_arr) = req.get("actions").and_then(|v| v.as_array()) {
+            actions_arr
+                .iter()
+                .filter_map(|av| serde_json::from_value(av.clone()).ok())
+                .collect()
+        } else {
+            vec![]
+        };
 
     // Validate
     let result = RuleValidator::validate_rule(&condition, &actions, &context);

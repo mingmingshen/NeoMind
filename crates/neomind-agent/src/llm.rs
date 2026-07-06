@@ -2255,7 +2255,10 @@ mod tests {
         let body = "some plain text error";
         let key1 = extract_skill_id_from_result(body);
         let key2 = extract_skill_id_from_result(body);
-        assert_eq!(key1, key2, "fallback must be deterministic for identical input");
+        assert_eq!(
+            key1, key2,
+            "fallback must be deterministic for identical input"
+        );
         assert!(key1.starts_with("hash:"));
     }
 
@@ -2266,20 +2269,14 @@ mod tests {
 
         // First load: body is appended.
         interface
-            .set_skill_context(
-                extract_skill_id_from_result(payload),
-                payload.to_string(),
-            )
+            .set_skill_context(extract_skill_id_from_result(payload), payload.to_string())
             .await;
         let after_first = interface.get_skill_context().await.expect("body present");
         assert!(after_first.contains("RULE GUIDE"));
 
         // Second identical load: should be a no-op (dedup).
         interface
-            .set_skill_context(
-                extract_skill_id_from_result(payload),
-                payload.to_string(),
-            )
+            .set_skill_context(extract_skill_id_from_result(payload), payload.to_string())
             .await;
         let after_second = interface.get_skill_context().await.expect("body present");
         assert_eq!(
@@ -2291,10 +2288,7 @@ mod tests {
         // A different skill id still accumulates.
         let payload2 = r#"{"id":"device-onboarding","name":"Dev","guide":"DEVICE GUIDE"}"#;
         interface
-            .set_skill_context(
-                extract_skill_id_from_result(payload2),
-                payload2.to_string(),
-            )
+            .set_skill_context(extract_skill_id_from_result(payload2), payload2.to_string())
             .await;
         let after_third = interface.get_skill_context().await.expect("body present");
         assert!(after_third.contains("RULE GUIDE"));
@@ -2305,10 +2299,7 @@ mod tests {
         assert!(interface.get_skill_context().await.is_none());
         // After clear, the same id can load again (fresh turn).
         interface
-            .set_skill_context(
-                extract_skill_id_from_result(payload),
-                payload.to_string(),
-            )
+            .set_skill_context(extract_skill_id_from_result(payload), payload.to_string())
             .await;
         assert!(interface
             .get_skill_context()

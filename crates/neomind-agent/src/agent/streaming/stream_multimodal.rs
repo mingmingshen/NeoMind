@@ -11,8 +11,8 @@ use futures::{Stream, StreamExt};
 
 use super::context::{build_context_window_with_summary, ToolExecutionResult};
 use super::dedup::deduplicate_tool_results;
-use super::resolve::resolve_cached_arguments;
 use super::intent::build_list_only_dead_end_prompt;
+use super::resolve::resolve_cached_arguments;
 use super::result_format::format_tool_results;
 use super::sanitize::sanitize_tool_result_for_prompt;
 use super::stream_core::StreamSafeguards;
@@ -103,7 +103,9 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     // so non-standard data URL formats are handled consistently.
     let image_base64_list: Vec<String> = images
         .iter()
-        .filter_map(|data_url| crate::image_utils::parse_image_data(data_url).map(|p| p.base64.to_string()))
+        .filter_map(|data_url| {
+            crate::image_utils::parse_image_data(data_url).map(|p| p.base64.to_string())
+        })
         .collect();
 
     // Store user message in history with images
