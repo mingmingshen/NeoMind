@@ -353,7 +353,12 @@ impl Tool for ImageEditTool {
  Common patterns:\n\
  - Annotate a chat-uploaded detection in ONE call: {\"image\": \"$cached:user_image\", \"operations\": [draw_rect(...), draw_text(label, x, y-20)]}\n\
  - Privacy masking: [blur_rect(face_region)]\n\
- - Region-focused analysis (2 tools, not 2 image_edit calls): image_edit(crop) then vision(returned path)"
+ - Region-focused analysis (2 tools, not 2 image_edit calls): image_edit(crop) then vision(returned path)\n\n\
+ EMBEDDING THE RESULT IN YOUR REPLY:\n\
+ The response includes a `url` field (e.g. \"/api/images/foo.png\"). To show the \
+ processed image to the user in your text reply, write markdown: \
+ `![description](url)`. The url stays valid for the lifetime of the file. \
+ Do NOT include the base64 unless the user explicitly asks for it."
     }
 
     fn parameters(&self) -> Value {
@@ -437,8 +442,10 @@ impl Tool for ImageEditTool {
         let path = self.write_output(&out_bytes, ext, params.output_filename.as_deref())?;
 
         // 6. Build response.
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let mut resp = serde_json::json!({
             "path": path.to_string_lossy(),
+            "url": format!("/api/images/{}", filename),
             "width": img.width(),
             "height": img.height(),
             "size_bytes": out_bytes.len(),

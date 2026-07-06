@@ -26,8 +26,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
         dashboards, data, data_push, devices, events, extension_stream, extensions,
-        frontend_components, instances, llm_backends, memory, message_channels, messages, mqtt,
-        onboarding, rules, sessions, settings, setup, skills, stats, suggestions, tools,
+        frontend_components, images, instances, llm_backends, memory, message_channels, messages,
+        mqtt, onboarding, rules, sessions, settings, setup, skills, stats, suggestions, tools,
     };
 
     // Public routes (no authentication required)
@@ -104,6 +104,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Tools API (public - static metadata)
         .route("/api/tools", get(tools::list_tools_handler))
         .route("/api/tools/:name", get(tools::get_tool_handler))
+        // Image static files (served from data/images/, content-addressed)
+        .route("/api/images/:filename", get(images::get_image_handler))
         // Extension read-only routes (metadata, health, assets)
         .route(
             "/api/extensions/:id",
@@ -544,10 +546,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             post(rules::set_rule_status_handler),
         )
         .route("/api/rules/:id/test", post(rules::test_rule_handler))
-        .route(
-            "/api/rules/:id/trigger",
-            post(rules::trigger_rule_handler),
-        )
+        .route("/api/rules/:id/trigger", post(rules::trigger_rule_handler))
         .route(
             "/api/rules/:id/history",
             get(rules::get_rule_history_handler),
