@@ -111,6 +111,37 @@ the extension marketplace.
   to the current 22 (vision, voice, IoT bridges, utilities),
   reorganized by category.
 
+### Diagnostic log archive download
+
+- **New `GET /api/logs/download?days=N` endpoint** — bundles every
+  `neomind.log.*` daily-rotated file under `<data_dir>/logs/` into a
+  single in-memory ZIP and streams it back as
+  `Content-Disposition: attachment`. Intended for support/diagnostic
+  flows: the user picks a time range in Settings → Preferences and
+  downloads a zip to email back to the team. Three defense-in-depth
+  memory caps on edge devices: 64 MiB per file, 60 files max, 512 MiB
+  total.
+- **Local-time date filter** — `tracing_appender::rolling::daily`
+  names files using LOCAL time, so the filter uses `chrono::Local`
+  (not UTC) to match. Off-by-one fix: `days=1` means today only
+  (was today + yesterday). The bare `neomind.log` active file
+  (no date suffix) always passes the filter.
+- **Canonical log path unification** — the Tauri shell now writes
+  logs to `<app_data>/data/logs/` (was `<app_data>/logs/`), matching
+  `NEOMIND_DATA_DIR` and the API handler's read path. A one-time
+  `migrate_legacy_log_dir()` runs at startup to move existing files
+  to the new location with a cross-filesystem copy+delete fallback.
+  CLI `neomind logs` checks the new path first, keeps the legacy
+  path as fallback for ≤0.9.1 upgraders.
+- **Frontend** — `DiagnosticDataCard` lives in PreferencesTab (next
+  to Data Management, both being operational features), using the
+  preferences width convention (`Select w-full sm:w-[180px]` +
+  inline `size="sm"` button). `api.downloadLogs` parses JSON errors
+  only — raw backend text never leaks to the toast.
+- **i18n fix** — pre-existing `updateAvailableWithVersion` had
+  single-brace `{version}` which i18next renders literally; fixed to
+  `{{version}}`.
+
 ---
 
 ## [0.9.1] - 2026-07-06
