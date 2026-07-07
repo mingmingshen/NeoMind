@@ -1154,6 +1154,94 @@ fn is_share_proxy_path_allowed(path: &str) -> bool {
         .any(|p| path.starts_with(*p) || first_segment == *p)
 }
 
+/// Generate a unique output_prefix by appending the first 8 chars of a fresh UUID.
+/// Two transforms with the same output_prefix would collide in the
+/// extensionMetric: "<prefix>.<field>" namespace, so this MUST be unique.
+fn new_output_prefix(source_prefix: &str) -> String {
+    // Sanitize: replace any non-alphanumeric_underscore with underscore
+    let clean: String = source_prefix
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let suffix: String = uuid::Uuid::new_v4().to_string().chars().take(8).collect();
+    format!("{}_{}", clean, suffix)
+}
+
+/// Rewrite all transform-ID and output-prefix references inside a single cloned
+/// component. Only fires when `config._transformId` matches `old_id` — this is the
+/// marker that the component "owns" the transform (vs. just referencing a user-picked
+/// one). Updates:
+///   - config._transformId             → new_id
+///   - dataSource.transformId          → new_id
+///   - dataSource.sourceId             → "transform:{new_id}"
+///   - dataSource.id                   → new_id
+///   - dataSource.metricId / .field    → replace old_prefix with new_prefix if the
+///                                       string starts with "{old_prefix}."
+fn rewrite_component_transform_refs(
+    component: &mut StoredComponent,
+    old_id: &str,
+    new_id: &str,
+    old_prefix: &str,
+    new_prefix: &str,
+) {
+    // Gate: only rewrite if config._transformId == old_id (ownership marker)
+    let is_owner = component
+        .config
+        .as_ref()
+        .and_then(|c| c.get("_transformId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s == old_id)
+        .unwrap_or(false);
+    if !is_owner {
+        return;
+    }
+
+    // config._transformId
+    if let Some(cfg) = component.config.as_mut().and_then(|c| c.as_object_mut()) {
+        cfg.insert(
+            "_transformId".to_string(),
+            JsonValue::String(new_id.to_string()),
+        );
+    }
+
+    // dataSource fields
+    if let Some(ds) = component
+        .data_source
+        .as_mut()
+        .and_then(|d| d.as_object_mut())
+    {
+        ds.insert(
+            "transformId".to_string(),
+            JsonValue::String(new_id.to_string()),
+        );
+        ds.insert(
+            "sourceId".to_string(),
+            JsonValue::String(format!("transform:{}", new_id)),
+        );
+        ds.insert("id".to_string(), JsonValue::String(new_id.to_string()));
+
+        let prefix_replacements = ["metricId", "field"];
+        let old_prefix_dot = format!("{}.", old_prefix);
+        for key in prefix_replacements {
+            if let Some(JsonValue::String(s)) = ds.get(key).cloned() {
+                if s.starts_with(&old_prefix_dot) {
+                    let suffix = &s[old_prefix_dot.len()..];
+                    ds.insert(
+                        key.to_string(),
+                        JsonValue::String(format!("{}.{}", new_prefix, suffix)),
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod share_proxy_tests {
     use super::is_share_proxy_path_allowed;
@@ -1253,4 +1341,143 @@ fn is_allowed_readonly_method(path: &str, method: &Method) -> bool {
             .any(|p| path_matches_pattern(path, p));
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{new_output_prefix, rewrite_component_transform_refs};
+    use neomind_storage::dashboards::DashboardComponent as StoredComponent;
+
+    #[test]
+    fn rewrite_component_transform_refs_updates_all_three_fields() {
+        let mut component = StoredComponent {
+            id: "comp_1".to_string(),
+            component_type: "chart".to_string(),
+            position: neomind_storage::dashboards::ComponentPosition {
+                x: 0,
+                y: 0,
+                w: 6,
+                h: 4,
+                min_w: None,
+                min_h: None,
+                max_w: None,
+                max_h: None,
+            },
+            title: None,
+            data_source: Some(serde_json::json!({
+                "type": "transform",
+                "transformId": "t1",
+                "sourceId": "transform:t1",
+                "id": "t1",
+                "metricId": "detection_count.value",
+                "field": "detection_count.value",
+            })),
+            display: None,
+            config: Some(serde_json::json!({ "_transformId": "t1" })),
+            actions: None,
+        };
+
+        rewrite_component_transform_refs(
+            &mut component,
+            "t1",
+            "t2",
+            "detection_count",
+            "detection_count_a1b2c3d4",
+        );
+
+        let ds = component.data_source.as_ref().unwrap();
+        assert_eq!(ds["transformId"], "t2");
+        assert_eq!(ds["sourceId"], "transform:t2");
+        assert_eq!(ds["id"], "t2");
+        assert_eq!(ds["metricId"], "detection_count_a1b2c3d4.value");
+        assert_eq!(ds["field"], "detection_count_a1b2c3d4.value");
+        assert_eq!(component.config.as_ref().unwrap()["_transformId"], "t2");
+    }
+
+    #[test]
+    fn rewrite_component_transform_refs_skips_when_no_marker() {
+        let mut component = StoredComponent {
+            id: "comp_2".to_string(),
+            component_type: "chart".to_string(),
+            position: neomind_storage::dashboards::ComponentPosition {
+                x: 0,
+                y: 0,
+                w: 6,
+                h: 4,
+                min_w: None,
+                min_h: None,
+                max_w: None,
+                max_h: None,
+            },
+            title: None,
+            data_source: Some(serde_json::json!({
+                "type": "transform",
+                "transformId": "t1",
+            })),
+            display: None,
+            config: None,
+            actions: None,
+        };
+
+        rewrite_component_transform_refs(
+            &mut component,
+            "t1",
+            "t2",
+            "detection_count",
+            "detection_count_new",
+        );
+
+        // No _transformId marker → helper should NOT touch this component
+        assert_eq!(component.data_source.as_ref().unwrap()["transformId"], "t1");
+    }
+
+    #[test]
+    fn rewrite_component_transform_refs_handles_missing_metric_prefix() {
+        let mut component = StoredComponent {
+            id: "comp_3".to_string(),
+            component_type: "chart".to_string(),
+            position: neomind_storage::dashboards::ComponentPosition {
+                x: 0,
+                y: 0,
+                w: 6,
+                h: 4,
+                min_w: None,
+                min_h: None,
+                max_w: None,
+                max_h: None,
+            },
+            title: None,
+            data_source: Some(serde_json::json!({
+                "transformId": "t1",
+                "sourceId": "transform:t1",
+                "metricId": "custom_field",
+            })),
+            display: None,
+            config: Some(serde_json::json!({ "_transformId": "t1" })),
+            actions: None,
+        };
+
+        rewrite_component_transform_refs(
+            &mut component,
+            "t1",
+            "t2",
+            "detection_count",
+            "detection_count_new",
+        );
+
+        let ds = component.data_source.as_ref().unwrap();
+        assert_eq!(ds["transformId"], "t2");
+        assert_eq!(ds["sourceId"], "transform:t2");
+        // metricId not prefixed by old output_prefix → unchanged
+        assert_eq!(ds["metricId"], "custom_field");
+    }
+
+    #[test]
+    fn new_output_prefix_appends_short_uuid_suffix() {
+        let p1 = new_output_prefix("detection_count");
+        let p2 = new_output_prefix("detection_count");
+        assert!(p1.starts_with("detection_count_"));
+        assert!(p2.starts_with("detection_count_"));
+        assert_ne!(p1, p2, "two calls must produce different prefixes");
+    }
 }
