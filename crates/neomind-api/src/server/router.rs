@@ -26,8 +26,9 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
         dashboards, data, data_push, devices, events, extension_stream, extensions,
-        frontend_components, images, instances, llm_backends, memory, message_channels, messages,
-        mqtt, onboarding, rules, sessions, settings, setup, skills, stats, suggestions, tools,
+        frontend_components, images, instances, llm_backends, logs, memory, message_channels,
+        messages, mqtt, onboarding, rules, sessions, settings, setup, skills, stats, suggestions,
+        tools,
     };
 
     // Public routes (no authentication required)
@@ -278,6 +279,9 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(data::list_all_data_sources_handler),
         )
         .route("/api/stats/system", get(stats::get_system_stats_handler))
+        // Diagnostic log archive download (admin/auth-only) — bundles
+        // data/logs/*.log.* into a zip for support flows.
+        .route("/api/logs/download", get(logs::download_logs_handler))
         // Webhook URL lookup — admin/UI helper, not for devices. Moved here from
         // public_routes to stop leaking device existence (404 vs 200) and the
         // configured NEOMIND_SERVER_URL to unauthenticated callers.

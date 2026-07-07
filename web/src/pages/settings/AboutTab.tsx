@@ -570,7 +570,6 @@ export function AboutTab() {
       <div className="text-center text-xs text-muted-foreground">
         © 2025–2026 CamThink · NeoMind
       </div>
-
       <InstanceManagerDialog
         open={instanceManagerOpen}
         onOpenChange={setInstanceManagerOpen}

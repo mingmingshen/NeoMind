@@ -797,12 +797,21 @@ async fn run_logs(
 
     let log_dirs = [
         std::path::PathBuf::from("data/logs"),
-        // macOS: ~/Library/Application Support/com.neomind.neomind/logs/
+        // Current Tauri path (≥ 0.9.2): <app_data>/data/logs/
+        // macOS
+        std::path::PathBuf::from(&home)
+            .join("Library/Application Support/com.neomind.neomind/data/logs"),
+        // Linux
+        std::path::PathBuf::from(&home)
+            .join(".local/share/com.neomind.neomind/data/logs"),
+        // Windows
+        std::path::PathBuf::from(&appdata).join("com.neomind.neomind/data/logs"),
+        // Legacy Tauri path (≤ 0.9.1): <app_data>/logs/ — kept for one release
+        // so users upgrading from older versions can still read pre-migration
+        // logs via `neomind logs` before restarting the desktop app.
         std::path::PathBuf::from(&home)
             .join("Library/Application Support/com.neomind.neomind/logs"),
-        // Linux: ~/.local/share/com.neomind.neomind/logs/
         std::path::PathBuf::from(&home).join(".local/share/com.neomind.neomind/logs"),
-        // Windows: %APPDATA%/com.neomind.neomind/logs/
         std::path::PathBuf::from(&appdata).join("com.neomind.neomind/logs"),
         // Fallback: ~/.neomind/logs/
         std::path::PathBuf::from(&home).join(".neomind/logs"),
