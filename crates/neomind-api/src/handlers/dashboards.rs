@@ -16,6 +16,7 @@ use super::{
     common::{ok, HandlerResult},
     ServerState,
 };
+use crate::automation::types::{AutomationMetadata, TransformAutomation};
 use crate::models::ErrorResponse;
 use neomind_core::event::NeoMindEvent;
 use neomind_storage::dashboards::{
@@ -1242,6 +1243,158 @@ fn rewrite_component_transform_refs(
     }
 }
 
+/// Result of cloning a dashboard's contents in memory.
+/// The handler persists `dashboard` and each entry of `new_transforms`.
+struct DuplicateBuild {
+    dashboard: StoredDashboard,
+    new_transforms: Vec<TransformAutomation>,
+}
+
+/// Pure clone logic — no I/O. Produces a new dashboard + new transforms
+/// that the caller then persists. Tested in isolation.
+fn build_duplicate_dashboard(
+    source: &StoredDashboard,
+    available_transforms: Vec<TransformAutomation>,
+    max_sort_order: i32,
+) -> DuplicateBuild {
+    let now = chrono::Utc::now().timestamp();
+    let new_dashboard_id = format!("dashboard_{}", uuid::Uuid::new_v4());
+
+    // Deep clone components via JSON round-trip (StoredComponent fields are serde_json::Value)
+    let mut new_components: Vec<StoredComponent> = source
+        .components
+        .iter()
+        .map(|c| {
+            serde_json::from_value(serde_json::to_value(c).unwrap_or(JsonValue::Null))
+                .unwrap_or_else(|_| c.clone())
+        })
+        .collect();
+
+    let mut new_transforms: Vec<TransformAutomation> = Vec::new();
+
+    for component in &mut new_components {
+        // Detect ownership marker
+        let old_t_id = match component
+            .config
+            .as_ref()
+            .and_then(|c| c.get("_transformId"))
+            .and_then(|v| v.as_str())
+        {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+
+        // Find the source transform
+        let src_t = match available_transforms.iter().find(|t| t.metadata.id == old_t_id) {
+            Some(t) => t.clone(),
+            None => continue, // Spec edge case: missing transform → leave refs as-is
+        };
+
+        // Clone transform with fresh IDs
+        let new_t_id = format!("transform_{}", uuid::Uuid::new_v4());
+        let new_prefix = new_output_prefix(&src_t.output_prefix);
+        let new_transform = TransformAutomation {
+            metadata: AutomationMetadata {
+                id: new_t_id.clone(),
+                name: format!("{} (copy)", src_t.metadata.name),
+                description: src_t.metadata.description.clone(),
+                enabled: src_t.metadata.enabled,
+                execution_count: 0,
+                last_executed: None,
+                created_at: now,
+                updated_at: now,
+            },
+            scope: src_t.scope.clone(),
+            intent: src_t.intent.clone(),
+            js_code: src_t.js_code.clone(),
+            output_prefix: new_prefix.clone(),
+            complexity: src_t.complexity,
+            operations: src_t.operations.clone(),
+        };
+
+        rewrite_component_transform_refs(
+            component,
+            &old_t_id,
+            &new_t_id,
+            &src_t.output_prefix,
+            &new_prefix,
+        );
+
+        new_transforms.push(new_transform);
+    }
+
+    let new_dashboard = StoredDashboard {
+        id: new_dashboard_id,
+        name: format!("{} (copy)", source.name),
+        layout: source.layout.clone(),
+        components: new_components,
+        created_at: now,
+        updated_at: now,
+        is_default: None,
+        sort_order: Some(max_sort_order + 1),
+    };
+
+    DuplicateBuild {
+        dashboard: new_dashboard,
+        new_transforms,
+    }
+}
+
+/// Duplicate a dashboard. Clones the source dashboard with a new ID and
+/// "(copy)" name. Component-owned transforms (marked via config._transformId)
+/// are deep-cloned with fresh IDs and output_prefix; their references in the
+/// cloned components are rewritten. Device/agent/extension references stay
+/// shared (they are global resources).
+pub async fn duplicate_dashboard_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Dashboard> {
+    // Load source
+    let source = state
+        .dashboard_store
+        .load(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load source dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
+
+    // Read max sort order
+    let max_order = state
+        .dashboard_store
+        .max_sort_order()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to compute sort order: {}", e)))?;
+
+    // Load all automations. `Automation` is a TYPE ALIAS for `TransformAutomation`
+    // (NOT an enum), so list_automations() returns Vec<TransformAutomation> directly.
+    let available_transforms: Vec<TransformAutomation> = match &state.automation.automation_store {
+        Some(store) => store
+            .list_automations()
+            .await
+            .map_err(|e| ErrorResponse::internal(format!("Failed to list automations: {}", e)))?,
+        None => Vec::new(),
+    };
+
+    // Pure clone logic
+    let build = build_duplicate_dashboard(&source, available_transforms, max_order);
+
+    // Persist new transforms first (orphan transforms are harmless if dashboard save fails)
+    if let Some(store) = &state.automation.automation_store {
+        for t in &build.new_transforms {
+            if let Err(e) = store.save_automation(t).await {
+                tracing::warn!(error = %e, transform_id = %t.metadata.id, "failed to save cloned transform");
+            }
+        }
+    }
+
+    // Persist new dashboard
+    state
+        .dashboard_store
+        .save(&build.dashboard)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save duplicated dashboard: {}", e)))?;
+
+    emit_dashboard_event(&state, &build.dashboard.id, "create");
+
+    ok(stored_to_api(&build.dashboard))
+}
+
 #[cfg(test)]
 mod share_proxy_tests {
     use super::is_share_proxy_path_allowed;
@@ -1345,8 +1498,11 @@ fn is_allowed_readonly_method(path: &str, method: &Method) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{new_output_prefix, rewrite_component_transform_refs};
-    use neomind_storage::dashboards::DashboardComponent as StoredComponent;
+    use super::{build_duplicate_dashboard, new_output_prefix, rewrite_component_transform_refs};
+    use neomind_storage::dashboards::{
+        Dashboard as StoredDashboard, DashboardComponent as StoredComponent,
+        DashboardLayout as StoredLayout,
+    };
 
     #[test]
     fn rewrite_component_transform_refs_updates_all_three_fields() {
@@ -1479,5 +1635,109 @@ mod tests {
         assert!(p1.starts_with("detection_count_"));
         assert!(p2.starts_with("detection_count_"));
         assert_ne!(p1, p2, "two calls must produce different prefixes");
+    }
+
+    #[tokio::test]
+    async fn duplicate_dashboard_handler_clones_owned_transform_and_rewrites_refs() {
+        use crate::automation::types::{AutomationMetadata, TransformAutomation, TransformScope};
+
+        let src_component = StoredComponent {
+            id: "comp_1".to_string(),
+            component_type: "chart".to_string(),
+            position: neomind_storage::dashboards::ComponentPosition {
+                x: 0, y: 0, w: 6, h: 4,
+                min_w: None, min_h: None, max_w: None, max_h: None,
+            },
+            title: None,
+            data_source: Some(serde_json::json!({
+                "type": "transform",
+                "transformId": "t_old",
+                "sourceId": "transform:t_old",
+                "id": "t_old",
+                "metricId": "detection_count.fish",
+            })),
+            display: None,
+            config: Some(serde_json::json!({ "_transformId": "t_old" })),
+            actions: None,
+        };
+
+        let src_transform = TransformAutomation {
+            metadata: AutomationMetadata {
+                id: "t_old".to_string(),
+                name: "Fish Counter".to_string(),
+                description: String::new(),
+                enabled: true,
+                execution_count: 5,
+                last_executed: Some(1000),
+                created_at: 900,
+                updated_at: 950,
+            },
+            scope: TransformScope::Global,
+            intent: None,
+            js_code: Some("return {}".to_string()),
+            output_prefix: "detection_count".to_string(),
+            complexity: 2,
+            operations: None,
+        };
+
+        let src_dashboard = StoredDashboard {
+            id: "dashboard_src".to_string(),
+            name: "My Dashboard".to_string(),
+            layout: StoredLayout::default_layout(),
+            components: vec![src_component],
+            created_at: 100,
+            updated_at: 200,
+            is_default: Some(true),
+            sort_order: Some(3),
+        };
+
+        let result = build_duplicate_dashboard(
+            &src_dashboard,
+            vec![src_transform],
+            10,
+        );
+
+        // Dashboard-level assertions
+        assert_ne!(result.dashboard.id, "dashboard_src");
+        assert!(result.dashboard.id.starts_with("dashboard_"));
+        assert_eq!(result.dashboard.name, "My Dashboard (copy)");
+        assert_eq!(result.dashboard.is_default, None, "is_default must NOT be inherited");
+        assert_eq!(result.dashboard.sort_order, Some(11), "appended to end");
+        assert!(result.dashboard.created_at > 100, "fresh created_at");
+
+        // Transform clones
+        assert_eq!(result.new_transforms.len(), 1, "exactly one transform cloned");
+        let new_t = &result.new_transforms[0];
+        assert_ne!(new_t.metadata.id, "t_old");
+        assert_eq!(new_t.metadata.name, "Fish Counter (copy)");
+        assert_ne!(new_t.output_prefix, "detection_count", "output_prefix must change");
+        assert!(new_t.output_prefix.starts_with("detection_count_"));
+        assert_eq!(new_t.metadata.execution_count, 0, "execution_count reset");
+        assert_eq!(new_t.metadata.last_executed, None, "last_executed cleared");
+
+        // Component refs rewritten to new transform ID and new output_prefix
+        let new_comp = &result.dashboard.components[0];
+        let ds = new_comp.data_source.as_ref().unwrap();
+        assert_eq!(ds["transformId"], new_t.metadata.id);
+        assert_eq!(ds["sourceId"], format!("transform:{}", new_t.metadata.id));
+        assert_eq!(ds["id"], new_t.metadata.id);
+        assert_eq!(ds["metricId"], format!("{}.fish", new_t.output_prefix));
+        assert_eq!(new_comp.config.as_ref().unwrap()["_transformId"], new_t.metadata.id);
+    }
+
+    #[test]
+    fn duplicate_dashboard_name_appends_copy_even_if_already_suffixed() {
+        let src = StoredDashboard {
+            id: "x".to_string(),
+            name: "X (copy)".to_string(),
+            layout: StoredLayout::default_layout(),
+            components: vec![],
+            created_at: 0,
+            updated_at: 0,
+            is_default: None,
+            sort_order: None,
+        };
+        let result = build_duplicate_dashboard(&src, vec![], 0);
+        assert_eq!(result.dashboard.name, "X (copy) (copy)");
     }
 }
