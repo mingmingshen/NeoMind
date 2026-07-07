@@ -128,26 +128,38 @@ NeoMind is a modular ecosystem with specialized repositories for each concern:
 | Repository | Purpose |
 |------------|---------|
 | **[NeoMind](https://github.com/camthink-ai/NeoMind)** | Core platform (this repo) — backend, frontend, desktop app |
-| **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** | Official extension marketplace — weather, YOLO detection, OCR, face recognition, streaming |
+| **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** | Official extension marketplace — 22 extensions: vision (YOLO/face/OCR), voice (TTS/ASR), IoT bridges (HA/Modbus/BACnet/ONVIF/OPC-UA/LoRaWAN), and more |
 | **[NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes)** | Device type definitions — standardized metrics and commands for IoT hardware |
 | **[NeoMind-Dashboard-Components](https://github.com/camthink-ai/NeoMind-Dashboard-Components)** | Dashboard widget marketplace — community-contributed React components |
 
 ### Available Extensions
 
+22 official extensions across vision, voice, IoT bridges, and utilities. Browse the full list in the [Extensions Marketplace](https://github.com/camthink-ai/NeoMind-Extensions).
+
 | Extension | Category | Description |
 |-----------|----------|-------------|
-| **Weather Forecast** | Data | Real-time weather via Open-Meteo API |
 | **Image Analyzer** | Vision | YOLOv11 object detection on uploaded images (80+ COCO categories) |
-| **YOLO Video** | Vision | Real-time object detection on RTSP/RTMP/HLS streams |
-| **YOLO Device Inference** | Vision | Auto-detection on NE301/NE101 camera feeds |
-| **Face Recognition** | Vision | ArcFace enrollment, matching, and real-time detection |
-| **OCR Device Inference** | Vision | PP-OCRv4 text extraction from camera feeds |
-| **Stream Player** | UI | RTSP/RTMP/HLS video player dashboard widget |
-| **Home Assistant Bridge** | Integration | Bidirectional HA sync via REST + WebSocket |
-| **LoRaWAN Bridge** | Integration | ChirpStack/TTN device data + payload decoding |
-| **Modbus Bridge** | Integration | Modbus TCP/RTU register map decoding |
-| **Uink-RMS Bridge** | Integration | E-paper display telemetry sync |
-
+| **YOLO Video** | Vision | Real-time object detection on RTSP/RTMP/HLS streams with ROI + line crossing |
+| **YOLO Device Inference** | Vision | Auto YOLOv11 detection on NE301/NE101 camera feeds with smart capture |
+| **Face Recognition** | Vision | ArcFace enrollment, matching, and real-time detection on device streams |
+| **OCR Device Inference** | Vision | SVTR text recognition bound to device image streams |
+| **PaddleOCR-VL** | Vision | High-accuracy multilingual OCR, table recognition, and key info extraction |
+| **Locate Anything** | Vision | Visual grounding — object detection, phrase grounding, GUI grounding, OCR |
+| **CosyVoice 3** | Voice | Fun-CosyVoice3-0.5B streaming TTS (host audio + wav synthesis) |
+| **MOSS TTS Nano** | Voice | Voice-cloning TTS extension |
+| **SenseVoice ASR** | Voice | Multilingual (zh/en/ja/ko/yue) speech recognition via sherpa-onnx |
+| **Edge TTS** | Voice | sherpa-onnx ZipVoice cross-platform CPU streaming TTS |
+| **Voice Assistant** | Voice | Full pipeline orchestrator: mic → VAD → ASR → reply → TTS → speaker |
+| **Home Assistant Bridge** | IoT Bridge | Import 3000+ HA entity integrations as NeoMind devices |
+| **LoRaWAN Bridge** | IoT Bridge | ChirpStack/TTN sensors with auto-discovery + payload decoding |
+| **Modbus Bridge** | IoT Bridge | TCP/RTU PLCs, power meters, sensors, industrial devices |
+| **BACnet Bridge** | IoT Bridge | BACnet/IP building automation discovery and control |
+| **ONVIF Bridge** | IoT Bridge | IP camera discovery, RTSP streams, PTZ control |
+| **OPC-UA Bridge** | IoT Bridge | Industrial servers — node browsing + subscription monitoring |
+| **Uink-RMS Bridge** | IoT Bridge | E-paper display telemetry sync and image push |
+| **Weather Forecast** | Utility | Real-time multi-city weather via OpenWeatherMap API |
+| **Stream Player** | UI | RTSP/RTMP/HLS/local-file video player dashboard widget |
+| **WASM Demo** | Demo | SDK capabilities showcase (counter, greeting, echo) |
 ### Supported Devices
 
 NE301 (Edge AI Camera) and NE101 (Sensing Camera). See [NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes) for full device type definitions.
@@ -498,7 +510,6 @@ Join our community to get help, share ideas, and stay up to date:
 
 - **[Discord](https://discord.gg/gkM7cc8gKb)** — Real-time chat, support, and announcements (recommended)
 - **[GitHub Issues](https://github.com/camthink-ai/NeoMind/issues)** — Bug reports and feature requests
-- **[GitHub Discussions](https://github.com/camthink-ai/NeoMind/discussions)** — Long-form Q&A and design talks
 - **[NeoMind Wiki](https://wiki.camthink.ai/docs/neomind/product-overview/what-is-neomind)** — Full documentation
 
 Release announcements are published to the Discord `#announcements` channel and on [GitHub Releases](https://github.com/camthink-ai/NeoMind/releases).

@@ -115,22 +115,38 @@ NeoMind 是一个模块化的生态系统，每个关注点都有专门的仓库
 | 仓库 | 用途 |
 |------|------|
 | **[NeoMind](https://github.com/camthink-ai/NeoMind)** | 核心平台（本仓库）— 后端、前端、桌面应用 |
-| **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** | 官方扩展市场 — 天气、YOLO 检测、OCR、人脸识别、视频流 |
+| **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** | 官方扩展市场 — 共 22 个扩展：视觉（YOLO/人脸/OCR）、语音（TTS/ASR）、IoT 桥接（HA/Modbus/BACnet/ONVIF/OPC-UA/LoRaWAN）等 |
 | **[NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes)** | 设备类型定义 — 标准化的 IoT 硬件指标和命令 |
 | **[NeoMind-Dashboard-Components](https://github.com/camthink-ai/NeoMind-Dashboard-Components)** | 仪表板组件市场 — 社区贡献的 React 组件 |
 
 ### 可用扩展
 
-| 扩展 | 说明 |
-|------|------|
-| **天气预报** | 通过 Open-Meteo API 获取实时天气数据。提供温度、湿度、风速和降水量等指标，可作为仪表板和自动化规则的数据源。支持可配置的地理位置和轮询间隔。 |
-| **图像分析** | 基于 YOLOv11 的上传图片目标检测。可识别人、车辆、动物等 80+ 种 COCO 类别，返回边界框、置信度和类别标签等结构化数据。 |
-| **YOLO 视频** | 实时视频流（RTSP/RTMP/HLS）目标检测。可配置帧率处理，采用丢弃中间帧队列实现低延迟。支持叠加渲染和检测计数指标。 |
-| **YOLO 设备推理** | 自动对设备摄像头画面运行 YOLO 检测。绑定 NE301/NE101 摄像头流，将检测结果发布为设备指标。支持检测到特定目标时触发 AI 告警。 |
-| **人脸识别** | 基于 ArcFace 的人脸识别，支持注册和匹配。支持人脸库管理、摄像头实时检测，以及基于置信度阈值的门禁场景匹配。 |
-| **OCR 设备推理** | 基于 PP-OCRv4 的设备摄像头文字识别。从图片和视频帧中提取文本，支持多语言识别。适用于仪表读数、车牌识别和文档处理。 |
-| **流媒体播放器** | 仪表板视频播放组件，支持 RTSP、RTMP 和 HLS 协议。提供低延迟播放、截图捕获、全屏模式和设备指标叠加显示。 |
+共 22 个官方扩展，覆盖视觉、语音、IoT 桥接和实用工具。完整列表请浏览 [扩展市场](https://github.com/camthink-ai/NeoMind-Extensions)。
 
+| 扩展 | 分类 | 说明 |
+|------|------|------|
+| **图像分析（Image Analyzer）** | 视觉 | 基于 YOLOv11 的上传图片目标检测，支持 80+ 种 COCO 类别 |
+| **YOLO 视频（YOLO Video）** | 视觉 | RTSP/RTMP/HLS 实时视频流目标检测，支持 ROI 区域与越线分析 |
+| **YOLO 设备推理（YOLO Device Inference）** | 视觉 | 自动对 NE301/NE101 摄像头流运行 YOLO 检测，支持智能抓拍 |
+| **人脸识别（Face Recognition）** | 视觉 | ArcFace 嵌入向量，支持人脸注册、匹配和设备流实时检测 |
+| **OCR 设备推理（OCR Device Inference）** | 视觉 | SVTR 文字识别，绑定设备图片流实时输出文本指标 |
+| **PaddleOCR-VL** | 视觉 | 高精度多语言 OCR、表格识别与关键信息提取 |
+| **Locate Anything** | 视觉 | 视觉定位 — 目标检测、短语定位、GUI 定位、OCR 一体化 |
+| **CosyVoice 3** | 语音 | Fun-CosyVoice3-0.5B 流式 TTS，支持本机音频播放与音频合成 |
+| **MOSS TTS Nano** | 语音 | 支持声音克隆的 TTS 扩展 |
+| **SenseVoice ASR** | 语音 | 多语言（中/英/日/韩/粤）语音识别，基于 sherpa-onnx CPU 后端 |
+| **Edge TTS** | 语音 | sherpa-onnx ZipVoice 跨平台 CPU 流式 TTS |
+| **Voice Assistant** | 语音 | 语音助手编排器：麦克风 → VAD → ASR → 回复 → TTS → 扬声器 |
+| **Home Assistant 桥接** | IoT 桥接 | 将 3000+ HA 实体集成导入为 NeoMind 设备 |
+| **LoRaWAN 桥接** | IoT 桥接 | 接入 ChirpStack/TTN 传感器，支持自动发现与负载解码 |
+| **Modbus 桥接** | IoT 桥接 | TCP/RTU 协议，连接 PLC、电表、传感器等工业设备 |
+| **BACnet 桥接** | IoT 桥接 | BACnet/IP 楼宇自动化设备发现与控制 |
+| **ONVIF 桥接** | IoT 桥接 | IP 摄像头发现、RTSP 取流、PTZ 控制 |
+| **OPC-UA 桥接** | IoT 桥接 | 工业服务器节点浏览与数据订阅 |
+| **Uink-RMS 桥接** | IoT 桥接 | 电子纸屏设备遥测同步与图片推送 |
+| **天气预报（Weather Forecast）** | 实用工具 | 基于 OpenWeatherMap 的多城市实时天气 |
+| **流媒体播放器（Stream Player）** | UI | 仪表板视频播放组件，支持 RTSP/RTMP/HLS 与本地文件 |
+| **WASM Demo** | 示例 | SDK 能力演示（计数器、问候、回声命令） |
 ### 支持设备
 
 NE301（边缘 AI 摄像头）和 NE101（感知摄像头）。完整设备类型定义请查看 [NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes)。
