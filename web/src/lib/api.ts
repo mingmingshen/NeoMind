@@ -2129,6 +2129,15 @@ export const api = {
     }),
 
   /**
+   * Duplicate a dashboard
+   * POST /api/dashboards/:id/duplicate
+   */
+  duplicateDashboard: (id: string) =>
+    fetchAPI<DashboardResponse>(`/dashboards/${id}/duplicate`, {
+      method: 'POST',
+    }),
+
+  /**
    * Reorder dashboards (persist manual sidebar order)
    * PUT /api/dashboards/reorder
    * @param dashboardIds Desired order, index 0 = top of list
