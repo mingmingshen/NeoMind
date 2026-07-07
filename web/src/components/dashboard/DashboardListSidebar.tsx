@@ -12,6 +12,7 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Copy,
   Check,
   X,
   PanelTop,
@@ -39,6 +40,7 @@ export interface DashboardListSidebarProps {
   onSwitch: (id: string) => void
   onCreate: (name: string) => void
   onRename: (id: string, name: string) => void
+  onDuplicate: (id: string) => void
   onDelete: (id: string) => void
   /** Persist a new manual order (array of dashboard IDs, index 0 = top). */
   onReorder?: (newOrder: string[]) => void
@@ -60,6 +62,7 @@ function DashboardSidebarContent({
   onSwitch,
   onCreate,
   onRename,
+  onDuplicate,
   onDelete,
   onReorder,
   onOpenChange,
@@ -337,6 +340,14 @@ function DashboardSidebarContent({
                           <Pencil className="h-3 w-3" />
                         </button>
                         <button
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                          onClick={(e) => { e.stopPropagation(); onDuplicate(dashboard.id) }}
+                          title={t('sidebar.duplicateDashboard')}
+                          aria-label={t('sidebar.duplicateDashboard')}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                        <button
                           className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-error transition-colors"
                           onClick={(e) => { e.stopPropagation(); handleDelete(dashboard.id) }}
                           title={t('sidebar.delete')}
@@ -369,6 +380,7 @@ export function DashboardListSidebar({
   onSwitch,
   onCreate,
   onRename,
+  onDuplicate,
   onDelete,
   onReorder,
   open = true,
@@ -396,6 +408,7 @@ export function DashboardListSidebar({
           onSwitch={onSwitch}
           onCreate={onCreate}
           onRename={onRename}
+          onDuplicate={onDuplicate}
           onDelete={onDelete}
           onReorder={onReorder}
           onOpenChange={onOpenChange}
@@ -438,6 +451,7 @@ export function DashboardListSidebar({
           onSwitch={onSwitch}
           onCreate={onCreate}
           onRename={onRename}
+          onDuplicate={onDuplicate}
           onDelete={onDelete}
           onReorder={onReorder}
           onOpenChange={onOpenChange}
