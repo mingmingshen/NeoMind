@@ -314,6 +314,7 @@ export const createDashboardCrudSlice: StateCreator<
         set((s) => ({
           dashboards: [...s.dashboards, newDash],
         }))
+        recordSelfSync(newDash.id)
         return newDash.id
       } catch (err) {
         logError(err, { operation: 'Duplicate dashboard', context: { dashboardId: id } })
