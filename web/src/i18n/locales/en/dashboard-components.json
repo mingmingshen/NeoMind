@@ -1066,6 +1066,7 @@
     "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
     "delete": "Delete",
     "rename": "Rename",
+    "moreActions": "More actions",
     "duplicateDashboard": "Duplicate",
     "componentCount": "{{count}} components",
     "namePlaceholder": "Dashboard name...",

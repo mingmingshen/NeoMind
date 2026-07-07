@@ -1066,6 +1066,7 @@
     "deleteDescription": "确定要删除「{{name}}」吗？此操作无法撤销。",
     "delete": "删除",
     "rename": "重命名",
+    "moreActions": "更多操作",
     "duplicateDashboard": "复制",
     "componentCount": "{{count}} 个组件",
     "namePlaceholder": "仪表板名称...",

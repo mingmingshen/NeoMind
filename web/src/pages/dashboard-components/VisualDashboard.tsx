@@ -1008,6 +1008,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onDashboardSwitch={handleDashboardSwitch}
           onDashboardCreate={handleDashboardCreate}
           onDashboardRename={handleDashboardRename}
+          onDashboardDuplicate={handleDashboardDuplicate}
           onDashboardDelete={handleDashboardDelete}
           onDashboardReorder={(newOrder) => useStore.getState().reorderDashboards(newOrder)}
           onSwitchToSidebar={handleSwitchToSidebar}
