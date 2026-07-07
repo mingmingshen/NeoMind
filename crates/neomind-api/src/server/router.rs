@@ -941,6 +941,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             post(dashboards::set_default_dashboard_handler),
         )
         .route(
+            "/api/dashboards/:id/duplicate",
+            post(dashboards::duplicate_dashboard_handler),
+        )
+        .route(
             "/api/dashboards/templates",
             get(dashboards::list_templates_handler),
         )

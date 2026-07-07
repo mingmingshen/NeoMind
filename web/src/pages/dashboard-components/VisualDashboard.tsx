@@ -123,7 +123,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     removeComponent, duplicateComponent, createDashboard, updateDashboard,
     deleteDashboard, persistDashboard, setCurrentDashboard, setComponentLibraryOpen,
     fetchDashboards, fetchDevices, fetchDeviceTypes, fetchDevicesCurrentBatch,
-    sendCommand,
+    sendCommand, duplicateDashboard,
   } = useStore((s) => ({
     setEditMode: s.setEditMode, addComponent: s.addComponent, updateComponent: s.updateComponent,
     batchUpdatePositions: s.batchUpdatePositions, removeComponent: s.removeComponent,
@@ -133,7 +133,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     setComponentLibraryOpen: s.setComponentLibraryOpen,
     fetchDashboards: s.fetchDashboards, fetchDevices: s.fetchDevices,
     fetchDeviceTypes: s.fetchDeviceTypes, fetchDevicesCurrentBatch: s.fetchDevicesCurrentBatch,
-    sendCommand: s.sendCommand,
+    sendCommand: s.sendCommand, duplicateDashboard: s.duplicateDashboard,
   }))
 
   // Marketplace store selectors — single subscription
@@ -365,6 +365,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const handleDashboardRename = useCallback((id: string, name: string) => {
     updateDashboard(id, { name })
   }, [updateDashboard])
+
+  const handleDashboardDuplicate = useCallback(async (id: string) => {
+    const newId = await duplicateDashboard(id)
+    if (!newId) {
+      toast({ title: t('visualDashboard.duplicateFailed'), variant: 'destructive' })
+      return
+    }
+    toast({ title: t('visualDashboard.duplicated') })
+    await setCurrentDashboard(newId)
+    navigate(`/visual-dashboard/${newId}`)
+  }, [duplicateDashboard, setCurrentDashboard, navigate, t])
 
   const handleDashboardDelete = useCallback(async (id: string) => {
     const confirmed = await confirm({
@@ -971,6 +982,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onSwitch={handleDashboardSwitch}
           onCreate={handleDashboardCreate}
           onRename={handleDashboardRename}
+          onDuplicate={handleDashboardDuplicate}
           onDelete={handleDashboardDelete}
           onReorder={(newOrder) => useStore.getState().reorderDashboards(newOrder)}
           open={sidebarOpen}
@@ -996,6 +1008,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onDashboardSwitch={handleDashboardSwitch}
           onDashboardCreate={handleDashboardCreate}
           onDashboardRename={handleDashboardRename}
+          onDashboardDuplicate={handleDashboardDuplicate}
           onDashboardDelete={handleDashboardDelete}
           onDashboardReorder={(newOrder) => useStore.getState().reorderDashboards(newOrder)}
           onSwitchToSidebar={handleSwitchToSidebar}
