@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.2] - 2026-07-07
+
+### Overview
+
+This release ships the **Dashboard Duplicate** feature plus a handful
+of smaller fixes that landed alongside it. The headline is a one-click
+"Duplicate" action on every dashboard that produces a fully isolated
+clone — including a deep copy of any component-owned transforms — so
+the original and the copy can be edited or deleted independently
+without breaking each other.
+
+The dashboard action UI also gets a small refactor in the same batch:
+both sidebar mode and tabs mode now expose per-dashboard actions
+through a unified `MoreVertical` ("...") dropdown instead of the
+previous row of inline hover buttons (which had grown to five icons
+after adding Duplicate).
+
+Rounding out the release are a llama.cpp context-overflow error
+message fix, a dialog overflow CSS tweak, and a README refresh for
+the extension marketplace.
+
+### Dashboard Duplicate
+
+- **New endpoint `POST /api/dashboards/:id/duplicate`** — server-side
+  clone of a source dashboard. The new dashboard gets a fresh UUID,
+  the name is suffixed with ` (copy)` (hardcoded English suffix,
+  intentionally not i18n'd), `is_default` is reset to `None` (so the
+  copy never silently steals default status from the original), and
+  `sort_order` is set to `max + 1` to append at the end of the list.
+  Emits the existing `DashboardUpdated` event with `action = "create"`
+  so all realtime subscribers (WS/SSE) refresh automatically.
+- **Component-owned transform deep cloning** — the key isolation
+  mechanism. Components can bind transforms two ways: *referenced*
+  (user picked an existing transform via the data source picker) or
+  *owned* (the component created the transform inline, marked by
+  `config._transformId`, and deletes it when the component is
+  removed). On duplicate, only **owned** transforms are deep-cloned:
+  the clone gets a fresh UUID (`transform_{uuid}`), a fresh
+  `output_prefix` (`{sanitized_source}_{8-char-uuid}`, because two
+  transforms sharing the same prefix would collide in the
+  `extensionMetric: "<prefix>.<field>"` namespace), `execution_count`
+  reset to 0, and `last_executed` cleared. All references inside the
+  cloned component are rewritten consistently —
+  `config._transformId`, `dataSource.transformId`,
+  `dataSource.sourceId`, `dataSource.id`, plus
+  `dataSource.metricId` / `dataSource.field` get their old-prefix
+  portion replaced with the new prefix.
+- **Shared references stay shared by design** — device IDs, agent
+  IDs, and extension IDs in component data sources are NOT cloned.
+  These are global resources (a temperature sensor physically exists
+  once), so the duplicated dashboard references the same source.
+  User-referenced transforms (no `_transformId` marker) are also
+  left shared, matching the user's intent.
+- **Frontend integration** — new `duplicateDashboard(id)` store
+  action calls the API, runs the response through `fromDashboardDTO`
+  (per the snake_case → camelCase dashboard DTO gotcha), appends to
+  `dashboards[]`, and calls `recordSelfSync(newId)` so the
+  backend's `DashboardUpdated` SSE event doesn't trigger a redundant
+  `fetchDashboards()` refetch race. The handler then shows a toast
+  and navigates to the new dashboard.
+- **Pure logic helpers, fully unit-tested** —
+  `new_output_prefix()` (sanitization + UUID suffix, unique across
+  calls) and `rewrite_component_transform_refs()` (5-field rewrite
+  gated on the `_transformId` ownership marker; no-op when the
+  marker is missing or doesn't match) are extracted as pure
+  functions and covered by 4 unit tests. `build_duplicate_dashboard`
+  (the in-memory clone pipeline with no I/O) adds 2 more tests
+  covering the full rewrite path and the `"X (copy)" → "X (copy)
+  (copy)"` double-suffix edge case.
+
+### Dashboard action menu unification
+
+- **Sidebar mode (`DashboardListSidebar`)** — replaces the five
+  inline hover buttons (Move Up / Move Down / Rename / Duplicate /
+  Delete) with a single `MoreVertical` trigger opening a
+  `DropdownMenu`. The trigger inherits the same hover-to-reveal
+  behavior (`opacity-0 group-hover:opacity-100`) so the row stays
+  clean at rest.
+- **Tabs mode (`DashboardTabBar`)** — the existing per-tab
+  `MoreVertical` dropdown gains a new Duplicate item between Rename
+  and Delete. Mobile switcher path also updated.
+- **Shared menu structure** — both modes now expose the same 5
+  items in the same order: Move Up / Move Down / separator / Rename
+  / Duplicate / Delete. Delete keeps the `text-error focus:text-error`
+  destructive styling.
+
+### Fixes & polish
+
+- **llama.cpp context-overflow reporting** — `ContextOverflow` errors
+  now prefer the server-reported `n_ctx` from the error body over
+  the cached `max_context_length()`. The cached value can be stale
+  (e.g. server restarted with a different `--ctx-size` but
+  capabilities not re-detected) or a theoretical default, which
+  previously produced misleading messages like `"11958 < 32000"`
+  when the real server-side limit was 8192. Both the non-streaming
+  and streaming error paths are updated.
+- **`UnifiedFormDialog` overflow** — added `overflow-hidden` to the
+  dialog content surface so child widgets no longer bleed past the
+  rounded corners on small viewports.
+- **README extensions refresh** — the official extensions list in
+  both `README.md` and `README.zh.md` is expanded from ~9 entries
+  to the current 22 (vision, voice, IoT bridges, utilities),
+  reorganized by category.
+
+---
+
 ## [0.9.1] - 2026-07-06
 
 ### Overview
