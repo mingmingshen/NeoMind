@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.3] - 2026-07-09
+
+### Overview
+
+This release fixes a critical bug where **chat and scheduled agents
+could not access base64 image metric data** — the data was silently
+truncated to `[image data, 63B]` before reaching the LLM, making it
+impossible for the agent to analyze camera snapshots, YOLO output
+frames, or any telemetry metric whose value is an image.
+
+The fix introduces a **value-level slim mechanism** that caches large
+strings out of the tool-result JSON and replaces each with a
+one-sentence natural-language summary containing a `$cached:`
+reference. The LLM reads the summary, passes the reference to the
+`vision` tool (or any image-aware tool), and the reference is
+transparently resolved back to the full binary payload at tool-call
+time. No new tools were added — the existing `vision` / `image_edit`
+pipeline picks up the cached data automatically.
+
+On the frontend side, the **AI Analyst dashboard component** gets
+i18n completeness, real-time progress events, and a streaming-bubble
+UX polish.
+
+### Agent image-data slim mechanism
+
+- **Root cause** — CLI's `sanitize_metric_value` truncated any string
+  > 80 bytes to 60 chars, then streaming's
+  `sanitize_tool_result_for_prompt` stripped `data:image/` URLs
+  entirely. Double truncation: the LLM never saw usable image data.
+- **`slim_large_strings_in_json`** (new method on `LargeDataCache`)
+  — walks the tool-result JSON tree, detects large strings
+  (`data:image/` prefix regardless of size, or any string > 64 KB),
+  stores each in the cache under a deterministic `path#8hex-hash` key
+  (multi-image safe), and replaces the value IN PLACE with a complete
+  natural-language sentence:
+  `Image data (image/jpeg, 271.4KB) cached as $cached:shell.data.metrics.values.image.value#a1b2c3d4 — pass this reference to the \`vision\` tool's \`image\` argument to analyze the content.`
+  Sibling fields in the JSON object are preserved untouched.
+- **`SLIM_THRESHOLD_BYTES = 64 KB`** — independent from
+  `CACHE_THRESHOLD_BYTES` (32 KB, which gates `store()`). Kept higher
+  so that (a) anything slim decides to cache is guaranteed to actually
+  be stored, and (b) legitimate large text payloads (compact configs,
+  multi-row query results, short logs) still reach the LLM verbatim
+  instead of being hidden behind a reference.
+- **Chat streaming path** (`stream_core.rs`, `stream_multimodal.rs`)
+  — slim runs BEFORE sanitize. After slim, the value is plain text
+  (no `data:image/` prefix), so sanitize's own stripping path is
+  skipped. The slimmed result is what enters the tool-call-results
+  vector and the LLM message history.
+- **Scheduled agent path** (`tool_loop.rs`, `tool_result.rs`) —
+  per-execution `LargeDataCache` created in `run_tool_loop`.
+  `resolve_cached_arguments` runs before `registry.execute_parallel`
+  to substitute `$cached:` references in tool-call arguments (same
+  function the chat path uses). `process_tool_results` now slims
+  before sanitize, mirroring the chat streaming pipeline. Both agent
+  execution modes (chat + scheduled) now have fully symmetric
+  slim + resolve pipelines.
+- **Privacy gate preserved** — the `IMAGE_AWARE_TOOLS` list
+  (`["image_edit", "vision"]`) still gates the omitted-field
+  auto-inject path. `$cached:` explicit-reference resolution is
+  ungated (the LLM intentionally passes the reference), but the
+  defense-in-depth "inject even when the LLM omitted image args"
+  branch only fires for tools that legitimately consume images.
+
+### CLI image-data passthrough
+
+- **`sanitize_metric_value` exception** — in agent mode
+  (`NEOMIND_JSON=1` env var set), strings starting with `data:image/`,
+  `http://`, or `https://` now pass through untouched. Previously,
+  all strings > 80 bytes were truncated to 60 chars, which (a)
+  destroyed base64 image data URLs, and (b) truncated long signed
+  HTTP URLs (e.g. pre-signed S3 image links) making them unresolvable.
+  Human terminal mode is unchanged — truncation still applies for
+  readability.
+- **`summarize_image_history`** — `device history` responses are now
+  post-processed: for each metric whose sampled values (first / mid /
+  last) look like images (`data:image/` prefix or URL ending in a
+  known image extension), the full data-point array is replaced with a
+  compact summary object containing `count`, `earliest_ts`,
+  `latest_ts`, `interval_avg_ms`, `latest_value` (the full data URL,
+  preserved so the slim layer can cache it), and a natural-language
+  `note` pointing at the `vision` tool. Non-image metrics pass through
+  untouched. Prevents 288 × 271 KB ≈ 78 MB responses from flooding
+  the agent context.
+
+### AI Analyst component improvements (frontend)
+
+- **Full i18n** — all hardcoded English strings in `AiAnalyst`,
+  `AnalystConfigPanel`, `AnalystMessageBubble`, and `AnalystTimeline`
+  replaced with `t()` calls. New locale keys added under
+  `aiAnalyst.*` in both `en` and `zh` `dashboard-components.json`.
+- **AgentProgress / AgentThinking WS events** —
+  `useAnalystSession` now handles these real-time event types,
+  showing stage-level progress ("Collecting data...", "Analyzing 5
+  data points...", "Tool-calling round 2") in the streaming bubble
+  while the agent executes. Previously the bubble showed nothing
+  until the execution completed.
+- **Streaming bubble gap fix** — on `AgentExecutionCompleted`, the
+  streaming content and message ID are no longer cleared immediately.
+  They persist until the `getExecution` API response arrives, closing
+  a blank-bubble gap between the completion event and the result
+  fetch.
+- **Persistent image dedup** — the timeline's image-enqueue dedup is
+  now persistent across rounds (was per-round). Prevents a timing
+  race where the `AgentExecutionStarted` WS event arrives before the
+  telemetry update, causing the stale previous-round image to
+  enqueue first and the fresh image to append right after (two
+  images per update).
+- **Vision model multimodal badge** — model picker entries in the
+  AI Analyst config schema now show an `Eye` icon next to models
+  flagged `isMultimodal`, making it visually clear which models can
+  process images. The `isMultimodal` field flows through
+  `SchemaContext.visionModels` → `useComponentConfigDialog` →
+  `business.tsx`.
+- **Schema regeneration on async load** — `useComponentConfigDialog`
+  now regenerates the config schema when `visionModels` or `agents`
+  arrays resolve (previously the schema was built once at dialog-open
+  time with empty arrays, leaving dropdowns empty if the fetch
+  hadn't completed yet).
+
 ## [0.9.2] - 2026-07-07
 
 ### Overview

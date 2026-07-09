@@ -881,8 +881,36 @@ pub async fn process_stream_events_with_safeguards(
                                 output.error.clone().unwrap_or_else(|| "Error".to_string())
                             };
 
-                            // Sanitize base64/image data before sending to frontend or LLM
-                            let display_str = sanitize_tool_result_for_prompt(&result_str);
+                            // Slim large strings (image data URLs, big base64) inline:
+                            // walk the JSON tree, store each large value into cache
+                            // under a deterministic key, and replace the value with a
+                            // one-line summary. This keeps the JSON payload small,
+                            // preserves all sibling fields, lets multiple images
+                            // coexist, and gives the LLM a concrete `$cached:` ref +
+                            // action hint pointing at the `vision` tool.
+                            let slimmed_str = {
+                                let mut state = internal_state.write().await;
+                                match serde_json::from_str::<serde_json::Value>(&result_str) {
+                                    Ok(mut v) => {
+                                        let n = state.large_data_cache.slim_large_strings_in_json(&mut v, &name);
+                                        if n > 0 {
+                                            tracing::debug!(
+                                                tool = %name,
+                                                slimmed_values = n,
+                                                "Slimmed large strings from tool result into cache"
+                                            );
+                                        }
+                                        serde_json::to_string(&v)
+                                            .unwrap_or_else(|_| result_str.clone())
+                                    }
+                                    Err(_) => result_str.clone(),
+                                }
+                            };
+
+                            // After slimming, no large base64 remains — sanitize is
+                            // essentially a no-op but kept for defense-in-depth (e.g.
+                            // non-JSON tool outputs with stray data URLs).
+                            let display_str = sanitize_tool_result_for_prompt(&slimmed_str);
 
                             tool_calls_with_results.push(ToolCall {
                                 name: name.clone(),
@@ -893,7 +921,8 @@ pub async fn process_stream_events_with_safeguards(
                             });
 
                             yield AgentEvent::tool_call_end_round(&name, &display_str, output.success, tool_iteration_count + 1);
-                            tool_call_results.push((name.clone(), display_str));
+
+                            tool_call_results.push((name.clone(), slimmed_str));
                         }
                         Err(e) => {
                             let error_msg = format!("Tool execution failed: {}", e);
@@ -964,15 +993,17 @@ pub async fn process_stream_events_with_safeguards(
                     initial_msg.tool_calls.as_ref().map_or(0, |c| c.len()), tool_iteration_count + 1);
                 internal_state.write().await.push_message(initial_msg);
 
-                // Save tool results to memory (large results go through cache → summary)
+                // Save tool results to memory.
+                // `tool_call_results` already contains the cache summaries (or
+                // passthrough for small results) computed during the execute loop
+                // above — no second `cache.store` needed here.
                 for (tool_name, result_str) in &tool_call_results {
                     if tool_name == "skill" {
                         let skill_id = crate::llm::extract_skill_id_from_result(result_str);
                         llm_interface.set_skill_context(skill_id, result_str.clone()).await;
                     } else {
                         let mut state = internal_state.write().await;
-                        let history_content = state.large_data_cache.store(tool_name, result_str);
-                        let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                        let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
                         state.push_message(tool_result_msg);
                     }
                 }

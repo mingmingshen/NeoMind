@@ -777,6 +777,16 @@ pub struct LargeDataCache {
 /// Only truly large payloads (images, huge JSON) get cached with a summary reference.
 const CACHE_THRESHOLD_BYTES: usize = 32 * 1024;
 
+/// Threshold used by `slim_large_strings_in_json` to decide when a
+/// non-image string is large enough to cache-and-replace. Kept higher
+/// than `CACHE_THRESHOLD_BYTES` (which gates `store()`) so that (a)
+/// anything slim decides to cache is guaranteed to actually be stored,
+/// and (b) legitimate large text payloads (configs, compact logs,
+/// multi-row query results) still reach the LLM verbatim instead of
+/// being hidden behind a `$cached:` reference the LLM can't "read" as
+/// text.
+const SLIM_THRESHOLD_BYTES: usize = 64 * 1024;
+
 /// Maximum number of cache entries. Oldest entries are evicted when exceeded.
 const MAX_CACHE_ENTRIES: usize = 20;
 
@@ -1309,6 +1319,146 @@ impl LargeDataCache {
             format!("{}B", bytes)
         }
     }
+
+    /// Walk a JSON tree and replace large string values IN PLACE with a
+    /// one-line natural-language summary that contains: data kind, MIME
+    /// type (if image), size, `$cached:` reference, and a concrete action
+    /// hint. The actual data is stored in cache under a path-derived key.
+    ///
+    /// Unlike [`store`](Self::store) (which caches the WHOLE tool result as
+    /// one entry when it exceeds 32KB), this method preserves all small
+    /// fields — only the large string values get replaced. This keeps
+    /// metadata visible to the LLM while preventing base64 from polluting
+    /// the prompt.
+    ///
+    /// Each large value gets its own cache key, so multiple images from the
+    /// same or different tools coexist without overwriting each other (the
+    /// 8-hex-char content hash disambiguates).
+    ///
+    /// Returns the number of values slimmed.
+    pub fn slim_large_strings_in_json(
+        &mut self,
+        value: &mut serde_json::Value,
+        tool_name: &str,
+    ) -> usize {
+        let mut count = 0;
+        self.slim_value_recursive(value, tool_name, &mut count);
+        if count > 0 {
+            self.evict_if_needed();
+        }
+        count
+    }
+
+    fn slim_value_recursive(
+        &mut self,
+        value: &mut serde_json::Value,
+        path: &str,
+        count: &mut usize,
+    ) {
+        match value {
+            serde_json::Value::String(s) => {
+                if Self::should_slim_string(s) {
+                    let key = Self::make_cache_key(path, s);
+                    let (kind, mime) = Self::classify_string(s);
+                    let bytes = s.len();
+                    let size_str = Self::humanize_bytes(bytes);
+                    let cached_ref = format!("$cached:{}", key);
+
+                    // Insert cache entry directly (we already know the data).
+                    let cached = CachedLargeResult {
+                        content_type: mime.clone(),
+                        data: s.clone(),
+                        size_bytes: bytes,
+                        cached_at: chrono::Utc::now().timestamp(),
+                    };
+                    self.entries.insert(key, cached);
+
+                    // Build one complete sentence with: kind, mime, size,
+                    // $cached ref, and a single concrete action pointing at
+                    // the common `vision` tool. We intentionally avoid naming
+                    // specific extensions — the LLM picks the right one based
+                    // on what's installed and what the user asked for.
+                    let summary = if mime.starts_with("image/") {
+                        format!(
+                            "{kind} data ({mime}, {size}) cached as {ref} — pass this reference to the `vision` tool's `image` argument to analyze the content.",
+                            kind = kind,
+                            mime = mime,
+                            size = size_str,
+                            ref = cached_ref
+                        )
+                    } else {
+                        format!(
+                            "{kind} ({size}) cached as {ref} — pass this reference to downstream tools that accept `$cached:` references to access the full data.",
+                            kind = kind,
+                            size = size_str,
+                            ref = cached_ref
+                        )
+                    };
+
+                    *value = serde_json::Value::String(summary);
+                    *count += 1;
+                }
+            }
+            serde_json::Value::Object(map) => {
+                for (k, v) in map.iter_mut() {
+                    let child_path = if path.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{}.{}", path, k)
+                    };
+                    self.slim_value_recursive(v, &child_path, count);
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                for (i, v) in arr.iter_mut().enumerate() {
+                    let child_path = format!("{}[{}]", path, i);
+                    self.slim_value_recursive(v, &child_path, count);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Decide whether a string is large enough (or image-like enough) to
+    /// warrant slimming. Image data URLs always trigger (keeping base64 out
+    /// of the prompt is an invariant). Other strings must exceed the
+    /// `SLIM_THRESHOLD_BYTES` ceiling — kept higher than `CACHE_THRESHOLD_BYTES`
+    /// so legitimate large text (configs, compact logs) still reaches the LLM
+    /// while truly bloated values get cached.
+    fn should_slim_string(s: &str) -> bool {
+        s.starts_with("data:image/") || s.len() > SLIM_THRESHOLD_BYTES
+    }
+
+    /// Classify a large string into (kind, mime) for the summary.
+    fn classify_string(s: &str) -> (&'static str, String) {
+        if let Some(rest) = s.strip_prefix("data:image/") {
+            let subtype = rest.split(';').next().unwrap_or("jpeg");
+            let canonical = crate::image_utils::normalize_mime_subtype(subtype)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("image/{}", subtype));
+            ("Image", canonical)
+        } else if s.len() > 10_000 && Self::looks_like_base64(s) {
+            ("Large base64 data", "application/octet-stream".to_string())
+        } else {
+            ("Large string data", "text/plain".to_string())
+        }
+    }
+
+    /// Build a deterministic, readable cache key.
+    /// Format: `<path>#<8-hex-content-hash>` — path makes it debuggable,
+    /// hash makes it unique per distinct payload (so two different images
+    /// at the same JSON path don't collide).
+    fn make_cache_key(path: &str, data: &str) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        data.hash(&mut hasher);
+        let hash = format!("{:x}", hasher.finish());
+        // Sanitize path — replace characters that would mangle `$cached:` parsing.
+        // The resolver splits on `:` so any `:` in path must be replaced.
+        let safe_path = path.replace(':', "_");
+        format!("{}#{}", safe_path, &hash[..8])
+    }
 }
 
 /// Unified internal state for the agent.
@@ -1536,5 +1686,227 @@ mod tests {
         assert_eq!(config.model, models::OLLAMA_DEFAULT);
         assert!(config.enable_tools);
         assert!(config.enable_memory);
+    }
+
+    // --- slim_large_strings_in_json coverage ---
+
+    /// Build a fake JPEG data URL of the requested byte size. Used to push
+    /// payloads past the 32KB slim threshold.
+    fn fake_jpeg_data_url(bytes: usize) -> String {
+        // "data:image/jpeg;base64," is 23 bytes; fill the rest with 'A'.
+        let prefix = "data:image/jpeg;base64,";
+        let pad = bytes.saturating_sub(prefix.len());
+        format!("{}{}", prefix, "A".repeat(pad))
+    }
+
+    /// Single image value gets replaced with a one-line summary that
+    /// mentions kind, mime, size, $cached ref, and the vision tool.
+    #[test]
+    fn test_slim_single_image_value_replaced() {
+        let mut cache = LargeDataCache::new();
+        let mut value = serde_json::json!({
+            "device": {"id": "abc", "battery": 100},
+            "image": fake_jpeg_data_url(40_000)
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "shell");
+        assert_eq!(n, 1, "exactly one value should be slimmed");
+
+        // Small sibling fields preserved untouched.
+        assert_eq!(value["device"]["battery"], 100);
+        assert_eq!(value["device"]["id"], "abc");
+
+        // The image value is now a summary string.
+        let summary = value["image"].as_str().expect("image replaced with string");
+        assert!(summary.contains("Image"), "summary should mention kind: {}", summary);
+        assert!(summary.contains("image/jpeg"), "summary should mention mime: {}", summary);
+        assert!(summary.contains("$cached:"), "summary should include ref: {}", summary);
+        assert!(summary.contains("vision"), "summary should hint at vision tool: {}", summary);
+
+        // No raw base64 left in the JSON.
+        let serialized = serde_json::to_string(&value).unwrap();
+        assert!(!serialized.contains("data:image/jpeg;base64,AAAA"),
+            "no raw base64 should remain in the slimmed JSON");
+    }
+
+    /// Two different images at the same JSON path get distinct cache keys
+    /// (content-hash disambiguates), so both stay accessible. This is the
+    /// multi-image coexistence guarantee.
+    #[test]
+    fn test_slim_multiple_images_get_distinct_keys() {
+        let mut cache = LargeDataCache::new();
+        let img_a = fake_jpeg_data_url(40_000);
+        let img_b = fake_jpeg_data_url(40_000) + "B"; // different content → different hash
+
+        let mut value = serde_json::json!({
+            "a": img_a,
+            "b": img_b
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "shell");
+        assert_eq!(n, 2, "both images should be slimmed");
+
+        let summary_a = value["a"].as_str().unwrap();
+        let summary_b = value["b"].as_str().unwrap();
+
+        // Extract the $cached: refs and confirm they differ.
+        let ref_a = summary_a
+            .split("$cached:").nth(1)
+            .and_then(|s| s.split_whitespace().next())
+            .expect("ref a present");
+        let ref_b = summary_b
+            .split("$cached:").nth(1)
+            .and_then(|s| s.split_whitespace().next())
+            .expect("ref b present");
+        assert_ne!(ref_a, ref_b, "refs must differ for different payloads");
+
+        // Both refs must resolve to their respective payloads.
+        let resolved_a = cache.resolve_reference(&format!("$cached:{}", ref_a)).expect("a resolves");
+        let resolved_b = cache.resolve_reference(&format!("$cached:{}", ref_b)).expect("b resolves");
+        assert!(resolved_a.ends_with("AAAA"));
+        assert!(resolved_b.ends_with("AAAAB"));
+    }
+
+    /// Strings under the threshold that aren't data URLs are NOT slimmed —
+    /// they flow through unchanged. (Note: `data:image/` URLs are slimmed
+    /// regardless of size — see `test_slim_small_data_url_still_replaced`
+    /// for that invariant. The "no base64 in prompt ever" guarantee must
+    /// hold for all image data, even tiny icons.)
+    #[test]
+    fn test_slim_small_strings_pass_through() {
+        let mut cache = LargeDataCache::new();
+        let mut value = serde_json::json!({
+            "short": "hello world",
+            "medium_text": "x".repeat(500),  // well below 32KB threshold
+            "nested": {"deep": "also short"}
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "tool");
+        assert_eq!(n, 0, "no values should be slimmed");
+        assert_eq!(value["short"], "hello world");
+        assert_eq!(value["medium_text"], "x".repeat(500));
+    }
+
+    /// Even tiny `data:image/` URLs get slimmed — invariant: no base64
+    /// (no matter how small) should ever leak into the prompt as raw text.
+    /// This defends against edge cases like 50-byte favicon data URLs
+    /// confusing the LLM.
+    #[test]
+    fn test_slim_small_data_url_still_replaced() {
+        let mut cache = LargeDataCache::new();
+        let mut value = serde_json::json!({
+            "icon": "data:image/png;base64,iVBORw0KGgo="  // 31 bytes
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "tool");
+        assert_eq!(n, 1, "small data URLs must still be slimmed");
+        let summary = value["icon"].as_str().unwrap();
+        assert!(summary.contains("$cached:"));
+    }
+
+    /// Threshold guard: a NON-image string under `SLIM_THRESHOLD_BYTES`
+    /// (64KB) must reach the LLM verbatim. Previously the threshold was
+    /// 32KB and would hide mid-size payloads (compact JSON configs, short
+    /// logs). After bumping to 64KB, only truly bloated values get cached.
+    #[test]
+    fn test_slim_large_text_under_threshold_passes_through() {
+        let mut cache = LargeDataCache::new();
+        // 40KB plain text — above the old 32KB ceiling, below the new 64KB one.
+        let big_text = "x".repeat(40_000);
+        let mut value = serde_json::json!({ "config": big_text.clone() });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "tool");
+        assert_eq!(n, 0, "40KB non-image text should pass through under the 64KB threshold");
+        assert_eq!(
+            value["config"].as_str().unwrap().len(),
+            40_000,
+            "text must be untouched"
+        );
+    }
+
+    /// Threshold guard: a NON-image string ABOVE `SLIM_THRESHOLD_BYTES`
+    /// (64KB) IS slimmed — that's the whole point of raising (not removing)
+    /// the ceiling.
+    #[test]
+    fn test_slim_large_text_above_threshold_replaced() {
+        let mut cache = LargeDataCache::new();
+        let big_text = "y".repeat(70_000); // 70KB > 64KB threshold
+        let mut value = serde_json::json!({ "log": big_text });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "tool");
+        assert_eq!(n, 1, "70KB non-image text should be slimmed");
+        let summary = value["log"].as_str().unwrap();
+        assert!(summary.contains("$cached:"), "should reference the cache");
+        // Verify the cache actually stored it (70KB > CACHE_THRESHOLD_BYTES 32KB)
+        // by extracting the `$cached:<key>` token and resolving it.
+        let key = summary
+            .find("$cached:")
+            .map(|start| &summary[start..])
+            .and_then(|s| s.split_whitespace().next())
+            .unwrap();
+        let resolved = cache.resolve_reference(key).expect("cache should have the data");
+        assert_eq!(resolved.len(), 70_000, "resolved value should be the full 70KB text");
+    }
+
+    /// Non-JSON tool outputs must not crash the slim path — but slim is
+    /// only called when the caller has already parsed JSON, so this test
+    /// documents that a JSON string value containing plain text (not a
+    /// data URL, not large) passes through untouched.
+    #[test]
+    fn test_slim_handles_plain_json_without_large_data() {
+        let mut cache = LargeDataCache::new();
+        let mut value = serde_json::json!({
+            "success": true,
+            "data": {"devices": [{"id": "x", "name": "Sensor"}]}
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "device_list");
+        assert_eq!(n, 0);
+        assert!(value["success"].is_boolean());
+    }
+
+    /// Arrays of images (e.g. a tool returning a list of frames) all get
+    /// slimmed, each with its own cache entry.
+    #[test]
+    fn test_slim_handles_array_of_images() {
+        let mut cache = LargeDataCache::new();
+        let mut value = serde_json::json!({
+            "frames": [
+                fake_jpeg_data_url(40_000),
+                fake_jpeg_data_url(40_000) + "X",
+                fake_jpeg_data_url(40_000) + "Y",
+            ]
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "stream");
+        assert_eq!(n, 3, "all three frames should be slimmed");
+
+        // Each frame should now be a summary string (no raw base64).
+        for (i, frame) in value["frames"].as_array().unwrap().iter().enumerate() {
+            let s = frame.as_str().unwrap_or_else(|| panic!("frame {} not a string", i));
+            assert!(s.contains("$cached:"), "frame {} missing ref", i);
+        }
+    }
+
+    /// Repeated slim calls (simulating two `device latest` invocations in
+    /// the same session) accumulate distinct cache entries — no overwrite.
+    #[test]
+    fn test_slim_repeated_calls_accumulate() {
+        let mut cache = LargeDataCache::new();
+
+        // First call: device A's image.
+        let mut v1 = serde_json::json!({"image": fake_jpeg_data_url(40_000)});
+        cache.slim_large_strings_in_json(&mut v1, "shell");
+
+        // Second call: device B's image (different content).
+        let mut v2 = serde_json::json!({"image": fake_jpeg_data_url(40_000) + "Z"});
+        cache.slim_large_strings_in_json(&mut v2, "shell");
+
+        // Both should be resolvable.
+        let ref1 = v1["image"].as_str().unwrap().split("$cached:").nth(1).unwrap().split_whitespace().next().unwrap();
+        let ref2 = v2["image"].as_str().unwrap().split("$cached:").nth(1).unwrap().split_whitespace().next().unwrap();
+        assert_ne!(ref1, ref2);
+        assert!(cache.resolve_reference(&format!("$cached:{}", ref1)).is_some());
+        assert!(cache.resolve_reference(&format!("$cached:{}", ref2)).is_some());
     }
 }

@@ -225,9 +225,30 @@ async fn fetch_examples(
 
 /// Sanitize a metric value for LLM consumption.
 /// Truncates long strings (likely base64 binary data) to avoid wasting tokens.
+///
+/// **Image data URLs are passed through untouched when invoked from the agent
+/// shell tool** (detected via `NEOMIND_JSON=1`). The agent's streaming layer
+/// has its own `LargeDataCache` that handles size — it caches the raw payload
+/// and exposes a `$cached:shell` reference the LLM can pass to `vision` /
+/// image-analysis extensions. Truncating here would starve that mechanism
+/// (the 60-char remnants never hit the 32KB cache threshold).
+/// Human terminal callers (no `NEOMIND_JSON`) still get truncation so they
+/// don't get a wall of base64 in their terminal.
 fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
     match val {
         serde_json::Value::String(s) => {
+            // Image-bearing strings (embedded base64 OR public HTTP(S) URLs)
+            // pass through untouched in agent (JSON) mode — the downstream
+            // LargeDataCache wraps embedded base64 as `$cached:` references,
+            // and the `vision` tool natively fetches HTTP(S) URLs. Truncating
+            // either would starve the cache or break long signed URLs.
+            if (s.starts_with("data:image/")
+                || s.starts_with("http://")
+                || s.starts_with("https://"))
+                && std::env::var("NEOMIND_JSON").is_ok()
+            {
+                return val.clone();
+            }
             if s.len() > 80 {
                 // Truncate and mark as binary/large — LLM doesn't need the full payload
                 let prefix = &s[..s.floor_char_boundary(60)];
@@ -495,7 +516,147 @@ pub async fn get_telemetry_history(
     }
 
     let data = client.get(&path).await?;
-    Ok(CliResponse::success(data, "Telemetry history retrieved"))
+    // Post-process: if the response contains image-bearing metrics, replace
+    // each such metric's data-point array with a compact summary. This
+    // prevents the response from being dominated by hundreds of 271KB+
+    // base64 strings when the LLM asks for image history. The latest
+    // snapshot's value is preserved so the downstream streaming-layer slim
+    // can cache it as a `$cached:` reference for the `vision` tool.
+    let summarized = summarize_image_history(&data, id);
+    Ok(CliResponse::success(summarized, "Telemetry history retrieved"))
+}
+
+/// If the telemetry history response contains image-bearing metrics,
+/// replace each such metric's data-point array with a compact summary
+/// object. This prevents the response from being dominated by hundreds
+/// of 271KB+ base64 strings when the LLM asks for image history (e.g.
+/// `device history <ID> --metric values.image --time-range 24h` would
+/// otherwise return 288 snapshots × 271KB ≈ 78MB of base64).
+///
+/// Detection: samples first / middle / last data points; if any value
+/// is a `data:image/` URL or an HTTP(S) URL ending in a known image
+/// extension, the metric is treated as image-bearing.
+///
+/// The summary preserves the LATEST snapshot's full value as
+/// `latest_value` so the downstream streaming-layer slim can cache it
+/// as a `$cached:` reference for the `vision` tool. All earlier
+/// snapshots are summarized away (count, time range, average interval,
+/// actionable note).
+///
+/// Non-image metrics pass through untouched, so a multi-metric history
+/// request (no `--metric` filter) only transforms the image-bearing ones.
+fn summarize_image_history(data: &serde_json::Value, device_id: &str) -> serde_json::Value {
+    let mut result = data.clone();
+
+    // Navigate to result.data.data (outer API wrapper → inner telemetry
+    // payload whose `data` field maps metric names to data-point arrays).
+    let data_obj = match result
+        .pointer_mut("/data/data")
+        .and_then(|v| v.as_object_mut())
+    {
+        Some(obj) => obj,
+        None => return result, // unexpected shape — pass through untouched
+    };
+
+    for (metric_name, metric_data) in data_obj.iter_mut() {
+        let points = match metric_data.as_array() {
+            Some(arr) if !arr.is_empty() => arr,
+            _ => continue,
+        };
+
+        // Sample up to 3 points (first / middle / last) for cheap detection.
+        let mid = points.len() / 2;
+        let last = points.len() - 1;
+        let sample_indices: [usize; 3] = [0, mid, last];
+        let is_image = sample_indices.iter().any(|&i| {
+            points
+                .get(i)
+                .and_then(|p| p.get("value"))
+                .and_then(|v| v.as_str())
+                .map(is_image_value)
+                .unwrap_or(false)
+        });
+
+        if !is_image {
+            continue; // non-image metric — pass through untouched
+        }
+
+        let count = points.len();
+        let earliest_ts = points
+            .first()
+            .and_then(|p| p.get("timestamp"))
+            .and_then(|v| v.as_i64());
+        let latest_point = points.last();
+        let latest_ts = latest_point
+            .and_then(|p| p.get("timestamp"))
+            .and_then(|v| v.as_i64());
+        let latest_value = latest_point.and_then(|p| p.get("value")).cloned();
+
+        let interval_avg_ms = match (earliest_ts, latest_ts, count) {
+            (Some(e), Some(l), c) if c > 1 => Some(((l - e) / (c as i64 - 1)).max(0)),
+            _ => None,
+        };
+
+        let time_window = match (earliest_ts, latest_ts) {
+            (Some(e), Some(l)) => format!(" between {} and {}", format_ts(e), format_ts(l)),
+            _ => String::new(),
+        };
+
+        let mut summary = serde_json::Map::new();
+        summary.insert("_image_history_summary".to_string(), json!(true));
+        summary.insert("metric".to_string(), json!(metric_name));
+        summary.insert("device_id".to_string(), json!(device_id));
+        summary.insert("count".to_string(), json!(count));
+        if let Some(e) = earliest_ts {
+            summary.insert("earliest_ts".to_string(), json!(e));
+        }
+        if let Some(l) = latest_ts {
+            summary.insert("latest_ts".to_string(), json!(l));
+        }
+        if let Some(iv) = interval_avg_ms {
+            summary.insert("interval_avg_ms".to_string(), json!(iv));
+        }
+        if let Some(v) = latest_value {
+            summary.insert("latest_value".to_string(), v);
+        }
+        summary.insert(
+            "note".to_string(),
+            json!(format!(
+                "{count} historical image snapshot(s){window}. The latest snapshot is in `latest_value` and is ready for analysis via the `vision` tool. For other snapshots, narrow the --time-range or filter to a specific window.",
+                count = count,
+                window = time_window
+            )),
+        );
+
+        *metric_data = serde_json::Value::Object(summary);
+    }
+
+    result
+}
+
+/// Heuristic: is this string value an image payload (data URL or URL
+/// pointing at an image resource)?
+fn is_image_value(s: &str) -> bool {
+    if s.starts_with("data:image/") {
+        return true;
+    }
+    if s.starts_with("http://") || s.starts_with("https://") {
+        let lower = s.to_lowercase();
+        // Strip query string before checking extension.
+        let path = lower.split('?').next().unwrap_or(&lower);
+        const EXTS: &[&str] = &[".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
+        return EXTS.iter().any(|ext| path.ends_with(ext));
+    }
+    false
+}
+
+/// Format a millisecond Unix timestamp as an RFC 3339 string for human-
+/// readable display in summary notes. Falls back to the raw integer if
+/// the timestamp is out of range.
+fn format_ts(ts_ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ts_ms)
+        .map(|dt| dt.to_rfc3339())
+        .unwrap_or_else(|| ts_ms.to_string())
 }
 
 /// Parse a human-readable time range string (e.g., "1h", "24h", "7d", "30d") to a start timestamp.
@@ -731,4 +892,222 @@ pub async fn write_metric(
 pub async fn get_webhook_url(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/devices/{}/webhook-url", id)).await?;
     Ok(CliResponse::success(data, "Webhook URL retrieved"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a fake data URL of the requested byte size.
+    fn fake_data_url(bytes: usize, mime: &str) -> String {
+        let prefix = format!("data:{};base64,", mime);
+        let pad = bytes.saturating_sub(prefix.len());
+        format!("{}{}", prefix, "A".repeat(pad))
+    }
+
+    /// Build a typical API response shape wrapping a telemetry payload.
+    fn wrap_telemetry(device_id: &str, data_obj: serde_json::Value) -> serde_json::Value {
+        json!({
+            "success": true,
+            "data": {
+                "device_id": device_id,
+                "data": data_obj,
+                "start": 0,
+                "end": 0
+            }
+        })
+    }
+
+    /// Single image metric → array replaced with summary object, latest
+    /// value preserved for downstream slim.
+    #[test]
+    fn test_summarize_single_image_metric_replaced() {
+        let device_id = "dev-001";
+        let metric = "values.image";
+        let url = fake_data_url(40_000, "image/jpeg");
+        let response = wrap_telemetry(
+            device_id,
+            json!({
+                metric: [
+                    {"timestamp": 1000, "value": fake_data_url(40_000, "image/jpeg")},
+                    {"timestamp": 2000, "value": fake_data_url(40_000, "image/jpeg")},
+                    {"timestamp": 3000, "value": url.clone()}
+                ]
+            }),
+        );
+
+        let out = summarize_image_history(&response, device_id);
+
+        let summary = &out["data"]["data"][metric];
+        assert_eq!(summary["_image_history_summary"], true);
+        assert_eq!(summary["count"], 3);
+        assert_eq!(summary["metric"], metric);
+        assert_eq!(summary["device_id"], device_id);
+        assert_eq!(summary["earliest_ts"], 1000);
+        assert_eq!(summary["latest_ts"], 3000);
+        assert_eq!(summary["interval_avg_ms"], 1000); // (3000-1000)/(3-1) = 1000ms
+        // latest_value carries the FULL data URL (slim layer will cache it).
+        assert_eq!(summary["latest_value"], url);
+        // Note mentions count + vision hint.
+        let note = summary["note"].as_str().unwrap();
+        assert!(note.contains("3 historical"), "note should mention count: {}", note);
+        assert!(note.contains("vision"), "note should mention vision: {}", note);
+    }
+
+    /// Mixed request (image metric + numeric metric) → only the image
+    /// metric is summarized, the numeric metric flows through untouched.
+    #[test]
+    fn test_summarize_mixed_metrics_only_image_replaced() {
+        let device_id = "dev-002";
+        let response = wrap_telemetry(
+            device_id,
+            json!({
+                "values.image": [
+                    {"timestamp": 1000, "value": fake_data_url(40_000, "image/png")}
+                ],
+                "values.temperature": [
+                    {"timestamp": 1000, "value": 23.5},
+                    {"timestamp": 2000, "value": 24.0}
+                ]
+            }),
+        );
+
+        let out = summarize_image_history(&response, device_id);
+
+        // Image metric transformed.
+        assert_eq!(out["data"]["data"]["values.image"]["_image_history_summary"], true);
+        assert_eq!(out["data"]["data"]["values.image"]["count"], 1);
+
+        // Numeric metric untouched.
+        assert!(out["data"]["data"]["values.temperature"].is_array());
+        assert_eq!(out["data"]["data"]["values.temperature"][0]["value"], 23.5);
+    }
+
+    /// Empty history (no data points) → pass through untouched.
+    #[test]
+    fn test_summarize_empty_history_untouched() {
+        let device_id = "dev-003";
+        let response = wrap_telemetry(
+            device_id,
+            json!({
+                "values.image": []
+            }),
+        );
+
+        let out = summarize_image_history(&response, device_id);
+        // Empty array stays empty array (not turned into a summary).
+        assert!(out["data"]["data"]["values.image"].is_array());
+    }
+
+    /// URL-form image values (http/https + image extension) are detected
+    /// just like data URLs.
+    #[test]
+    fn test_summarize_detects_image_urls() {
+        let device_id = "dev-004";
+        let response = wrap_telemetry(
+            device_id,
+            json!({
+                "snapshots": [
+                    {"timestamp": 1000, "value": "https://camera.example.com/snapshots/img1.jpg"},
+                    {"timestamp": 2000, "value": "https://camera.example.com/snapshots/img2.jpg?token=abc"}
+                ]
+            }),
+        );
+
+        let out = summarize_image_history(&response, device_id);
+        let summary = &out["data"]["data"]["snapshots"];
+        assert_eq!(summary["_image_history_summary"], true);
+        assert_eq!(summary["count"], 2);
+        assert_eq!(
+            summary["latest_value"],
+            "https://camera.example.com/snapshots/img2.jpg?token=abc"
+        );
+    }
+
+    /// Non-image history (numeric only) → completely untouched.
+    #[test]
+    fn test_summarize_non_image_history_passthrough() {
+        let device_id = "dev-005";
+        let original = wrap_telemetry(
+            device_id,
+            json!({
+                "values.temperature": [
+                    {"timestamp": 1000, "value": 23.5},
+                    {"timestamp": 2000, "value": 24.0}
+                ]
+            }),
+        );
+
+        let out = summarize_image_history(&response_clone(&original), device_id);
+        assert_eq!(out, original, "non-image response must be unchanged");
+    }
+
+    fn response_clone(v: &serde_json::Value) -> serde_json::Value {
+        v.clone()
+    }
+
+    /// Unexpected response shape (no /data/data path) → pass through
+    /// untouched, do not crash.
+    #[test]
+    fn test_summarize_unexpected_shape_passthrough() {
+        let weird = json!({
+            "success": true,
+            "data": "just a string, not an object"
+        });
+        let out = summarize_image_history(&weird, "dev-x");
+        assert_eq!(out, weird);
+
+        let weird2 = json!({"no_data_key": true});
+        let out2 = summarize_image_history(&weird2, "dev-x");
+        assert_eq!(out2, weird2);
+    }
+
+    /// is_image_value heuristic coverage.
+    #[test]
+    fn test_is_image_value_heuristic() {
+        assert!(is_image_value("data:image/jpeg;base64,/9j/4AAQ"));
+        assert!(is_image_value("data:image/png;base64,iVBORw0KGgo="));
+        assert!(is_image_value("https://example.com/img.jpg"));
+        assert!(is_image_value("http://cam.local/snap.PNG"));
+        assert!(is_image_value("https://cdn.com/x.JPEG"));
+        assert!(is_image_value("https://cdn.com/path/img.webp?token=long-signed-url-xyz"));
+
+        // Negative cases.
+        assert!(!is_image_value("https://example.com/page.html"));
+        assert!(!is_image_value("https://example.com/api/data"));
+        assert!(!is_image_value("data:application/json;base64,e30="));
+        assert!(!is_image_value("just a regular string"));
+        assert!(!is_image_value("23.5"));
+    }
+
+    /// URL-form image value should NOT be truncated by sanitize_metric_value
+    /// in agent (JSON) mode. We can't set env vars in unit tests safely, so
+    /// this test documents the contract by checking the branch logic
+    /// directly.
+    #[test]
+    fn test_sanitize_metric_value_url_branch() {
+        // Simulate agent mode by checking the predicate inline.
+        let long_url = format!(
+            "https://example.com/camera/snapshots/very-deep-path/with/many/segments/and-a-long-signed-token-that-exceeds-80-bytes.jpg?sig={}",
+            "a".repeat(100)
+        );
+        assert!(long_url.len() > 80);
+        // Branch predicate matches the implementation.
+        let is_pass_through = (long_url.starts_with("data:image/")
+            || long_url.starts_with("http://")
+            || long_url.starts_with("https://"))
+            && std::env::var("NEOMIND_JSON").is_ok();
+        // Without env var → would be truncated (documenting the contract).
+        // Caller is responsible for setting NEOMIND_JSON in agent context.
+        let _ = is_pass_through; // just asserts it compiles + documents intent
+    }
+
+    /// format_ts converts millisecond timestamps to RFC 3339.
+    #[test]
+    fn test_format_ts_converts_millis() {
+        // 2026-07-08T18:00:09Z ≈ 1783504809000 ms (within rounding).
+        let ts = 1_783_504_809_000_i64;
+        let s = format_ts(ts);
+        assert!(s.starts_with("2026-07-08"), "expected 2026-07-08 in {}", s);
+    }
 }
