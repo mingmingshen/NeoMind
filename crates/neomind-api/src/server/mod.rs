@@ -330,14 +330,16 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                                     record.last_error_at = None;
                                     let _ = store.save(&record);
 
-                                    // Apply saved config if available
+                                    // Apply saved config via ConfigUpdate IPC (NOT
+                                    // execute_command, because "configure" is a
+                                    // lifecycle method, not a registered command).
                                     if let Some(ref config) = record.config {
                                         tracing::info!(
                                             extension_id = %ext_id,
                                             "Applying saved config to extension after crash recovery"
                                         );
                                         if let Err(e) = rt
-                                            .execute_command(&ext_id, "configure", config)
+                                            .send_config_update(&ext_id, config)
                                             .await
                                         {
                                             tracing::warn!(

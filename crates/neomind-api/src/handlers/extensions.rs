@@ -2863,10 +2863,18 @@ pub async fn reload_extension_handler(
                     }
                 }
 
-                // Apply saved config
+                // Apply saved config via the lifecycle `configure()` method.
+                // NOTE: must NOT use `execute_command(id, "configure", cfg)` —
+                // `configure` is a lifecycle method, not a dispatched command,
+                // and is not in any extension's commands list. Doing so fails
+                // with "Command not found: configure" on every reload (see
+                // the analogous hot-reload path at send_config_update above).
+                // The runtime routes send_config_update through the proper
+                // IPC channel (ConfigUpdate) that the runner turns into a
+                // call to `neomind_extension_configure_json`.
                 if let Some(ref cfg) = config {
                     if let Err(e) = runtime
-                        .execute_command(&metadata.id, "configure", cfg)
+                        .send_config_update(&metadata.id, cfg)
                         .await
                     {
                         tracing::warn!(

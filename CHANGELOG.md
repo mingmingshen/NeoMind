@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.4] - 2026-07-10
+
+### Overview
+
+This release fixes a long-standing bug where **saved extension
+configurations were never reapplied** on reload, crash recovery, or
+startup. The three code paths responsible all routed the saved config
+through `execute_command(id, "configure", ...)`, but `configure` is a
+lifecycle method, not a registered command — so it failed with
+"Command not found: configure" on every invocation, and the extension
+kept running with its default config.
+
+### Extension config application
+
+- **Root cause** — `configure` is an SDK lifecycle method invoked via
+  the dedicated `ConfigUpdate` IPC channel; it is not present in any
+  extension's `commands` list. `execute_command` only dispatches
+  registered commands, so it silently failed on every reload/recovery.
+- **Fix** — all three call sites now use the proper IPC:
+  - `reload_extension_handler` (manual reload after config edit)
+  - crash-recovery loop in `server/mod.rs` (auto-restart after a
+    crash-loop-disabled extension is re-enabled)
+  - startup load path in `extension_state.rs` (initial config apply on
+    server boot)
+- All three paths use `runtime.send_config_update(&id, cfg)`, which
+  routes through the runner's ConfigUpdate channel →
+  `neomind_extension_configure_json`, matching the hot-reload path
+  already used for live config edits.
+
+---
+
 ## [0.9.3] - 2026-07-09
 
 ### Overview
