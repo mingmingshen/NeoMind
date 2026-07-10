@@ -155,6 +155,11 @@ jobs:
         run: test -f web/dist/index.html && echo "✅ Frontend ready"
 
       # 更激进的 Rust 缓存策略
+      # Key includes matrix.os (the exact runner image, e.g. ubuntu-22.04 vs
+      # ubuntu-latest/24.04) so caches don't cross-contaminate across GLIBC
+      # versions — build-script binaries compiled on 24.04 require GLIBC_2.39
+      # and crash on 22.04 ("version GLIBC_2.39 not found"). restore-keys is
+      # likewise scoped to the image to prevent pulling stale 24.04 artifacts.
       - name: Setup Rust cache
         uses: actions/cache@v4
         with:
@@ -163,10 +168,9 @@ jobs:
             ~/.cargo/git/
             target/
             web/src-tauri/target/
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ matrix.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.target }}-
-            ${{ runner.os }}-cargo-
+            cargo-${{ matrix.os }}-${{ matrix.target }}-
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
