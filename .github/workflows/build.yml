@@ -323,7 +323,7 @@ jobs:
           - os: linux
             target: aarch64-unknown-linux-gnu
             arch: arm64
-            runner: ubuntu-latest
+            runner: ubuntu-22.04-arm  # pin to oldest supported LTS for glibc 2.35 baseline (matches amd64)
           - os: darwin
             target: aarch64-apple-darwin
             arch: arm64
