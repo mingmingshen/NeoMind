@@ -126,7 +126,7 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
           - platform: 'linux-x86_64'
-            os: ubuntu-latest
+            os: ubuntu-22.04  # pin to oldest supported LTS for GLIBC 2.35 baseline (so .deb installs on 22.04)
             target: x86_64-unknown-linux-gnu
           - platform: 'linux-aarch64'
             os: ubuntu-22.04-arm
@@ -360,35 +360,18 @@ jobs:
           restore-keys: |
             server-v2-${{ matrix.runner }}-${{ matrix.target }}-
 
-      - name: Cache cross-compilation tool
-        if: matrix.os == 'linux' && matrix.arch != 'amd64'
-        uses: actions/cache@v4
-        id: cache-cross
-        with:
-          path: ~/.cargo/bin/cross
-          key: cross-${{ matrix.target }}-${{ runner.os }}-v2
-
-      - name: Install cross-compilation tool
-        if: matrix.os == 'linux' && matrix.arch != 'amd64' && steps.cache-cross.outputs.cache-hit != 'true'
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
       # ========== 构建纯 API 服务器（无前端嵌入）==========
+      # Both linux arches now run on native runners (amd64 on ubuntu-22.04 x86_64,
+      # arm64 on ubuntu-22.04-arm ARM64), so both use plain `cargo build`. The old
+      # `cross` cross-compile path was removed — its cached x86_64 binary failed
+      # with "Exec format error" on the ARM runner, and native builds are faster.
       - name: Build server and extension runner (Linux)
         if: matrix.os == 'linux'
         shell: bash
         run: |
           set -e
-
-          # Native x86_64 build uses plain cargo (target == host) to avoid the
-          # `cross` binary's own glibc dependency leaking into the toolchain.
-          # aarch64 is cross-compiled from x86_64 host via `cross`.
-          if [[ "${{ matrix.arch }}" == "amd64" ]]; then
-            cargo build --release -p neomind-cli --target ${{ matrix.target }}
-            cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
-          else
-            cross build --release -p neomind-cli --target ${{ matrix.target }}
-            cross build --release -p neomind-extension-runner --target ${{ matrix.target }}
-          fi
+          cargo build --release -p neomind-cli --target ${{ matrix.target }}
+          cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
 
           # Verify binaries exist
           ls -la target/${{ matrix.target }}/release/neomind target/${{ matrix.target }}/release/neomind-extension-runner
