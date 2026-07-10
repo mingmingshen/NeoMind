@@ -212,6 +212,15 @@ jobs:
           export CARGO_PROFILE_RELEASE_LTO=thin
           export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256
 
+          # Linux: force clang for wasmtime's C deps (ittapi etc.) — gcc-11 on
+          # ubuntu-22.04 miscompiles them, causing the wasmtime rlib to not be
+          # produced and a downstream "can't find crate" cascade in extension-runner.
+          # macOS already defaults to clang; Windows uses MSVC and must be left alone.
+          if [[ "${{ matrix.os }}" == ubuntu-* ]]; then
+            export CC=clang
+            export CXX=clang++
+          fi
+
           # Build extension runner (CLI is dispatched in-process, no sidecar needed)
           cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
 
