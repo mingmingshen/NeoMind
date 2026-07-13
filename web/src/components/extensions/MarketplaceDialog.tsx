@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/use-toast"
 import {
   FullScreenDialog,
@@ -681,19 +682,24 @@ function ExtensionDetailView({
               {t("extensions:market.readme", "Documentation")}
             </h3>
             {readmeLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t("common:loading", "Loading...")}
+              <div className="space-y-3" aria-label={t("common:loading", "Loading...")}>
+                <Skeleton className="h-5 w-2/3" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-5/6" />
+                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-3 w-4/5" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-3/4" />
               </div>
             ) : (
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    img: ({ node, ...props }) => (
+                    img: ({ node: _node, ...props }) => (
                       <img {...props} src={resolveReadmeUrl(props.src)} />
                     ),
-                    a: ({ node, ...props }) => (
+                    a: ({ node: _node, ...props }) => (
                       <a
                         {...props}
                         href={resolveReadmeUrl(props.href)}
