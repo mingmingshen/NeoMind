@@ -2432,14 +2432,12 @@ pub async fn install_marketplace_extension_handler(
             }),
         }
     } else {
-        // Fall back to platform-specific binary download
-        // Check if this is a WASM extension (works on all platforms)
-        let is_wasm = metadata.builds.contains_key("wasm");
-        let build_key = if is_wasm { "wasm" } else { platform };
+        // Fall back to platform-specific binary download with variant fallback.
+        // Variant chain (via accel): e.g. Jetson → linux-aarch64-jetson → linux-aarch64 → wasm.
+        let variant = neomind_core::extension::accel::detect_variant();
 
-        if is_wasm && platform == "unknown" {
-            // WASM extensions don't need platform detection
-        } else if !is_wasm && platform == "unknown" {
+        // "unknown" platform is only acceptable for pure-WASM extensions.
+        if platform == "unknown" && !metadata.builds.contains_key("wasm") {
             return ok(MarketplaceInstallResponse {
                 success: false,
                 extension_id: req.id,
@@ -2450,10 +2448,28 @@ pub async fn install_marketplace_extension_handler(
             });
         }
 
-        // Get build info for this platform/WASM
-        let build = metadata.builds.get(build_key).ok_or_else(|| {
-            ErrorResponse::bad_request(format!("No build available for platform: {}", platform))
+        let available_keys: std::collections::HashSet<&str> =
+            metadata.builds.keys().map(|s| s.as_str()).collect();
+        let build_key = select_build_key(&available_keys, platform, variant).ok_or_else(|| {
+            ErrorResponse::bad_request(format!(
+                "No compatible build for {} (variant={:?}); available builds: {:?}",
+                platform,
+                variant,
+                metadata.builds.keys().collect::<Vec<_>>()
+            ))
         })?;
+
+        // Get build info for the selected platform/variant/WASM.
+        // SAFE: select_build_key only returns a key present in `available_keys`,
+        // which we built from metadata.builds.keys() — so .get() is guaranteed Some.
+        // (If select_build_key is ever refactored to emit keys NOT derived from
+        // available_keys, this invariant breaks — keep it subset-bound.)
+        let build = metadata.builds
+            .get(build_key.as_str())
+            .expect("select_build_key invariant: returned key must exist in metadata.builds");
+
+        // Determine if this is a WASM build for file extension logic (used later)
+        let is_wasm = build_key == "wasm";
 
         // Download the extension binary
         tracing::info!("Downloading extension {} from {}", req.id, build.url);
