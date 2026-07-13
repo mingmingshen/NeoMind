@@ -37,7 +37,6 @@ use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
 
 use crate::extension::types::ExtensionError;
 
@@ -372,22 +371,36 @@ impl From<PackageError> for ExtensionError {
 }
 
 impl ExtensionPackage {
+    /// Stream-hash a file's contents for the checksum without buffering the
+    /// whole file in memory. Used by [`load`](Self::load) so opening a large
+    /// `.nep` (e.g. ML model bundle) for upload doesn't OOM.
+    async fn stream_hash_file(path: &Path) -> Result<String, PackageError> {
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncReadExt;
+        let mut f = tokio::fs::File::open(path).await?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = f.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
     /// Load a package from a file
     pub async fn load(path: &Path) -> Result<Self, PackageError> {
-        // Read file
-        let mut file = tokio::fs::File::open(path).await?;
-        let metadata = file.metadata().await?;
-        let size = metadata.len();
+        let size = tokio::fs::metadata(path).await?.len();
 
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).await?;
+        // Stream-hash the file for the checksum — do NOT read_to_end, large
+        // packages would OOM.
+        let checksum = Self::stream_hash_file(path).await?;
 
-        // Calculate checksum
-        let checksum = Self::calculate_checksum(&buffer);
-
-        // Parse ZIP archive
-        let cursor = Cursor::new(buffer);
-        let mut archive = ZipArchive::new(cursor).map_err(|e| PackageError::Zip(e.to_string()))?;
+        // Parse the manifest only, via a File-backed archive (no full buffer).
+        let std_file = std::fs::File::open(path)?;
+        let mut archive = ZipArchive::new(std_file).map_err(|e| PackageError::Zip(e.to_string()))?;
 
         // Read manifest.json
         let manifest_content = Self::read_file_from_zip(&mut archive, "manifest.json")?;
@@ -501,18 +514,22 @@ impl ExtensionPackage {
         let ext_dir = target_dir.join(ext_id);
         tokio::fs::create_dir_all(&ext_dir).await?;
 
-        // Load ZIP archive
-        let data = if let Some(path) = &self.path {
-            tokio::fs::read(path).await?
-        } else {
-            return Err(PackageError::Io(std::io::Error::new(
+        // Load ZIP archive from file — do NOT tokio::fs::read (would buffer
+        // the whole package in memory). Open async, hand the std File to
+        // ZipArchive; entries are then streamed by extract_file/extract_directory.
+        let path = self.path.clone().ok_or_else(|| {
+            PackageError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "Package has no file path",
-            )));
-        };
-
-        let cursor = Cursor::new(data);
-        let mut archive = ZipArchive::new(cursor).map_err(|e| PackageError::Zip(e.to_string()))?;
+            ))
+        })?;
+        // Open the file synchronously (brief, just the open — not a full read)
+        // and hand the std File to ZipArchive. Entries are then streamed by
+        // extract_file/extract_directory, so the package is never buffered
+        // whole. std File is used because ZipArchive needs std Read+Seek.
+        let file = std::fs::File::open(&path)?;
+        let mut archive = ZipArchive::new(file)
+            .map_err(|e| PackageError::Zip(e.to_string()))?;
 
         // Extract manifest.json
         let manifest_path = ext_dir.join("manifest.json");
@@ -1117,15 +1134,31 @@ impl ExtensionPackage {
             .by_name(src_path)
             .map_err(|e| PackageError::MissingFile(format!("{}: {}", src_path, e)))?;
 
-        let mut content = Vec::new();
-        file.read_to_end(&mut content)?;
-
         // Create parent directory
         if let Some(parent) = dst_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        tokio::fs::write(dst_path, content).await?;
+        // macOS: clear existing (code-signed xattr blocks create on re-install)
+        if dst_path.exists() {
+            let _ = tokio::fs::remove_file(dst_path).await;
+        }
+
+        // Stream the entry to disk in chunks — never read_to_end, since large
+        // model/binary entries would OOM. ZipFile is a blocking reader, so we
+        // pull 64 KB at a time through std Read + tokio AsyncWrite.
+        use std::io::Read;
+        use tokio::io::AsyncWriteExt;
+        let mut out = tokio::fs::File::create(dst_path).await?;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            out.write_all(&buf[..n]).await?;
+        }
+        out.flush().await?;
         Ok(())
     }
 
@@ -1156,10 +1189,22 @@ impl ExtensionPackage {
                     tokio::fs::create_dir_all(parent).await?;
                 }
 
-                // Extract file
-                let mut content = Vec::new();
-                file.read_to_end(&mut content)?;
-                tokio::fs::write(dst_path, content).await?;
+                // Stream-extract (chunked) — never read_to_end large entries.
+                use std::io::Read as _;
+                use tokio::io::AsyncWriteExt;
+                if dst_path.exists() {
+                    let _ = tokio::fs::remove_file(&dst_path).await;
+                }
+                let mut out = tokio::fs::File::create(&dst_path).await?;
+                let mut buf = [0u8; 64 * 1024];
+                loop {
+                    let n = file.read(&mut buf)?;
+                    if n == 0 {
+                        break;
+                    }
+                    out.write_all(&buf[..n]).await?;
+                }
+                out.flush().await?;
             }
         }
 
@@ -1624,6 +1669,76 @@ mod tests {
         assert!(
             delta_mb < pkg_mb * 0.3,
             "RSS grew {:.1} MB for a {:.0} MB package — install_from_file is buffering the whole package in memory!",
+            delta_mb,
+            pkg_mb
+        );
+    }
+
+    /// Upload path = load (stream hash + manifest) + install (file-backed
+    /// extract). Proves the async path also streams — a 150 MB upload must
+    /// not spike RSS the way the old read_to_end + Cursor did.
+    #[tokio::test]
+    #[ignore]
+    async fn test_upload_path_memory_footprint() {
+        use std::io::Write;
+        let platform = detect_platform();
+        let lib_ext = if platform.starts_with("windows") {
+            "dll"
+        } else if platform.starts_with("darwin") {
+            "dylib"
+        } else {
+            "so"
+        };
+        let binary_entry = format!("binaries/{}/extension.{}", platform, lib_ext);
+        let manifest = format!(
+            r#"{{"format":"neomind-extension-package","abi_version":3,"id":"test-upload-mem","name":"T","version":"1.0.0","binaries":{{"{}":"{}"}},"type":"native"}}"#,
+            platform, binary_entry
+        );
+
+        let target_pkg_mb: u64 = 150;
+        let tmp = std::env::temp_dir().join(format!(
+            "neomind-upload-memtest-{}.nep",
+            unique_nonce()
+        ));
+        {
+            let file = std::fs::File::create(&tmp).unwrap();
+            let mut zw = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            zw.start_file("manifest.json", opts).unwrap();
+            zw.write_all(manifest.as_bytes()).unwrap();
+            zw.start_file(&binary_entry, opts).unwrap();
+            let chunk = vec![0xABu8; 1024 * 1024];
+            for _ in 0..target_pkg_mb {
+                zw.write_all(&chunk).unwrap();
+            }
+            zw.finish().unwrap();
+        }
+        let pkg_size = std::fs::metadata(&tmp).unwrap().len();
+        let pkg_mb = pkg_size as f64 / 1024.0 / 1024.0;
+
+        let target = std::env::temp_dir().join(format!(
+            "neomind-upload-memtest-target-{}",
+            unique_nonce()
+        ));
+        std::fs::create_dir_all(&target).unwrap();
+
+        let rss_before = current_rss_kb();
+        let package = ExtensionPackage::load(&tmp).await.expect("load should succeed");
+        let _result = package.install(&target).await.expect("install should succeed");
+        let rss_after = current_rss_kb();
+
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir_all(&target);
+
+        let delta_mb = (rss_after as i64 - rss_before as i64) as f64 / 1024.0;
+        println!(
+            "upload path RSS before: {} KB, after: {} KB, delta: {:.1} MB (package {:.0} MB)",
+            rss_before, rss_after, delta_mb, pkg_mb
+        );
+        assert!(
+            delta_mb < pkg_mb * 0.3,
+            "upload path RSS grew {:.1} MB for {:.0} MB package — load/install not streaming!",
             delta_mb,
             pkg_mb
         );
