@@ -51,6 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to underscore; no behavior change for standard packages (the default
   branch already returned the correct directory).
 
+- **Marketplace download/upload no longer buffer the whole package in memory
+  (OOM fix)** — both paths used `read_to_end`/`bytes()`, so a large `.nep`
+  (e.g. paddle-ocr-v6 + CUDA ORT, hundreds of MB) peaked at ~3× package size
+  in RAM and OOM'd edge devices. The 0.9.5 upload-ceiling bump didn't help —
+  it raised the body limit, not the in-memory buffering.
+  - Downloads (`marketplace install`) now stream the body to a temp file
+    (`bytes_stream`), enforce a 1 GB cap (Content-Length + running byte
+    counter), and extract via `install_from_file` (File-backed `ZipArchive`).
+  - Uploads (`load` + `install`) stream-hash the file and read the manifest
+    via a File-backed archive instead of `read_to_end`.
+  - All zip entry extraction (`extract_file_sync` / `extract_directory_sync`
+    and the async pair) switched from `read_to_end` to `std::io::copy` /
+    chunked copy — the original bug, surfaced by a memory-footprint test.
+  - New `MAX_EXTENSION_DOWNLOAD_SIZE = 1 GB` (`types.rs`); upload body limit
+    unchanged at 512 MB.
+  - Verified by `#[ignore]` memory tests: a 150 MB package spikes RSS by
+    **0.8 MB** (download) / **2.2 MB** (upload), vs hundreds of MB before.
+
 ## [0.9.5] - 2026-07-13
 
 ### Overview
