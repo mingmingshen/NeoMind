@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/use-toast"
 import {
   FullScreenDialog,
@@ -514,14 +513,13 @@ function ExtensionDetailView({
 }: ExtensionDetailViewProps) {
   const { t } = useTranslation(["extensions", "common"])
   const [readme, setReadme] = useState<string | null>(null)
-  const [readmeLoading, setReadmeLoading] = useState(false)
 
-  // Fetch README asynchronously — don't block the detail view. Missing README
-  // (content: null) → hide the section, equivalent to today's behavior.
+  // Fetch README asynchronously. The section renders only once content arrives,
+  // so a missing README (content: null) never flashes a title/skeleton that
+  // then vanishes — nothing appears until there's something to show.
   useEffect(() => {
     if (!extension.id) return
     let cancelled = false
-    setReadmeLoading(true)
     setReadme(null)
     api
       .get<{ content: string | null }>(`/extensions/market/${extension.id}/readme`)
@@ -530,9 +528,6 @@ function ExtensionDetailView({
       })
       .catch((e) => {
         if (!cancelled) console.warn("Failed to load README:", e)
-      })
-      .finally(() => {
-        if (!cancelled) setReadmeLoading(false)
       })
     return () => {
       cancelled = true
@@ -674,45 +669,34 @@ function ExtensionDetailView({
           </div>
         )}
 
-        {/* README / Documentation */}
-        {(readmeLoading || readme) && (
+        {/* README / Documentation — render only once content arrives, so a
+            missing README never flashes a title that then vanishes. */}
+        {readme && (
           <div>
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <FileText className="h-4 w-4" />
               {t("extensions:market.readme", "Documentation")}
             </h3>
-            {readmeLoading ? (
-              <div className="space-y-3" aria-label={t("common:loading", "Loading...")}>
-                <Skeleton className="h-5 w-2/3" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-5/6" />
-                <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-3 w-4/5" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-3/4" />
-              </div>
-            ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    img: ({ node: _node, ...props }) => (
-                      <img {...props} src={resolveReadmeUrl(props.src)} />
-                    ),
-                    a: ({ node: _node, ...props }) => (
-                      <a
-                        {...props}
-                        href={resolveReadmeUrl(props.href)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    ),
-                  }}
-                >
-                  {readme ?? ""}
-                </ReactMarkdown>
-              </div>
-            )}
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  img: ({ node: _node, ...props }) => (
+                    <img {...props} src={resolveReadmeUrl(props.src)} />
+                  ),
+                  a: ({ node: _node, ...props }) => (
+                    <a
+                      {...props}
+                      href={resolveReadmeUrl(props.href)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  ),
+                }}
+              >
+                {readme}
+              </ReactMarkdown>
+            </div>
           </div>
         )}
       </div>
