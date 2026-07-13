@@ -473,8 +473,8 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
                   <div className="max-w-[80%]">
                     <div className="rounded-2xl px-4 py-3 bg-muted">
                       <div className="space-y-2">
-                        <div className="h-3.5 w-full bg-muted-foreground/10 rounded" />
-                        <div className="h-3.5 w-3/4 bg-muted-foreground/10 rounded" />
+                        <div className="h-3.5 w-full bg-muted-foreground rounded" />
+                        <div className="h-3.5 w-3/4 bg-muted-foreground rounded" />
                       </div>
                     </div>
                   </div>
@@ -483,7 +483,7 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
                 <div className="flex gap-3 justify-end animate-pulse">
                   <div className="max-w-[70%]">
                     <div className="rounded-2xl px-4 py-2.5 bg-muted">
-                      <div className="h-3.5 w-32 bg-muted-foreground/10 rounded" />
+                      <div className="h-3.5 w-32 bg-muted-foreground rounded" />
                     </div>
                   </div>
                 </div>
@@ -493,9 +493,9 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
                   <div className="max-w-[80%]">
                     <div className="rounded-2xl px-4 py-3 bg-muted">
                       <div className="space-y-2">
-                        <div className="h-3.5 w-full bg-muted-foreground/10 rounded" />
-                        <div className="h-3.5 w-2/3 bg-muted-foreground/10 rounded" />
-                        <div className="h-3.5 w-1/2 bg-muted-foreground/10 rounded" />
+                        <div className="h-3.5 w-full bg-muted-foreground rounded" />
+                        <div className="h-3.5 w-2/3 bg-muted-foreground rounded" />
+                        <div className="h-3.5 w-1/2 bg-muted-foreground rounded" />
                       </div>
                     </div>
                   </div>

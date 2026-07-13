@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.5] - 2026-07-13
+
+### Overview
+
+This release fixes a class of **dark-mode rendering bugs** where many UI
+elements were silently invisible, hardens HTTP body-limit handling so
+large POST bodies are no longer rejected, raises the extension upload
+ceiling for large ML model bundles, and folds timezone selection into
+the first-run setup flow.
+
+### Dark-mode transparency (frontend)
+
+- **Root cause** — semantic colors are defined as OKLCH CSS variables
+  (e.g. `--muted-foreground`), and Tailwind v3 cannot apply its `/opacity`
+  modifier to a bare `var(--x)` color. Every `bg-muted-foreground/30`,
+  `bg-background/95`, `ring-foreground/30`, `from-muted/50`, etc.
+  **failed to generate any CSS rule**, leaving the element with no
+  background → fully transparent. Verified empirically by compiling the
+  real config: the broken classes produce no output, while `bg-muted-30`
+  / `bg-bg-95` generate correctly.
+- **Why dark mode looked worse** — the failures affect both themes, but
+  most of these elements (skeleton bars, status dots, the streaming
+  cursor, the scrollbar thumb) are meant to be *dim-but-visible*; their
+  absence against a dark surface reads as an obvious hole, whereas
+  against a light surface it is barely noticeable.
+- **Fixes** — every broken `/opacity` usage replaced with a token that
+  actually generates:
+  - Skeleton loading bars (chat history), the streaming "thinking"
+    cursor, off-line / disabled status dots, and the scrollbar thumb →
+    solid `bg-muted-foreground` (visible in both themes).
+  - Mobile chat input header `bg-background/95` → `bg-bg-95` (predefined
+    95% alpha — exact equivalent).
+  - Button keyboard-focus ring `ring-foreground/30` → `ring-ring`. This
+    also restores the ring that vanished when the earlier
+    "ring-ring-flashed-orange" workaround (from when `--ring` aliased
+    `--brand`) was switched to the broken `ring-foreground/30`; `--ring`
+    has since been redefined to a neutral `foreground@35%`, so `ring-ring`
+    is safe again and consistent with the 16 other components using it.
+  - Secondary text that used `text-muted-foreground/N` (which silently
+    fell back to full-contrast foreground) → `text-muted-foreground`.
+  - Gradient fade-outs and the skeleton shimmer mid-stop → predefined
+    alpha tokens (`from-muted-50`, `via-muted-30`).
+  - Row / element hover washes → solid `hover:bg-muted` /
+    `group-hover:bg-muted`.
+  - A second pass (the first scan's regex missed predefined alpha tokens
+    with digits in the name, e.g. `bg-bg-50`) caught seven more: the
+    **login form card** (`bg-bg-50/95` → `bg-bg-50`, the card had been
+    transparent over its background glows), the calendar date-range
+    highlight (`bg-accent/50` → `bg-accent`), the chat active-session
+    timestamp and action-button hovers plus the extension filter count
+    badge (`*-primary-foreground/N` → `white/N` — `primary-foreground`
+    resolves to white in both themes, and `white` supports the opacity
+    modifier), and the dashboard mobile edit-mode overlay
+    (`bg-bg-30/20` → `bg-muted-30`; `--bg-30` was never defined). The
+    `/opacity` bug class is now at zero across the frontend.
+
+### HTTP body-limit alignment (backend)
+
+- **Root cause** — the global `RequestBodyLimitLayer` (10 MB) was applied
+  to the API routes, but axum's `Json` / `Bytes` extractors consult a
+  *separate* `DefaultBodyLimit` whose default is 2 MB. Without an explicit
+  `DefaultBodyLimit`, large POST bodies (e.g. base64 images sent to
+  extension command endpoints) were rejected with **413** even though the
+  request layer allowed 10 MB.
+- **Fix** — `router.rs` now layers
+  `DefaultBodyLimit::max(MAX_REQUEST_BODY_SIZE)` alongside
+  `RequestBodyLimitLayer`, so both gates accept the same payload size.
+
+### Extension upload ceiling
+
+- `MAX_EXTENSION_UPLOAD_SIZE` raised from **100 MB → 512 MB** so large ML
+  model bundles (e.g. paddle-ocr-v6 with CUDA ORT libraries plus
+  multi-tier ONNX models) can be installed via the extension upload
+  endpoint without hitting the cap.
+
+### Setup flow
+
+- Timezone is now captured during first-run setup: the browser timezone
+  is auto-detected on the account-creation step and saved silently, and
+  the completion screen exposes an adjustable timezone selector (saved
+  via `PUT /settings/timezone`). Removes the need to visit Settings just
+  to set the timezone on first run.
+- Setup screens received mobile / layout polish: safe-area insets,
+  `viewport-full` sizing, responsive icon and spacing scales, and an
+  entrance animation.
+
+---
+
 ## [0.9.4] - 2026-07-10
 
 ### Overview

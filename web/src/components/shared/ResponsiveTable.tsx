@@ -342,7 +342,7 @@ export function ResponsiveTable({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 shrink-0 hover:bg-muted-foreground/10"
+                            className="h-8 w-8 shrink-0 hover:bg-muted"
                             aria-label="Actions"
                           >
                             <MoreVertical className="h-4 w-4" />

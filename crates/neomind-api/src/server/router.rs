@@ -1168,7 +1168,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Apply global body limit to these routes
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             MAX_REQUEST_BODY_SIZE,
-        ));
+        ))
+        // Match DefaultBodyLimit to RequestBodyLimitLayer so the Json/Bytes
+        // extractors accept the same payload size. Without this, axum's
+        // default 2MB DefaultBodyLimit silently rejects large POST bodies
+        // (e.g. base64 images sent to extension command endpoints) with 413,
+        // even though RequestBodyLimitLayer allows 10MB.
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_SIZE));
 
     // Combine all routes - extension_upload_routes has its own larger limit
     let router = router

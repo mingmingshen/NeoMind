@@ -673,7 +673,7 @@ function CollapsibleText({ content, maxLines = 6 }: { content: string; maxLines?
       >
         {expanded || !isLong ? content : content.split('\n').slice(0, maxLines).join('\n')}
         {!expanded && isLong && (
-          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-muted/50 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-muted-50 to-transparent" />
         )}
       </div>
       {isLong && (

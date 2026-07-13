@@ -1305,7 +1305,7 @@ export function ChatPage() {
             hacks needed. */}
         <div className={cn(
           "shrink-0 px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
-          isDesktop ? "border-0" : "bg-background/95 backdrop-blur-xl"
+          isDesktop ? "border-0" : "bg-bg-95 backdrop-blur-xl"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Image previews */}

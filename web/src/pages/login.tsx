@@ -379,7 +379,7 @@ export function LoginPage() {
         }}
       >
         <div className="w-full max-w-md">
-          <div className="bg-bg-50/95 backdrop-blur-md rounded-xl p-6 sm:p-8 border border-border shadow-2xl">
+          <div className="bg-bg-50 backdrop-blur-md rounded-xl p-6 sm:p-8 border border-border shadow-2xl">
             <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-center">{t('auth:login')}</h2>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:gap-5">
               <div className="relative">

@@ -115,8 +115,9 @@ fn generate_internal_proxy_secret() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Maximum request body size for extension uploads (100 MB - base64 encoded files are ~33% larger)
-pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 100 * 1024 * 1024;
+/// Maximum request body size for extension uploads (512 MB - accommodates large
+/// ML model bundles, e.g. paddle-ocr-v6 with CUDA ORT libs + multi-tier ONNX models)
+pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 512 * 1024 * 1024;
 
 /// Server state shared across all handlers.
 ///

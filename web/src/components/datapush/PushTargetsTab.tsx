@@ -136,7 +136,7 @@ export function PushTargetsTab() {
           <div className="flex items-center gap-1.5">
             <div className={cn(
               "h-2 w-2 rounded-full",
-              target.enabled ? "bg-success" : "bg-muted-foreground/40"
+              target.enabled ? "bg-success" : "bg-muted-foreground"
             )} />
             <span className={cn(textMini, target.enabled ? "text-success" : "text-muted-foreground")}>
               {target.enabled ? t('common:dataPush.running', 'Running') : t('common:dataPush.stopped', 'Stopped')}

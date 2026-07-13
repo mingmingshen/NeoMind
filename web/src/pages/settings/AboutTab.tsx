@@ -178,7 +178,7 @@ function ExternalLinkValue({ href, text }: { href: string; text: string }) {
       className="inline-flex items-center gap-1 font-mono text-info hover:underline"
     >
       <span>{text}</span>
-      <ExternalLink className="h-3 w-3 text-muted-foreground/70" />
+      <ExternalLink className="h-3 w-3 text-muted-foreground" />
     </a>
   )
 }

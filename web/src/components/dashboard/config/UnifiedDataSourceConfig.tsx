@@ -783,7 +783,7 @@ export function UnifiedDataSourceConfig({
                     'shrink-0 w-4 h-4 rounded-sm flex items-center justify-center transition-colors',
                     item.isSelected
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground group-hover:bg-muted-foreground/10'
+                      : 'bg-muted text-muted-foreground group-hover:bg-muted'
                   )}>
                     <Check className={cn(
                       'h-4 w-4',
@@ -1159,7 +1159,7 @@ export function UnifiedDataSourceConfig({
                     {/* Status indicator */}
                     <div className={cn(
                       'w-2 h-2 rounded-full',
-                      device.online ? 'bg-success' : 'bg-muted-foreground/30'
+                      device.online ? 'bg-success' : 'bg-muted-foreground'
                     )} />
                   </button>
                 )
