@@ -606,27 +606,82 @@ impl ExtensionPackage {
 
     /// Install the package synchronously (for use in spawn_blocking)
     /// Takes raw package bytes since from_bytes() doesn't store them
+    /// Install the package synchronously (for use in spawn_blocking).
+    /// Takes raw package bytes since from_bytes() doesn't store them.
+    /// In-memory variant — used by the upload path where the body limit
+    /// already bounds the size. The download path should use
+    /// [`install_from_file`](Self::install_from_file) to avoid buffering
+    /// large packages in memory.
     pub fn install_sync(data: &[u8], target_dir: &Path) -> Result<InstallResult, PackageError> {
         tracing::info!(
-            "install_sync step 1/9: parse zip ({} bytes, target={})",
+            "install_sync: {} bytes, target={}",
             data.len(),
             target_dir.display()
         );
+        let checksum = Self::calculate_checksum(data);
         let cursor = Cursor::new(data.to_vec());
-        let mut archive = ZipArchive::new(cursor).map_err(|e| {
-            tracing::error!("install_sync FAILED step 1 (zip parse): {}", e);
-            PackageError::Zip(e.to_string())
-        })?;
+        let mut archive = ZipArchive::new(cursor)
+            .map_err(|e| PackageError::Zip(e.to_string()))?;
+        Self::install_from_archive(&mut archive, target_dir, checksum)
+    }
 
+    /// Install a package from a file path — streams the ZIP from the file
+    /// instead of buffering it in memory. Used by the marketplace download
+    /// path so that large `.nep` packages (ML model bundles + CUDA ORT) do
+    /// not OOM. Only the file header + individual entries are held in memory
+    /// at a time, never the whole archive.
+    pub fn install_from_file(
+        data_path: &Path,
+        target_dir: &Path,
+    ) -> Result<InstallResult, PackageError> {
+        tracing::info!(
+            "install_from_file: {}, target={}",
+            data_path.display(),
+            target_dir.display()
+        );
+
+        // Stream-hash the file for the checksum (do not buffer it all).
+        let checksum = {
+            use std::io::Read;
+            let mut hasher = Sha256::new();
+            let mut f = std::fs::File::open(data_path)?;
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                let n = f.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+            }
+            format!("{:x}", hasher.finalize())
+        };
+
+        let file = std::fs::File::open(data_path)?;
+        let mut archive = ZipArchive::new(file)
+            .map_err(|e| PackageError::Zip(e.to_string()))?;
+        Self::install_from_archive(&mut archive, target_dir, checksum)
+    }
+
+    /// Core install logic over an already-opened ZIP archive. Generic over
+    /// the reader so the in-memory path ([`install_sync`](Self::install_sync),
+    /// via `Cursor`) and the file-backed path
+    /// ([`install_from_file`](Self::install_from_file), via `File`) share one
+    /// implementation. `checksum` is computed by the caller — it requires the
+    /// raw package bytes/stream, which the archive abstraction does not expose.
+    fn install_from_archive<R: Read + std::io::Seek>(
+        archive: &mut ZipArchive<R>,
+        target_dir: &Path,
+        checksum: String,
+    ) -> Result<InstallResult, PackageError> {
         // Read manifest from archive
-        let manifest_content = Self::read_file_from_zip(&mut archive, "manifest.json")?;
+        let manifest_content = Self::read_file_from_zip(archive, "manifest.json")?;
         let manifest: ExtensionPackageManifest = serde_json::from_str(&manifest_content)?;
 
         Self::validate_manifest(&manifest)?;
 
         let ext_id = &manifest.id;
         let version = &manifest.version;
-        tracing::info!("install_sync step 2/9: manifest OK ({} v{})", ext_id, version);
+        tracing::info!("install: manifest OK ({} v{})", ext_id, version);
 
         // Create extension directory
         let ext_dir = target_dir.join(ext_id);
@@ -634,7 +689,7 @@ impl ExtensionPackage {
 
         // Extract manifest.json
         let manifest_path = ext_dir.join("manifest.json");
-        Self::extract_file_sync(&mut archive, "manifest.json", &manifest_path)?;
+        Self::extract_file_sync(archive, "manifest.json", &manifest_path)?;
 
         // Get binary path for current platform
         let platform = detect_platform();
@@ -646,7 +701,7 @@ impl ExtensionPackage {
             .ok_or_else(|| {
                 let available_platforms: Vec<String> = manifest.binaries.keys().cloned().collect();
                 tracing::error!(
-                    "install_sync FAILED step 3: no binary for platform '{}' (have: {})",
+                    "install FAILED: no binary for platform '{}' (have: {})",
                     platform,
                     available_platforms.join(", ")
                 );
@@ -657,11 +712,7 @@ impl ExtensionPackage {
                 ))
             })?;
 
-        tracing::info!(
-            "install_sync step 3/9: platform {} -> {}",
-            platform,
-            binary_rel_path
-        );
+        tracing::info!("install: platform {} -> {}", platform, binary_rel_path);
 
         // Extract binary and preserve directory structure.
         // Route through safe_join_within to reject `..` / absolute paths
@@ -669,8 +720,8 @@ impl ExtensionPackage {
         // (the async install path uses `file_name()` to flatten; this path
         // preserves subdirs for shared libraries, so we must guard instead).
         let binary_file = Self::safe_join_within(&ext_dir, &binary_rel_path)?;
-        Self::extract_file_sync(&mut archive, &binary_rel_path, &binary_file)?;
-        tracing::info!("install_sync step 4/9: binary extracted");
+        Self::extract_file_sync(archive, &binary_rel_path, &binary_file)?;
+        tracing::info!("install: binary extracted");
 
         // Extract all sibling files in the same directory as the binary
         // These are bundled shared libraries (e.g. libonnxruntime.dylib)
@@ -718,12 +769,12 @@ impl ExtensionPackage {
         // This allows safe discovery without loading native libraries
         let sidecar_json = binary_file.with_extension("json");
         Self::create_sidecar_json_sync(&manifest, &sidecar_json)?;
-        tracing::info!("install_sync step 5/9: sidecar json + sibling libs done");
+        tracing::info!("install: sidecar json + sibling libs done");
 
         // Extract frontend directory if exists
         let frontend_dir = if manifest.frontend.is_some() {
             let frontend_path = ext_dir.join("frontend");
-            Self::extract_directory_sync(&mut archive, "frontend/", &frontend_path)?;
+            Self::extract_directory_sync(archive, "frontend/", &frontend_path)?;
             Some(frontend_path)
         } else {
             None
@@ -731,16 +782,16 @@ impl ExtensionPackage {
 
         // Extract models directory if exists (for AI/ML extensions)
         let models_path = ext_dir.join("models");
-        Self::extract_directory_sync(&mut archive, "models/", &models_path)?;
+        Self::extract_directory_sync(archive, "models/", &models_path)?;
 
         // Extract assets directory if exists (for static assets)
         let assets_path = ext_dir.join("assets");
-        Self::extract_directory_sync(&mut archive, "assets/", &assets_path)?;
+        Self::extract_directory_sync(archive, "assets/", &assets_path)?;
 
         // Extract config directory if exists (for configuration files)
         let config_path = ext_dir.join("config");
-        Self::extract_directory_sync(&mut archive, "config/", &config_path)?;
-        tracing::info!("install_sync step 6/9: resource dirs done");
+        Self::extract_directory_sync(archive, "config/", &config_path)?;
+        tracing::info!("install: resource dirs done");
 
         // 🔧 macOS: Re-sign all extracted dylibs after installation.
         // When a .nep replaces an existing extension, macOS may cache the old code signature
@@ -750,9 +801,9 @@ impl ExtensionPackage {
         #[cfg(target_os = "macos")]
         {
             if let Some(binary_dir) = binary_file.parent() {
-                tracing::info!("install_sync step 7/9: re-signing dylibs (macOS)");
+                tracing::info!("install: re-signing dylibs (macOS)");
                 Self::resign_dylibs_macos(binary_dir);
-                tracing::info!("install_sync step 7/9: resign done");
+                tracing::info!("install: resign done");
             }
         }
 
@@ -762,9 +813,6 @@ impl ExtensionPackage {
             .as_ref()
             .map(|f| f.components.clone())
             .unwrap_or_default();
-
-        // Calculate checksum
-        let checksum = Self::calculate_checksum(data);
 
         // ✨ Determine which resource directories were extracted
         let models_dir = if models_path.exists() {
@@ -780,7 +828,7 @@ impl ExtensionPackage {
             None
         };
 
-        tracing::info!("install_sync step 9/9: success ({} v{})", ext_id, version);
+        tracing::info!("install: success ({} v{})", ext_id, version);
         Ok(InstallResult {
             extension_id: ext_id.clone(),
             version: version.clone(),
@@ -1419,5 +1467,75 @@ mod tests {
 
         assert_eq!(manifest.id, "test-extension");
         assert!(manifest.frontend.is_none());
+    }
+
+    fn unique_nonce() -> u64 {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        N.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Build a minimal valid .nep (in-memory) for the current platform, so
+    /// install tests don't depend on a real extension package.
+    fn build_test_nep() -> Vec<u8> {
+        use std::io::Write;
+        let platform = detect_platform();
+        let lib_ext = if platform.starts_with("windows") {
+            "dll"
+        } else if platform.starts_with("darwin") {
+            "dylib"
+        } else {
+            "so"
+        };
+        let binary_entry = format!("binaries/{}/extension.{}", platform, lib_ext);
+        let manifest = format!(
+            r#"{{"format":"neomind-extension-package","abi_version":3,"id":"test-install-file","name":"Test","version":"9.9.9","binaries":{{"{}":"{}"}},"type":"native"}}"#,
+            platform, binary_entry
+        );
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut zw = zip::ZipWriter::new(buf);
+        let opts = zip::write::SimpleFileOptions::default();
+        zw.start_file("manifest.json", opts).unwrap();
+        zw.write_all(manifest.as_bytes()).unwrap();
+        zw.start_file(&binary_entry, opts).unwrap();
+        zw.write_all(b"fake binary").unwrap();
+        zw.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn test_install_from_file_streams_archive() {
+        // install_from_file must match install_sync for identical package
+        // data (both share install_from_archive) — proves the file-backed
+        // path works end-to-end without buffering the archive in memory.
+        let zip_bytes = build_test_nep();
+        let tmp =
+            std::env::temp_dir().join(format!("neomind-test-install-{}.nep", unique_nonce()));
+        std::fs::write(&tmp, &zip_bytes).unwrap();
+
+        let target_sync =
+            std::env::temp_dir().join(format!("neomind-test-sync-{}", unique_nonce()));
+        let target_file =
+            std::env::temp_dir().join(format!("neomind-test-file-{}", unique_nonce()));
+        std::fs::create_dir_all(&target_sync).unwrap();
+        std::fs::create_dir_all(&target_file).unwrap();
+
+        let via_sync = ExtensionPackage::install_sync(&zip_bytes, &target_sync);
+        let via_file = ExtensionPackage::install_from_file(&tmp, &target_file);
+
+        // cleanup
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir_all(&target_sync);
+        let _ = std::fs::remove_dir_all(&target_file);
+
+        let via_sync = via_sync.expect("install_sync should succeed on test package");
+        let via_file = via_file.expect("install_from_file should succeed on test package");
+
+        // Same package → same metadata + checksum (computed via &[u8] vs a
+        // streamed file, but the underlying bytes are identical).
+        assert_eq!(via_file.extension_id, via_sync.extension_id);
+        assert_eq!(via_file.version, via_sync.version);
+        assert_eq!(via_file.checksum, via_sync.checksum);
+        assert_eq!(via_file.extension_id, "test-install-file");
+        assert!(!via_file.checksum.is_empty());
     }
 }

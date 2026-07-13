@@ -119,6 +119,13 @@ fn generate_internal_proxy_secret() -> String {
 /// ML model bundles, e.g. paddle-ocr-v6 with CUDA ORT libs + multi-tier ONNX models)
 pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 512 * 1024 * 1024;
 
+/// Maximum size of an extension package downloaded from the marketplace
+/// (1 GB). Higher than the upload limit because the download path streams
+/// the body to a temp file (no in-memory buffering), and marketplace
+/// packages may bundle large ML models. Enforced via Content-Length (when
+/// reported) plus a running byte counter during streaming.
+pub const MAX_EXTENSION_DOWNLOAD_SIZE: u64 = 1024 * 1024 * 1024;
+
 /// Server state shared across all handlers.
 ///
 /// Organized into logical sub-states for better maintainability.

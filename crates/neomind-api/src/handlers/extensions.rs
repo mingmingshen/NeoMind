@@ -26,6 +26,9 @@ use crate::server::ServerState;
 use neomind_core::datasource::DataSourceId;
 use neomind_core::extension::{MetricDataType, ParameterDefinition};
 use neomind_storage::{ExtensionRecord, ExtensionStore};
+use futures::StreamExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::server::types::MAX_EXTENSION_DOWNLOAD_SIZE;
 
 /// Validate an extension ID to prevent path traversal in filesystem operations.
 /// Extension IDs are kebab-case identifiers (e.g. "weather-forecast-v2").
@@ -2184,11 +2187,103 @@ fn select_build_key(
 }
 
 /// Compute SHA256 checksum of file content
+/// RAII guard that removes a path when dropped (best-effort). Used to make
+/// sure a downloaded temp file is cleaned up on every exit path (success,
+/// error, panic) without a manual `remove_file` at each return.
+struct AutoRemove(std::path::PathBuf);
+impl Drop for AutoRemove {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Stream a reqwest response body to a temp file, enforcing a max size.
+/// Returns the temp file path. Size is enforced via Content-Length (when
+/// reported) AND a running byte counter during streaming (defends against
+/// wrong/missing Content-Length headers). Never buffers the whole body in
+/// memory — each chunk is written and dropped. Caller owns the returned
+/// path and is responsible for removing it (typically via [`AutoRemove`]).
+async fn download_to_temp_file(
+    response: reqwest::Response,
+    max_size: u64,
+    label: &str,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(len) = response.content_length() {
+        if len > max_size {
+            return Err(format!(
+                "Package too large: {} bytes reported (max {} bytes)",
+                len, max_size
+            ));
+        }
+    }
+    let tmp_path = std::env::temp_dir().join(format!(
+        "neomind-{}-{}-{}.tmp",
+        label,
+        std::process::id(),
+        tmp_counter()
+    ));
+    let mut file = tokio::fs::File::create(&tmp_path)
+        .await
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let mut stream = response.bytes_stream();
+    let mut total: u64 = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            // Clean up the partial temp file on stream error.
+            let _ = std::fs::remove_file(&tmp_path);
+            format!("Download stream error: {}", e)
+        })?;
+        total += chunk.len() as u64;
+        if total > max_size {
+            drop(file);
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(format!(
+                "Package exceeded max size of {} bytes during download (got {})",
+                max_size, total
+            ));
+        }
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    }
+    file.flush()
+        .await
+        .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+    tracing::info!("Downloaded {} bytes to {}", total, tmp_path.display());
+    Ok(tmp_path)
+}
+
+/// Monotonic counter for unique temp file names across concurrent installs.
+fn tmp_counter() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static C: AtomicU64 = AtomicU64::new(0);
+    C.fetch_add(1, Ordering::SeqCst)
+}
+
 fn compute_sha256(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(data);
     format!("{:x}", hasher.finalize())
+}
+
+/// Stream-hash a file's contents for SHA256 verification without buffering
+/// the whole file in memory. Used by the download path to verify large
+/// binaries (ORT libs, model blobs) that were streamed to a temp file.
+fn compute_sha256_of_file(path: &std::path::Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut hasher = Sha256::new();
+    let mut f = std::fs::File::open(path)?;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// POST /api/extensions/market/install
@@ -2317,28 +2412,40 @@ pub async fn install_marketplace_extension_handler(
             });
         }
 
-        let package_bytes = match package_response.bytes().await {
-            Ok(b) => b,
-            Err(e) => {
+        // Stream the package body to a temp file (never buffer the whole
+        // .nep in memory — large ML model bundles would OOM). The temp file
+        // is cleaned up via _guard on every exit path.
+        let tmp_path = match download_to_temp_file(
+            package_response,
+            MAX_EXTENSION_DOWNLOAD_SIZE,
+            &req.id,
+        )
+        .await
+        {
+            Ok(p) => p,
+            Err(msg) => {
                 return ok(MarketplaceInstallResponse {
                     success: false,
                     extension_id: req.id.clone(),
                     downloaded: false,
                     installed: false,
                     path: None,
-                    error: Some(format!("Failed to read package data: {}", e)),
+                    error: Some(msg),
                 });
             }
         };
+        let _guard = AutoRemove(tmp_path.clone());
 
-        // Verify it's a valid ZIP file
-        let zip_magic: &[u8] = &[0x50, 0x4B, 0x03, 0x04];
-        let zip_empty: &[u8] = &[0x50, 0x4B, 0x05, 0x06];
-        let zip_spanned: &[u8] = &[0x50, 0x4B, 0x07, 0x08];
-
-        let is_zip = package_bytes.starts_with(zip_magic)
-            || package_bytes.starts_with(zip_empty)
-            || package_bytes.starts_with(zip_spanned);
+        // Verify it's a valid ZIP file by reading only the magic bytes from
+        // the temp file (don't load the whole package to check 4 bytes).
+        let mut magic_buf = [0u8; 4];
+        if let Ok(mut magic_file) = tokio::fs::File::open(&tmp_path).await {
+            // read_exact errors (file < 4 bytes) → magic_buf stays partial/zero → not a zip.
+            let _ = magic_file.read_exact(&mut magic_buf).await;
+        }
+        let is_zip = magic_buf == [0x50, 0x4B, 0x03, 0x04]
+            || magic_buf == [0x50, 0x4B, 0x05, 0x06]
+            || magic_buf == [0x50, 0x4B, 0x07, 0x08];
 
         if !is_zip {
             return ok(MarketplaceInstallResponse {
@@ -2355,17 +2462,17 @@ pub async fn install_marketplace_extension_handler(
         let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
         let target_dir = PathBuf::from(data_dir).join("extensions");
 
-        // Install the package
-        let package_bytes_clone = package_bytes.to_vec();
+        // Install from the temp file — streams the ZIP from disk, not memory.
+        // (install_from_file reads manifest + validates internally, so the old
+        // from_bytes() pre-check is redundant and dropped.)
+        let tmp_path_clone = tmp_path.clone();
         let target_dir_clone = target_dir.clone();
         let install_result = tokio::task::spawn_blocking(move || {
             use neomind_core::extension::package::ExtensionPackage;
-            // First validate the package
-            let _package = ExtensionPackage::from_bytes(package_bytes_clone.clone())?;
-            // Then install using the sync method
-            ExtensionPackage::install_sync(&package_bytes_clone, &target_dir_clone)
+            ExtensionPackage::install_from_file(&tmp_path_clone, &target_dir_clone)
         })
         .await;
+        // _guard drops here on early return / end of scope → removes tmp_path.
 
         match install_result {
             Ok(Ok(result)) => {
@@ -2533,14 +2640,22 @@ pub async fn install_marketplace_extension_handler(
             });
         }
 
-        let bytes = download_response
-            .bytes()
-            .await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to read download: {}", e)))?;
+        // Stream the binary to a temp file (don't buffer large ORT/model
+        // blobs in memory). _guard removes the temp file on every exit path.
+        let tmp_path = download_to_temp_file(
+            download_response,
+            MAX_EXTENSION_DOWNLOAD_SIZE,
+            &req.id,
+        )
+        .await
+        .map_err(ErrorResponse::internal)?;
+        let _guard = AutoRemove(tmp_path.clone());
 
-        // Verify SHA256 if provided
+        // Verify SHA256 if provided — hash the temp file in a streaming fashion.
         if !build.sha256.is_empty() {
-            let checksum = compute_sha256(&bytes);
+            let checksum = compute_sha256_of_file(&tmp_path).map_err(|e| {
+                ErrorResponse::internal(format!("Failed to hash downloaded file: {}", e))
+            })?;
             if checksum != build.sha256 {
                 return ok(MarketplaceInstallResponse {
                     success: false,
@@ -2591,8 +2706,8 @@ pub async fn install_marketplace_extension_handler(
             // WASM: write both .wasm and .json files
             let wasm_path = extensions_dir.join(&wasm_filename);
 
-            std::fs::write(&wasm_path, &bytes).map_err(|e| {
-                ErrorResponse::internal(format!("Failed to write WASM file: {}", e))
+            std::fs::copy(&tmp_path, &wasm_path).map_err(|e| {
+                ErrorResponse::internal(format!("Failed to copy WASM file: {}", e))
             })?;
 
             // Download and write JSON sidecar
@@ -2655,8 +2770,8 @@ pub async fn install_marketplace_extension_handler(
             let filename = format!("libneomind_extension_{}{}", req.id, ext);
             let file_path = extensions_dir.join(&filename);
 
-            std::fs::write(&file_path, &bytes).map_err(|e| {
-                ErrorResponse::internal(format!("Failed to write extension file: {}", e))
+            std::fs::copy(&tmp_path, &file_path).map_err(|e| {
+                ErrorResponse::internal(format!("Failed to copy extension file: {}", e))
             })?;
 
             tracing::info!("Extension downloaded to: {:?}", file_path);
