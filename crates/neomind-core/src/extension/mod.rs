@@ -20,6 +20,7 @@ pub mod extension_event_subscription;
 pub mod isolated;
 pub mod loader;
 pub mod package;
+pub mod accel;
 pub mod proxy;
 pub mod registry;
 pub mod runtime;
