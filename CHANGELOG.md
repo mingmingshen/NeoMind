@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Extension hardware variant selection (CUDA / Jetson)** — the extension
+  marketplace now auto-selects a CUDA/Jetson-specific build when the host
+  matches, falling back to the generic OS+arch build, then to wasm.
+  - Detection order: `NEOMIND_EXTENSION_VARIANT` env override
+    (`cpu|cuda|jetson`) → `/etc/nv_tegra_release` (Jetson, checked first) →
+    `nvidia-smi` (CUDA) → CPU. Jetson is checked before CUDA so a Jetson
+    with `nvidia-smi` present is not misclassified.
+  - New `crates/neomind-core/src/extension/accel.rs` is the single source
+    of truth (`Variant`, `fallback_keys`, `detect_variant` with `OnceLock`
+    caching + best-effort degradation). `select_build_key` in
+    `install_from_marketplace_handler` resolves
+    `linux-aarch64-jetson` → `linux-aarch64` → `wasm`.
+  - **Zero regression** — variant discrimination lives only in marketplace
+    `metadata.json` `builds` keys and release filenames; the `.nep`
+    internal `manifest.binaries` key stays the plain OS+arch (e.g.
+    `linux_arm64`), identical for CPU and Jetson builds. Pure-wasm and
+    pure-native extensions behave exactly as before; manual `.nep` upload
+    is unaffected.
+  - End-to-end Jetson auto-download additionally requires the marketplace
+    to publish a `linux-aarch64-jetson` entry in `metadata.json` `builds`
+    (NeoMind-Extensions side). Until then Jetson devices fall back to the
+    CPU build, equivalent to today's behavior.
+
+- **Extension README on the marketplace detail page** — the "View Details"
+  dialog now renders the extension's `README.md`. New best-effort endpoint
+  `GET /api/extensions/market/:id/readme` proxies the marketplace README
+  and returns `{ content: null }` when absent (so the section is simply
+  hidden, never an error). README is rendered with `react-markdown` + GFM;
+  relative links/images are rewritten to absolute GitHub raw URLs so
+  screenshots and doc links load. Loads asynchronously, never blocks the
+  detail view.
+
+### Fixed
+
+- `find_nep_binary` match arms in `neomind-core::extension::loader::native`
+  used hyphen keys (e.g. `"linux-arm64"`) while `detect_platform()` returns
+  underscore (`linux_arm64`), so every arm was dead code. Aligned the arms
+  to underscore; no behavior change for standard packages (the default
+  branch already returned the correct directory).
+
 ## [0.9.5] - 2026-07-13
 
 ### Overview
