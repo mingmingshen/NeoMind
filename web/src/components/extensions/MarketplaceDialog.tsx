@@ -26,9 +26,12 @@ import {
   ChevronLeft,
   ExternalLink,
   X,
+  FileText,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { useStore } from "@/store"
 import { useIsMobile } from "@/hooks/useMobile"
 
@@ -509,6 +512,41 @@ function ExtensionDetailView({
   isMobile,
 }: ExtensionDetailViewProps) {
   const { t } = useTranslation(["extensions", "common"])
+  const [readme, setReadme] = useState<string | null>(null)
+  const [readmeLoading, setReadmeLoading] = useState(false)
+
+  // Fetch README asynchronously — don't block the detail view. Missing README
+  // (content: null) → hide the section, equivalent to today's behavior.
+  useEffect(() => {
+    if (!extension.id) return
+    let cancelled = false
+    setReadmeLoading(true)
+    setReadme(null)
+    api
+      .get<{ content: string | null }>(`/extensions/market/${extension.id}/readme`)
+      .then((res) => {
+        if (!cancelled) setReadme(res?.content ?? null)
+      })
+      .catch((e) => {
+        if (!cancelled) console.warn("Failed to load README:", e)
+      })
+      .finally(() => {
+        if (!cancelled) setReadmeLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [extension.id])
+
+  // Resolve a relative path inside the README to an absolute GitHub raw URL
+  // (so screenshots / doc links load instead of 404'ing against the app).
+  // Absolute URLs (http[s]:, mailto:) and in-page anchors (#) are kept as-is.
+  const resolveReadmeUrl = (raw: string | undefined): string | undefined => {
+    if (!raw) return raw
+    if (/^(https?:|mailto:|#|data:)/i.test(raw)) return raw
+    const base = `https://raw.githubusercontent.com/camthink-ai/NeoMind-Extensions/main/extensions/${extension.id}/`
+    return base + raw.replace(/^\.?\//, "")
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -632,6 +670,43 @@ function ExtensionDetailView({
                 <li key={key}>• {key}</li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* README / Documentation */}
+        {(readmeLoading || readme) && (
+          <div>
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              {t("extensions:market.readme", "Documentation")}
+            </h3>
+            {readmeLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t("common:loading", "Loading...")}
+              </div>
+            ) : (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    img: ({ node, ...props }) => (
+                      <img {...props} src={resolveReadmeUrl(props.src)} />
+                    ),
+                    a: ({ node, ...props }) => (
+                      <a
+                        {...props}
+                        href={resolveReadmeUrl(props.href)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    ),
+                  }}
+                >
+                  {readme ?? ""}
+                </ReactMarkdown>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -164,6 +164,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(extensions::get_marketplace_extension_handler),
         )
         .route(
+            "/api/extensions/market/:id/readme",
+            get(extensions::get_marketplace_extension_readme_handler),
+        )
+        .route(
             "/api/extensions/market/updates",
             get(extensions::check_marketplace_updates_handler),
         )

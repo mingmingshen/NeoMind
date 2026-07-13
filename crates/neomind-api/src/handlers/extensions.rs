@@ -2074,6 +2074,48 @@ pub async fn get_marketplace_extension_handler(
     ok(metadata)
 }
 
+/// Response for the README fetch — `content` is `null` when the README
+/// doesn't exist (README is optional, so a missing one is not an error).
+#[derive(Debug, serde::Serialize)]
+pub struct ExtensionReadmeResponse {
+    pub content: Option<String>,
+}
+
+/// GET /api/extensions/market/:id/readme
+///
+/// Fetch the README.md content for a specific extension from the marketplace.
+/// Returns `{ content: null }` when the README does not exist or the fetch
+/// fails — README is optional, so this best-effort endpoint never reports a
+/// hard error (the frontend just hides the README section).
+pub async fn get_marketplace_extension_readme_handler(
+    State(_state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<ExtensionReadmeResponse> {
+    let readme_url = format!(
+        "{}/{}/extensions/{}/README.md",
+        MARKET_BASE_URL, MARKET_BRANCH, id
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))?;
+
+    let response = client
+        .get(&readme_url)
+        .header("User-Agent", "NeoMind-Extension-Marketplace")
+        .send()
+        .await;
+
+    // README missing (or transient fetch failure) is normal → content: null.
+    let content = match response {
+        Ok(r) if r.status().is_success() => r.text().await.ok(),
+        _ => None,
+    };
+
+    ok(ExtensionReadmeResponse { content })
+}
+
 /// Detect current platform for extension download
 /// Returns platform string in hyphen format (e.g., "darwin-aarch64")
 /// This matches the format used in marketplace metadata `builds` keys
