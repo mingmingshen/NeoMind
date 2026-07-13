@@ -928,22 +928,22 @@ impl ExtensionPackage {
             .by_name(src_path)
             .map_err(|e| PackageError::MissingFile(format!("{}: {}", src_path, e)))?;
 
-        let mut content = Vec::new();
-        file.read_to_end(&mut content)?;
-
         // Create parent directory
         if let Some(parent) = dst_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
         // macOS: clear any existing file first — code-signed dylibs with
-        // `com.apple.provenance` xattr reject fs::write with EACCES on
+        // `com.apple.provenance` xattr reject File::create with EACCES on
         // re-install. remove_file clears xattrs + inode.
         if dst_path.exists() {
             let _ = std::fs::remove_file(dst_path);
         }
 
-        std::fs::write(dst_path, content)?;
+        // Stream the entry to disk — never read_to_end, since large model or
+        // binary entries would OOM. std::io::copy uses an 8 KB buffer.
+        let mut out = std::fs::File::create(dst_path)?;
+        std::io::copy(&mut file, &mut out)?;
         Ok(())
     }
 
@@ -1003,10 +1003,13 @@ impl ExtensionPackage {
                     std::fs::create_dir_all(parent)?;
                 }
 
-                // Extract file
-                let mut content = Vec::new();
-                file.read_to_end(&mut content)?;
-                std::fs::write(dst_path, content)?;
+                // Extract file — streamed (std::io::copy, 8 KB buffer) so a
+                // large entry doesn't get buffered in memory.
+                if dst_path.exists() {
+                    let _ = std::fs::remove_file(&dst_path);
+                }
+                let mut out = std::fs::File::create(&dst_path)?;
+                std::io::copy(&mut file, &mut out)?;
             }
         }
 
@@ -1537,5 +1540,92 @@ mod tests {
         assert_eq!(via_file.checksum, via_sync.checksum);
         assert_eq!(via_file.extension_id, "test-install-file");
         assert!(!via_file.checksum.is_empty());
+    }
+
+    /// Current process RSS in KB (ps-based; works on macOS + Linux).
+    fn current_rss_kb() -> u64 {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()
+            .expect("ps failed");
+        String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(0)
+    }
+
+    /// Proves install_from_file does NOT buffer the whole package in memory.
+    /// Builds a ~150 MB package streaming to disk (1 MB write buffer, so the
+    /// build itself stays low-memory), then measures RSS before/after install.
+    /// A streaming install's RSS delta is far below the package size; an
+    /// in-memory install would spike by ~3x the package size and fail.
+    #[test]
+    #[ignore]
+    fn test_install_from_file_memory_footprint() {
+        use std::io::Write;
+        let platform = detect_platform();
+        let lib_ext = if platform.starts_with("windows") {
+            "dll"
+        } else if platform.starts_with("darwin") {
+            "dylib"
+        } else {
+            "so"
+        };
+        let binary_entry = format!("binaries/{}/extension.{}", platform, lib_ext);
+        let manifest = format!(
+            r#"{{"format":"neomind-extension-package","abi_version":3,"id":"test-mem","name":"T","version":"1.0.0","binaries":{{"{}":"{}"}},"type":"native"}}"#,
+            platform, binary_entry
+        );
+
+        // Stream-build a ~150 MB Stored (uncompressed) zip: 1 MB buffer in a
+        // loop, so the package bytes are never all in memory during build.
+        let target_pkg_mb: u64 = 150;
+        let tmp =
+            std::env::temp_dir().join(format!("neomind-memtest-{}.nep", unique_nonce()));
+        {
+            let file = std::fs::File::create(&tmp).unwrap();
+            let mut zw = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            zw.start_file("manifest.json", opts).unwrap();
+            zw.write_all(manifest.as_bytes()).unwrap();
+            zw.start_file(&binary_entry, opts).unwrap();
+            let chunk = vec![0xABu8; 1024 * 1024]; // 1 MB
+            for _ in 0..target_pkg_mb {
+                zw.write_all(&chunk).unwrap();
+            }
+            zw.finish().unwrap();
+        }
+        let pkg_size = std::fs::metadata(&tmp).unwrap().len();
+        let pkg_mb = pkg_size as f64 / 1024.0 / 1024.0;
+        println!("package size: {:.0} MB", pkg_mb);
+
+        let target =
+            std::env::temp_dir().join(format!("neomind-memtest-target-{}", unique_nonce()));
+        std::fs::create_dir_all(&target).unwrap();
+
+        let rss_before = current_rss_kb();
+        let result = ExtensionPackage::install_from_file(&tmp, &target);
+        let rss_after = current_rss_kb();
+
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir_all(&target);
+
+        result.expect("install_from_file should succeed on a large package");
+
+        let delta_mb = (rss_after as i64 - rss_before as i64) as f64 / 1024.0;
+        println!(
+            "RSS before: {} KB, after: {} KB, delta: {:.1} MB (package {:.0} MB)",
+            rss_before, rss_after, delta_mb, pkg_mb
+        );
+        // Streaming: delta must be far below the package size — only chunk
+        // buffers + zip metadata are held. An in-memory install would spike
+        // by ~3x package size. Allow 30% headroom for allocator/page artifacts.
+        assert!(
+            delta_mb < pkg_mb * 0.3,
+            "RSS grew {:.1} MB for a {:.0} MB package — install_from_file is buffering the whole package in memory!",
+            delta_mb,
+            pkg_mb
+        );
     }
 }
