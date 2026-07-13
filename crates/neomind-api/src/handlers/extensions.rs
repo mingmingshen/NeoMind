@@ -2121,6 +2121,26 @@ fn detect_platform() -> &'static str {
     }
 }
 
+/// Select the best marketplace `builds` key for the current platform + variant.
+///
+/// Candidate order: variant-specific key(s) → base platform → `wasm` (universal).
+/// Returns the first key present in `available_keys`, or `None` if nothing matches.
+///
+/// Pure function (no I/O) so it can be unit-tested without network/state.
+/// Caller (marketplace install) is responsible for the "unknown platform" guard
+/// and for producing a user-facing error when this returns `None`.
+fn select_build_key(
+    available_keys: &std::collections::HashSet<&str>,
+    base_platform: &str,
+    variant: neomind_core::extension::accel::Variant,
+) -> Option<String> {
+    let mut candidates = neomind_core::extension::accel::fallback_keys(base_platform, variant);
+    candidates.push("wasm".to_string());
+    candidates
+        .into_iter()
+        .find(|k| available_keys.contains(k.as_str()))
+}
+
 /// Compute SHA256 checksum of file content
 fn compute_sha256(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -4120,4 +4140,69 @@ pub async fn get_sync_status_handler(
         "nep_cache_dir": nep_cache_dir.to_string_lossy().to_string(),
         "install_dir": install_dir.to_string_lossy().to_string(),
     }))
+}
+
+#[cfg(test)]
+mod select_build_key_tests {
+    use super::select_build_key;
+    use neomind_core::extension::accel::Variant;
+    use std::collections::HashSet;
+
+    fn keys(v: &[&'static str]) -> HashSet<&'static str> {
+        v.iter().copied().collect()
+    }
+
+    #[test]
+    fn jetson_picks_jetson_build_when_present() {
+        let avail = keys(&["linux-aarch64-jetson", "linux-aarch64"]);
+        assert_eq!(
+            select_build_key(&avail, "linux-aarch64", Variant::Jetson),
+            Some("linux-aarch64-jetson".to_string())
+        );
+    }
+
+    #[test]
+    fn jetson_falls_back_to_plain_when_no_jetson_build() {
+        let avail = keys(&["linux-aarch64"]);
+        assert_eq!(
+            select_build_key(&avail, "linux-aarch64", Variant::Jetson),
+            Some("linux-aarch64".to_string())
+        );
+    }
+
+    #[test]
+    fn cpu_picks_plain_build() {
+        let avail = keys(&["linux-aarch64"]);
+        assert_eq!(
+            select_build_key(&avail, "linux-aarch64", Variant::Cpu),
+            Some("linux-aarch64".to_string())
+        );
+    }
+
+    #[test]
+    fn native_preferred_over_wasm_when_both_present() {
+        let avail = keys(&["linux-aarch64", "wasm"]);
+        assert_eq!(
+            select_build_key(&avail, "linux-aarch64", Variant::Jetson),
+            Some("linux-aarch64".to_string())
+        );
+    }
+
+    #[test]
+    fn wasm_picked_for_pure_wasm_extension() {
+        let avail = keys(&["wasm"]);
+        assert_eq!(
+            select_build_key(&avail, "linux-aarch64", Variant::Cpu),
+            Some("wasm".to_string())
+        );
+    }
+
+    #[test]
+    fn no_match_returns_none() {
+        let avail = keys(&["windows-x86_64"]);
+        assert_eq!(
+            select_build_key(&avail, "linux-aarch64", Variant::Jetson),
+            None
+        );
+    }
 }
