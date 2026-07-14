@@ -236,7 +236,42 @@ pub async fn resolve_image(
         return Ok((bytes, mime));
     }
 
-    // 3. Block non-http URL schemes with a clear error
+    // 3. Handle NeoMind internal image URLs (/api/images/<device>/<metric>/<ts>.<ext>)
+    //    This MUST come before local file path check because these URLs start with '/'
+    if input.starts_with("/api/images/") {
+        // Extract path after /api/images/ and map to data_dir/images/
+        let url_path = input.strip_prefix("/api/images/").ok_or_else(|| {
+            ImageIoError::InvalidArguments("Malformed /api/images/ URL".into())
+        })?;
+
+        // Get data_dir from NEOMIND_DATA_DIR env (default: "data")
+        let data_dir = std::env::var("NEOMIND_DATA_DIR")
+            .unwrap_or_else(|_| "data".to_string());
+
+        // Construct filesystem path: <data_dir>/images/<url_path>
+        let image_path = std::path::Path::new(&data_dir)
+            .join("images")
+            .join(url_path);
+
+        // Convert to string for read_local_image
+        let path_str = image_path.to_str().ok_or_else(|| {
+            ImageIoError::InvalidArguments("Invalid image path (non-UTF8)".into())
+        })?;
+
+        tracing::debug!(
+            url = %input,
+            local_path = %path_str,
+            "Resolving /api/images/ URL to local file"
+        );
+
+        let bytes = read_local_image(path_str, max_size)?;
+        let mime = detect_mime_from_bytes(&bytes)
+            .unwrap_or("image/jpeg")
+            .to_string();
+        return Ok((bytes, mime));
+    }
+
+    // 4. Block non-http URL schemes with a clear error
     if input.contains("://") {
         return Err(ImageIoError::InvalidArguments(format!(
             "Unsupported URL scheme in '{}'. Only http:// and https:// are supported.",
@@ -244,7 +279,7 @@ pub async fn resolve_image(
         )));
     }
 
-    // 4. Raw base64 detection (MUST come before local file path check).
+    // 5. Raw base64 detection (MUST come before local file path check).
     //
     // Why: a stripped JPEG base64 starts with "/9j/" and a PNG base64 starts
     // with "iVBORw0KGgo". The "/" prefix would otherwise be misclassified
@@ -286,7 +321,7 @@ pub async fn resolve_image(
         return Ok((bytes, mime));
     }
 
-    // 5. Local file path
+    // 6. Local file path
     if input.starts_with('/') || input.starts_with("./") {
         let bytes = read_local_image(input, max_size)?;
         let mime = detect_mime_from_bytes(&bytes)
@@ -295,7 +330,7 @@ pub async fn resolve_image(
         return Ok((bytes, mime));
     }
 
-    // 6. Fallback: treat as raw base64
+    // 7. Fallback: treat as raw base64
     if input.is_empty() {
         return Err(ImageIoError::InvalidArguments("Image data is empty".into()));
     }
@@ -965,6 +1000,95 @@ mod tests {
                 &bytes[..8],
                 &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
             );
+        }
+
+        #[tokio::test]
+        async fn resolve_image_api_images_url_reads_file() {
+            // Create a temporary test directory
+            let temp_dir = std::env::temp_dir();
+            let test_data_dir = temp_dir.join(format!("neomind_test_api_images_{}", uuid::Uuid::new_v4()));
+
+            // Set up test image directory
+            crate::testing_helpers::setup_test_image_dir(&test_data_dir)
+                .expect("Failed to set up test image directory");
+
+            // Set NEOMIND_DATA_DIR for this test
+            std::env::set_var("NEOMIND_DATA_DIR", test_data_dir.to_str().unwrap());
+
+            let client = make_client();
+
+            // Test /api/images/ URL resolution
+            let url = "/api/images/test-device-001/image/1234567890000.png";
+            let (bytes, mime) = resolve_image(url, &client, 10 * 1024 * 1024)
+                .await
+                .expect("resolve /api/images/ URL");
+
+            assert_eq!(mime, "image/png");
+            assert!(!bytes.is_empty());
+            assert_eq!(
+                &bytes[..8],
+                &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+            );
+
+            // Test JPEG URL
+            let jpg_url = "/api/images/test-device-001/image/1234567890001.jpg";
+            let (jpg_bytes, jpg_mime) = resolve_image(jpg_url, &client, 10 * 1024 * 1024)
+                .await
+                .expect("resolve /api/images/ JPEG URL");
+
+            assert_eq!(jpg_mime, "image/jpeg");
+            assert!(!jpg_bytes.is_empty());
+            assert_eq!(&jpg_bytes[..2], &[0xFF, 0xD8]);
+
+            // Clean up
+            crate::testing_helpers::cleanup_test_image_dir(&test_data_dir)
+                .expect("Failed to clean up test directory");
+            std::env::remove_var("NEOMIND_DATA_DIR");
+        }
+
+        #[tokio::test]
+        async fn resolve_image_api_images_url_file_not_found() {
+            // Create a temporary test directory (empty, no images)
+            let temp_dir = std::env::temp_dir();
+            let test_data_dir = temp_dir.join(format!("neomind_test_api_images_empty_{}", uuid::Uuid::new_v4()));
+
+            std::fs::create_dir_all(&test_data_dir).expect("Failed to create temp dir");
+
+            // Set NEOMIND_DATA_DIR for this test
+            std::env::set_var("NEOMIND_DATA_DIR", test_data_dir.to_str().unwrap());
+
+            let client = make_client();
+
+            // Test /api/images/ URL with non-existent file
+            let url = "/api/images/test-device-001/image/9999999999.png";
+            let result = resolve_image(url, &client, 10 * 1024 * 1024).await;
+
+            assert!(result.is_err(), "Should fail for non-existent file");
+
+            // Clean up
+            std::fs::remove_dir_all(&test_data_dir).expect("Failed to clean up test directory");
+            std::env::remove_var("NEOMIND_DATA_DIR");
+        }
+
+        #[tokio::test]
+        async fn resolve_image_api_images_url_backward_compatibility() {
+            // Ensure existing data URL, http URL, and base64 still work
+            let client = make_client();
+
+            // Test data URL (existing functionality)
+            let data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+            let (_bytes, mime) = resolve_image(data_url, &client, 10 * 1024 * 1024)
+                .await
+                .expect("data URL should still work");
+            assert_eq!(mime, "image/png");
+
+            // Test raw base64 (existing functionality)
+            // Use a valid base64 string with proper padding
+            let raw_base64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCgAyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg";
+            let (_b64_bytes, b64_mime) = resolve_image(raw_base64, &client, 10 * 1024 * 1024)
+                .await
+                .expect("raw base64 should still work");
+            assert_eq!(b64_mime, "image/jpeg");
         }
     }
 }

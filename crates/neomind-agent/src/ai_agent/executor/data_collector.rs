@@ -1239,7 +1239,60 @@ pub(crate) fn extract_image_data(
     value: &serde_json::Value,
 ) -> (Option<String>, Option<String>, Option<String>) {
     if let Some(s) = value.as_str() {
-        if s.starts_with("http://") || s.starts_with("https://") {
+        // NeoMind internal image URLs: /api/images/<device>/<metric>/<ts>.<ext>
+        if s.starts_with("/api/images/") {
+            tracing::info!(target: "neomind::agent::event_value", url = %s, "[DIAG] extract_image_data: matched /api/images/ branch");
+
+            // Extract path after /api/images/ and map to data_dir/images/
+            let url_path = match s.strip_prefix("/api/images/") {
+                Some(path) => path,
+                None => {
+                    tracing::error!(target: "neomind::agent::event_value", url = %s, "[DIAG] extract_image_data: malformed /api/images/ URL");
+                    return (None, None, None);
+                }
+            };
+
+            // Get data_dir from NEOMIND_DATA_DIR env (default: "data")
+            let data_dir = std::env::var("NEOMIND_DATA_DIR")
+                .unwrap_or_else(|_| "data".to_string());
+
+            // Construct filesystem path: <data_dir>/images/<url_path>
+            let image_path = std::path::Path::new(&data_dir)
+                .join("images")
+                .join(url_path);
+
+            // Read file and convert to base64
+            match std::fs::read(&image_path) {
+                Ok(bytes) => {
+                    // Detect MIME type from magic bytes
+                    let mime = crate::image_utils::detect_mime_from_bytes(&bytes)
+                        .unwrap_or("image/jpeg")
+                        .to_string();
+
+                    // Convert to base64
+                    let base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+
+                    tracing::info!(target: "neomind::agent::event_value",
+                        url = %s,
+                        local_path = %image_path.display(),
+                        size = bytes.len(),
+                        mime = %mime,
+                        "[DIAG] extract_image_data: successfully loaded /api/images/ file"
+                    );
+
+                    (None, Some(base64), Some(mime))
+                }
+                Err(e) => {
+                    tracing::error!(target: "neomind::agent::event_value",
+                        url = %s,
+                        local_path = %image_path.display(),
+                        error = %e,
+                        "[DIAG] extract_image_data: failed to read /api/images/ file"
+                    );
+                    (None, None, None)
+                }
+            }
+        } else if s.starts_with("http://") || s.starts_with("https://") {
             tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched URL branch");
             (Some(s.to_string()), None, None)
         } else if s.starts_with("data:image/") {
@@ -1375,5 +1428,138 @@ pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> b
             || obj.contains_key("image_data")
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_extract_image_data_api_images_url() {
+        // Create a temporary test directory
+        let temp_dir = std::env::temp_dir();
+        let test_data_dir = temp_dir.join(format!("neomind_test_data_collector_{}", uuid::Uuid::new_v4()));
+
+        // Set up test image directory
+        crate::testing_helpers::setup_test_image_dir(&test_data_dir)
+            .expect("Failed to set up test image directory");
+
+        // Set NEOMIND_DATA_DIR for this test
+        std::env::set_var("NEOMIND_DATA_DIR", test_data_dir.to_str().unwrap());
+
+        // Test /api/images/ URL extraction
+        let url_value = serde_json::json!("/api/images/test-device-001/image/1234567890000.png");
+        let (url, base64, mime) = extract_image_data(&url_value);
+
+        assert!(url.is_none(), "URL should be None for /api/images/ URLs");
+        assert!(base64.is_some(), "Should extract base64 data");
+        assert!(mime.is_some(), "Should detect MIME type");
+        assert_eq!(mime.unwrap(), "image/png");
+
+        // Test JPEG URL
+        let jpg_url_value = serde_json::json!("/api/images/test-device-001/image/1234567890001.jpg");
+        let (jpg_url, jpg_base64, jpg_mime) = extract_image_data(&jpg_url_value);
+
+        assert!(jpg_url.is_none());
+        assert!(jpg_base64.is_some());
+        assert!(jpg_mime.is_some());
+        assert_eq!(jpg_mime.unwrap(), "image/jpeg");
+
+        // Clean up
+        crate::testing_helpers::cleanup_test_image_dir(&test_data_dir)
+            .expect("Failed to clean up test directory");
+        std::env::remove_var("NEOMIND_DATA_DIR");
+    }
+
+    #[test]
+    fn test_extract_image_data_api_images_url_not_found() {
+        // Create a temporary test directory (empty, no images)
+        let temp_dir = std::env::temp_dir();
+        let test_data_dir = temp_dir.join(format!("neomind_test_data_collector_empty_{}", uuid::Uuid::new_v4()));
+
+        fs::create_dir_all(&test_data_dir).expect("Failed to create temp dir");
+
+        // Set NEOMIND_DATA_DIR for this test
+        std::env::set_var("NEOMIND_DATA_DIR", test_data_dir.to_str().unwrap());
+
+        // Test /api/images/ URL with non-existent file
+        let url_value = serde_json::json!("/api/images/test-device-001/image/9999999999.png");
+        let (url, base64, mime) = extract_image_data(&url_value);
+
+        assert!(url.is_none(), "URL should be None");
+        assert!(base64.is_none(), "Base64 should be None for non-existent file");
+        assert!(mime.is_none(), "MIME should be None for non-existent file");
+
+        // Clean up
+        std::fs::remove_dir_all(&test_data_dir).expect("Failed to clean up test directory");
+        std::env::remove_var("NEOMIND_DATA_DIR");
+    }
+
+    #[test]
+    fn test_extract_image_data_backward_compatibility() {
+        // Test existing data URL functionality
+        let data_url = serde_json::json!("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+        let (url, base64, mime) = extract_image_data(&data_url);
+
+        assert!(url.is_none(), "URL should be None for data URLs");
+        assert!(base64.is_some(), "Should extract base64 from data URL");
+        assert!(mime.is_some(), "Should detect MIME type");
+        assert_eq!(mime.unwrap(), "image/png");
+
+        // Test existing HTTP URL functionality
+        let http_url = serde_json::json!("http://example.com/image.jpg");
+        let (http_url_result, http_base64, http_mime) = extract_image_data(&http_url);
+
+        assert!(http_url_result.is_some(), "Should extract HTTP URL");
+        assert!(http_base64.is_none(), "Base64 should be None for HTTP URLs");
+        assert!(http_mime.is_none(), "MIME should be None for HTTP URLs");
+
+        // Test existing raw base64 functionality
+        // Use a valid base64 string with proper padding
+        let raw_base64 = serde_json::json!("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCgAyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg");
+        let (b64_url, b64_data, b64_mime) = extract_image_data(&raw_base64);
+
+        assert!(b64_url.is_none(), "URL should be None for raw base64");
+        assert!(b64_data.is_some(), "Should extract raw base64");
+        assert!(b64_mime.is_some(), "Should detect MIME from magic bytes");
+        assert_eq!(b64_mime.unwrap(), "image/jpeg");
+    }
+
+    #[test]
+    fn test_extract_image_data_non_image_string() {
+        // Test non-image string (should return None, None, None)
+        let text_value = serde_json::json!("This is just plain text");
+        let (url, base64, mime) = extract_image_data(&text_value);
+
+        assert!(url.is_none(), "URL should be None for non-image text");
+        assert!(base64.is_none(), "Base64 should be None for non-image text");
+        assert!(mime.is_none(), "MIME should be None for non-image text");
+    }
+
+    #[test]
+    fn test_is_image_metric() {
+        // Test metric name detection
+        assert!(is_image_metric("image", &serde_json::json!("some data")));
+        assert!(is_image_metric("camera_image", &serde_json::json!("some data")));
+        assert!(is_image_metric("snapshot", &serde_json::json!("some data")));
+        assert!(is_image_metric("photo", &serde_json::json!("some data")));
+
+        // Test case insensitivity
+        assert!(is_image_metric("Image", &serde_json::json!("some data")));
+        assert!(is_image_metric("IMAGE_DATA", &serde_json::json!("some data")));
+
+        // Test negative cases
+        assert!(!is_image_metric("temperature", &serde_json::json!("some data")));
+        assert!(!is_image_metric("humidity", &serde_json::json!("some data")));
+
+        // Test with object values containing image fields
+        let obj_value = serde_json::json!({"image_url": "http://example.com.jpg"});
+        assert!(is_image_metric("data", &obj_value));
+
+        // Test with base64 data
+        let base64_value = serde_json::json!("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCgAyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg");
+        assert!(is_image_metric("data", &base64_value));
     }
 }
