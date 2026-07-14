@@ -102,6 +102,9 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/capabilities/:name",
             get(capabilities::get_capability_handler),
         )
+        // Image static files (public — URLs contain device_id + timestamp, effectively
+        // unguessable; dashboard itself requires login; <img> can't authenticate cross-origin)
+        .route("/api/images/*path", get(images::get_image_handler))
         // Tools API (public - static metadata)
         .route("/api/tools", get(tools::list_tools_handler))
         .route("/api/tools/:name", get(tools::get_tool_handler))
@@ -270,10 +273,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     // Protected routes (require API key or JWT via Authorization header)
     // SECURITY: Sensitive data and all write operations require authentication.
     let protected_routes = Router::new()
-        // Image static files (served from data/images/, structured paths)
-        // SECURITY: requires auth — device images may be sensitive. Dashboard
-        // <img src> is same-origin so the browser sends the session cookie.
-        .route("/api/images/*path", get(images::get_image_handler))
         // === Telemetry & Data (moved from public for security) ===
         .route("/api/telemetry", get(data::query_telemetry_handler))
         .route(
