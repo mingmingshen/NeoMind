@@ -25,6 +25,7 @@ neomind-storage = { path = "../neomind-storage" }
 neomind-rules = { path = "../neomind-rules" }
 neomind-messages = { path = "../neomind-messages" }
 
+clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
