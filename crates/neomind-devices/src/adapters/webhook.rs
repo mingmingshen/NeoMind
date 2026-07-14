@@ -505,8 +505,7 @@ impl WebhookAdapter {
         Ok(metrics_count)
     }
 
-    /// Convert MetricValue::Binary to URL string if applicable.
-    /// Returns the converted value (URL as String) or original value if not Binary or on error.
+    /// Convert image data (Binary or base64 String) to URL if applicable.
     pub async fn convert_binary_to_url(
         device_id: &str,
         metric_name: &str,
@@ -524,16 +523,31 @@ impl WebhookAdapter {
                             MetricValue::String(url)
                         }
                         Err(e) => {
-                            error!("Failed to save binary image for {}/{}: {}. Keeping as Binary.", device_id, metric_name, e);
-                            // Fallback: keep as Binary if save fails
+                            error!("Failed to save binary image for {}/{}: {}", device_id, metric_name, e);
                             MetricValue::Binary(bytes)
                         }
                     }
                 } else {
-                    debug!("No data_dir configured, keeping Binary metric for {}/{}", device_id, metric_name);
-                    // Keep as Binary if no data_dir
                     MetricValue::Binary(bytes)
                 }
+            }
+            MetricValue::String(s) => {
+                // Webhook JSON payloads carry images as base64 strings — detect and convert
+                if let Some(bytes) = crate::image_storage::try_decode_base64_image(&s) {
+                    let dir_guard = data_dir.read().await;
+                    if let Some(dir) = dir_guard.as_ref() {
+                        match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
+                            Ok(url) => {
+                                debug!("Saved string image for {}/{} -> {}", device_id, metric_name, url);
+                                return MetricValue::String(url);
+                            }
+                            Err(e) => {
+                                error!("Failed to save string image for {}/{}: {}", device_id, metric_name, e);
+                            }
+                        }
+                    }
+                }
+                MetricValue::String(s)
             }
             // Not a Binary value, return unchanged
             other => other,

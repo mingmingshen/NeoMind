@@ -231,6 +231,29 @@ pub fn validate_path_component(component: &str) -> Result<String> {
 /// Returns `ImageStorageError` if:
 /// - `device_id` or `metric` contain invalid characters (path traversal)
 /// - File I/O fails (disk full, permissions, etc.)
+/// Try to decode a string as base64-encoded image data.
+/// Handles data URLs (`data:image/png;base64,...`) and raw base64.
+/// Returns decoded bytes if it looks like an image, None otherwise.
+pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let raw_b64 = if s.starts_with("data:image/") {
+        s.split(";base64,").nth(1)?
+    } else if s.len() > 100 {
+        s
+    } else {
+        return None;
+    };
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(raw_b64)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw_b64))
+        .ok()?;
+    if detect_extension(&decoded) != "bin" {
+        Some(decoded)
+    } else {
+        None
+    }
+}
+
 pub fn save_image_binary(
     device_id: &str,
     metric: &str,

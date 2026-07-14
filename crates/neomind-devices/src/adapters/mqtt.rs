@@ -1596,8 +1596,7 @@ impl MqttAdapter {
         Ok(())
     }
 
-    /// Convert MetricValue::Binary to URL string if applicable.
-    /// Returns the converted value (URL as String) or original value if not Binary or on error.
+    /// Convert image data (Binary or base64 String) to URL if applicable.
     pub fn convert_binary_to_url(
         device_id: &str,
         metric_name: &str,
@@ -1614,18 +1613,31 @@ impl MqttAdapter {
                             MetricValue::String(url)
                         }
                         Err(e) => {
-                            error!("Failed to save binary image for {}/{}: {}. Keeping as Binary.", device_id, metric_name, e);
-                            // Fallback: keep as Binary if save fails
+                            error!("Failed to save binary image for {}/{}: {}", device_id, metric_name, e);
                             MetricValue::Binary(bytes)
                         }
                     }
                 } else {
-                    debug!("No data_dir configured, keeping Binary metric for {}/{}", device_id, metric_name);
-                    // Keep as Binary if no data_dir
                     MetricValue::Binary(bytes)
                 }
             }
-            // Not a Binary value, return unchanged
+            MetricValue::String(s) => {
+                // MQTT JSON payloads carry images as base64 strings — detect and convert
+                if let Some(bytes) = crate::image_storage::try_decode_base64_image(&s) {
+                    if let Some(dir) = data_dir {
+                        match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
+                            Ok(url) => {
+                                debug!("Saved string image for {}/{} -> {}", device_id, metric_name, url);
+                                return MetricValue::String(url);
+                            }
+                            Err(e) => {
+                                error!("Failed to save string image for {}/{}: {}", device_id, metric_name, e);
+                            }
+                        }
+                    }
+                }
+                MetricValue::String(s)
+            }
             other => other,
         }
     }
