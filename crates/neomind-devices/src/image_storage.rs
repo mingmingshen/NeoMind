@@ -27,6 +27,9 @@ pub enum ImageStorageError {
     UnknownFileType,
     /// I/O error during file write.
     IoError(std::io::Error),
+    /// File exceeded the resolve size cap (bytes). Guards against OOM when
+    /// resolving image URLs for inline base64 / LLM / external delivery.
+    TooLarge(u64),
 }
 
 impl std::fmt::Display for ImageStorageError {
@@ -35,6 +38,7 @@ impl std::fmt::Display for ImageStorageError {
             Self::InvalidPathComponent(s) => write!(f, "Invalid path component: {}", s),
             Self::UnknownFileType => write!(f, "Unknown file type from magic bytes"),
             Self::IoError(e) => write!(f, "I/O error: {}", e),
+            Self::TooLarge(n) => write!(f, "Image file too large: {} bytes", n),
         }
     }
 }
@@ -153,15 +157,17 @@ pub fn validate_path_component(component: &str) -> Result<String> {
     }
 
     if component.contains("..") {
-        return Err(ImageStorageError::InvalidPathComponent(
-            format!("contains path traversal: {}", component),
-        ));
+        return Err(ImageStorageError::InvalidPathComponent(format!(
+            "contains path traversal: {}",
+            component
+        )));
     }
 
     if component.contains('/') || component.contains('\\') {
-        return Err(ImageStorageError::InvalidPathComponent(
-            format!("contains path separator: {}", component),
-        ));
+        return Err(ImageStorageError::InvalidPathComponent(format!(
+            "contains path separator: {}",
+            component
+        )));
     }
 
     if component.contains('\0') {
@@ -305,10 +311,26 @@ pub fn detect_mime_from_bytes(bytes: &[u8]) -> &'static str {
     }
 }
 
+/// Upper bound on a single image resolved via [`read_internal_image_url`].
+/// Guards against OOM when a device/extension writes an oversized file and it
+/// is then resolved for inline base64 (LLM context, webhook/MQTT push).
+/// Callers that want a stricter per-path cap still can, post-read.
+pub const MAX_INTERNAL_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
 /// Read a NeoMind internal image URL (`/api/images/<dev>/<metric>/<ts>.<ext>`)
 /// back into raw bytes + MIME. Read-side counterpart to `save_image_binary`;
-/// single source of truth for path construction, traversal guard, and MIME.
-/// `max_size` is NOT enforced here — callers that care check themselves.
+/// single source of truth for path construction + security guards + MIME.
+///
+/// Guards applied (matching the public `GET /api/images/` handler):
+/// - **traversal**: rejects `..`, absolute-root, and NUL in the URL;
+/// - **symlink escape**: canonicalizes the resolved path and rejects anything
+///   that does not stay under `<data_dir>/images/` (a symlinked entry under
+///   `images/` pointing at e.g. `/etc/shadow` is refused);
+/// - **size**: stats the file and rejects above [`MAX_INTERNAL_IMAGE_BYTES`]
+///   *before* reading (prevents loading a multi-GB file into RAM);
+/// - **magic bytes**: rejects content whose header is not a recognized image
+///   (a `.bin` payload written by `save_image_binary` for unknown bytes is
+///   not returned as a fake `image/jpeg`).
 pub fn read_internal_image_url(url: &str, data_dir: &Path) -> Result<(Vec<u8>, &'static str)> {
     let url_path = url.strip_prefix("/api/images/").ok_or_else(|| {
         ImageStorageError::InvalidPathComponent(format!("not a /api/images/ URL: {url}"))
@@ -327,8 +349,40 @@ pub fn read_internal_image_url(url: &str, data_dir: &Path) -> Result<(Vec<u8>, &
         ));
     }
 
-    let image_path = data_dir.join("images").join(url_path);
-    let bytes = std::fs::read(&image_path)?;
+    let images_dir = data_dir.join("images");
+    let image_path = images_dir.join(url_path);
+
+    // Symlink-escape guard: resolve real paths and require the file to remain
+    // under images_dir. canonicalize also requires the file to exist, so a
+    // missing file surfaces here as an IoError (same outcome as before).
+    let canon_images = images_dir
+        .canonicalize()
+        .map_err(ImageStorageError::IoError)?;
+    let canon_file = image_path
+        .canonicalize()
+        .map_err(ImageStorageError::IoError)?;
+    if !canon_file.starts_with(&canon_images) {
+        return Err(ImageStorageError::InvalidPathComponent(
+            "image path escapes the images directory".to_string(),
+        ));
+    }
+
+    // OOM guard: stat BEFORE reading so an oversized file never enters RAM.
+    let len = std::fs::metadata(&canon_file)
+        .map_err(ImageStorageError::IoError)?
+        .len();
+    if len > MAX_INTERNAL_IMAGE_BYTES {
+        return Err(ImageStorageError::TooLarge(len));
+    }
+
+    let bytes = std::fs::read(&canon_file)?;
+
+    // Magic-byte gate: refuse non-image content (e.g. a `.bin` written by
+    // save_image_binary for bytes it couldn't identify) rather than returning
+    // it mislabeled as image/jpeg.
+    if detect_extension(&bytes) == "bin" {
+        return Err(ImageStorageError::UnknownFileType);
+    }
     let mime = detect_mime_from_bytes(&bytes);
     Ok((bytes, mime))
 }
@@ -435,7 +489,8 @@ mod tests {
             0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
         ];
 
-        let url = save_image_binary("camera-001", "image", 1634567890000, &jpeg_bytes, data_dir).unwrap();
+        let url =
+            save_image_binary("camera-001", "image", 1634567890000, &jpeg_bytes, data_dir).unwrap();
 
         assert_eq!(url, "/api/images/camera-001/image/1634567890000.jpg");
 
@@ -458,7 +513,14 @@ mod tests {
             0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
         ];
 
-        let url = save_image_binary("sensor-02", "screenshot", 1634567890001, &png_bytes, data_dir).unwrap();
+        let url = save_image_binary(
+            "sensor-02",
+            "screenshot",
+            1634567890001,
+            &png_bytes,
+            data_dir,
+        )
+        .unwrap();
 
         assert_eq!(url, "/api/images/sensor-02/screenshot/1634567890001.png");
 
@@ -484,7 +546,13 @@ mod tests {
 
         let jpeg_bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
 
-        let result = save_image_binary("device-001", "metric/../etc", 1634567890000, &jpeg_bytes, data_dir);
+        let result = save_image_binary(
+            "device-001",
+            "metric/../etc",
+            1634567890000,
+            &jpeg_bytes,
+            data_dir,
+        );
         assert!(result.is_err());
     }
 
@@ -495,7 +563,14 @@ mod tests {
 
         let jpeg_bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
 
-        save_image_binary("new-device", "new-metric", 1634567890000, &jpeg_bytes, data_dir).unwrap();
+        save_image_binary(
+            "new-device",
+            "new-metric",
+            1634567890000,
+            &jpeg_bytes,
+            data_dir,
+        )
+        .unwrap();
 
         let device_dir = data_dir.join("images/new-device");
         let metric_dir = device_dir.join("new-metric");
@@ -531,7 +606,10 @@ mod tests {
     fn test_read_internal_image_url_bad_prefix() {
         let temp_dir = TempDir::new().unwrap();
         let res = read_internal_image_url("http://example.com/x.jpg", temp_dir.path());
-        assert!(matches!(res, Err(ImageStorageError::InvalidPathComponent(_))));
+        assert!(matches!(
+            res,
+            Err(ImageStorageError::InvalidPathComponent(_))
+        ));
     }
 
     #[test]
@@ -554,6 +632,50 @@ mod tests {
     }
 
     #[test]
+    fn test_read_internal_image_url_rejects_non_image() {
+        // save_image_binary stores unrecognized magic as <ts>.bin; the reader
+        // must refuse it (UnknownFileType) rather than return it as image/jpeg.
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+        let garbage = b"NOT_AN_IMAGE_plain_text_payload_here";
+        let bin_url = save_image_binary("dev", "m", 1, garbage, data_dir).unwrap();
+        assert!(bin_url.ends_with(".bin"), "expected .bin for non-image");
+        let res = read_internal_image_url(&bin_url, data_dir);
+        assert!(
+            matches!(res, Err(ImageStorageError::UnknownFileType)),
+            "non-image (.bin) content must be rejected, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn test_read_internal_image_url_rejects_symlink_escape() {
+        // A symlink planted under images/ pointing OUTSIDE must be refused by
+        // the canonicalize + starts_with guard — even if the target is a valid
+        // image (so the only reason for rejection is the escape).
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+        let jpeg_bytes = [0xFFu8, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
+        let secret = data_dir.join("secret.jpg");
+        std::fs::write(&secret, jpeg_bytes).unwrap();
+        let metric_dir = data_dir.join("images").join("dev").join("m");
+        std::fs::create_dir_all(&metric_dir).unwrap();
+        let link = metric_dir.join("evil.jpg");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&secret, &link).unwrap();
+            let res = read_internal_image_url("/api/images/dev/m/evil.jpg", data_dir);
+            assert!(
+                matches!(res, Err(ImageStorageError::InvalidPathComponent(_))),
+                "symlink escape must be rejected, got {res:?}"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (secret, link); // symlink test is unix-only
+        }
+    }
+
+    #[test]
     fn test_save_image_binary_concurrent_safe() {
         let temp_dir = TempDir::new().unwrap();
         let data_dir = temp_dir.path().to_path_buf();
@@ -561,9 +683,12 @@ mod tests {
         let jpeg_bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
 
         // Simulate concurrent writes to different devices/metrics
-        let url1 = save_image_binary("device-001", "metric-a", 1000, &jpeg_bytes, &data_dir).unwrap();
-        let url2 = save_image_binary("device-002", "metric-b", 1000, &jpeg_bytes, &data_dir).unwrap();
-        let url3 = save_image_binary("device-001", "metric-c", 1001, &jpeg_bytes, &data_dir).unwrap();
+        let url1 =
+            save_image_binary("device-001", "metric-a", 1000, &jpeg_bytes, &data_dir).unwrap();
+        let url2 =
+            save_image_binary("device-002", "metric-b", 1000, &jpeg_bytes, &data_dir).unwrap();
+        let url3 =
+            save_image_binary("device-001", "metric-c", 1001, &jpeg_bytes, &data_dir).unwrap();
 
         // All should succeed without conflicts
         assert_eq!(url1, "/api/images/device-001/metric-a/1000.jpg");
@@ -571,8 +696,14 @@ mod tests {
         assert_eq!(url3, "/api/images/device-001/metric-c/1001.jpg");
 
         // Verify all files exist
-        assert!(data_dir.join("images/device-001/metric-a/1000.jpg").exists());
-        assert!(data_dir.join("images/device-002/metric-b/1000.jpg").exists());
-        assert!(data_dir.join("images/device-001/metric-c/1001.jpg").exists());
+        assert!(data_dir
+            .join("images/device-001/metric-a/1000.jpg")
+            .exists());
+        assert!(data_dir
+            .join("images/device-002/metric-b/1000.jpg")
+            .exists());
+        assert!(data_dir
+            .join("images/device-001/metric-c/1001.jpg")
+            .exists());
     }
 }

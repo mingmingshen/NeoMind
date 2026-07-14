@@ -245,25 +245,23 @@ pub async fn resolve_image(
         // helper centralizes path construction + traversal guard + MIME.
         use neomind_devices::image_storage::{read_internal_image_url, ImageStorageError};
 
-        let data_dir =
-            std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
 
-        let (bytes, mime) =
-            read_internal_image_url(input, std::path::Path::new(&data_dir)).map_err(
-                |e| match e {
-                    ImageStorageError::InvalidPathComponent(_) => {
-                        ImageIoError::PermissionDenied(e.to_string())
-                    }
-                    ImageStorageError::IoError(_) => ImageIoError::InvalidArguments(format!(
-                        "Failed to read /api/images/ URL {input}: {e}"
-                    )),
-                    ImageStorageError::UnknownFileType => {
-                        ImageIoError::InvalidArguments(format!(
-                            "Unrecognized image file for {input}"
-                        ))
-                    }
-                },
-            )?;
+        let (bytes, mime) = read_internal_image_url(input, std::path::Path::new(&data_dir))
+            .map_err(|e| match e {
+                ImageStorageError::InvalidPathComponent(_) => {
+                    ImageIoError::PermissionDenied(e.to_string())
+                }
+                ImageStorageError::IoError(_) => ImageIoError::InvalidArguments(format!(
+                    "Failed to read /api/images/ URL {input}: {e}"
+                )),
+                ImageStorageError::UnknownFileType => {
+                    ImageIoError::InvalidArguments(format!("Unrecognized image file for {input}"))
+                }
+                ImageStorageError::TooLarge(_) => ImageIoError::InvalidArguments(format!(
+                    "Image file too large for /api/images/ URL {input}: {e}"
+                )),
+            })?;
 
         tracing::info!(url = %input, size = bytes.len(), "Resolved /api/images/ URL");
 
@@ -1012,7 +1010,8 @@ mod tests {
         async fn resolve_image_api_images_url_reads_file() {
             // Create a temporary test directory
             let temp_dir = std::env::temp_dir();
-            let test_data_dir = temp_dir.join(format!("neomind_test_api_images_{}", uuid::Uuid::new_v4()));
+            let test_data_dir =
+                temp_dir.join(format!("neomind_test_api_images_{}", uuid::Uuid::new_v4()));
 
             // Set up test image directory
             crate::testing_helpers::setup_test_image_dir(&test_data_dir)
@@ -1056,7 +1055,10 @@ mod tests {
         async fn resolve_image_api_images_url_file_not_found() {
             // Create a temporary test directory (empty, no images)
             let temp_dir = std::env::temp_dir();
-            let test_data_dir = temp_dir.join(format!("neomind_test_api_images_empty_{}", uuid::Uuid::new_v4()));
+            let test_data_dir = temp_dir.join(format!(
+                "neomind_test_api_images_empty_{}",
+                uuid::Uuid::new_v4()
+            ));
 
             std::fs::create_dir_all(&test_data_dir).expect("Failed to create temp dir");
 
