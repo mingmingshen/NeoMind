@@ -13,9 +13,9 @@ use std::sync::Arc;
 use clap::CommandFactory;
 use tokio::sync::RwLock;
 
-use crate::context::ResourceIndex;
 #[cfg(test)]
 use crate::context::Resource;
+use crate::context::ResourceIndex;
 use neomind_cli_ops::dispatch::commands::Args;
 
 /// Resident system-capability map builder. Shares the same `ResourceIndex`
@@ -55,12 +55,14 @@ impl CapabilityIndex {
                 continue; // skip leaf commands
             }
             let name = sub.get_name();
-            let about = sub
-                .get_about()
-                .map(|x| x.to_string())
-                .unwrap_or_default();
+            let about = sub.get_about().map(|x| x.to_string()).unwrap_or_default();
             let sub_names: Vec<&str> = sub.get_subcommands().map(|c| c.get_name()).collect();
-            s.push_str(&format!("- {}: {} — {}\n", name, sub_names.join("/"), about));
+            s.push_str(&format!(
+                "- {}: {} — {}\n",
+                name,
+                sub_names.join("/"),
+                about
+            ));
         }
         s
     }
@@ -122,16 +124,40 @@ mod tests {
     fn cli_tree_has_14_domains_and_device_history() {
         let tree = CapabilityIndex::build_cli_tree();
         let domains = [
-            "device", "dashboard", "rule", "agent", "extension", "llm", "message",
-            "transform", "widget", "push", "connector", "settings", "system", "api-key",
+            "device",
+            "dashboard",
+            "rule",
+            "agent",
+            "extension",
+            "llm",
+            "message",
+            "transform",
+            "widget",
+            "push",
+            "connector",
+            "settings",
+            "system",
+            "api-key",
         ];
         for d in domains {
             assert!(tree.contains(&format!("- {}:", d)), "missing domain {}", d);
         }
-        assert!(tree.contains("history"), "device subcommands should include history");
-        assert!(!tree.contains("- serve:"), "leaf command serve must be excluded");
-        assert!(!tree.contains("- chat:"), "leaf command chat must be excluded");
-        assert!(!tree.contains("- health:"), "leaf command health must be excluded");
+        assert!(
+            tree.contains("history"),
+            "device subcommands should include history"
+        );
+        assert!(
+            !tree.contains("- serve:"),
+            "leaf command serve must be excluded"
+        );
+        assert!(
+            !tree.contains("- chat:"),
+            "leaf command chat must be excluded"
+        );
+        assert!(
+            !tree.contains("- health:"),
+            "leaf command health must be excluded"
+        );
     }
 
     #[tokio::test]
@@ -181,6 +207,10 @@ mod tests {
         // No skill list duplication
         assert!(!out.contains("device-onboarding"));
         // ~1.2K token target ≈ well under 6KB chars
-        assert!(out.len() <= 6000, "capability index too large: {} bytes", out.len());
+        assert!(
+            out.len() <= 6000,
+            "capability index too large: {} bytes",
+            out.len()
+        );
     }
 }

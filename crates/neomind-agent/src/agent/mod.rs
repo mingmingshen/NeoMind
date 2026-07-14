@@ -778,9 +778,8 @@ impl Agent {
         ));
         // Capability index shares the same ResourceIndex as the semantic mapper
         // (zero new service wiring) — see prompts/capability_index.rs.
-        let capability_index = Arc::new(crate::prompts::CapabilityIndex::new(
-            resource_index.clone(),
-        ));
+        let capability_index =
+            Arc::new(crate::prompts::CapabilityIndex::new(resource_index.clone()));
 
         Self {
             config,
