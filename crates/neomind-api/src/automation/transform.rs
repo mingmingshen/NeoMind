@@ -2538,16 +2538,12 @@ fn resolve_image_data(value: &Value) -> String {
 
     if let Some(url) = find_image_url(value) {
         let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-        if let Ok((bytes, mime_type)) =
-            neomind_devices::image_storage::read_internal_image_url(&url, Path::new(&data_dir))
-        {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            tracing::debug!(
-                url = %url, file_size = bytes.len(), mime = %mime_type,
-                "Successfully resolved image URL to base64"
-            );
-            return format!("data:{};base64,{}", mime_type, b64);
+        if let Some(data_url) = neomind_devices::image_storage::resolve_internal_image_to_data_url(
+            &url,
+            Path::new(&data_dir),
+        ) {
+            tracing::debug!(url = %url, "Successfully resolved image URL to base64");
+            return data_url;
         } else {
             tracing::warn!(url = %url, "Failed to read image file, falling back to base64 scan");
         }
@@ -2560,15 +2556,17 @@ fn resolve_image_data(value: &Value) -> String {
 /// Checks nested objects recursively; returns the first match.
 fn find_image_url(value: &Value) -> Option<String> {
     match value {
-        Value::String(s) if s.starts_with("/api/images/") => {
-            Some(s.clone())
-        }
+        Value::String(s) if s.starts_with("/api/images/") => Some(s.clone()),
         Value::Object(map) => {
             // Prioritize keys containing "image", "photo", "picture", "url", or "src"
             for (k, v) in map {
                 let kl = k.to_lowercase();
-                if kl.contains("image") || kl.contains("photo") || kl.contains("picture")
-                   || kl.contains("url") || kl.contains("src") {
+                if kl.contains("image")
+                    || kl.contains("photo")
+                    || kl.contains("picture")
+                    || kl.contains("url")
+                    || kl.contains("src")
+                {
                     if let Some(s) = v.as_str() {
                         if s.starts_with("/api/images/") {
                             return Some(s.to_string());
@@ -3377,7 +3375,10 @@ mod tests {
     fn test_find_image_url() {
         // Test direct URL string
         let url_data = json!({ "image": "/api/images/test.jpg" });
-        assert_eq!(find_image_url(&url_data), Some("/api/images/test.jpg".to_string()));
+        assert_eq!(
+            find_image_url(&url_data),
+            Some("/api/images/test.jpg".to_string())
+        );
 
         // Test nested object with URL
         let nested_data = json!({
@@ -3385,13 +3386,19 @@ mod tests {
                 "imageUrl": "/api/images/nested.png"
             }
         });
-        assert_eq!(find_image_url(&nested_data), Some("/api/images/nested.png".to_string()));
+        assert_eq!(
+            find_image_url(&nested_data),
+            Some("/api/images/nested.png".to_string())
+        );
 
         // Test array with URL
         let array_data = json!({
             "images": ["/api/images/array1.jpg", "/api/images/array2.png"]
         });
-        assert_eq!(find_image_url(&array_data), Some("/api/images/array1.jpg".to_string()));
+        assert_eq!(
+            find_image_url(&array_data),
+            Some("/api/images/array1.jpg".to_string())
+        );
 
         // Test no URL present
         let no_url_data = json!({ "text": "just text" });
@@ -3402,7 +3409,10 @@ mod tests {
             "url": "/api/images/mixed.jpg",
             "base64": "data:image/png;base64,iVBORw0KG..."
         });
-        assert_eq!(find_image_url(&mixed_data), Some("/api/images/mixed.jpg".to_string()));
+        assert_eq!(
+            find_image_url(&mixed_data),
+            Some("/api/images/mixed.jpg".to_string())
+        );
     }
 
     #[test]

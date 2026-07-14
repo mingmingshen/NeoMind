@@ -387,6 +387,22 @@ pub fn read_internal_image_url(url: &str, data_dir: &Path) -> Result<(Vec<u8>, &
     Ok((bytes, mime))
 }
 
+/// Resolve a `/api/images/` URL to a self-contained `data:<mime>;base64,...`
+/// string for delivery to consumers that can't reach the local file route
+/// (external webhooks, MQTT brokers, LLM context).
+///
+/// Single source of truth for the url→data-url transform: data-push and the
+/// transform engine both call this instead of each inlining base64+format.
+/// Applies the same symlink/size/magic guards as [`read_internal_image_url`].
+/// Returns `None` if `url` is not a `/api/images/` URL, the file is missing /
+/// unreadable / too large / non-image — callers fall back to the raw value.
+pub fn resolve_internal_image_to_data_url(url: &str, data_dir: &Path) -> Option<String> {
+    use base64::Engine as _;
+    let (bytes, mime) = read_internal_image_url(url, data_dir).ok()?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(format!("data:{mime};base64,{b64}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

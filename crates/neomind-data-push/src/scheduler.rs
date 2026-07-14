@@ -177,9 +177,10 @@ impl PushScheduler {
                                 if !matches_event_type(&event, &event_types) {
                                     continue;
                                 }
-                                if let Some((source_id, value, ts)) = extract_event_data(&event) {
+                                if let Some((source_id, mut value, ts)) = extract_event_data(&event) {
                                     let value_str = value.to_string();
                                     if matcher.should_push(&source_id, &value_str) {
+                                        resolve_image_urls_in_value(&mut value);
                                         if !batch_enabled {
                                             // Immediate delivery (batch_size=1)
                                             if let Err(e) = deliver_with_retry(
@@ -276,9 +277,10 @@ impl PushScheduler {
                             return;
                         }
                         if let Some((event, _metadata)) = result {
-                            if let Some((source_id, value, ts)) = extract_event_data(&event) {
+                            if let Some((source_id, mut value, ts)) = extract_event_data(&event) {
                                 let value_str = value.to_string();
                                 if matcher.should_push(&source_id, &value_str) {
+                                    resolve_image_urls_in_value(&mut value);
                                     buffer.push((source_id, value, ts));
                                 }
                             }
@@ -310,40 +312,52 @@ fn matches_event_type(event: &neomind_core::NeoMindEvent, event_types: &[String]
     event_types.iter().any(|t| t == type_name)
 }
 
-/// Convert MetricValue to serde_json::Value.
+/// Convert MetricValue to serde_json::Value (raw — no image resolution here).
+/// `/api/images/` URLs are resolved to base64 data URLs AFTER the source filter
+/// by [`resolve_image_urls_in_value`], so targets filtering on non-image
+/// sources never pay the disk read + base64 encode.
 fn metric_to_json(value: &neomind_core::MetricValue) -> serde_json::Value {
     match value {
         neomind_core::MetricValue::Float(f) => json!(*f),
         neomind_core::MetricValue::Integer(i) => json!(*i),
         neomind_core::MetricValue::Boolean(b) => json!(*b),
-        neomind_core::MetricValue::String(s) => {
-            // Data-push delivers to EXTERNAL consumers that can't reach the
-            // local /api/images/ file route. Resolve internal image URLs to
-            // self-contained data: base64 URLs (restores the pre-v0.9.6
-            // contract). On read failure fall back to the raw URL.
-            if s.starts_with("/api/images/") {
-                if let Some(data_url) = resolve_api_image_to_data_url(s) {
-                    return json!(data_url);
-                }
-            }
-            json!(s)
-        }
+        neomind_core::MetricValue::String(s) => json!(s),
         neomind_core::MetricValue::Json(v) => v.clone(),
     }
 }
 
-/// Resolve a `/api/images/` URL to `data:<mime>;base64,<...>` for external
-/// delivery. None if file unreadable (caller falls back to raw URL).
-fn resolve_api_image_to_data_url(url: &str) -> Option<String> {
-    use base64::Engine as _;
-    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    let (bytes, mime) = neomind_devices::image_storage::read_internal_image_url(
-        url,
-        std::path::Path::new(&data_dir),
+/// Resolve the NeoMind data directory (env override, else cwd-relative "data").
+fn data_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string()),
     )
-    .ok()?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Some(format!("data:{};base64,{}", mime, b64))
+}
+
+/// Walk a JSON value in place and rewrite any `/api/images/` strings to
+/// self-contained `data:` base64 URLs. Covers both top-level String metrics and
+/// image URLs nested inside a Json object/array. Applied post-filter so the
+/// source matcher and change-dedup compare the short URL, not a multi-MB blob.
+fn resolve_image_urls_in_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(s) if s.starts_with("/api/images/") => {
+            if let Some(data_url) =
+                neomind_devices::image_storage::resolve_internal_image_to_data_url(s, &data_dir())
+            {
+                *s = data_url;
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                resolve_image_urls_in_value(v);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values_mut() {
+                resolve_image_urls_in_value(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Extract data from a NeoMindEvent for push delivery.
@@ -446,11 +460,8 @@ async fn deliver_with_retry(
                         error = %e,
                         "Delivery failed, retrying"
                     );
-                    if sleep_or_cancel(
-                        std::time::Duration::from_secs(effective_backoff),
-                        cancel,
-                    )
-                    .await
+                    if sleep_or_cancel(std::time::Duration::from_secs(effective_backoff), cancel)
+                        .await
                     {
                         log.status = DeliveryStatus::Failed;
                         log.error = Some(format!("Cancelled during retry backoff: {}", e));
@@ -594,11 +605,8 @@ async fn flush_batch(
                         error = %e,
                         "Batch delivery failed, retrying"
                     );
-                    if sleep_or_cancel(
-                        std::time::Duration::from_secs(effective_backoff),
-                        cancel,
-                    )
-                    .await
+                    if sleep_or_cancel(std::time::Duration::from_secs(effective_backoff), cancel)
+                        .await
                     {
                         log.status = DeliveryStatus::Failed;
                         log.error = Some(format!("Cancelled during retry backoff: {}", e));
