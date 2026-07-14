@@ -3100,6 +3100,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dynamic_prompt_contains_capability_index() {
+        let agent = Agent::with_session("test_capability".to_string());
+        let prompt = agent.generate_dynamic_system_prompt().await;
+        assert!(
+            prompt.contains("## System Capability Index"),
+            "capability index missing from dynamic prompt"
+        );
+        assert!(
+            prompt.contains("### CLI Commands"),
+            "cli tree missing from dynamic prompt"
+        );
+    }
+
+    #[tokio::test]
     async fn test_agent_history() {
         let agent = Agent::with_session("test_session".to_string());
 
