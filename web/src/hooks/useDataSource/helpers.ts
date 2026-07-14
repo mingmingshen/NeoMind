@@ -211,7 +211,7 @@ export function base64ToDataUrl(raw: string): string {
 
 /** Pre-normalize raw base64 to data URL for image sources. No-op for non-base64. */
 export function normalizeImageValue(value: unknown): unknown {
-  if (typeof value === 'string' && value.length > 100 && !value.startsWith('data:') && !value.startsWith('http')) {
+  if (typeof value === 'string' && value.length > 100 && !value.startsWith('data:') && !value.startsWith('http') && !value.startsWith('/api/')) {
     return base64ToDataUrl(value)
   }
   return value
