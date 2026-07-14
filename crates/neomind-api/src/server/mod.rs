@@ -5,6 +5,7 @@
 
 pub mod assets;
 pub mod extension_metrics;
+pub mod image_cleanup;
 pub mod install_service;
 pub mod middleware;
 pub mod router;
@@ -28,6 +29,7 @@ pub use state::DeviceStatusUpdate;
 pub use types::{ServerState, MAX_REQUEST_BODY_SIZE};
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -197,6 +199,28 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, "Retention cleanup failed");
+                            }
+                        }
+                    }
+
+                    // Clean up expired image files
+                    if let Some(image_retention_hours) = config.image_retention {
+                        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+                        let images_dir = PathBuf::from(&data_dir).join("images");
+
+                        match crate::server::image_cleanup::cleanup_expired_images(&images_dir, image_retention_hours).await {
+                            Ok((files_deleted, dirs_cleaned)) => {
+                                if files_deleted > 0 || dirs_cleaned > 0 {
+                                    tracing::info!(
+                                        files_deleted = files_deleted,
+                                        dirs_cleaned = dirs_cleaned,
+                                        retention_hours = image_retention_hours,
+                                        "Image retention cleanup completed"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "Image retention cleanup failed");
                             }
                         }
                     }
