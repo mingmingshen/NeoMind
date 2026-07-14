@@ -71,7 +71,7 @@ impl CapabilityIndex {
     pub fn build_data_conventions() -> String {
         r###"
 ### Data Conventions
-- metric field names vary by device type. Run `neomind device list` first — it returns `metric_fields` + an `example` (with current values) per type; do NOT call `device get` per device just to learn the fields.
+- Run `neomind device list` first for the device overview. Its `example` field can be huge (AI-inference results like `virtual.*`); read `summary`, `types[].type`, `types[].metric_fields`, and `types[].devices.list` — skip the `example` blob unless you need one sample value. Filter with `--device-type <type>` (not `--type`) or `--status`; do NOT call `device get` per device just to learn fields.
 - Boolean flags take a value with `=`: `--enabled=true`, `--tls=false`, `--compress=true`, `--public=false` (NOT bare `--enabled`). Applies across rule/agent/transform/push/connector/device enable·tls·compress·public·auto_approve.
 - device history: `neomind device history <ID> --metric <field> --time-range <range> [--compress=true]`
   - `--time-range`: `1h`, `24h`, `7d`, `30d` (there is no --start/--end)
@@ -79,6 +79,7 @@ impl CapabilityIndex {
   - `--compress=true` for an AI-friendly compact series; image metrics are auto-summarized regardless
 - device get returns data.metrics.{name}.{value,unit,timestamp} (single-device current snapshot)
 - Output is structured JSON (NEOMIND_JSON=1); errors carry a `suggestion` field with recovery hints
+- The shell tool runs neomind in-process — no shell pipes/redirects (`|`, `>`, `2>&1`, `head`). Filter/limit with command flags (`--device-type`, `--status`, `--limit`), not shell plumbing.
 - For create/update commands with many fields, `skill load` the matching skill first (rule-management, agent-management, etc.) — field schemas live there, not here.
 "###
             .to_string()
@@ -131,6 +132,14 @@ mod tests {
         );
         assert!(c.contains("NEOMIND_JSON"));
         assert!(c.contains("suggestion"));
+        assert!(
+            c.contains("--device-type"),
+            "must mention --device-type filter (not --type)"
+        );
+        assert!(
+            c.contains("no shell pipes"),
+            "must warn the shell tool has no pipes/redirects"
+        );
         assert!(
             c.contains("do NOT call `device get` per device"),
             "must steer away from per-device get for field discovery"
