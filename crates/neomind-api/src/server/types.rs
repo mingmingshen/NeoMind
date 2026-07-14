@@ -512,6 +512,7 @@ impl ServerState {
         {
             mqtt.set_shared_device_registry(self.devices.service.get_registry())
                 .await;
+            mqtt.set_data_dir(self.data_dir.clone());
         }
 
         self.devices
@@ -1688,6 +1689,7 @@ impl ServerState {
                 {
                     mqtt.set_shared_device_registry(self.devices.service.get_registry())
                         .await;
+                    mqtt.set_data_dir(self.data_dir.clone());
                 }
 
                 // Register adapter with device service
@@ -1737,6 +1739,7 @@ impl ServerState {
                     ) {
                         whk.set_shared_device_registry(self.devices.service.get_registry())
                             .await;
+                        whk.set_data_dir(self.data_dir.clone());
                     }
 
                     self.devices

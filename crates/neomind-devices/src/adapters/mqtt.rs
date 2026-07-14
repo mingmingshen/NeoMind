@@ -20,6 +20,7 @@
 //! ```
 
 use crate::adapter::{AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
+use crate::image_storage::save_image_binary;
 use crate::mdl::MetricValue;
 use crate::mqtt::MqttConfig;
 use crate::protocol::ProtocolMapping;
@@ -34,6 +35,7 @@ use neomind_core::EventBus;
 use neomind_core::NeoMindEvent;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -172,6 +174,8 @@ pub struct MqttAdapter {
     outbound_command_topics: Arc<RwLock<HashSet<String>>>,
     /// Unified data extractor
     extractor: Arc<UnifiedExtractor>,
+    /// Data directory for image storage (runtime, not config)
+    data_dir: Arc<RwLock<Option<PathBuf>>>,
 }
 
 impl MqttAdapter {
@@ -197,6 +201,7 @@ impl MqttAdapter {
             topic_to_device: Arc::new(RwLock::new(HashMap::new())),
             outbound_command_topics: Arc::new(RwLock::new(HashSet::new())),
             extractor,
+            data_dir: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -232,6 +237,14 @@ impl MqttAdapter {
         *self.device_registry.write().await = registry;
     }
 
+    /// Set the data directory for image storage.
+    pub fn set_data_dir(&self, data_dir: PathBuf) {
+        let data_dir_arc = self.data_dir.clone();
+        tokio::spawn(async move {
+            *data_dir_arc.write().await = Some(data_dir);
+        });
+    }
+
     /// Create a new MQTT adapter with a protocol mapping.
     pub fn with_mapping(
         config: MqttAdapterConfig,
@@ -258,6 +271,7 @@ impl MqttAdapter {
             topic_to_device: Arc::new(RwLock::new(HashMap::new())),
             outbound_command_topics: Arc::new(RwLock::new(HashSet::new())),
             extractor,
+            data_dir: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -547,6 +561,7 @@ impl MqttAdapter {
         let extractor = self.extractor.clone();
         let topic_to_device = self.topic_to_device.clone();
         let outbound_command_topics = self.outbound_command_topics.clone();
+        let data_dir_clone = self.data_dir.clone();
 
         info!(
             "Starting event loop task for broker '{}', connecting to {}...",
@@ -584,6 +599,7 @@ impl MqttAdapter {
                             &extractor,
                             &topic_to_device,
                             &outbound_command_topics,
+                            data_dir_clone.read().await.as_ref(),
                         )
                         .await;
                     }
@@ -837,6 +853,7 @@ impl MqttAdapter {
         let extractor = self.extractor.clone();
         let topic_to_device = self.topic_to_device.clone();
         let outbound_command_topics = self.outbound_command_topics.clone();
+        let data_dir_clone = self.data_dir.clone();
 
         let (eventloop_tx, eventloop_rx) = async_channel::unbounded();
         let event_tx_clone = event_tx.clone();
@@ -859,6 +876,7 @@ impl MqttAdapter {
                             &extractor,
                             &topic_to_device,
                             &outbound_command_topics,
+                            data_dir_clone.read().await.as_ref(),
                         )
                         .await;
                     }
@@ -1578,6 +1596,40 @@ impl MqttAdapter {
         Ok(())
     }
 
+    /// Convert MetricValue::Binary to URL string if applicable.
+    /// Returns the converted value (URL as String) or original value if not Binary or on error.
+    pub fn convert_binary_to_url(
+        device_id: &str,
+        metric_name: &str,
+        timestamp: i64,
+        value: MetricValue,
+        data_dir: Option<&PathBuf>,
+    ) -> MetricValue {
+        match value {
+            MetricValue::Binary(bytes) => {
+                if let Some(dir) = data_dir {
+                    match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
+                        Ok(url) => {
+                            debug!("Saved binary image for {}/{} -> {}", device_id, metric_name, url);
+                            MetricValue::String(url)
+                        }
+                        Err(e) => {
+                            error!("Failed to save binary image for {}/{}: {}. Keeping as Binary.", device_id, metric_name, e);
+                            // Fallback: keep as Binary if save fails
+                            MetricValue::Binary(bytes)
+                        }
+                    }
+                } else {
+                    debug!("No data_dir configured, keeping Binary metric for {}/{}", device_id, metric_name);
+                    // Keep as Binary if no data_dir
+                    MetricValue::Binary(bytes)
+                }
+            }
+            // Not a Binary value, return unchanged
+            other => other,
+        }
+    }
+
     /// Handle MQTT notification from a specific broker.
     /// This is a static method that processes incoming messages.
     async fn handle_mqtt_notification(
@@ -1596,6 +1648,7 @@ impl MqttAdapter {
         extractor: &Arc<UnifiedExtractor>,
         topic_to_device: &Arc<RwLock<HashMap<String, String>>>,
         outbound_command_topics: &Arc<RwLock<HashSet<String>>>,
+        data_dir: Option<&PathBuf>,
     ) {
         match notification {
             rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)) => {
@@ -1723,12 +1776,21 @@ impl MqttAdapter {
 
                                 // Emit all extracted metrics
                                 for metric in result.metrics {
+                                    // Convert Binary to URL before storage + event bus (fork point)
+                                    let value = Self::convert_binary_to_url(
+                                        &device_id,
+                                        &metric.name,
+                                        now.timestamp(),
+                                        metric.value.clone(),
+                                        data_dir,
+                                    );
+
                                     // Update metric cache
                                     {
                                         let mut cache = metric_cache.write().await;
                                         cache.entry(device_id.clone()).or_default().insert(
                                             metric.name.clone(),
-                                            (metric.value.clone(), now),
+                                            (value.clone(), now),
                                         );
                                     }
 
@@ -1736,7 +1798,7 @@ impl MqttAdapter {
                                     if let Some(storage) = telemetry_storage.read().await.as_ref() {
                                         let data_point = crate::telemetry::DataPoint {
                                             timestamp: now.timestamp(),
-                                            value: metric.value.clone(),
+                                            value: value.clone(),
                                             quality: None,
                                         };
                                         if let Err(e) = storage
@@ -1754,7 +1816,7 @@ impl MqttAdapter {
                                         } else {
                                             debug!(
                                                 "Stored metric {} = {:?} for device {}",
-                                                metric.name, metric.value, device_id
+                                                metric.name, value, device_id
                                             );
                                         }
                                     }
@@ -1763,7 +1825,7 @@ impl MqttAdapter {
                                     if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric.name.clone(),
-                                        value: metric.value.clone(),
+                                        value: value.clone(),
                                         timestamp: now.timestamp(),
                                     }) {
                                         error!(
@@ -1807,6 +1869,15 @@ impl MqttAdapter {
                         if let Ok(value) = MqttAdapter::default_parse_value(&payload) {
                             let metric_name = extract_metric_name_from_topic(&topic)
                                 .unwrap_or_else(|| "value".to_string());
+
+                            // Convert Binary to URL before storage + event bus (fork point)
+                            let value = Self::convert_binary_to_url(
+                                &device_id,
+                                &metric_name,
+                                now.timestamp(),
+                                value,
+                                data_dir,
+                            );
 
                             // Update metric cache
                             {
@@ -1952,12 +2023,21 @@ impl MqttAdapter {
                                 }
 
                                 for metric in result.metrics {
+                                    // Convert Binary to URL before storage + event bus (fork point)
+                                    let value = Self::convert_binary_to_url(
+                                        &device_id,
+                                        &metric.name,
+                                        now.timestamp(),
+                                        metric.value.clone(),
+                                        data_dir,
+                                    );
+
                                     // Update metric cache
                                     {
                                         let mut cache = metric_cache.write().await;
                                         cache.entry(device_id.clone()).or_default().insert(
                                             metric.name.clone(),
-                                            (metric.value.clone(), now),
+                                            (value.clone(), now),
                                         );
                                     }
 
@@ -1965,7 +2045,7 @@ impl MqttAdapter {
                                     if let Some(storage) = telemetry_storage.read().await.as_ref() {
                                         let data_point = crate::telemetry::DataPoint {
                                             timestamp: now.timestamp(),
-                                            value: metric.value.clone(),
+                                            value: value.clone(),
                                             quality: None,
                                         };
                                         if let Err(e) = storage
@@ -1988,7 +2068,7 @@ impl MqttAdapter {
                                     if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric.name.clone(),
-                                        value: metric.value.clone(),
+                                        value: value.clone(),
                                         timestamp: now.timestamp(),
                                     }) {
                                         error!(
@@ -2001,6 +2081,15 @@ impl MqttAdapter {
                                 // No device type - try simple value extraction
                                 if let Ok(value) = MqttAdapter::default_parse_value(&payload) {
                                     let metric_name = "value";
+
+                                    // Convert Binary to URL before storage + event bus (fork point)
+                                    let value = Self::convert_binary_to_url(
+                                        &device_id,
+                                        metric_name,
+                                        now.timestamp(),
+                                        value,
+                                        data_dir,
+                                    );
 
                                     // Update metric cache
                                     {
