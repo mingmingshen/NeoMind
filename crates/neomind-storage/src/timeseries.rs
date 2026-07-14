@@ -306,6 +306,13 @@ fn value_looks_like_image(value: &serde_json::Value) -> bool {
     if s.starts_with("data:image/") {
         return true;
     }
+    // Fast path: /api/images/ URL prefix (image stored as file URL, not base64).
+    // Without this, apply_retention won't recognize image URL records as images,
+    // so they'd use default_retention (7d) instead of image_retention (3d) —
+    // causing files to be deleted before telemetry records (URL 404 window).
+    if s.starts_with("/api/images/") {
+        return true;
+    }
     // Need at least 32 chars to fill a 24-byte magic-byte window.
     // Shorter strings can't carry a meaningful image payload.
     if s.len() < 32 {
