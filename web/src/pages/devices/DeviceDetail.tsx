@@ -260,10 +260,28 @@ export function DeviceDetail({
 
   const downloadImage = (src: string, timestamp?: string) => {
     try {
-      // Determine file extension from MIME type
+      let filename = `${device?.name || 'device'}_${selectedMetric || 'metric'}${timestamp ? '_' + timestamp.replace(/[:\s]/g, '-') : ''}`
+
+      // For /api/images/ URLs: fetch the image file, convert to blob, download
+      if (src.startsWith('http') && src.includes('/api/images/')) {
+        fetch(src).then(r => r.blob()).then(blob => {
+          const ext = blob.type.split('/')[1] === 'jpeg' ? 'jpg' : blob.type.split('/')[1] || 'png'
+          const link = document.createElement('a')
+          link.href = URL.createObjectURL(blob)
+          link.download = `${filename}.${ext}`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          URL.revokeObjectURL(link.href)
+          toast({ title: t('devices:detailPage.downloadSuccess') })
+        }).catch(() => toast({ variant: 'destructive', title: t('devices:detailPage.downloadFailed') }))
+        return
+      }
+
+      // For base64 data URLs: direct download
       const mimeMatch = src.match(/^data:image\/(\w+);/)
       const ext = mimeMatch?.[1] === 'jpeg' ? 'jpg' : mimeMatch?.[1] || 'png'
-      const filename = `${device?.name || 'device'}_${selectedMetric || 'metric'}${timestamp ? '_' + timestamp.replace(/[:\s]/g, '-') : ''}.${ext}`
+      filename += `.${ext}`
 
       const link = document.createElement('a')
       link.href = src
