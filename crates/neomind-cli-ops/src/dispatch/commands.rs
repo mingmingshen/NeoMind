@@ -26,7 +26,9 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
-    /// Start the web server.
+    /// Start the web server (API on :9375, swagger at /api/docs).
+    ///
+    /// Example: `neomind serve --port 9375`
     Serve {
         /// Host to bind to.
         #[arg(long, default_value = "0.0.0.0")]
@@ -35,7 +37,9 @@ pub enum Command {
         #[arg(short, long, default_value_t = 9375)]
         port: u16,
     },
-    /// Run a single prompt and exit.
+    /// Run a single prompt and exit (non-interactive).
+    ///
+    /// Example: `neomind prompt "Summarize the latest sensor readings"`
     Prompt {
         /// The prompt to process.
         prompt: String,
@@ -47,20 +51,34 @@ pub enum Command {
         temperature: f32,
     },
     /// Chat mode (interactive REPL with session persistence).
+    ///
+    /// Resume an existing session with --session <ID>.
+    ///
+    /// Example: `neomind chat`
+    /// Example: `neomind chat --session sess-001`
     Chat {
         /// Session ID to resume (optional).
         #[arg(short, long)]
         session: Option<String>,
     },
     /// List available models from Ollama.
+    ///
+    /// Prefer `llm models` for the same result under a clearer namespace.
+    ///
+    /// Example: `neomind list-models --endpoint http://localhost:11434`
     ListModels {
         /// Ollama endpoint.
         #[arg(long, default_value = "http://localhost:11434")]
         endpoint: String,
     },
     /// Check system health and status.
+    ///
+    /// Example: `neomind health`
     Health,
     /// View system logs.
+    ///
+    /// Example: `neomind logs --tail 100 --follow`
+    /// Example: `neomind logs --level ERROR --since 1h`
     Logs {
         /// Number of lines to show (default: 50).
         #[arg(long, default_value_t = 50)]
@@ -76,6 +94,8 @@ pub enum Command {
         since: Option<String>,
     },
     /// Check for updates.
+    ///
+    /// Example: `neomind check-update`
     CheckUpdate,
     /// LLM backend management commands.
     Llm {
@@ -154,6 +174,9 @@ pub enum Command {
     ///
     /// After `neomind login`, the CLI works from any working directory without
     /// needing `NEOMIND_API_KEY`. Mirrors `gh auth login`.
+    ///
+    /// Example: `neomind login`
+    /// Example: `neomind login --data-dir /var/lib/neomind --force`
     Login {
         /// Server data directory (auto-detected if omitted).
         #[arg(long)]
@@ -163,8 +186,14 @@ pub enum Command {
         force: bool,
     },
     /// Remove the locally saved API key credential.
+    ///
+    /// After logout the CLI falls back to NEOMIND_API_KEY env var or fails auth.
+    ///
+    /// Example: `neomind logout`
     Logout,
     /// Show the current API key and validate it against the server.
+    ///
+    /// Example: `neomind whoami`
     Whoami,
 }
 
@@ -1893,6 +1922,11 @@ pub enum WidgetCommand {
 #[derive(Subcommand, Debug)]
 pub enum SystemCommand {
     /// Show system infrastructure info (MQTT broker, webhook URL, network).
+    ///
+    /// Returns MQTT broker address, webhook base URL, local IP, and API endpoint.
+    /// Use this to discover connection endpoints for devices and connectors.
+    ///
+    /// Example: `neomind system info`
     Info {
     },
 }
@@ -1901,18 +1935,36 @@ pub enum SystemCommand {
 #[derive(Subcommand, Debug)]
 pub enum SettingsCommand {
     /// Get the current global timezone.
+    ///
+    /// Returns the IANA timezone used for cron schedule evaluation and timestamp display.
+    ///
+    /// Example: `neomind settings timezone`
     Timezone {
     },
     /// Set the global timezone (IANA format, e.g. Asia/Shanghai).
+    ///
+    /// Affects cron schedule evaluation and displayed timestamps. Run `settings timezones`
+    /// to see valid values.
+    ///
+    /// Example: `neomind settings set-timezone Asia/Shanghai`
     SetTimezone {
         /// Timezone in IANA format (e.g. "Asia/Shanghai", "UTC").
         #[arg(required = true)]
         timezone: String,
     },
     /// List available timezones.
+    ///
+    /// Shows all IANA timezone identifiers accepted by `settings set-timezone`.
+    ///
+    /// Example: `neomind settings timezones`
     Timezones {
     },
     /// Get data retention configuration.
+    ///
+    /// Returns whether automatic cleanup is enabled, the cleanup interval, and
+    /// retention limits for telemetry and image data. Change with `settings set-retention`.
+    ///
+    /// Example: `neomind settings retention`
     Retention {
     },
     /// Update data retention configuration.
@@ -1934,6 +1986,12 @@ pub enum SettingsCommand {
         image_retention: Option<u64>,
     },
     /// Trigger a manual data cleanup now.
+    ///
+    /// Immediately applies retention rules to delete expired telemetry/image data,
+    /// without waiting for the next scheduled cleanup. Review limits with
+    /// `settings retention` first.
+    ///
+    /// Example: `neomind settings cleanup`
     Cleanup {
     },
 }
