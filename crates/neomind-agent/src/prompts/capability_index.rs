@@ -72,12 +72,14 @@ impl CapabilityIndex {
         r###"
 ### Data Conventions
 - metric field names vary by device type. Run `neomind device list` first — it returns `metric_fields` + an `example` (with current values) per type; do NOT call `device get` per device just to learn the fields.
+- Boolean flags take a value with `=`: `--enabled=true`, `--tls=false`, `--compress=true`, `--public=false` (NOT bare `--enabled`). Applies across rule/agent/transform/push/connector/device enable·tls·compress·public·auto_approve.
 - device history: `neomind device history <ID> --metric <field> --time-range <range> [--compress=true]`
   - `--time-range`: `1h`, `24h`, `7d`, `30d` (there is no --start/--end)
   - `--metric`: a field name from device list `metric_fields` (e.g. `values.battery`, `temperature`)
-  - `--compress=true` (note the `=`; it is a value flag, not a bare flag) for an AI-friendly compact series; image metrics are auto-summarized regardless
+  - `--compress=true` for an AI-friendly compact series; image metrics are auto-summarized regardless
 - device get returns data.metrics.{name}.{value,unit,timestamp} (single-device current snapshot)
 - Output is structured JSON (NEOMIND_JSON=1); errors carry a `suggestion` field with recovery hints
+- For create/update commands with many fields, `skill load` the matching skill first (rule-management, agent-management, etc.) — field schemas live there, not here.
 "###
             .to_string()
     }
@@ -122,6 +124,10 @@ mod tests {
         assert!(
             c.contains("--compress=true"),
             "must mention the --compress=true form"
+        );
+        assert!(
+            c.contains("--enabled=true"),
+            "must state the generic bool=value rule"
         );
         assert!(c.contains("NEOMIND_JSON"));
         assert!(c.contains("suggestion"));
