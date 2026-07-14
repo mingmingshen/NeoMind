@@ -1,3 +1,5 @@
+import { getServerOrigin } from '@/lib/api'
+
 // Check if a string is a base64-encoded image
 export function isBase64Image(value: unknown): boolean {
   if (typeof value !== "string") return false
@@ -30,6 +32,11 @@ export function getImageDataUrl(value: unknown): string | null {
   if (typeof value !== "string") return null
   const str = value.trim()
   if (!str) return null
+
+  // API image URL — prepend server origin
+  if (str.startsWith('/api/images/')) {
+    return getServerOrigin() + str
+  }
 
   // Already a data:image URL
   if (str.startsWith("data:image/")) {
