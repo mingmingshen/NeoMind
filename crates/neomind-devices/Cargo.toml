@@ -45,6 +45,7 @@ all = ["mqtt", "embedded-broker"]
 
 [dev-dependencies]
 base64 = { workspace = true }
+tempfile = "3"
 
 [lints.clippy]
 # Temporarily suppress clippy warnings for neomind-devices

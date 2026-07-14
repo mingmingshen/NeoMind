@@ -105,8 +105,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Tools API (public - static metadata)
         .route("/api/tools", get(tools::list_tools_handler))
         .route("/api/tools/:name", get(tools::get_tool_handler))
-        // Image static files (served from data/images/, content-addressed)
-        .route("/api/images/:filename", get(images::get_image_handler))
+        // Image static files (served from data/images/, structured paths)
+        .route("/api/images/*path", get(images::get_image_handler))
         // Extension read-only routes (metadata, health, assets)
         .route(
             "/api/extensions/:id",
