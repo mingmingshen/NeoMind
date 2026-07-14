@@ -9,6 +9,10 @@ license.workspace = true
 [dependencies]
 neomind-core = { path = "../neomind-core" }
 neomind-storage = { path = "../neomind-storage" }
+# Resolve internal /api/images/ URLs to base64 for external delivery
+# (webhook/MQTT push targets can't reach the local file route).
+neomind-devices = { path = "../neomind-devices" }
+base64 = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

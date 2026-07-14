@@ -316,9 +316,34 @@ fn metric_to_json(value: &neomind_core::MetricValue) -> serde_json::Value {
         neomind_core::MetricValue::Float(f) => json!(*f),
         neomind_core::MetricValue::Integer(i) => json!(*i),
         neomind_core::MetricValue::Boolean(b) => json!(*b),
-        neomind_core::MetricValue::String(s) => json!(s),
+        neomind_core::MetricValue::String(s) => {
+            // Data-push delivers to EXTERNAL consumers that can't reach the
+            // local /api/images/ file route. Resolve internal image URLs to
+            // self-contained data: base64 URLs (restores the pre-v0.9.6
+            // contract). On read failure fall back to the raw URL.
+            if s.starts_with("/api/images/") {
+                if let Some(data_url) = resolve_api_image_to_data_url(s) {
+                    return json!(data_url);
+                }
+            }
+            json!(s)
+        }
         neomind_core::MetricValue::Json(v) => v.clone(),
     }
+}
+
+/// Resolve a `/api/images/` URL to `data:<mime>;base64,<...>` for external
+/// delivery. None if file unreadable (caller falls back to raw URL).
+fn resolve_api_image_to_data_url(url: &str) -> Option<String> {
+    use base64::Engine as _;
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+    let (bytes, mime) = neomind_devices::image_storage::read_internal_image_url(
+        url,
+        std::path::Path::new(&data_dir),
+    )
+    .ok()?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(format!("data:{};base64,{}", mime, b64))
 }
 
 /// Extract data from a NeoMindEvent for push delivery.

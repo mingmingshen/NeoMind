@@ -239,36 +239,42 @@ pub async fn resolve_image(
     // 3. Handle NeoMind internal image URLs (/api/images/<device>/<metric>/<ts>.<ext>)
     //    This MUST come before local file path check because these URLs start with '/'
     if input.starts_with("/api/images/") {
-        // Extract path after /api/images/ and map to data_dir/images/
-        let url_path = input.strip_prefix("/api/images/").ok_or_else(|| {
-            ImageIoError::InvalidArguments("Malformed /api/images/ URL".into())
-        })?;
+        // Delegate to the shared read-side helper in neomind-devices (next to
+        // save_image_binary). Avoids read_local_image (canonicalize + system-
+        // path/extension/magic gate meant for arbitrary local paths); the
+        // helper centralizes path construction + traversal guard + MIME.
+        use neomind_devices::image_storage::{read_internal_image_url, ImageStorageError};
 
-        // Get data_dir from NEOMIND_DATA_DIR env (default: "data")
-        let data_dir = std::env::var("NEOMIND_DATA_DIR")
-            .unwrap_or_else(|_| "data".to_string());
+        let data_dir =
+            std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
 
-        // Construct filesystem path: <data_dir>/images/<url_path>
-        let image_path = std::path::Path::new(&data_dir)
-            .join("images")
-            .join(url_path);
+        let (bytes, mime) =
+            read_internal_image_url(input, std::path::Path::new(&data_dir)).map_err(
+                |e| match e {
+                    ImageStorageError::InvalidPathComponent(_) => {
+                        ImageIoError::PermissionDenied(e.to_string())
+                    }
+                    ImageStorageError::IoError(_) => ImageIoError::InvalidArguments(format!(
+                        "Failed to read /api/images/ URL {input}: {e}"
+                    )),
+                    ImageStorageError::UnknownFileType => {
+                        ImageIoError::InvalidArguments(format!(
+                            "Unrecognized image file for {input}"
+                        ))
+                    }
+                },
+            )?;
 
-        // Convert to string for read_local_image
-        let path_str = image_path.to_str().ok_or_else(|| {
-            ImageIoError::InvalidArguments("Invalid image path (non-UTF8)".into())
-        })?;
+        tracing::info!(url = %input, size = bytes.len(), "Resolved /api/images/ URL");
 
-        tracing::debug!(
-            url = %input,
-            local_path = %path_str,
-            "Resolving /api/images/ URL to local file"
-        );
-
-        let bytes = read_local_image(path_str, max_size)?;
-        let mime = detect_mime_from_bytes(&bytes)
-            .unwrap_or("image/jpeg")
-            .to_string();
-        return Ok((bytes, mime));
+        if bytes.len() > max_size {
+            return Err(ImageIoError::InvalidArguments(format!(
+                "Image file too large: {} bytes (max {})",
+                bytes.len(),
+                max_size
+            )));
+        }
+        return Ok((bytes, mime.to_string()));
     }
 
     // 4. Block non-http URL schemes with a clear error
@@ -1066,6 +1072,36 @@ mod tests {
             assert!(result.is_err(), "Should fail for non-existent file");
 
             // Clean up
+            std::fs::remove_dir_all(&test_data_dir).expect("Failed to clean up test directory");
+            std::env::remove_var("NEOMIND_DATA_DIR");
+        }
+
+        #[tokio::test]
+        async fn resolve_image_api_images_url_rejects_traversal() {
+            let temp_dir = std::env::temp_dir();
+            let test_data_dir = temp_dir.join(format!(
+                "neomind_test_api_images_traversal_{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&test_data_dir).expect("Failed to create temp dir");
+            std::env::set_var("NEOMIND_DATA_DIR", test_data_dir.to_str().unwrap());
+
+            let client = make_client();
+
+            for evil in [
+                "/api/images/../../etc/passwd",
+                "/api/images/test-device/../../../etc/passwd",
+                "/api/images/test-device/image/../../../etc/shadow.png",
+            ] {
+                let result = resolve_image(evil, &client, 10 * 1024 * 1024).await;
+                assert!(
+                    matches!(result, Err(ImageIoError::PermissionDenied(_))),
+                    "traversal URL {:?} should be rejected as PermissionDenied, got {:?}",
+                    evil,
+                    result
+                );
+            }
+
             std::fs::remove_dir_all(&test_data_dir).expect("Failed to clean up test directory");
             std::env::remove_var("NEOMIND_DATA_DIR");
         }

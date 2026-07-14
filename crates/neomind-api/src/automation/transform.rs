@@ -2534,75 +2534,26 @@ impl TransformEngine {
 /// # Returns
 /// Base64-encoded image data (with or without data URI prefix), or empty string if not found
 fn resolve_image_data(value: &Value) -> String {
-    use std::path::PathBuf;
+    use std::path::Path;
 
-    // First, scan for image URLs
     if let Some(url) = find_image_url(value) {
-        // Extract the path from the URL: /api/images/<path>
-        let path = url.trim_start_matches("/api/images/");
-
-        if !path.is_empty() {
-            // Get data directory from environment variable
-            let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-            let image_path = PathBuf::from(data_dir).join("images").join(path);
-
-            // Try to read the file and convert to base64
-            if let Ok(bytes) = std::fs::read(&image_path) {
-                use base64::Engine;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-
-                tracing::debug!(
-                    url = %url,
-                    image_path = ?image_path,
-                    file_size = bytes.len(),
-                    "Successfully resolved image URL to base64"
-                );
-
-                // Return with data URI prefix for consistency
-                let mime_type = detect_mime_type(&bytes);
-                return format!("data:{};base64,{}", mime_type, b64);
-            } else {
-                tracing::warn!(
-                    url = %url,
-                    image_path = ?image_path,
-                    "Failed to read image file, falling back to base64 scan"
-                );
-            }
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+        if let Ok((bytes, mime_type)) =
+            neomind_devices::image_storage::read_internal_image_url(&url, Path::new(&data_dir))
+        {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            tracing::debug!(
+                url = %url, file_size = bytes.len(), mime = %mime_type,
+                "Successfully resolved image URL to base64"
+            );
+            return format!("data:{};base64,{}", mime_type, b64);
+        } else {
+            tracing::warn!(url = %url, "Failed to read image file, falling back to base64 scan");
         }
     }
 
-    // Fallback to existing base64 scan logic
     find_image_data(value).to_string()
-}
-
-/// Detect MIME type from image file signature (magic bytes)
-fn detect_mime_type(bytes: &[u8]) -> &'static str {
-    // GIF signature: GIF87a or GIF89a (6 bytes)
-    if bytes.len() >= 6 && (&bytes[0..6] == b"GIF87a" || &bytes[0..6] == b"GIF89a") {
-        return "image/gif";
-    }
-
-    if bytes.len() >= 8 {
-        // PNG signature: \x89PNG\r\n\x1a\n
-        if &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
-            return "image/png";
-        }
-        // JPEG signature: \xff\xd8
-        if bytes[0] == 0xFF && bytes[1] == 0xD8 {
-            return "image/jpeg";
-        }
-        // BMP signature: BM
-        if bytes[0] == b'B' && bytes[1] == b'M' {
-            return "image/bmp";
-        }
-        // WebP signature: RIFF....WEBP
-        if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-            return "image/webp";
-        }
-    }
-
-    // Default to PNG if we can't detect
-    "image/png"
 }
 
 /// Find image URLs in a JSON value by scanning for /api/images/... patterns.
@@ -3452,25 +3403,6 @@ mod tests {
             "base64": "data:image/png;base64,iVBORw0KG..."
         });
         assert_eq!(find_image_url(&mixed_data), Some("/api/images/mixed.jpg".to_string()));
-    }
-
-    #[test]
-    fn test_detect_mime_type() {
-        // PNG signature
-        let png_header = [0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00];
-        assert_eq!(detect_mime_type(&png_header), "image/png");
-
-        // JPEG signature
-        let jpeg_header = [0xFFu8, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
-        assert_eq!(detect_mime_type(&jpeg_header), "image/jpeg");
-
-        // GIF signature - actually detects GIF correctly
-        let gif_header = *b"GIF87a";
-        assert_eq!(detect_mime_type(&gif_header), "image/gif");
-
-        // Default for unknown
-        let unknown_header = [0x00u8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
-        assert_eq!(detect_mime_type(&unknown_header), "image/png"); // Default
     }
 
     #[test]

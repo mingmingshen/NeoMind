@@ -1962,9 +1962,12 @@ impl TimeSeriesStore {
             // data point's value), NOT name-based, so it works for any
             // metric name as long as the payload really is image data.
             let explicit_hours = policy.get_retention_hours(device_type, metric);
-            let effective_hours = if explicit_hours == policy.default_hours
-                && explicit_hours.is_some()
-            {
+            // Do NOT also require explicit_hours.is_some(): when
+            // default_retention=null but image_retention is set, explicit_hours
+            // is None — gating on .is_some() would skip this branch so image
+            // rows never purge here while image_cleanup deletes their files
+            // → dangling 404 URLs forever.
+            let effective_hours = if explicit_hours == policy.default_hours {
                 // No explicit override — fell through to default. Check
                 // whether this metric actually carries image data, and if
                 // so, apply image_retention instead.
@@ -2545,6 +2548,57 @@ mod tests {
                 .retention_in_progress
                 .load(std::sync::atomic::Ordering::SeqCst),
             "flag must be cleared after a real run completes"
+        );
+    }
+
+    /// v0.9.6 regression guard: with default_retention=None but
+    /// image_retention=Some(short), image rows must STILL be purged.
+    #[tokio::test]
+    async fn test_apply_retention_image_when_default_none() {
+        let store = TimeSeriesStore::memory().unwrap();
+        let old = chrono::Utc::now().timestamp() - 100 * 3600;
+
+        store
+            .write(
+                "cam",
+                "values.image",
+                DataPoint::new_string(
+                    old,
+                    "/api/images/cam/values.image/1700000000.jpg".to_string(),
+                ),
+            )
+            .await
+            .unwrap();
+        store
+            .write("cam", "temperature", DataPoint::new(old, 23.5))
+            .await
+            .unwrap();
+        store.flush().unwrap();
+
+        let mut policy = RetentionPolicy::new(None);
+        policy.set_image_retention(Some(1));
+        store.set_retention_policy(policy).await;
+
+        let result = store.apply_retention().await.unwrap();
+        assert!(
+            result.points_removed >= 1,
+            "image row must be purged by image_retention even when default_retention is None"
+        );
+
+        let img_left = store
+            .query_range("cam", "values.image", i64::MIN, i64::MAX, None)
+            .await
+            .unwrap();
+        assert!(img_left.points.is_empty(), "image metric must be empty after retention");
+
+        let num_left = store
+            .query_range("cam", "temperature", i64::MIN, i64::MAX, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            num_left.points.len(),
+            1,
+            "numeric metric must be kept when default_retention is None"
         );
     }
 

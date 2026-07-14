@@ -292,6 +292,47 @@ pub fn save_image_binary(
     Ok(url_path)
 }
 
+/// Detect MIME type from magic bytes. Falls back to `image/jpeg`.
+pub fn detect_mime_from_bytes(bytes: &[u8]) -> &'static str {
+    match detect_extension(bytes) {
+        "jpg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tiff" => "image/tiff",
+        _ => "image/jpeg",
+    }
+}
+
+/// Read a NeoMind internal image URL (`/api/images/<dev>/<metric>/<ts>.<ext>`)
+/// back into raw bytes + MIME. Read-side counterpart to `save_image_binary`;
+/// single source of truth for path construction, traversal guard, and MIME.
+/// `max_size` is NOT enforced here — callers that care check themselves.
+pub fn read_internal_image_url(url: &str, data_dir: &Path) -> Result<(Vec<u8>, &'static str)> {
+    let url_path = url.strip_prefix("/api/images/").ok_or_else(|| {
+        ImageStorageError::InvalidPathComponent(format!("not a /api/images/ URL: {url}"))
+    })?;
+
+    if url_path.contains('\0')
+        || std::path::Path::new(url_path).components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir | std::path::Component::RootDir
+            )
+        })
+    {
+        return Err(ImageStorageError::InvalidPathComponent(
+            "path traversal is not allowed in /api/images/ URL".to_string(),
+        ));
+    }
+
+    let image_path = data_dir.join("images").join(url_path);
+    let bytes = std::fs::read(&image_path)?;
+    let mime = detect_mime_from_bytes(&bytes);
+    Ok((bytes, mime))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,6 +501,56 @@ mod tests {
         let metric_dir = device_dir.join("new-metric");
         assert!(device_dir.exists());
         assert!(metric_dir.exists());
+    }
+
+    #[test]
+    fn test_read_internal_image_url_round_trip() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+        let jpeg_bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
+        let jpg_url = save_image_binary("cam-1", "image", 1000, &jpeg_bytes, data_dir).unwrap();
+        let (bytes, mime) = read_internal_image_url(&jpg_url, data_dir).unwrap();
+        assert_eq!(bytes, jpeg_bytes);
+        assert_eq!(mime, "image/jpeg");
+
+        let png_bytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let png_url = save_image_binary("cam-1", "image", 1001, &png_bytes, data_dir).unwrap();
+        let (png_out, png_mime) = read_internal_image_url(&png_url, data_dir).unwrap();
+        assert_eq!(png_out, png_bytes);
+        assert_eq!(png_mime, "image/png");
+    }
+
+    #[test]
+    fn test_read_internal_image_url_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let res = read_internal_image_url("/api/images/no-such/dev/m/1.jpg", temp_dir.path());
+        assert!(matches!(res, Err(ImageStorageError::IoError(_))));
+    }
+
+    #[test]
+    fn test_read_internal_image_url_bad_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let res = read_internal_image_url("http://example.com/x.jpg", temp_dir.path());
+        assert!(matches!(res, Err(ImageStorageError::InvalidPathComponent(_))));
+    }
+
+    #[test]
+    fn test_read_internal_image_url_rejects_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+        let secret = data_dir.join("secret.txt");
+        std::fs::write(&secret, b"TOPSECRET").unwrap();
+        for evil in [
+            "/api/images/../../secret.txt",
+            "/api/images/dev/../../../secret.txt",
+            "/api/images/dev/m/../../../../secret.txt",
+        ] {
+            let res = read_internal_image_url(evil, data_dir);
+            assert!(
+                matches!(res, Err(ImageStorageError::InvalidPathComponent(_))),
+                "{evil:?} should be rejected, got {res:?}"
+            );
+        }
     }
 
     #[test]

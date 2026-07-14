@@ -1243,50 +1243,24 @@ pub(crate) fn extract_image_data(
         if s.starts_with("/api/images/") {
             tracing::info!(target: "neomind::agent::event_value", url = %s, "[DIAG] extract_image_data: matched /api/images/ branch");
 
-            // Extract path after /api/images/ and map to data_dir/images/
-            let url_path = match s.strip_prefix("/api/images/") {
-                Some(path) => path,
-                None => {
-                    tracing::error!(target: "neomind::agent::event_value", url = %s, "[DIAG] extract_image_data: malformed /api/images/ URL");
-                    return (None, None, None);
-                }
-            };
-
-            // Get data_dir from NEOMIND_DATA_DIR env (default: "data")
-            let data_dir = std::env::var("NEOMIND_DATA_DIR")
-                .unwrap_or_else(|_| "data".to_string());
-
-            // Construct filesystem path: <data_dir>/images/<url_path>
-            let image_path = std::path::Path::new(&data_dir)
-                .join("images")
-                .join(url_path);
-
-            // Read file and convert to base64
-            match std::fs::read(&image_path) {
-                Ok(bytes) => {
-                    // Detect MIME type from magic bytes
-                    let mime = crate::image_utils::detect_mime_from_bytes(&bytes)
-                        .unwrap_or("image/jpeg")
-                        .to_string();
-
-                    // Convert to base64
-                    let base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
-
+            let data_dir =
+                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+            match neomind_devices::image_storage::read_internal_image_url(
+                s,
+                std::path::Path::new(&data_dir),
+            ) {
+                Ok((bytes, mime)) => {
+                    let base64 =
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
                     tracing::info!(target: "neomind::agent::event_value",
-                        url = %s,
-                        local_path = %image_path.display(),
-                        size = bytes.len(),
-                        mime = %mime,
+                        url = %s, size = bytes.len(), mime = %mime,
                         "[DIAG] extract_image_data: successfully loaded /api/images/ file"
                     );
-
-                    (None, Some(base64), Some(mime))
+                    (None, Some(base64), Some(mime.to_string()))
                 }
                 Err(e) => {
                     tracing::error!(target: "neomind::agent::event_value",
-                        url = %s,
-                        local_path = %image_path.display(),
-                        error = %e,
+                        url = %s, error = %e,
                         "[DIAG] extract_image_data: failed to read /api/images/ file"
                     );
                     (None, None, None)
@@ -1406,6 +1380,12 @@ pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> b
     if let Some(s) = value.as_str() {
         // Check for URL
         if s.starts_with("http://") || s.starts_with("https://") {
+            return true;
+        }
+        // NeoMind internal image URL (file-backed since v0.9.6). MUST be
+        // recognized here, else a non-image-keyword metric is never classified
+        // and extract_image_data never runs → silent vision loss.
+        if s.starts_with("/api/images/") {
             return true;
         }
         // Check for base64 image data
@@ -1561,5 +1541,17 @@ mod tests {
         // Test with base64 data
         let base64_value = serde_json::json!("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCgAyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg");
         assert!(is_image_metric("data", &base64_value));
+
+        // Internal /api/images/ URL with a NON-image keyword metric name.
+        // Regression guard for v0.9.6: image values are now short URL strings,
+        // so value-only detection must recognize the /api/images/ prefix.
+        assert!(is_image_metric(
+            "payload",
+            &serde_json::json!("/api/images/dev-001/feed/1700000000.jpg")
+        ));
+        assert!(is_image_metric(
+            "values.image",
+            &serde_json::json!("/api/images/9999/values.image/1784027451.jpg")
+        ));
     }
 }
