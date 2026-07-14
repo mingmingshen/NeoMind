@@ -117,11 +117,9 @@ pub async fn list_devices(
                 .map(|(_, id)| id.as_str())
             {
                 if let Some(metrics) = example_results.get(example_id) {
-                    let (field_names, command_names, example_obj) =
-                        build_example(example_id, metrics, devs);
+                    let (field_names, command_names) = build_example(metrics);
                     type_entry["metric_fields"] = field_names;
                     type_entry["command_fields"] = command_names;
-                    type_entry["example"] = example_obj;
                 }
             }
 
@@ -141,55 +139,29 @@ pub async fn list_devices(
                 "metric_fields": [],
                 "online": group_online,
                 "offline": devs.len() - group_online,
-                "example": null,
                 "devices": build_device_list(devs),
             }));
         }
     }
 
     // Build ungrouped entries
-    let ungrouped_response: Vec<serde_json::Value> = if enrich && !ungrouped_devices.is_empty() {
-        let ungrouped_ids: Vec<(String, String)> = ungrouped_devices
-            .iter()
-            .filter_map(|d| extract_device_id(d).map(|id| ("_ungrouped".to_string(), id)))
-            .collect();
-        let ungrouped_results: BTreeMap<String, serde_json::Value> =
-            fetch_examples(client, &ungrouped_ids).await;
-
-        ungrouped_devices
-            .iter()
-            .map(|d| {
-                let id = extract_device_id(d).unwrap_or_default();
-                let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let dev_status = d
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                let mut entry = json!({
-                    "id": id,
-                    "name": name,
-                    "status": dev_status,
-                });
-                if let Some(metrics) = ungrouped_results.get(&id) {
-                    entry["metrics"] = compact_metric_values(metrics);
-                }
-                entry
+    let ungrouped_response: Vec<serde_json::Value> = ungrouped_devices
+        .iter()
+        .map(|d| {
+            let id = extract_device_id(d).unwrap_or_default();
+            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let dev_status = d
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            json!({
+                "id": id,
+                "name": name,
+                "status": dev_status,
+                "latest_command": format!("neomind device get {}", id),
             })
-            .collect()
-    } else {
-        ungrouped_devices
-            .iter()
-            .map(|d| {
-                let id = extract_device_id(d).unwrap_or_default();
-                let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let dev_status = d
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                json!({"id": id, "name": name, "status": dev_status})
-            })
-            .collect()
-    };
+        })
+        .collect();
 
     let response = json!({
         "summary": {
@@ -237,12 +209,15 @@ async fn fetch_examples(
 fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
     match val {
         serde_json::Value::String(s) => {
-            // Image-bearing strings (embedded base64 OR public HTTP(S) URLs)
-            // pass through untouched in agent (JSON) mode — the downstream
-            // LargeDataCache wraps embedded base64 as `$cached:` references,
-            // and the `vision` tool natively fetches HTTP(S) URLs. Truncating
-            // either would starve the cache or break long signed URLs.
+            // Image-bearing strings (embedded base64, public HTTP(S) URLs, or
+            // internal /api/images/ URLs) pass through untouched in agent
+            // (JSON) mode — the downstream LargeDataCache wraps embedded base64
+            // as `$cached:` references, the `vision` tool resolves /api/images/
+            // URLs, and it natively fetches HTTP(S) URLs. Truncating any of
+            // these would starve the cache or break the URL the vision tool
+            // needs (a /api/images/ URL >80 chars would be cut to 60 → corrupt).
             if (s.starts_with("data:image/")
+                || s.starts_with("/api/images/")
                 || s.starts_with("http://")
                 || s.starts_with("https://"))
                 && std::env::var("NEOMIND_JSON").is_ok()
@@ -300,37 +275,24 @@ fn extract_device_id(device: &serde_json::Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// Build metric field names, command names, and example object from /current response.
-fn build_example(
-    example_id: &str,
-    current_data: &serde_json::Value,
-    devs: &[serde_json::Value],
-) -> (serde_json::Value, serde_json::Value, serde_json::Value) {
+/// Build metric field names and command names from /current response.
+///
+/// Only field/command *names* are returned — per-device sample values were
+/// dropped because they bloated `device list` output (AI-inference fields
+/// like `virtual.*` ran to thousands of chars each). Each device now carries
+/// a `latest_command` so the agent fetches real values on demand via
+/// `device get <id>` instead of reading a stale sample blob.
+fn build_example(current_data: &serde_json::Value) -> (serde_json::Value, serde_json::Value) {
     let response_data = current_data.get("data").unwrap_or(current_data);
     let metrics = response_data.get("metrics");
     let commands = response_data.get("commands");
 
-    let mut field_names = Vec::new();
-    let mut example_values = serde_json::Map::new();
-
-    let example_name = devs
-        .iter()
-        .find(|d| extract_device_id(d).as_deref() == Some(example_id))
-        .and_then(|d| {
-            d.get("name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_default();
-
-    // Extract metric field names + example values
+    // Extract metric field names (names only — no values)
+    let mut field_names: Vec<serde_json::Value> = Vec::new();
     if let Some(metrics_obj) = metrics.and_then(|m| m.as_object()) {
         for (name, info) in metrics_obj {
-            if let Some(val) = info.get("value") {
-                if !val.is_null() {
-                    field_names.push(json!(name));
-                    example_values.insert(name.clone(), sanitize_metric_value(val));
-                }
+            if info.get("value").map_or(false, |v| !v.is_null()) {
+                field_names.push(json!(name));
             }
         }
     }
@@ -345,36 +307,7 @@ fn build_example(
         })
         .unwrap_or_default();
 
-    example_values.insert("id".to_string(), json!(example_id));
-    example_values.insert("name".to_string(), json!(example_name));
-
-    (
-        json!(field_names),
-        json!(command_names),
-        json!(example_values),
-    )
-}
-
-/// Extract compact metric values from /current response (for ungrouped devices).
-fn compact_metric_values(current_data: &serde_json::Value) -> serde_json::Value {
-    let metrics = current_data
-        .get("data")
-        .and_then(|d| d.get("metrics"))
-        .or_else(|| current_data.get("metrics"));
-
-    if let Some(metrics_obj) = metrics.and_then(|m| m.as_object()) {
-        let mut values = serde_json::Map::new();
-        for (name, info) in metrics_obj {
-            if let Some(val) = info.get("value") {
-                if !val.is_null() {
-                    values.insert(name.clone(), sanitize_metric_value(val));
-                }
-            }
-        }
-        json!(values)
-    } else {
-        json!({})
-    }
+    (json!(field_names), json!(command_names))
 }
 
 /// Build device list for a type group, truncated to MAX_DEVICES_PER_TYPE.
@@ -390,7 +323,12 @@ fn build_device_list(devs: &[serde_json::Value]) -> serde_json::Value {
                 .get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            json!({"id": id, "name": name, "status": dev_status})
+            json!({
+                "id": id,
+                "name": name,
+                "status": dev_status,
+                "latest_command": format!("neomind device get {}", id),
+            })
         })
         .collect();
 
@@ -523,7 +461,10 @@ pub async fn get_telemetry_history(
     // snapshot's value is preserved so the downstream streaming-layer slim
     // can cache it as a `$cached:` reference for the `vision` tool.
     let summarized = summarize_image_history(&data, id);
-    Ok(CliResponse::success(summarized, "Telemetry history retrieved"))
+    Ok(CliResponse::success(
+        summarized,
+        "Telemetry history retrieved",
+    ))
 }
 
 /// If the telemetry history response contains image-bearing metrics,
@@ -638,6 +579,12 @@ fn summarize_image_history(data: &serde_json::Value, device_id: &str) -> serde_j
 /// pointing at an image resource)?
 fn is_image_value(s: &str) -> bool {
     if s.starts_with("data:image/") {
+        return true;
+    }
+    // Internal file-backed image URL (since v0.9.6 images are stored as
+    // /api/images/... URLs, not base64). Recognize it so device history can
+    // summarize image metrics and guide the agent to the vision tool.
+    if s.starts_with("/api/images/") {
         return true;
     }
     if s.starts_with("http://") || s.starts_with("https://") {
@@ -946,12 +893,20 @@ mod tests {
         assert_eq!(summary["earliest_ts"], 1000);
         assert_eq!(summary["latest_ts"], 3000);
         assert_eq!(summary["interval_avg_ms"], 1000); // (3000-1000)/(3-1) = 1000ms
-        // latest_value carries the FULL data URL (slim layer will cache it).
+                                                      // latest_value carries the FULL data URL (slim layer will cache it).
         assert_eq!(summary["latest_value"], url);
         // Note mentions count + vision hint.
         let note = summary["note"].as_str().unwrap();
-        assert!(note.contains("3 historical"), "note should mention count: {}", note);
-        assert!(note.contains("vision"), "note should mention vision: {}", note);
+        assert!(
+            note.contains("3 historical"),
+            "note should mention count: {}",
+            note
+        );
+        assert!(
+            note.contains("vision"),
+            "note should mention vision: {}",
+            note
+        );
     }
 
     /// Mixed request (image metric + numeric metric) → only the image
@@ -975,7 +930,10 @@ mod tests {
         let out = summarize_image_history(&response, device_id);
 
         // Image metric transformed.
-        assert_eq!(out["data"]["data"]["values.image"]["_image_history_summary"], true);
+        assert_eq!(
+            out["data"]["data"]["values.image"]["_image_history_summary"],
+            true
+        );
         assert_eq!(out["data"]["data"]["values.image"]["count"], 1);
 
         // Numeric metric untouched.
@@ -1021,6 +979,32 @@ mod tests {
         assert_eq!(
             summary["latest_value"],
             "https://camera.example.com/snapshots/img2.jpg?token=abc"
+        );
+    }
+
+    /// v0.9.6 regression guard: image metrics now store `/api/images/...` URLs
+    /// (file-backed), not base64. `is_image_value` must recognize them so
+    /// `device history` still synthesizes the image summary + vision hint.
+    #[test]
+    fn test_summarize_detects_api_images_urls() {
+        let device_id = "dev-004b";
+        let response = wrap_telemetry(
+            device_id,
+            json!({
+                "values.image": [
+                    {"timestamp": 1000, "value": "/api/images/dev-004b/values.image/1700000000.jpg"},
+                    {"timestamp": 2000, "value": "/api/images/dev-004b/values.image/1700000001.jpg"}
+                ]
+            }),
+        );
+
+        let out = summarize_image_history(&response, device_id);
+        let summary = &out["data"]["data"]["values.image"];
+        assert_eq!(summary["_image_history_summary"], true);
+        assert_eq!(summary["count"], 2);
+        assert_eq!(
+            summary["latest_value"],
+            "/api/images/dev-004b/values.image/1700000001.jpg"
         );
     }
 
@@ -1070,7 +1054,9 @@ mod tests {
         assert!(is_image_value("https://example.com/img.jpg"));
         assert!(is_image_value("http://cam.local/snap.PNG"));
         assert!(is_image_value("https://cdn.com/x.JPEG"));
-        assert!(is_image_value("https://cdn.com/path/img.webp?token=long-signed-url-xyz"));
+        assert!(is_image_value(
+            "https://cdn.com/path/img.webp?token=long-signed-url-xyz"
+        ));
 
         // Negative cases.
         assert!(!is_image_value("https://example.com/page.html"));
