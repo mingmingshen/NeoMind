@@ -19,10 +19,12 @@ use tracing_subscriber::Layer;
 // Clap command types now live in neomind_cli_ops::dispatch::commands
 use neomind_cli_ops::dispatch::commands::*;
 
-// Jemalloc global allocator: glibc malloc's per-thread arenas fragment over
-// time and don't return freed memory to the OS (server RSS climbed to 4-6 GB
-// over days). jemalloc packs small allocations tightly and releases freed
-// pages promptly, keeping RSS stable.
+// Jemalloc global allocator (Linux only): glibc malloc's per-thread arenas
+// fragment over time and don't return freed memory to the OS (server RSS
+// climbed to 4-6 GB over days). jemalloc packs allocations tightly and
+// releases freed pages promptly. macOS/Windows use their own allocators
+// (not glibc) so they don't have this problem.
+#[cfg(target_os = "linux")]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
