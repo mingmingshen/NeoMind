@@ -737,6 +737,8 @@ pub struct Agent {
         Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>,
     /// Semantic mapper - converts natural language to technical IDs
     semantic_mapper: Arc<semantic_mapper::SemanticToolMapper>,
+    /// Resident system capability index (CLI tree + data conventions + device-type snapshot).
+    capability_index: Arc<crate::prompts::CapabilityIndex>,
     /// Shared conversation state (merged: context + followup + hash)
     shared_state: Arc<tokio::sync::RwLock<AgentSharedState>>,
     /// Tool result cache - caches recent tool executions to avoid redundant calls
@@ -774,6 +776,11 @@ impl Agent {
         let semantic_mapper = Arc::new(semantic_mapper::SemanticToolMapper::new(
             resource_index.clone(),
         ));
+        // Capability index shares the same ResourceIndex as the semantic mapper
+        // (zero new service wiring) — see prompts/capability_index.rs.
+        let capability_index = Arc::new(crate::prompts::CapabilityIndex::new(
+            resource_index.clone(),
+        ));
 
         Self {
             config,
@@ -789,6 +796,7 @@ impl Agent {
                 crate::smart_conversation::SmartConversationManager::new(),
             )),
             semantic_mapper,
+            capability_index,
             shared_state: Arc::new(tokio::sync::RwLock::new(AgentSharedState {
                 conversation_context: ConversationContext::new(),
                 smart_followup: SmartFollowUpManager::new(),
@@ -1213,6 +1221,13 @@ impl Agent {
         if !resource_context.is_empty() {
             prompt.push_str("\n\n");
             prompt.push_str(&resource_context);
+        }
+
+        // === System capability index (command tree + data conventions + device-type snapshot) ===
+        let capability = self.capability_index.build().await;
+        if !capability.is_empty() {
+            prompt.push_str("\n\n");
+            prompt.push_str(&capability);
         }
 
         // === Memory snapshot injection (frozen, loaded once per session) ===
