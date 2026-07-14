@@ -29,6 +29,11 @@ futures = { workspace = true }
 reqwest = { workspace = true }
 zip = "2.1"
 
+# Jemalloc global allocator — replaces glibc malloc to avoid per-thread arena
+# fragmentation (server RSS was climbing 4-6 GB over days; jemalloc returns
+# freed memory to the OS promptly and packs small allocations tightly).
+tikv-jemallocator = "0.6"
+
 # CLI
 clap = { workspace = true }
 
