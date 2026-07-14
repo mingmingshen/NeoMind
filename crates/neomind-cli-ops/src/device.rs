@@ -158,7 +158,6 @@ pub async fn list_devices(
                 "id": id,
                 "name": name,
                 "status": dev_status,
-                "latest_command": format!("neomind device get {}", id),
             })
         })
         .collect();
@@ -279,9 +278,8 @@ fn extract_device_id(device: &serde_json::Value) -> Option<String> {
 ///
 /// Only field/command *names* are returned — per-device sample values were
 /// dropped because they bloated `device list` output (AI-inference fields
-/// like `virtual.*` ran to thousands of chars each). Each device now carries
-/// a `latest_command` so the agent fetches real values on demand via
-/// `device get <id>` instead of reading a stale sample blob.
+/// like `virtual.*` ran to thousands of chars each). The agent fetches real
+/// values on demand via `device get <id>` instead of reading a stale sample.
 fn build_example(current_data: &serde_json::Value) -> (serde_json::Value, serde_json::Value) {
     let response_data = current_data.get("data").unwrap_or(current_data);
     let metrics = response_data.get("metrics");
@@ -327,7 +325,6 @@ fn build_device_list(devs: &[serde_json::Value]) -> serde_json::Value {
                 "id": id,
                 "name": name,
                 "status": dev_status,
-                "latest_command": format!("neomind device get {}", id),
             })
         })
         .collect();

@@ -71,7 +71,7 @@ impl CapabilityIndex {
     pub fn build_data_conventions() -> String {
         r###"
 ### Data Conventions
-- Run `neomind device list` first for the overview — read `summary`, `types[].type`, `types[].metric_fields` (field names per type), and each device's `latest_command` (a ready-to-run `neomind device get <id>` that fetches that device's current values + fields). Filter with `--device-type <type>` (not `--type`) or `--status`.
+- Run `neomind device list` first for the overview — read `summary`, `types[].type`, `types[].metric_fields` (field names per type), and `types[].devices.list` (id/name/status). Filter with `--device-type <type>` (not `--type`) or `--status`. Fetch a device's current values with `device get <id>`, history with `device history <id> --metric <field> --time-range 7d`.
 - Boolean flags take a value with `=`: `--enabled=true`, `--tls=false`, `--compress=true`, `--public=false` (NOT bare `--enabled`). Applies across rule/agent/transform/push/connector/device enable·tls·compress·public·auto_approve.
 - device history: `neomind device history <ID> --metric <field> --time-range <range> [--compress=true]`
   - `--time-range`: `1h`, `24h`, `7d`, `30d` (there is no --start/--end)
@@ -141,8 +141,8 @@ mod tests {
             "must warn the shell tool has no pipes/redirects"
         );
         assert!(
-            c.contains("latest_command"),
-            "must mention the per-device latest_command"
+            c.contains("devices.list"),
+            "must mention devices.list for the device roster"
         );
     }
 
