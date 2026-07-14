@@ -71,10 +71,13 @@ impl CapabilityIndex {
     pub fn build_data_conventions() -> String {
         r###"
 ### Data Conventions
-- metric field names vary by device type. Run `neomind device list` first and read metric_fields + example; never guess field names.
-- device history supports `--compress` for an AI-friendly structure; image metrics are auto-summarized.
-- device get returns data.metrics.{name}.{value,unit,timestamp}.
-- Output is structured JSON (NEOMIND_JSON=1); errors carry a `suggestion` field with recovery hints.
+- metric field names vary by device type. Run `neomind device list` first — it returns `metric_fields` + an `example` (with current values) per type; do NOT call `device get` per device just to learn the fields.
+- device history: `neomind device history <ID> --metric <field> --time-range <range> [--compress=true]`
+  - `--time-range`: `1h`, `24h`, `7d`, `30d` (there is no --start/--end)
+  - `--metric`: a field name from device list `metric_fields` (e.g. `values.battery`, `temperature`)
+  - `--compress=true` (note the `=`; it is a value flag, not a bare flag) for an AI-friendly compact series; image metrics are auto-summarized regardless
+- device get returns data.metrics.{name}.{value,unit,timestamp} (single-device current snapshot)
+- Output is structured JSON (NEOMIND_JSON=1); errors carry a `suggestion` field with recovery hints
 "###
             .to_string()
     }
@@ -115,9 +118,17 @@ mod tests {
     fn data_conventions_mentions_key_rules() {
         let c = CapabilityIndex::build_data_conventions();
         assert!(c.contains("metric_fields"));
-        assert!(c.contains("--compress"));
+        assert!(c.contains("--time-range"), "must mention --time-range");
+        assert!(
+            c.contains("--compress=true"),
+            "must mention the --compress=true form"
+        );
         assert!(c.contains("NEOMIND_JSON"));
         assert!(c.contains("suggestion"));
+        assert!(
+            c.contains("do NOT call `device get` per device"),
+            "must steer away from per-device get for field discovery"
+        );
     }
 
     #[test]
