@@ -147,18 +147,15 @@ export function getApiBase(): string {
   return '/api'
 }
 
-/** Get server origin URL based on environment (cached — never changes during session) */
-let _cachedServerOrigin = ''
+/** Get server origin URL based on environment */
 export function getServerOrigin(): string {
-  if (_cachedServerOrigin) return _cachedServerOrigin
   const base = getApiBase()
   try {
     const url = new URL(base)
-    _cachedServerOrigin = url.origin
-    return _cachedServerOrigin
+    return url.origin
   } catch {
-    _cachedServerOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:9375'
-    return _cachedServerOrigin
+    if (typeof window !== 'undefined') return window.location.origin
+    return 'http://localhost:9375'
   }
 }
 
@@ -168,7 +165,6 @@ let _dynamicApiBase = ''
 /** Set dynamic API base (used by InstanceSlice for instance switching) */
 export function setApiBase(url: string): void {
   _dynamicApiBase = url
-  _cachedServerOrigin = ''  // invalidate cache on instance switch
 }
 
 // ============================================================================
