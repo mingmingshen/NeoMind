@@ -208,23 +208,26 @@ async fn fetch_examples(
 fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
     match val {
         serde_json::Value::String(s) => {
-            // Image-bearing strings (embedded base64, public HTTP(S) URLs, or
-            // internal /api/images/ URLs) pass through untouched in agent
-            // (JSON) mode — the downstream LargeDataCache wraps embedded base64
-            // as `$cached:` references, the `vision` tool resolves /api/images/
-            // URLs, and it natively fetches HTTP(S) URLs. Truncating any of
-            // these would starve the cache or break the URL the vision tool
-            // needs (a /api/images/ URL >80 chars would be cut to 60 → corrupt).
-            if (s.starts_with("data:image/")
-                || s.starts_with("/api/images/")
-                || s.starts_with("http://")
-                || s.starts_with("https://"))
-                && std::env::var("NEOMIND_JSON").is_ok()
+            let is_agent = std::env::var("NEOMIND_JSON").is_ok();
+            // Agent mode: pass large strings through UNTRUNCATED. This covers
+            // raw base64 WITHOUT a `data:image/` prefix (e.g. NE301 `image_data`)
+            // — the chat/scheduled slim layer (LargeDataCache) wraps strings
+            // >4KB into `$cached:` refs that the `vision` tool resolves back to
+            // the full bytes. Truncating here to 60 chars starves the cache and
+            // breaks vision. Image URLs (data:/api/images/http/https) also pass
+            // through regardless of length.
+            if is_agent
+                && (s.len() > 80
+                    || s.starts_with("data:image/")
+                    || s.starts_with("/api/images/")
+                    || s.starts_with("http://")
+                    || s.starts_with("https://"))
             {
                 return val.clone();
             }
+            // Terminal mode (human) or short strings: truncate large ones so the
+            // terminal isn't flooded with base64.
             if s.len() > 80 {
-                // Truncate and mark as binary/large — LLM doesn't need the full payload
                 let prefix = &s[..s.floor_char_boundary(60)];
                 json!(format!(
                     "{}... <truncated, {} bytes total>",
