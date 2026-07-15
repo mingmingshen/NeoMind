@@ -77,7 +77,7 @@ impl CapabilityIndex {
   - `--time-range`: `1h`, `24h`, `7d`, `30d` (there is no --start/--end)
   - `--metric`: a field name from device list `metric_fields` (e.g. `values.battery`, `temperature`)
   - `--compress=true` for an AI-friendly compact series; image metrics are auto-summarized regardless
-- device get returns data.metrics.{name}.{value,unit,timestamp} (single-device current snapshot)
+- device get <id> returns ALL current metrics for one device (data.metrics.{name}.{value,unit,timestamp}) — it takes NO --metric flag (unlike `device history`); for one metric's time series use `device history <id> --metric <field>`.
 - Output is structured JSON (NEOMIND_JSON=1); errors carry a `suggestion` field with recovery hints
 - The shell tool runs neomind in-process — no shell pipes/redirects (`|`, `>`, `2>&1`, `head`). Filter/limit with command flags (`--device-type`, `--status`, `--limit`), not shell plumbing.
 - For create/update commands with many fields, `skill load` the matching skill first (rule-management, agent-management, etc.) — field schemas live there, not here.
@@ -143,6 +143,10 @@ mod tests {
         assert!(
             c.contains("devices.list"),
             "must mention devices.list for the device roster"
+        );
+        assert!(
+            c.contains("NO --metric"),
+            "must clarify device get takes no --metric (unlike history)"
         );
     }
 
