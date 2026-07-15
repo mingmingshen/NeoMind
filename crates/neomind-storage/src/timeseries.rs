@@ -573,6 +573,30 @@ pub struct TimeSeriesStore {
 /// Global time series store singleton (thread-safe).
 static TIMESERIES_STORE_SINGLETON: Mutex<Option<Arc<TimeSeriesStore>>> = Mutex::new(None);
 
+/// Default telemetry redb cache size in MiB when no env override is set.
+///
+/// redb 2.6.3 defaults to a 1 GiB per-DB page cache (90% read). The
+/// telemetry store is the only DB large enough for that cache to fill
+/// (~920 MB anonymous heap on prod), so cap it here. The OS page cache
+/// backs reads regardless, so shrinking the in-process cache reclaims
+/// ~650 MB RSS at little read-perf cost.
+const DEFAULT_TELEMETRY_CACHE_MB: usize = 256;
+
+/// Resolve the telemetry redb cache size (MiB) from an env-var value.
+/// `None` / unparseable / `0` / negative → `DEFAULT_TELEMETRY_CACHE_MB`.
+fn parse_telemetry_cache_mb(env_val: Option<&str>) -> usize {
+    env_val
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&mb| mb > 0)
+        .unwrap_or(DEFAULT_TELEMETRY_CACHE_MB)
+}
+
+/// Telemetry redb cache size in bytes, from `NEOMIND_TELEMETRY_CACHE_MB`
+/// (falls back to `DEFAULT_TELEMETRY_CACHE_MB`). `set_cache_size` takes bytes.
+fn telemetry_cache_size_bytes() -> usize {
+    parse_telemetry_cache_mb(std::env::var("NEOMIND_TELEMETRY_CACHE_MB").ok().as_deref()) * 1024 * 1024
+}
+
 impl TimeSeriesStore {
     /// Open or create a time series store at the given path.
     /// Uses a singleton pattern to prevent multiple opens of the same database.
@@ -599,10 +623,16 @@ impl TimeSeriesStore {
 
         // Create new store and save to singleton
         let path_ref = path.as_ref();
+        // redb defaults to a 1 GiB per-DB cache; telemetry.redb is the only
+        // store large enough to fill it (~920 MB anonymous heap on prod).
+        // Cap via NEOMIND_TELEMETRY_CACHE_MB (default 256 MiB). The OS page
+        // cache still backs reads, so read perf is largely preserved.
+        let mut builder = Database::builder();
+        builder.set_cache_size(telemetry_cache_size_bytes());
         let db = if path_ref.exists() {
-            Database::open(path_ref)?
+            builder.open(path_ref)?
         } else {
-            Database::create(path_ref)?
+            builder.create(path_ref)?
         };
 
         let store = Arc::new(TimeSeriesStore {
@@ -2375,6 +2405,22 @@ fn fmt_ts_range(start_ts: i64, end_ts: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_telemetry_cache_mb() {
+        // Absent → default
+        assert_eq!(parse_telemetry_cache_mb(None), DEFAULT_TELEMETRY_CACHE_MB);
+        assert_eq!(DEFAULT_TELEMETRY_CACHE_MB, 256);
+        // Explicit override
+        assert_eq!(parse_telemetry_cache_mb(Some("512")), 512);
+        assert_eq!(parse_telemetry_cache_mb(Some("128")), 128);
+        // Unparseable / empty → default
+        assert_eq!(parse_telemetry_cache_mb(Some("abc")), DEFAULT_TELEMETRY_CACHE_MB);
+        assert_eq!(parse_telemetry_cache_mb(Some("")), DEFAULT_TELEMETRY_CACHE_MB);
+        // Zero / negative → default
+        assert_eq!(parse_telemetry_cache_mb(Some("0")), DEFAULT_TELEMETRY_CACHE_MB);
+        assert_eq!(parse_telemetry_cache_mb(Some("-1")), DEFAULT_TELEMETRY_CACHE_MB);
+    }
 
     #[tokio::test]
     async fn test_timeseries_write_read() {
