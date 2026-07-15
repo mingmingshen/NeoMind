@@ -899,10 +899,12 @@ impl LargeDataCache {
     /// Used for auto-injection when the LLM fails to pass valid image arguments.
     /// Returns the extracted image data (base64) and the cache key.
     pub fn get_latest_image(&self) -> Option<(String, String)> {
+        let data_dir = Self::image_data_dir();
+        let data_dir = std::path::Path::new(&data_dir);
         // Priority 1: user-uploaded images
         if let Some(user_img) = self.entries.get("user_image") {
             return Some((
-                Self::extract_image_data(&user_img.data),
+                Self::extract_image_data(&user_img.data, data_dir),
                 "user_image".to_string(),
             ));
         }
@@ -921,7 +923,7 @@ impl LargeDataCache {
                 }
             }
         }
-        best.map(|(key, entry)| (Self::extract_image_data(&entry.data), key.clone()))
+        best.map(|(key, entry)| (Self::extract_image_data(&entry.data, data_dir), key.clone()))
     }
 
     /// Detect content type from content heuristics.
@@ -931,6 +933,12 @@ impl LargeDataCache {
             // Extract MIME from data URL
             let end = content.find(';').unwrap_or(15);
             return content[..end].trim_start_matches("data:").to_string();
+        }
+        // Internal image URL form (/api/images/...) — image-bearing regardless of
+        // size (the URL is tiny but points at a real stored image), so
+        // get_latest_image() can surface it for vision auto-injection.
+        if content.contains("/api/images/") {
+            return "image/url".to_string();
         }
         // Check for raw base64 image data (long string of base64 chars)
         if content.len() > 10_000 && Self::looks_like_base64(content) {
@@ -966,25 +974,56 @@ impl LargeDataCache {
     pub fn resolve_reference(&self, reference: &str) -> Option<String> {
         let tool_name = reference.strip_prefix("$cached:")?;
         let cached = self.entries.get(tool_name)?;
-        Some(Self::extract_image_data(&cached.data))
+        let data_dir = Self::image_data_dir();
+        Some(Self::extract_image_data(
+            &cached.data,
+            std::path::Path::new(&data_dir),
+        ))
     }
 
     /// Extract image/base64 data from a cached result string.
     /// Recursively walks the JSON tree to find base64_data regardless of nesting depth,
     /// so it works for any tool response structure (device get, query, extensions, etc.).
-    fn extract_image_data(data: &str) -> String {
+    fn extract_image_data(data: &str, data_dir: &std::path::Path) -> String {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-            if let Some(found) = Self::find_base64_in_value(&json) {
+            if let Some(found) = Self::find_base64_in_value(&json, data_dir) {
                 return found;
             }
         }
-        // Fallback: return raw data (works for pure base64)
+        // Fallback: return raw data (works for pure base64 or a bare /api/images/ URL,
+        // which the downstream vision tool's resolve_image handles directly).
         data.to_string()
     }
 
+    /// Resolve the data dir for internal image lookups.
+    /// Mirrors the agent data collector / extension tool normalization.
+    fn image_data_dir() -> String {
+        std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string())
+    }
+
+    /// Resolve an internal `/api/images/` URL to raw base64 (no `data:` prefix),
+    /// matching the form `find_base64_in_value` returns for its other image sources.
+    ///
+    /// Lets the `$cached:` reference + auto-inject path feed vision tools from
+    /// device/tool results that carry the v0.9.6 URL form instead of base64.
+    /// Returns `None` for non-URL input or unresolvable files (missing/too large/
+    /// non-image) so the caller keeps searching or falls back.
+    fn resolve_api_images_url(url: &str, data_dir: &std::path::Path) -> Option<String> {
+        if !url.starts_with("/api/images/") {
+            return None;
+        }
+        let data_url =
+            neomind_devices::image_storage::resolve_internal_image_to_data_url(url, data_dir)?;
+        // data:<mime>;base64,<b64> → raw <b64> (base64 alphabet has no comma).
+        data_url.split(',').nth(1).map(|s| s.to_string())
+    }
+
     /// Recursively search a JSON value for base64 image data.
-    /// Priority: base64_data fields > data:image URLs > large string values.
-    fn find_base64_in_value(value: &serde_json::Value) -> Option<String> {
+    /// Priority: base64_data fields > /api/images/ URLs > data:image URLs > large string values.
+    fn find_base64_in_value(
+        value: &serde_json::Value,
+        data_dir: &std::path::Path,
+    ) -> Option<String> {
         match value {
             serde_json::Value::Object(map) => {
                 // Direct base64_data field (any depth)
@@ -994,6 +1033,10 @@ impl LargeDataCache {
                 // data:image URL (extract base64 portion)
                 for key in &["data", "image", "content", "url"] {
                     if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
+                        // Internal /api/images/ URL → resolve to raw base64.
+                        if let Some(b64) = Self::resolve_api_images_url(s, data_dir) {
+                            return Some(b64);
+                        }
                         if let Some(b64) = s.strip_prefix("data:image/") {
                             if let Some(after_comma) = b64.split(',').nth(1) {
                                 return Some(after_comma.to_string());
@@ -1012,7 +1055,7 @@ impl LargeDataCache {
                 }
                 // Recurse into child values
                 for v in map.values() {
-                    if let Some(found) = Self::find_base64_in_value(v) {
+                    if let Some(found) = Self::find_base64_in_value(v, data_dir) {
                         return Some(found);
                     }
                 }
@@ -1020,7 +1063,7 @@ impl LargeDataCache {
             }
             serde_json::Value::Array(arr) => {
                 for v in arr {
-                    if let Some(found) = Self::find_base64_in_value(v) {
+                    if let Some(found) = Self::find_base64_in_value(v, data_dir) {
                         return Some(found);
                     }
                 }
@@ -1718,15 +1761,33 @@ mod tests {
 
         // The image value is now a summary string.
         let summary = value["image"].as_str().expect("image replaced with string");
-        assert!(summary.contains("Image"), "summary should mention kind: {}", summary);
-        assert!(summary.contains("image/jpeg"), "summary should mention mime: {}", summary);
-        assert!(summary.contains("$cached:"), "summary should include ref: {}", summary);
-        assert!(summary.contains("vision"), "summary should hint at vision tool: {}", summary);
+        assert!(
+            summary.contains("Image"),
+            "summary should mention kind: {}",
+            summary
+        );
+        assert!(
+            summary.contains("image/jpeg"),
+            "summary should mention mime: {}",
+            summary
+        );
+        assert!(
+            summary.contains("$cached:"),
+            "summary should include ref: {}",
+            summary
+        );
+        assert!(
+            summary.contains("vision"),
+            "summary should hint at vision tool: {}",
+            summary
+        );
 
         // No raw base64 left in the JSON.
         let serialized = serde_json::to_string(&value).unwrap();
-        assert!(!serialized.contains("data:image/jpeg;base64,AAAA"),
-            "no raw base64 should remain in the slimmed JSON");
+        assert!(
+            !serialized.contains("data:image/jpeg;base64,AAAA"),
+            "no raw base64 should remain in the slimmed JSON"
+        );
     }
 
     /// Two different images at the same JSON path get distinct cache keys
@@ -1751,18 +1812,24 @@ mod tests {
 
         // Extract the $cached: refs and confirm they differ.
         let ref_a = summary_a
-            .split("$cached:").nth(1)
+            .split("$cached:")
+            .nth(1)
             .and_then(|s| s.split_whitespace().next())
             .expect("ref a present");
         let ref_b = summary_b
-            .split("$cached:").nth(1)
+            .split("$cached:")
+            .nth(1)
             .and_then(|s| s.split_whitespace().next())
             .expect("ref b present");
         assert_ne!(ref_a, ref_b, "refs must differ for different payloads");
 
         // Both refs must resolve to their respective payloads.
-        let resolved_a = cache.resolve_reference(&format!("$cached:{}", ref_a)).expect("a resolves");
-        let resolved_b = cache.resolve_reference(&format!("$cached:{}", ref_b)).expect("b resolves");
+        let resolved_a = cache
+            .resolve_reference(&format!("$cached:{}", ref_a))
+            .expect("a resolves");
+        let resolved_b = cache
+            .resolve_reference(&format!("$cached:{}", ref_b))
+            .expect("b resolves");
         assert!(resolved_a.ends_with("AAAA"));
         assert!(resolved_b.ends_with("AAAAB"));
     }
@@ -1816,7 +1883,10 @@ mod tests {
         let mut value = serde_json::json!({ "config": big_text.clone() });
 
         let n = cache.slim_large_strings_in_json(&mut value, "tool");
-        assert_eq!(n, 0, "40KB non-image text should pass through under the 64KB threshold");
+        assert_eq!(
+            n, 0,
+            "40KB non-image text should pass through under the 64KB threshold"
+        );
         assert_eq!(
             value["config"].as_str().unwrap().len(),
             40_000,
@@ -1844,8 +1914,14 @@ mod tests {
             .map(|start| &summary[start..])
             .and_then(|s| s.split_whitespace().next())
             .unwrap();
-        let resolved = cache.resolve_reference(key).expect("cache should have the data");
-        assert_eq!(resolved.len(), 70_000, "resolved value should be the full 70KB text");
+        let resolved = cache
+            .resolve_reference(key)
+            .expect("cache should have the data");
+        assert_eq!(
+            resolved.len(),
+            70_000,
+            "resolved value should be the full 70KB text"
+        );
     }
 
     /// Non-JSON tool outputs must not crash the slim path — but slim is
@@ -1883,9 +1959,71 @@ mod tests {
 
         // Each frame should now be a summary string (no raw base64).
         for (i, frame) in value["frames"].as_array().unwrap().iter().enumerate() {
-            let s = frame.as_str().unwrap_or_else(|| panic!("frame {} not a string", i));
+            let s = frame
+                .as_str()
+                .unwrap_or_else(|| panic!("frame {} not a string", i));
             assert!(s.contains("$cached:"), "frame {} missing ref", i);
         }
+    }
+
+    /// A cached tool result carrying an `/api/images/` URL (the v0.9.6 image
+    /// storage form) must resolve to raw base64 — so `$cached:` references and
+    /// vision auto-inject still feed vision tools the actual bytes, not a
+    /// hostless path the tool can't read.
+    #[test]
+    fn test_extract_image_data_resolves_api_images_url() {
+        let temp =
+            std::env::temp_dir().join(format!("neomind_test_cache_img_{}", uuid::Uuid::new_v4()));
+        let images_dir = temp.join("images").join("cam1").join("image");
+        std::fs::create_dir_all(&images_dir).unwrap();
+        let png = [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52,
+        ];
+        std::fs::write(images_dir.join("1700000000.png"), png).unwrap();
+
+        // URL nested under a recognized image key, inside a JSON tool result.
+        let data = r#"{"device":"cam1","image":"/api/images/cam1/image/1700000000.png"}"#;
+        let resolved = LargeDataCache::extract_image_data(data, &temp);
+
+        use base64::Engine as _;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&resolved)
+            .expect("should resolve to raw base64");
+        assert_eq!(decoded, png, "got: {resolved}");
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// A bare `/api/images/` URL (not wrapped in JSON) falls back to the raw
+    /// string — the downstream vision tool's `resolve_image` handles it, so the
+    /// cache must not drop or mangle it.
+    #[test]
+    fn test_extract_image_data_bare_api_images_url_passthrough() {
+        let temp =
+            std::env::temp_dir().join(format!("neomind_test_cache_bare_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp).unwrap();
+        let url = "/api/images/cam1/image/1700000000.png";
+        let resolved = LargeDataCache::extract_image_data(url, &temp);
+        assert_eq!(resolved, url, "bare URL should pass through unchanged");
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Content containing an `/api/images/` URL is image-bearing (regardless of
+    /// the tiny URL size) and must be classified as an image type so
+    /// `get_latest_image()` can surface it for vision auto-injection.
+    #[test]
+    fn test_detect_content_type_api_images_url() {
+        assert_eq!(
+            LargeDataCache::detect_content_type("/api/images/cam1/image/1.png"),
+            "image/url"
+        );
+        assert_eq!(
+            LargeDataCache::detect_content_type(
+                r#"{"device":"cam1","image":"/api/images/cam1/image/1.png"}"#
+            ),
+            "image/url"
+        );
     }
 
     /// Repeated slim calls (simulating two `device latest` invocations in
@@ -1903,10 +2041,30 @@ mod tests {
         cache.slim_large_strings_in_json(&mut v2, "shell");
 
         // Both should be resolvable.
-        let ref1 = v1["image"].as_str().unwrap().split("$cached:").nth(1).unwrap().split_whitespace().next().unwrap();
-        let ref2 = v2["image"].as_str().unwrap().split("$cached:").nth(1).unwrap().split_whitespace().next().unwrap();
+        let ref1 = v1["image"]
+            .as_str()
+            .unwrap()
+            .split("$cached:")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap();
+        let ref2 = v2["image"]
+            .as_str()
+            .unwrap()
+            .split("$cached:")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap();
         assert_ne!(ref1, ref2);
-        assert!(cache.resolve_reference(&format!("$cached:{}", ref1)).is_some());
-        assert!(cache.resolve_reference(&format!("$cached:{}", ref2)).is_some());
+        assert!(cache
+            .resolve_reference(&format!("$cached:{}", ref1))
+            .is_some());
+        assert!(cache
+            .resolve_reference(&format!("$cached:{}", ref2))
+            .is_some());
     }
 }

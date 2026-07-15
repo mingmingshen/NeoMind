@@ -519,11 +519,17 @@ impl WebhookAdapter {
                 if let Some(dir) = dir_guard.as_ref() {
                     match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
                         Ok(url) => {
-                            debug!("Saved binary image for {}/{} -> {}", device_id, metric_name, url);
+                            debug!(
+                                "Saved binary image for {}/{} -> {}",
+                                device_id, metric_name, url
+                            );
                             MetricValue::String(url)
                         }
                         Err(e) => {
-                            error!("Failed to save binary image for {}/{}: {}", device_id, metric_name, e);
+                            error!(
+                                "Failed to save binary image for {}/{}: {}",
+                                device_id, metric_name, e
+                            );
                             MetricValue::Binary(bytes)
                         }
                     }
@@ -538,11 +544,17 @@ impl WebhookAdapter {
                     if let Some(dir) = dir_guard.as_ref() {
                         match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
                             Ok(url) => {
-                                debug!("Saved string image for {}/{} -> {}", device_id, metric_name, url);
+                                debug!(
+                                    "Saved string image for {}/{} -> {}",
+                                    device_id, metric_name, url
+                                );
                                 return MetricValue::String(url);
                             }
                             Err(e) => {
-                                error!("Failed to save string image for {}/{}: {}", device_id, metric_name, e);
+                                error!(
+                                    "Failed to save string image for {}/{}: {}",
+                                    device_id, metric_name, e
+                                );
                             }
                         }
                     }
@@ -571,7 +583,8 @@ impl WebhookAdapter {
             timestamp,
             value,
             self.data_dir.clone(),
-        ).await;
+        )
+        .await;
 
         // Emit to device event channel
         let _ = self.event_tx.send(DeviceEvent::Metric {
@@ -913,7 +926,9 @@ mod tests {
             .validate_request("dev-1", Some("wrong"), None)
             .is_err());
         // Correct key
-        assert!(adapter.validate_request("dev-1", Some("secret"), None).is_ok());
+        assert!(adapter
+            .validate_request("dev-1", Some("secret"), None)
+            .is_ok());
     }
 
     #[test]
@@ -922,7 +937,9 @@ mod tests {
         // requests without an X-API-Key header are accepted.
         let adapter = make_adapter_with_config(WebhookAdapterConfig::new("t"));
         assert!(adapter.validate_request("dev-1", None, None).is_ok());
-        assert!(adapter.validate_request("dev-1", Some("anything"), None).is_ok());
+        assert!(adapter
+            .validate_request("dev-1", Some("anything"), None)
+            .is_ok());
     }
 
     // ----- discovery throttle -----
@@ -968,8 +985,7 @@ mod tests {
         // Collect all events pending for phase 1. Each post emits at least a
         // Discovery and a Metric event, so drain until the channel is idle.
         let mut discoveries_phase1 = 0u32;
-        let drain_deadline =
-            tokio::time::Instant::now() + Duration::from_millis(150);
+        let drain_deadline = tokio::time::Instant::now() + Duration::from_millis(150);
         loop {
             tokio::select! {
                 _ = tokio::time::sleep_until(drain_deadline) => break,
@@ -1003,8 +1019,7 @@ mod tests {
 
         // Drain again; only Metric events should appear.
         let mut discoveries_phase2 = 0u32;
-        let drain_deadline =
-            tokio::time::Instant::now() + Duration::from_millis(150);
+        let drain_deadline = tokio::time::Instant::now() + Duration::from_millis(150);
         loop {
             tokio::select! {
                 _ = tokio::time::sleep_until(drain_deadline) => break,

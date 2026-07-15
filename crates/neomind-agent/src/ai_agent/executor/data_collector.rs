@@ -1243,8 +1243,7 @@ pub(crate) fn extract_image_data(
         if s.starts_with("/api/images/") {
             tracing::info!(target: "neomind::agent::event_value", url = %s, "[DIAG] extract_image_data: matched /api/images/ branch");
 
-            let data_dir =
-                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+            let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
             match neomind_devices::image_storage::read_internal_image_url(
                 s,
                 std::path::Path::new(&data_dir),
@@ -1420,7 +1419,10 @@ mod tests {
     fn test_extract_image_data_api_images_url() {
         // Create a temporary test directory
         let temp_dir = std::env::temp_dir();
-        let test_data_dir = temp_dir.join(format!("neomind_test_data_collector_{}", uuid::Uuid::new_v4()));
+        let test_data_dir = temp_dir.join(format!(
+            "neomind_test_data_collector_{}",
+            uuid::Uuid::new_v4()
+        ));
 
         // Set up test image directory
         crate::testing_helpers::setup_test_image_dir(&test_data_dir)
@@ -1439,7 +1441,8 @@ mod tests {
         assert_eq!(mime.unwrap(), "image/png");
 
         // Test JPEG URL
-        let jpg_url_value = serde_json::json!("/api/images/test-device-001/image/1234567890001.jpg");
+        let jpg_url_value =
+            serde_json::json!("/api/images/test-device-001/image/1234567890001.jpg");
         let (jpg_url, jpg_base64, jpg_mime) = extract_image_data(&jpg_url_value);
 
         assert!(jpg_url.is_none());
@@ -1457,7 +1460,10 @@ mod tests {
     fn test_extract_image_data_api_images_url_not_found() {
         // Create a temporary test directory (empty, no images)
         let temp_dir = std::env::temp_dir();
-        let test_data_dir = temp_dir.join(format!("neomind_test_data_collector_empty_{}", uuid::Uuid::new_v4()));
+        let test_data_dir = temp_dir.join(format!(
+            "neomind_test_data_collector_empty_{}",
+            uuid::Uuid::new_v4()
+        ));
 
         fs::create_dir_all(&test_data_dir).expect("Failed to create temp dir");
 
@@ -1469,7 +1475,10 @@ mod tests {
         let (url, base64, mime) = extract_image_data(&url_value);
 
         assert!(url.is_none(), "URL should be None");
-        assert!(base64.is_none(), "Base64 should be None for non-existent file");
+        assert!(
+            base64.is_none(),
+            "Base64 should be None for non-existent file"
+        );
         assert!(mime.is_none(), "MIME should be None for non-existent file");
 
         // Clean up
@@ -1522,17 +1531,29 @@ mod tests {
     fn test_is_image_metric() {
         // Test metric name detection
         assert!(is_image_metric("image", &serde_json::json!("some data")));
-        assert!(is_image_metric("camera_image", &serde_json::json!("some data")));
+        assert!(is_image_metric(
+            "camera_image",
+            &serde_json::json!("some data")
+        ));
         assert!(is_image_metric("snapshot", &serde_json::json!("some data")));
         assert!(is_image_metric("photo", &serde_json::json!("some data")));
 
         // Test case insensitivity
         assert!(is_image_metric("Image", &serde_json::json!("some data")));
-        assert!(is_image_metric("IMAGE_DATA", &serde_json::json!("some data")));
+        assert!(is_image_metric(
+            "IMAGE_DATA",
+            &serde_json::json!("some data")
+        ));
 
         // Test negative cases
-        assert!(!is_image_metric("temperature", &serde_json::json!("some data")));
-        assert!(!is_image_metric("humidity", &serde_json::json!("some data")));
+        assert!(!is_image_metric(
+            "temperature",
+            &serde_json::json!("some data")
+        ));
+        assert!(!is_image_metric(
+            "humidity",
+            &serde_json::json!("some data")
+        ));
 
         // Test with object values containing image fields
         let obj_value = serde_json::json!({"image_url": "http://example.com.jpg"});

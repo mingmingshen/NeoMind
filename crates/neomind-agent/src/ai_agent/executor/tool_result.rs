@@ -111,8 +111,7 @@ impl AgentExecutor {
                                         slimmed_values = n,
                                         "Slimmed large strings from scheduled-agent tool result"
                                     );
-                                    serde_json::to_string_pretty(&v)
-                                        .unwrap_or_else(|_| raw.clone())
+                                    serde_json::to_string_pretty(&v).unwrap_or_else(|_| raw.clone())
                                 } else {
                                     raw
                                 }
@@ -121,7 +120,8 @@ impl AgentExecutor {
                         }
                     };
                     // Sanitize base64/image data to prevent context bloat
-                    let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&slimmed);
+                    let sanitized =
+                        crate::agent::streaming::sanitize_tool_result_for_prompt(&slimmed);
                     // UTF-8 safe truncation (has fast-path for short strings)
                     // 128KB limit: large enough for compact time-series and multi-device
                     // queries. The compaction layer handles context window limits later.

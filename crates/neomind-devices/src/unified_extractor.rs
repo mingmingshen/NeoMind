@@ -170,7 +170,9 @@ impl UnifiedExtractor {
                 let metric_value = self.value_to_metric_value(&value);
                 debug!(
                     "System metric '{}' extracted for device '{}': value_type={}",
-                    sys_key, device_id, metric_value.type_name()
+                    sys_key,
+                    device_id,
+                    metric_value.type_name()
                 );
                 metrics.push(ExtractedMetric {
                     name: sys_key.to_string(),
@@ -805,10 +807,7 @@ mod tests {
         // __webhook_image as a regular field, which is fine — it just means
         // the metric is doubly visible). Assert the system metric is present
         // by name.
-        let has_webhook_image = result
-            .metrics
-            .iter()
-            .any(|m| m.name == "__webhook_image");
+        let has_webhook_image = result.metrics.iter().any(|m| m.name == "__webhook_image");
         assert!(
             has_webhook_image,
             "expected __webhook_image system metric in results: {:?}",
@@ -833,10 +832,7 @@ mod tests {
 
         let result = extractor.extract("cam1", "unknown_type", &data).await;
 
-        let has_phantom = result
-            .metrics
-            .iter()
-            .any(|m| m.name == "__webhook_image");
+        let has_phantom = result.metrics.iter().any(|m| m.name == "__webhook_image");
         assert!(
             !has_phantom,
             "phantom __webhook_image metric synthesized when payload did not contain it: {:?}",

@@ -323,7 +323,10 @@ impl MqttAdapter {
                         telemetry_topic, broker_id, e
                     );
                 } else {
-                    subscribed_topics.write().await.insert(telemetry_topic.clone());
+                    subscribed_topics
+                        .write()
+                        .await
+                        .insert(telemetry_topic.clone());
                     subscribed_count += 1;
                 }
             }
@@ -654,14 +657,20 @@ impl MqttAdapter {
                 "Attempting to subscribe to topic '{}' on broker '{}'...",
                 topic, broker_id
             );
-            if let Err(e) = client_for_sub.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
+            if let Err(e) = client_for_sub
+                .subscribe(topic, rumqttc::QoS::AtLeastOnce)
+                .await
+            {
                 warn!(
                     "Failed to subscribe to {} on broker {}: {}",
                     topic, broker_id, e
                 );
             } else {
                 success_count += 1;
-                subscribed_topics_for_sub.write().await.insert(topic.clone());
+                subscribed_topics_for_sub
+                    .write()
+                    .await
+                    .insert(topic.clone());
                 info!(
                     "Successfully subscribed to topic '{}' on broker '{}'",
                     topic, broker_id
@@ -954,14 +963,20 @@ impl MqttAdapter {
                 "Attempting to subscribe to topic '{}' on broker '{}'...",
                 topic, broker_id
             );
-            if let Err(e) = client_for_sub.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
+            if let Err(e) = client_for_sub
+                .subscribe(topic, rumqttc::QoS::AtLeastOnce)
+                .await
+            {
                 warn!(
                     "Failed to subscribe to {} on broker {}: {}",
                     topic, broker_id, e
                 );
             } else {
                 success_count += 1;
-                subscribed_topics_for_sub.write().await.insert(topic.clone());
+                subscribed_topics_for_sub
+                    .write()
+                    .await
+                    .insert(topic.clone());
                 info!(
                     "Successfully subscribed to topic '{}' on broker '{}'",
                     topic, broker_id
@@ -1423,9 +1438,7 @@ impl DeviceAdapter for MqttAdapter {
                 .connection_config
                 .telemetry_topic
                 .clone()
-                .unwrap_or_else(|| {
-                    format!("device/{}/{}/uplink", device.device_type, device_id)
-                });
+                .unwrap_or_else(|| format!("device/{}/{}/uplink", device.device_type, device_id));
             self.subscribe_topic(&topic).await?;
             info!(
                 "Subscribed to device {} telemetry topic: {}",
@@ -1609,11 +1622,17 @@ impl MqttAdapter {
                 if let Some(dir) = data_dir {
                     match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
                         Ok(url) => {
-                            debug!("Saved binary image for {}/{} -> {}", device_id, metric_name, url);
+                            debug!(
+                                "Saved binary image for {}/{} -> {}",
+                                device_id, metric_name, url
+                            );
                             MetricValue::String(url)
                         }
                         Err(e) => {
-                            error!("Failed to save binary image for {}/{}: {}", device_id, metric_name, e);
+                            error!(
+                                "Failed to save binary image for {}/{}: {}",
+                                device_id, metric_name, e
+                            );
                             MetricValue::Binary(bytes)
                         }
                     }
@@ -1627,11 +1646,17 @@ impl MqttAdapter {
                     if let Some(dir) = data_dir {
                         match save_image_binary(device_id, metric_name, timestamp, &bytes, dir) {
                             Ok(url) => {
-                                debug!("Saved string image for {}/{} -> {}", device_id, metric_name, url);
+                                debug!(
+                                    "Saved string image for {}/{} -> {}",
+                                    device_id, metric_name, url
+                                );
                                 return MetricValue::String(url);
                             }
                             Err(e) => {
-                                error!("Failed to save string image for {}/{}: {}", device_id, metric_name, e);
+                                error!(
+                                    "Failed to save string image for {}/{}: {}",
+                                    device_id, metric_name, e
+                                );
                             }
                         }
                     }
@@ -1690,9 +1715,7 @@ impl MqttAdapter {
                 // the adapter's own bridge connection) to avoid firing phantom
                 // transport events for our own session.
                 if topic.starts_with("$SYS/brokers/") {
-                    if let Some((sys_client_id, is_online)) =
-                        parse_sys_presence_topic(&topic)
-                    {
+                    if let Some((sys_client_id, is_online)) = parse_sys_presence_topic(&topic) {
                         if sys_client_id.starts_with("neomind-") {
                             debug!(
                                 "Skipping $SYS presence for internal client '{}'",
@@ -1800,10 +1823,10 @@ impl MqttAdapter {
                                     // Update metric cache
                                     {
                                         let mut cache = metric_cache.write().await;
-                                        cache.entry(device_id.clone()).or_default().insert(
-                                            metric.name.clone(),
-                                            (value.clone(), now),
-                                        );
+                                        cache
+                                            .entry(device_id.clone())
+                                            .or_default()
+                                            .insert(metric.name.clone(), (value.clone(), now));
                                     }
 
                                     // Store in telemetry storage
@@ -2047,10 +2070,10 @@ impl MqttAdapter {
                                     // Update metric cache
                                     {
                                         let mut cache = metric_cache.write().await;
-                                        cache.entry(device_id.clone()).or_default().insert(
-                                            metric.name.clone(),
-                                            (value.clone(), now),
-                                        );
+                                        cache
+                                            .entry(device_id.clone())
+                                            .or_default()
+                                            .insert(metric.name.clone(), (value.clone(), now));
                                     }
 
                                     // Store in telemetry storage
@@ -2604,18 +2627,16 @@ mod tests {
     #[test]
     fn test_parse_sys_presence_topic_emqx_style() {
         // connected → online=true
-        let (cid, online) = parse_sys_presence_topic(
-            "$SYS/brokers/emqx@10.0.0.1/clients/sensor-001/connected",
-        )
-        .expect("EMQX connected topic must parse");
+        let (cid, online) =
+            parse_sys_presence_topic("$SYS/brokers/emqx@10.0.0.1/clients/sensor-001/connected")
+                .expect("EMQX connected topic must parse");
         assert_eq!(cid, "sensor-001");
         assert!(online);
 
         // disconnected → online=false
-        let (cid, online) = parse_sys_presence_topic(
-            "$SYS/brokers/emqx@10.0.0.1/clients/sensor-001/disconnected",
-        )
-        .expect("EMQX disconnected topic must parse");
+        let (cid, online) =
+            parse_sys_presence_topic("$SYS/brokers/emqx@10.0.0.1/clients/sensor-001/disconnected")
+                .expect("EMQX disconnected topic must parse");
         assert_eq!(cid, "sensor-001");
         assert!(!online);
     }
@@ -2625,15 +2646,9 @@ mod tests {
         // Aggregate stats topic (Mosquitto-style) — not per-client
         assert!(parse_sys_presence_topic("$SYS/broker/clients/connected").is_none());
         // Metrics topic
-        assert!(parse_sys_presence_topic(
-            "$SYS/brokers/emqx@node/metrics/bytes.sent"
-        )
-        .is_none());
+        assert!(parse_sys_presence_topic("$SYS/brokers/emqx@node/metrics/bytes.sent").is_none());
         // Unknown suffix
-        assert!(parse_sys_presence_topic(
-            "$SYS/brokers/emqx@node/clients/cid/kicked"
-        )
-        .is_none());
+        assert!(parse_sys_presence_topic("$SYS/brokers/emqx@node/clients/cid/kicked").is_none());
     }
 
     #[test]
@@ -2641,10 +2656,7 @@ mod tests {
         // Too few segments
         assert!(parse_sys_presence_topic("$SYS/brokers").is_none());
         // Wrong root prefix
-        assert!(parse_sys_presence_topic(
-            "devices/brokers/n/clients/c/connected"
-        )
-        .is_none());
+        assert!(parse_sys_presence_topic("devices/brokers/n/clients/c/connected").is_none());
         // Missing `clients` segment
         assert!(parse_sys_presence_topic("$SYS/brokers/n/sessions/c/connected").is_none());
     }
@@ -2654,14 +2666,11 @@ mod tests {
         // The parser returns the id verbatim; the caller is responsible for
         // filtering `neomind-` prefixed ids (this mirrors the embedded-broker
         // `is_internal_client` convention).
-        let (cid, _) = parse_sys_presence_topic(
-            "$SYS/brokers/n/clients/neomind-external-b1/connected",
-        )
-        .expect("Internal client id still parses; caller filters");
+        let (cid, _) =
+            parse_sys_presence_topic("$SYS/brokers/n/clients/neomind-external-b1/connected")
+                .expect("Internal client id still parses; caller filters");
         assert_eq!(cid, "neomind-external-b1");
     }
-
-
 
     /// Regression: LWT/status broadcast topics must NOT trigger
     /// auto-onboarding. Real-world example from NE301 field deployment:
@@ -2675,7 +2684,9 @@ mod tests {
         // Status-broadcast topics
         assert!(looks_like_non_telemetry_topic("aicam/status/offline"));
         assert!(looks_like_non_telemetry_topic("aicam/status/online"));
-        assert!(looks_like_non_telemetry_topic("homeassistant/status/online"));
+        assert!(looks_like_non_telemetry_topic(
+            "homeassistant/status/online"
+        ));
         assert!(looks_like_non_telemetry_topic("devices/status/connected"));
 
         // Bare LWT signatures
@@ -2684,9 +2695,15 @@ mod tests {
         assert!(looks_like_non_telemetry_topic("dev/abc/will"));
 
         // Real telemetry MUST pass through
-        assert!(!looks_like_non_telemetry_topic("ne301/2A0015/upload/report"));
-        assert!(!looks_like_non_telemetry_topic("device/ne301_camera/2819FD/uplink"));
-        assert!(!looks_like_non_telemetry_topic("sensors/temp-001/temperature"));
+        assert!(!looks_like_non_telemetry_topic(
+            "ne301/2A0015/upload/report"
+        ));
+        assert!(!looks_like_non_telemetry_topic(
+            "device/ne301_camera/2819FD/uplink"
+        ));
+        assert!(!looks_like_non_telemetry_topic(
+            "sensors/temp-001/temperature"
+        ));
         assert!(!looks_like_non_telemetry_topic("stat/deviceid/power"));
     }
 
