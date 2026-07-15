@@ -406,4 +406,10 @@ async fn test_extract_store_raw_false_skips_raw_metric() {
         result.metrics.iter().any(|m| m.name == "battery"),
         "template metric 'battery' should still be extracted even when _raw is skipped"
     );
+    // The `raw_stored` flag must reflect that _raw was actually skipped —
+    // downstream (mqtt.rs logging) reads it, so the contract matters.
+    assert!(
+        !result.raw_stored,
+        "raw_stored must be false when store_raw=Some(false) skips _raw"
+    );
 }
