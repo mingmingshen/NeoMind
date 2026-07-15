@@ -1291,7 +1291,51 @@ impl DeviceService {
             }
         });
 
+        // Phase 3: best-effort purge of on-disk image files for this device.
+        // v0.9.6 stores device images at <data_dir>/images/<device_id>/; without
+        // this they'd linger until the age-based cleanup sweep expires them — up
+        // to image_retention after the device is already gone.
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+        Self::purge_device_images(device_id, std::path::Path::new(&data_dir));
+
         Ok(())
+    }
+
+    /// Best-effort purge of a device's on-disk image files on unregister.
+    ///
+    /// Failures are logged, never propagated — unregister must not fail just
+    /// because image cleanup couldn't run. Reuses `validate_path_component`
+    /// (same as `save_image_binary`) so a hostile device_id can't traverse out
+    /// of `images/`, plus a canonicalize guard against symlink escape.
+    fn purge_device_images(device_id: &str, data_dir: &std::path::Path) {
+        let images_dir = data_dir.join("images");
+        let Ok(safe_device_id) = crate::image_storage::validate_path_component(device_id) else {
+            return;
+        };
+        let device_dir = images_dir.join(&safe_device_id);
+        if !device_dir.exists() {
+            return;
+        }
+        // Symlink-escape guard: refuse if the resolved path isn't under images/.
+        let canon_ok = match (images_dir.canonicalize(), device_dir.canonicalize()) {
+            (Ok(base), Ok(target)) => target.starts_with(&base),
+            _ => false,
+        };
+        if !canon_ok {
+            tracing::warn!(
+                device_id = %device_id,
+                "Refusing to purge device image dir: resolves outside images/"
+            );
+            return;
+        }
+        match std::fs::remove_dir_all(&device_dir) {
+            Ok(_) => {
+                tracing::info!(device_id = %device_id, "Purged device image dir on unregister")
+            }
+            Err(e) => {
+                tracing::warn!(device_id = %device_id, error = %e, "Failed to purge device image dir")
+            }
+        }
     }
 
     /// Update a device configuration
@@ -2316,6 +2360,50 @@ mod tests {
             }
             other => panic!("should fall back to original URL, got {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_purge_device_images_removes_device_dir_leaves_siblings() {
+        // Unregistering a device must purge its on-disk image dir, leaving
+        // other devices' image dirs intact.
+        let temp = std::env::temp_dir().join(format!("neomind_test_purge_{}", std::process::id()));
+        let images = temp.join("images");
+        let dev_a = images.join("cam-a").join("image");
+        let dev_b = images.join("cam-b").join("image");
+        std::fs::create_dir_all(&dev_a).unwrap();
+        std::fs::create_dir_all(&dev_b).unwrap();
+        std::fs::write(dev_a.join("1.png"), b"data").unwrap();
+        std::fs::write(dev_b.join("2.png"), b"data").unwrap();
+
+        DeviceService::purge_device_images("cam-a", &temp);
+
+        assert!(!images.join("cam-a").exists(), "cam-a dir should be purged");
+        assert!(images.join("cam-b").exists(), "cam-b dir must be untouched");
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_purge_device_images_rejects_traversal_device_id() {
+        // A hostile device_id with path-traversal chars must not escape images/.
+        let temp =
+            std::env::temp_dir().join(format!("neomind_test_purge_trav_{}", std::process::id()));
+        let images = temp.join("images");
+        std::fs::create_dir_all(&images).unwrap();
+        // Nothing to purge (validate_path_component rejects "../etc"), and no
+        // panic / escape — just a no-op.
+        DeviceService::purge_device_images("../../etc", &temp);
+        assert!(images.exists());
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_purge_device_images_missing_dir_is_noop() {
+        let temp =
+            std::env::temp_dir().join(format!("neomind_test_purge_noop_{}", std::process::id()));
+        std::fs::create_dir_all(&temp).unwrap();
+        // No images dir at all — must not panic.
+        DeviceService::purge_device_images("never-existed", &temp);
         let _ = std::fs::remove_dir_all(&temp);
     }
 

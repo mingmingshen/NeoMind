@@ -42,7 +42,7 @@ pub async fn cleanup_expired_images(
         .as_millis() as i64;
 
     tracing::debug!(
- retention_hours = retention_hours,
+        retention_hours = retention_hours,
         cutoff_timestamp_ms = cutoff_timestamp_ms,
         "Starting image cleanup"
     );
@@ -53,10 +53,10 @@ pub async fn cleanup_expired_images(
     }
 
     let mut files_deleted = 0usize;
-    let dirs_cleaned;
 
     // Collect all files first to avoid borrowing issues
-    let files_to_delete: Vec<(PathBuf, i64)> = collect_expired_files(images_dir, cutoff_timestamp_ms)?;
+    let files_to_delete: Vec<(PathBuf, i64)> =
+        collect_expired_files(images_dir, cutoff_timestamp_ms)?;
 
     // Delete files
     for (file_path, timestamp_ms) in &files_to_delete {
@@ -80,7 +80,7 @@ pub async fn cleanup_expired_images(
     }
 
     // Clean up empty directories
-    dirs_cleaned = cleanup_empty_directories(images_dir)?;
+    let dirs_cleaned = cleanup_empty_directories(images_dir)?;
 
     if files_deleted > 0 || dirs_cleaned > 0 {
         tracing::info!(
@@ -135,8 +135,19 @@ fn collect_expired_files(
             let sub_files = collect_expired_files(&path, cutoff_timestamp_ms)?;
             expired_files.extend(sub_files);
         } else if file_type.is_file() {
-            // Check if this is an image file with timestamp
-            if let Some(timestamp_ms) = extract_timestamp_from_filename(&path) {
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if filename.starts_with(".tmp.") {
+                // Stale temp file from a crashed save_image_binary — a
+                // successful save renames .tmp -> final immediately, so a
+                // lingering .tmp.* means a crash mid-write. Expire by mtime
+                // (the temp name has no parseable timestamp) and only when
+                // older than the cutoff, so an in-flight write is never touched.
+                if let Some(mtime_ms) = file_mtime_ms(&path) {
+                    if mtime_ms < cutoff_timestamp_ms {
+                        expired_files.push((path, mtime_ms));
+                    }
+                }
+            } else if let Some(timestamp_ms) = extract_timestamp_from_filename(&path) {
                 if timestamp_ms < cutoff_timestamp_ms {
                     expired_files.push((path, timestamp_ms));
                 }
@@ -165,6 +176,15 @@ fn extract_timestamp_from_filename(path: &Path) -> Option<i64> {
 
     // Parse as i64 (milliseconds)
     timestamp_str.parse::<i64>().ok()
+}
+
+/// File mtime in milliseconds since Unix epoch (for temp files that have no
+/// parseable timestamp in their name).
+fn file_mtime_ms(path: &Path) -> Option<i64> {
+    let meta = fs::metadata(path).ok()?;
+    let mtime = meta.modified().ok()?;
+    let age = mtime.duration_since(UNIX_EPOCH).ok()?;
+    Some(age.as_millis() as i64)
 }
 
 /// Clean up empty directories in the images directory.
@@ -273,9 +293,15 @@ mod tests {
         );
 
         // Invalid filenames
-        assert_eq!(extract_timestamp_from_filename(Path::new("notimestamp.jpg")), None);
+        assert_eq!(
+            extract_timestamp_from_filename(Path::new("notimestamp.jpg")),
+            None
+        );
         assert_eq!(extract_timestamp_from_filename(Path::new("text.txt")), None);
-        assert_eq!(extract_timestamp_from_filename(Path::new("163abc.jpg")), None);
+        assert_eq!(
+            extract_timestamp_from_filename(Path::new("163abc.jpg")),
+            None
+        );
     }
 
     #[tokio::test]
@@ -394,5 +420,43 @@ mod tests {
 
         // Assert: 3 expired files deleted, 3 recent files remain
         assert_eq!(result.0, 3); // 3 files deleted
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_removes_stale_tmp_files() {
+        // A .tmp.* file left by a crashed save_image_binary has no parseable
+        // timestamp; cleanup must still expire it by mtime. A recent .tmp
+        // (in-flight write) must be left alone.
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let images_dir = temp_dir.path().join("images");
+        let metric_dir = images_dir.join("cam").join("image");
+        std::fs::create_dir_all(&metric_dir).unwrap();
+
+        // Stale .tmp (old mtime) — should be deleted.
+        let stale_tmp = metric_dir.join(".tmp.1700000000");
+        std::fs::write(&stale_tmp, b"stale").unwrap();
+        let old = SystemTime::now() - Duration::from_secs(100_000); // ~28h ago
+        let f = std::fs::File::open(&stale_tmp).unwrap();
+        f.set_times(std::fs::FileTimes::new().set_modified(old))
+            .unwrap();
+        drop(f);
+
+        // Regular expired image — should also be deleted.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let expired = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18000_000));
+
+        // Recent .tmp (in-flight write) — must NOT be deleted.
+        let fresh_tmp = metric_dir.join(".tmp.9999");
+        std::fs::write(&fresh_tmp, b"fresh").unwrap();
+
+        let result = cleanup_expired_images(&images_dir, 2).await.unwrap();
+        // 2 deleted: stale .tmp + expired image. fresh .tmp kept.
+        assert!(!stale_tmp.exists(), "stale .tmp should be deleted");
+        assert!(!expired.exists(), "expired image should be deleted");
+        assert!(fresh_tmp.exists(), "fresh .tmp (in-flight) must be kept");
+        assert_eq!(result.0, 2);
     }
 }

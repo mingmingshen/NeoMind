@@ -934,10 +934,13 @@ impl LargeDataCache {
             let end = content.find(';').unwrap_or(15);
             return content[..end].trim_start_matches("data:").to_string();
         }
-        // Internal image URL form (/api/images/...) — image-bearing regardless of
-        // size (the URL is tiny but points at a real stored image), so
-        // get_latest_image() can surface it for vision auto-injection.
-        if content.contains("/api/images/") {
+        // Internal image URL form (/api/images/...) — image-bearing regardless
+        // of size (the URL is tiny but points at a real stored image), so
+        // get_latest_image() can surface it for vision auto-injection. Require
+        // it to be the whole value (bare URL) or a JSON string value (preceded
+        // by a quote) — a mere mention in prose (e.g. an error message) must
+        // NOT classify as image, or it'd falsely trigger vision auto-inject.
+        if content.starts_with("/api/images/") || content.contains("\"/api/images/") {
             return "image/url".to_string();
         }
         // Check for raw base64 image data (long string of base64 chars)
@@ -2022,6 +2025,24 @@ mod tests {
             LargeDataCache::detect_content_type(
                 r#"{"device":"cam1","image":"/api/images/cam1/image/1.png"}"#
             ),
+            "image/url"
+        );
+    }
+
+    /// A result that merely MENTIONS `/api/images/` in prose (e.g. an error
+    /// message) must NOT be classified as image — it would falsely trigger
+    /// vision auto-injection of a non-image string. Only a bare URL or a JSON
+    /// string value counts.
+    #[test]
+    fn test_detect_content_type_prose_mention_not_image() {
+        assert_eq!(
+            LargeDataCache::detect_content_type(r#"{"error":"failed to fetch /api/images/x"}"#),
+            "application/json"
+        );
+        // A value that starts with /api/images/ (even under a non-image key)
+        // still looks like an image URL value → image/url.
+        assert_eq!(
+            LargeDataCache::detect_content_type(r#"{"note":"/api/images/cam/1.png"}"#),
             "image/url"
         );
     }
