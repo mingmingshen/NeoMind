@@ -220,10 +220,26 @@ impl VisionTool {
                 tools: None,
             };
             match runtime.generate(input).await {
-                Ok(output) if !output.text.trim().is_empty() => return Ok(output.text),
-                Ok(_) => {
-                    tracing::warn!(backend_id = %id, "VLM returned empty, trying next candidate");
-                    errors.push(format!("{}: empty response", id));
+                Ok(output) if !output.text.trim().is_empty()
+                    && !looks_like_vision_failure(&output.text) =>
+                {
+                    return Ok(output.text)
+                }
+                Ok(output) => {
+                    // Empty, OR a non-empty "I can't see the image" reply —
+                    // typically a text-only model that silently ignored the
+                    // image bytes. Treat as failure so we fall through to the
+                    // next (hopefully truly multimodal) candidate.
+                    tracing::warn!(
+                        backend_id = %id,
+                        analysis_preview = %output.text.chars().take(80).collect::<String>(),
+                        "VLM candidate produced no usable analysis, trying next"
+                    );
+                    errors.push(format!(
+                        "{}: {}",
+                        id,
+                        output.text.chars().take(120).collect::<String>()
+                    ));
                 }
                 Err(e) => {
                     let m = e.to_string();
@@ -301,6 +317,44 @@ Only use this tool when you need to analyze images from OTHER sources:
             "image_type": mime,
         })))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Vision-only helpers
+// ---------------------------------------------------------------------------
+
+/// Heuristic: detect a VLM reply that means "I didn't actually receive/see
+/// the image". A text-only model wrongly marked multimodal ignores the image
+/// bytes and replies with variants of "I can't view images / 我无法查看图片".
+/// Treat such replies as failure so `analyze` falls through to the next
+/// candidate instead of returning a useless "I can't see it" as the result.
+fn looks_like_vision_failure(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    const MARKERS: &[&str] = &[
+        "cannot view",
+        "can't view",
+        "cannot see",
+        "can't see",
+        "unable to view",
+        "unable to see",
+        "cannot process image",
+        "i don't see",
+        "i do not see",
+        "no image",
+        "image is not",
+        "not visible",
+        "cannot display",
+        "cannot access",
+        "no access to",
+        "无法查看",
+        "看不到",
+        "无法看到",
+        "无法识别图片",
+        "没有权限加载",
+        "无法直接查看",
+        "无法解析",
+    ];
+    MARKERS.iter().any(|m| lower.contains(m))
 }
 
 // ---------------------------------------------------------------------------
