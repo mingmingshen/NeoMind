@@ -250,7 +250,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                       className={cn(
                         "w-11 h-11 rounded-lg transition-all",
                         isActive
-                          ? "bg-muted text-primary hover:bg-muted-50"
+                          ? "bg-brand-bg text-brand"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted-50"
                       )}
                       onClick={() => startTransition(() => navigate(item.path))}
@@ -492,7 +492,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                     className={cn(
                       "flex-shrink-0 px-4 py-2.5 text-base whitespace-nowrap transition-all select-none",
                       isActive
-                        ? "text-foreground font-bold"
+                        ? "text-brand font-bold"
                         : "text-muted-foreground active:text-foreground"
                     )}
                     onClick={() => startTransition(() => navigate(item.path))}
@@ -503,7 +503,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
               })}
               {/* Animated underline indicator */}
               <div
-                className="absolute bottom-0 h-[3px] bg-primary transition-all duration-250 ease-out rounded-full"
+                className="absolute bottom-0 h-[3px] bg-brand transition-all duration-250 ease-out rounded-full"
                 style={{ left: indicatorStyle.left, width: indicatorStyle.width }}
               />
             </div>
