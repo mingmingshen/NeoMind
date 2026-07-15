@@ -9,10 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Follow-ups to the 0.9.6 image-URL storage migration: completed cross-boundary
-coverage and hardened the on-disk file lifecycle.
+## [0.9.6] - 2026-07-15
+
+Image metric URL storage migration plus cross-boundary hardening and on-disk
+file-lifecycle fixes.
+
+### Added
+
+- **Image metric URL storage** — image data (base64, ~50 KB-MB per data
+  point) is now stored as files on disk (`data/images/<device>/<metric>/<ts>.<ext>`)
+  with only a short URL (`/api/images/...`, ~50 bytes) kept in the telemetry
+  database. This reduces `telemetry.redb` size by ~1000× for image-heavy
+  deployments and eliminates multi-second telemetry queries that returned large
+  base64 payloads.
+  - **Ingestion fork conversion**: Binary → save file → URL string, passed to
+    both storage and EventBus (single conversion point, guaranteed consistency).
+  - **Authenticated image serving**: `GET /api/images/*path` (requires login,
+    cookie-based auth for dashboard `<img src>`).
+  - **Agent vision compatibility**: `image_utils::resolve_image` and
+    `data_collector::extract_image_data` resolve `/api/images/` URLs → read file
+    → base64 for LLM vision input. Old base64 data still works.
+  - **Transform compatibility**: `find_image_data` resolves URLs → file → base64
+    before injecting into JS sandbox.
+  - **Image file retention**: `cleanup_expired_images()` scans `data/images/` by
+    filename timestamp, deletes expired files + empty directories, synchronized
+    with telemetry `image_retention` (default 72h).
+  - **Retention sync fix**: `value_looks_like_image()` now recognizes
+    `/api/images/` URLs so telemetry records are deleted at `image_retention`
+    (not `default_retention`), preventing a 404 window where records outlive
+    files.
+  - **Backward compatible**: old base64 telemetry data continues to display and
+    is naturally cleaned by retention. No migration needed.
+
+- **jemalloc global allocator (Linux only)** — replaces glibc malloc to fix
+  per-thread arena fragmentation that caused server RSS to climb 4-6 GB over
+  days. jemalloc packs allocations tightly and returns freed pages to the OS
+  promptly. macOS and Windows use their own allocators (no glibc) so they're
+  unaffected. `#[cfg(target_os = "linux")]` gates both the allocator and the
+  dependency.
 
 ### Fixed
+
+- `json_to_metric_value` now short-circuits `/api/images/` URLs to
+  `MetricValue::String` (prevents accidental base64 re-decoding).
+- `adapter.rs convert_metric_value` Binary→base64 kept as documented fallback
+  (ingestion fork converts Binary→URL before reaching adapter).
 
 - **Image URL storage — completed cross-boundary resolution.** Several
   consumers of image metrics still expected base64 and silently mishandled
@@ -58,49 +99,6 @@ coverage and hardened the on-disk file lifecycle.
 
 - `getServerOrigin()` is computed per call (dropped the memoized cache) to
   avoid stale-origin risk on instance switch.
-
-## [0.9.6] - 2026-07-14
-
-### Added
-
-- **Image metric URL storage** — image data (base64, ~50 KB-MB per data
-  point) is now stored as files on disk (`data/images/<device>/<metric>/<ts>.<ext>`)
-  with only a short URL (`/api/images/...`, ~50 bytes) kept in the telemetry
-  database. This reduces `telemetry.redb` size by ~1000× for image-heavy
-  deployments and eliminates multi-second telemetry queries that returned large
-  base64 payloads.
-  - **Ingestion fork conversion**: Binary → save file → URL string, passed to
-    both storage and EventBus (single conversion point, guaranteed consistency).
-  - **Authenticated image serving**: `GET /api/images/*path` (requires login,
-    cookie-based auth for dashboard `<img src>`).
-  - **Agent vision compatibility**: `image_utils::resolve_image` and
-    `data_collector::extract_image_data` resolve `/api/images/` URLs → read file
-    → base64 for LLM vision input. Old base64 data still works.
-  - **Transform compatibility**: `find_image_data` resolves URLs → file → base64
-    before injecting into JS sandbox.
-  - **Image file retention**: `cleanup_expired_images()` scans `data/images/` by
-    filename timestamp, deletes expired files + empty directories, synchronized
-    with telemetry `image_retention` (default 72h).
-  - **Retention sync fix**: `value_looks_like_image()` now recognizes
-    `/api/images/` URLs so telemetry records are deleted at `image_retention`
-    (not `default_retention`), preventing a 404 window where records outlive
-    files.
-  - **Backward compatible**: old base64 telemetry data continues to display and
-    is naturally cleaned by retention. No migration needed.
-
-- **jemalloc global allocator (Linux only)** — replaces glibc malloc to fix
-  per-thread arena fragmentation that caused server RSS to climb 4-6 GB over
-  days. jemalloc packs allocations tightly and returns freed pages to the OS
-  promptly. macOS and Windows use their own allocators (no glibc) so they're
-  unaffected. `#[cfg(target_os = "linux")]` gates both the allocator and the
-  dependency.
-
-### Fixed
-
-- `json_to_metric_value` now short-circuits `/api/images/` URLs to
-  `MetricValue::String` (prevents accidental base64 re-decoding).
-- `adapter.rs convert_metric_value` Binary→base64 kept as documented fallback
-  (ingestion fork converts Binary→URL before reaching adapter).
 
 ## [0.9.5] - 2026-07-13
 
