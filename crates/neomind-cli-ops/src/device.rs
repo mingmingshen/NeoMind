@@ -891,6 +891,56 @@ mod tests {
         })
     }
 
+    /// `--metric` keeps only the requested field; metric keys with dots
+    /// (`values.battery`) must match as flat keys, not JSON-pointer paths.
+    #[test]
+    fn test_filter_single_metric_keeps_only_requested() {
+        let mut resp = json!({
+            "data": {
+                "metrics": {
+                    "values.battery": {"value": 84, "unit": "%", "timestamp": 1000},
+                    "temperature": {"value": 25.0, "unit": "C", "timestamp": 1000},
+                    "values.image": {"value": "data:image/jpeg;base64,AAAA", "unit": null, "timestamp": 1000}
+                },
+                "device": {"id": "dev-001"}
+            }
+        });
+        filter_single_metric(&mut resp, "values.battery");
+        let metrics = resp["data"]["metrics"].as_object().unwrap();
+        assert_eq!(metrics.len(), 1, "only the requested field remains");
+        assert!(metrics.contains_key("values.battery"), "dotted key matched as flat key");
+        assert!(!metrics.contains_key("values.image"), "big inference-ish field dropped");
+        assert_eq!(resp["data"]["device"]["id"], "dev-001", "metadata untouched");
+    }
+
+    /// Missing field falls back to all metrics + a `_note`, not an error.
+    #[test]
+    fn test_filter_single_metric_missing_field_adds_note() {
+        let mut resp = json!({
+            "data": {
+                "metrics": {
+                    "values.battery": {"value": 84, "unit": "%", "timestamp": 1000}
+                }
+            }
+        });
+        filter_single_metric(&mut resp, "values.nonexistent");
+        assert_eq!(
+            resp["data"]["metrics"].as_object().unwrap().len(),
+            1,
+            "all metrics kept when field absent"
+        );
+        let note = resp["data"]["_note"].as_str().unwrap();
+        assert!(note.contains("not found"), "note explains the miss: {}", note);
+    }
+
+    /// No `data.metrics` at all is a no-op (must not panic).
+    #[test]
+    fn test_filter_single_metric_no_metrics_is_noop() {
+        let mut resp = json!({"data": {"device": {"id": "dev-001"}}});
+        filter_single_metric(&mut resp, "values.battery");
+        assert_eq!(resp["data"]["device"]["id"], "dev-001");
+    }
+
     /// Single image metric → array replaced with summary object, latest
     /// value preserved for downstream slim.
     #[test]
