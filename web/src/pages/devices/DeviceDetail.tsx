@@ -732,7 +732,7 @@ export function DeviceDetail({
 
       {/* Image Preview Dialog */}
       <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
-        <DialogContent className="sm:max-w-4xl p-2 z-[110]">
+        <DialogContent className="sm:max-w-4xl p-0 sm:p-0 overflow-hidden z-[110]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('devices:detailPage.preview')}</DialogTitle>
             <DialogDescription>{t('devices:detailPage.imagePreview')}</DialogDescription>
@@ -740,23 +740,25 @@ export function DeviceDetail({
           <div className="absolute right-4 top-4 flex items-center gap-2 z-10">
             {previewImageSrc && (
               <button
+                type="button"
                 onClick={() => downloadImage(previewImageSrc)}
-                className="rounded-full bg-overlay-medium p-2 text-white hover:bg-overlay-heavy transition-colors"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-overlay-medium text-white transition-colors hover:bg-overlay-heavy"
                 title={t('devices:detailPage.downloadImage')}
               >
                 <Download className="h-5 w-5" />
               </button>
             )}
             <button
+              type="button"
               onClick={() => setImagePreviewOpen(false)}
-              className="rounded-full bg-overlay-medium p-2 text-white hover:bg-overlay-heavy transition-colors"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-overlay-medium text-white transition-colors hover:bg-overlay-heavy"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
           {previewImageSrc && (
             <div className="flex items-center justify-center min-h-[300px]">
-              <img src={previewImageSrc} alt={t('devices:detailPage.preview')} className="max-w-full max-h-[70vh] object-contain rounded-lg" />
+              <img src={previewImageSrc} alt={t('devices:detailPage.preview')} className="max-w-full max-h-[70vh] object-contain" />
             </div>
           )}
         </DialogContent>
