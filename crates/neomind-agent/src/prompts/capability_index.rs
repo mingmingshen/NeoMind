@@ -78,6 +78,7 @@ impl CapabilityIndex {
   - `--metric`: a field name from device list `metric_fields` (e.g. `values.battery`, `temperature`)
   - `--compress=true` for an AI-friendly compact series; image metrics are auto-summarized regardless
 - device get <id> [--metric <field>] — returns current metrics for one device (data.metrics.{name}.{value,unit,timestamp}). Pass `--metric values.battery` to get only that field's current value (avoids pulling all metrics, e.g. AI-camera inference fields); omit for all. For a metric's time series use `device history <id> --metric <field>`.
+- Image metrics (e.g. ne101 `values.image`, ne301 `image_data`): fetch with `device get <id> --metric <field>` IN-PROCESS (do NOT pipe to python or redirect to a file). The large base64 auto-caches as a `$cached:xxx` ref in the tool result — pass that ref straight to `vision(image="$cached:xxx", prompt=...)`. Do NOT base64-decode / save-to-file yourself: that bypasses the cache and the value gets truncated.
 - Output is structured JSON (NEOMIND_JSON=1); errors carry a `suggestion` field with recovery hints
 - The shell tool runs neomind in-process — no shell pipes/redirects (`|`, `>`, `2>&1`, `head`). Filter/limit with command flags (`--device-type`, `--status`, `--limit`), not shell plumbing.
 - For create/update commands with many fields, `skill load` the matching skill first (rule-management, agent-management, etc.) — field schemas live there, not here.
@@ -143,6 +144,10 @@ mod tests {
         assert!(
             c.contains("devices.list"),
             "must mention devices.list for the device roster"
+        );
+        assert!(
+            c.contains("$cached"),
+            "must teach the $cached image-cache flow (device get --metric -> vision)"
         );
         assert!(
             c.contains("device get <id> [--metric"),

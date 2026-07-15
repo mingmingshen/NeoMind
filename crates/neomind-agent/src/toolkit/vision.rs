@@ -255,6 +255,7 @@ DO NOT use this tool for images you can already see — analyze those yourself d
 - Images embedded in the current message (e.g., from bound data sources) — these are already visible to you
 
 Only use this tool when you need to analyze images from OTHER sources:
+- `$cached:xxx` — a cache ref returned by other tools (e.g. `device get --metric <image_field>` output, or extension image outputs). Pass it directly as `image`; it resolves to the full image bytes. Prefer this over base64-decoding/saving files yourself.
 - HTTP/HTTPS image URLs (e.g., camera snapshots, web images) — fetches automatically, private/local URLs blocked
 - /path/to/file.jpg — local image file on disk (must have an image extension)
 - data:image/...;base64,... — base64 data URL from extension outputs
