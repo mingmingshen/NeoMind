@@ -1,5 +1,14 @@
 # Cargo build acceleration configuration for NeoMind
 
+[env]
+# jemalloc is compiled with a fixed page size; it aborts at startup if the
+# runtime page size is larger than its compiled page (JEMALLOC_SYS_WITH_LG_PAGE).
+# ARM64 kernels may use 4/16/64 KB pages (Pi 5 = 16 KB; Kunpeng/Graviton/Ampere
+# can be 64 KB). 2^16 = 64 KB covers all of them and runs fine on smaller pages
+# (jemalloc only requires compiled page >= system page). Linux-only effect —
+# tikv-jemalloc-sys only builds on Linux. Fixes #11 (Pi 5 16 KB startup crash).
+JEMALLOC_SYS_WITH_LG_PAGE = "16"
+
 [build]
 # Use parallel compilation (8 cores for now, can be increased)
 jobs = 8

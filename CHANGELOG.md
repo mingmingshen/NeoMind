@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-07-15
+
+Hotfix for the 0.9.6 ARM64 server startup crash.
+
+### Fixed
+
+- **ARM64 server crash on 16 KB / 64 KB page-size kernels** (e.g. Raspberry Pi 5).
+  The 0.9.6 jemalloc global allocator was compiled with a fixed 4 KB page size, so
+  on any ARM64 system whose kernel page size is larger (Pi 5 = 16 KB; some ARM64
+  servers such as Kunpeng/Graviton/Ampere = 64 KB) jemalloc aborted at startup with
+  `<jemalloc>: Unsupported system page size` and the server could not start. Builds
+  jemalloc with a 64 KB page size (`JEMALLOC_SYS_WITH_LG_PAGE=16`), which covers
+  4/16/64 KB hosts — jemalloc only requires compiled page ≥ system page, so the same
+  binary runs everywhere. Linux server only; desktop, macOS, and x86_64 were
+  unaffected. (#11)
+
 ## [0.9.6] - 2026-07-15
 
 Image metric URL storage migration plus cross-boundary hardening and on-disk
