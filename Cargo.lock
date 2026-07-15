@@ -3712,9 +3712,11 @@ version = "0.9.6"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "handlebars",
  "neomind-core",
+ "neomind-devices",
  "neomind-storage",
  "redb",
  "reqwest",
