@@ -185,6 +185,42 @@ pub fn validate_path_component(component: &str) -> Result<String> {
     Ok(component.to_string())
 }
 
+/// Try to decode a string as base64-encoded image data.
+///
+/// Handles data URLs (`data:image/png;base64,...`) and raw base64. Tolerates
+/// the variants real devices emit: MIME-folded whitespace and missing/optional
+/// padding (e.g. NE301 cameras send unpadded standard-alphabet base64).
+/// Returns decoded bytes if it looks like an image, `None` otherwise.
+pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let raw_b64 = if s.starts_with("data:image/") {
+        s.split(";base64,").nth(1)?
+    } else if s.len() > 100 {
+        s
+    } else {
+        return None;
+    };
+    // Tolerate the base64 variants real devices emit: MIME-folded whitespace
+    // and missing/optional padding. NE301 cameras, for example, send unpadded
+    // standard-alphabet base64 (len % 4 != 0, no `=`); the strict STANDARD
+    // engine rejects it ("Incorrect padding"), and the URL_SAFE_NO_PAD
+    // fallback uses the wrong alphabet. Strip whitespace + padding, then try
+    // the standard alphabet (no-pad) before url-safe.
+    let cleaned: Vec<u8> = raw_b64
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+        .collect();
+    let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(&cleaned)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&cleaned))
+        .ok()?;
+    if detect_extension(&decoded) != "bin" {
+        Some(decoded)
+    } else {
+        None
+    }
+}
+
 /// Save image binary data to disk and return the URL path.
 ///
 /// This function stores image metrics as binary files instead of
@@ -237,39 +273,6 @@ pub fn validate_path_component(component: &str) -> Result<String> {
 /// Returns `ImageStorageError` if:
 /// - `device_id` or `metric` contain invalid characters (path traversal)
 /// - File I/O fails (disk full, permissions, etc.)
-/// Try to decode a string as base64-encoded image data.
-/// Handles data URLs (`data:image/png;base64,...`) and raw base64.
-/// Returns decoded bytes if it looks like an image, None otherwise.
-pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
-    use base64::Engine as _;
-    let raw_b64 = if s.starts_with("data:image/") {
-        s.split(";base64,").nth(1)?
-    } else if s.len() > 100 {
-        s
-    } else {
-        return None;
-    };
-    // Tolerate the base64 variants real devices emit: MIME-folded whitespace
-    // and missing/optional padding. NE301 cameras, for example, send unpadded
-    // standard-alphabet base64 (len % 4 != 0, no `=`); the strict STANDARD
-    // engine rejects it ("Incorrect padding"), and the URL_SAFE_NO_PAD
-    // fallback uses the wrong alphabet. Strip whitespace + padding, then try
-    // the standard alphabet (no-pad) before url-safe.
-    let cleaned: Vec<u8> = raw_b64
-        .bytes()
-        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
-        .collect();
-    let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
-        .decode(&cleaned)
-        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&cleaned))
-        .ok()?;
-    if detect_extension(&decoded) != "bin" {
-        Some(decoded)
-    } else {
-        None
-    }
-}
-
 pub fn save_image_binary(
     device_id: &str,
     metric: &str,
