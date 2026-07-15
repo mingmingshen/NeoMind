@@ -249,9 +249,19 @@ pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
     } else {
         return None;
     };
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(raw_b64)
-        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw_b64))
+    // Tolerate the base64 variants real devices emit: MIME-folded whitespace
+    // and missing/optional padding. NE301 cameras, for example, send unpadded
+    // standard-alphabet base64 (len % 4 != 0, no `=`); the strict STANDARD
+    // engine rejects it ("Incorrect padding"), and the URL_SAFE_NO_PAD
+    // fallback uses the wrong alphabet. Strip whitespace + padding, then try
+    // the standard alphabet (no-pad) before url-safe.
+    let cleaned: Vec<u8> = raw_b64
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+        .collect();
+    let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(&cleaned)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&cleaned))
         .ok()?;
     if detect_extension(&decoded) != "bin" {
         Some(decoded)
@@ -721,5 +731,60 @@ mod tests {
         assert!(data_dir
             .join("images/device-001/metric-c/1001.jpg")
             .exists());
+    }
+
+    /// Regression: devices (e.g. NE301 cameras) emit standard-alphabet base64
+    /// WITHOUT padding (len % 4 != 0, no `=`). The strict STANDARD engine
+    /// rejects it ("Incorrect padding") and the URL_SAFE_NO_PAD fallback used
+    /// the wrong alphabet — so the image was never converted to a URL and got
+    /// stored as raw base64. Must now decode.
+    #[test]
+    fn test_try_decode_base64_image_unpadded_standard() {
+        // FF D8 FF E0 = JPEG SOI + APP0 marker start.
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE0];
+        use base64::Engine as _;
+        let padded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let unpadded = padded.trim_end_matches('=');
+        assert_ne!(
+            unpadded.len() % 4,
+            0,
+            "test premise: unpadded length not a multiple of 4"
+        );
+
+        let data_url = format!("data:image/jpeg;base64,{}", unpadded);
+        let decoded =
+            try_decode_base64_image(&data_url).expect("unpadded standard base64 must decode");
+        assert_eq!(decoded, bytes);
+    }
+
+    /// Whitespace inside base64 (MIME folding) must not break decoding.
+    #[test]
+    fn test_try_decode_base64_image_whitespace_tolerant() {
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
+        use base64::Engine as _;
+        let folded = base64::engine::general_purpose::STANDARD
+            .encode(bytes)
+            .chars()
+            .collect::<Vec<_>>()
+            .chunks(4)
+            .map(|c| c.iter().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let data_url = format!("data:image/jpeg;base64,{}", folded);
+        let decoded = try_decode_base64_image(&data_url).expect("folded base64 must decode");
+        assert_eq!(decoded, bytes);
+    }
+
+    /// Real-world regression: an NE301 camera payload whose `image_data` is an
+    /// unpadded standard-alphabet data URL (1263 chars, len % 4 == 3). Before
+    /// the fix this returned None and the image was stored as base64.
+    #[test]
+    fn test_try_decode_base64_image_ne301_unpadded_payload() {
+        let ne301 = "data:image/jpeg;base64,/9j/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCALQBQADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDzmiiig6wooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiigAopKWkAUd6KKYGlCd0SkelSd+tQWrAxADtU2aDGS1FpKPTNHagQufWkopD6EmgBc80ZpKCaAFoyemaYzqByaia5RenJpDJ6CaptdEn5RUbTO3fFMfIy8ZFHVhUT3KDpzVIkk5JpKClAtNdk/dGKhaV2HJqOlpFKKQEk9TRRRQMSiloosAlLRRQAUUUUAFFFFAH//ZAAAA";
+        // Sanity: this is the failing shape (unpadded, standard alphabet).
+        let b64 = ne301.split(";base64,").nth(1).unwrap();
+        assert_ne!(b64.len() % 4, 0, "premise: NE301 base64 is unpadded");
+        let decoded = try_decode_base64_image(ne301).expect("NE301 payload must decode");
+        assert_eq!(&decoded[..3], &[0xFF, 0xD8, 0xFF], "should be a JPEG");
     }
 }

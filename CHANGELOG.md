@@ -34,6 +34,12 @@ coverage and hardened the on-disk file lifecycle.
     resolution for sources that won't be delivered.
   - Ingestion now converts base64-**string** image payloads (not just
     `Binary`) to `/api/images/` URLs.
+  - **Unpadded / whitespace-containing base64 now decodes** (e.g. NE301 cameras
+    emit standard-alphabet base64 with no `=` padding, `len % 4 != 0`). The
+    strict `STANDARD` decoder rejected these ("Incorrect padding") and the
+    `URL_SAFE_NO_PAD` fallback used the wrong alphabet, so such images were
+    left stored as raw base64 instead of URLs. `try_decode_base64_image` now
+    strips whitespace + padding and decodes via `STANDARD_NO_PAD`.
   - Frontend: all image preview/download components recognize `/api/images/`
     URLs (prepend server origin; fetch-as-blob for download).
 
