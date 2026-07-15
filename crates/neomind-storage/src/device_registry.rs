@@ -56,6 +56,13 @@ pub struct DeviceTypeTemplate {
     /// `None` = use global default. Forward-compatible via `#[serde(default)]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_offline_timeout_secs: Option<u64>,
+    /// If `Some(false)`, skip storing the `_raw` metric (full payload snapshot)
+    /// for devices of this type. `None` (default) = inherit the extractor's
+    /// `store_raw` config (currently always true). Set `Some(false)` for
+    /// large-payload devices (e.g. cameras) whose structured metrics already
+    /// cover all fields. Forward-compatible via `#[serde(default)]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_raw: Option<bool>,
     /// Builtin template version (e.g. "1.0.0"). Only set for official templates.
     /// When present, the seeder will update the template if a newer version is bundled.
     /// User-created templates have this as None and are never overwritten by the seeder.
@@ -1038,6 +1045,7 @@ mod tests {
             uplink_samples: vec![],
             commands: vec![],
             default_offline_timeout_secs: None,
+            store_raw: None,
             builtin_version: None,
         };
 
@@ -1253,6 +1261,7 @@ mod tests {
             commands: vec![],
             default_offline_timeout_secs: None,
             builtin_version: None, // No version = user-created
+            store_raw: None,
         };
         store.save_template(&user_template).unwrap();
 

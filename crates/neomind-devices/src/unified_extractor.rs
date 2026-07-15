@@ -182,8 +182,18 @@ impl UnifiedExtractor {
             }
         }
 
-        // Step 1: Always store raw data if configured
-        if self.config.store_raw {
+        // Look up the device-type template ONCE, reused by Step 1 (to honor a
+        // per-type `store_raw` override) and Step 2 (metric extraction).
+        let template = self.device_registry.get_template(device_type);
+
+        // Step 1: Store raw data as `_raw` unless this device type opts out.
+        // Precedence: template.store_raw (Some) > extractor config.store_raw.
+        // `None` inherits the config default — unchanged for existing types.
+        let store_raw = template
+            .as_ref()
+            .and_then(|t| t.store_raw)
+            .unwrap_or(self.config.store_raw);
+        if store_raw {
             let raw_value = self.value_to_metric_value(raw_data);
             metrics.push(ExtractedMetric {
                 name: "_raw".to_string(),
@@ -193,9 +203,7 @@ impl UnifiedExtractor {
             raw_stored = true;
         }
 
-        // Step 2: Try template-driven extraction
-        let template = self.device_registry.get_template(device_type);
-
+        // Step 2: Template-driven metric extraction (template fetched above)
         let mode = if let Some(template) = template {
             // Check if template has defined metrics
             if !template.metrics.is_empty() {

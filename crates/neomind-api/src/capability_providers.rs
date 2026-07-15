@@ -299,6 +299,7 @@ impl DeviceCapabilityProvider {
             uplink_samples: vec![],
             commands,
             default_offline_timeout_secs: None,
+            store_raw: None,
         };
 
         device_service
