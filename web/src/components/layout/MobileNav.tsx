@@ -154,11 +154,11 @@ export function MobileNav() {
         // a few pixels, especially near the rounded-lg corners.
         className={cn(
           "group relative flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors",
-          active ? "bg-brand-bg" : "hover:bg-muted-50 active:bg-muted",
+          active ? "" : "hover:bg-muted-50 active:bg-muted",
         )}
       >
         <Icon
-          className={cn("h-5 w-5 shrink-0", active ? "text-brand" : "text-muted-foreground")}
+          className={cn("h-5 w-5 shrink-0", active ? "text-brand brand-icon-stroke" : "text-muted-foreground")}
         />
         <span
           className={cn(
@@ -191,7 +191,7 @@ export function MobileNav() {
       onClick={onClick}
       className={cn(
         "h-9 w-9 shrink-0 rounded-lg",
-        opts.active ? "bg-brand-bg text-brand" : "text-muted-foreground hover:text-foreground hover:bg-muted-50",
+        opts.active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted-50",
       )}
       aria-label={label}
       title={label}

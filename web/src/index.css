@@ -1394,3 +1394,18 @@ html {
   }
 }
 
+/* Brand icon gradient — paints an SVG icon's stroke with the logo's
+   segmented #FF8C00 → #FF4500 orange gradient (see <BrandGradientDef/>).
+   CSS `stroke`/`stroke-width` (specificity 0,1,0) override lucide's
+   stroke="currentColor" / stroke-width="2" presentation attributes. */
+.brand-icon-stroke {
+  stroke: url(#brand-icon-gradient);
+  stroke-width: 2.5;
+}
+
+/* Disable the Button base's active:scale-[0.97] press feedback on nav
+   icons — on small icons the 3% press-and-release reads as jitter. */
+.no-press-scale:active {
+  transform: none !important;
+}
+
