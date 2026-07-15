@@ -7,14 +7,15 @@
 //! ## Persistence
 //!
 //! The registry supports optional disk persistence using redb storage:
-//! ```rust,no_run
+//! ```no_run
 //! use neomind_devices::DeviceRegistry;
-//!
-//! // Create registry with persistence
-//! let registry = DeviceRegistry::with_persistence("./data/devices.redb").await?;
-//!
-//! // Or create in-memory registry
-//! let registry = DeviceRegistry::new();
+//! # async fn _doc() -> Result<(), Box<dyn std::error::Error>> {
+//! // With persistence (async — requires a runtime)
+//! let _registry = DeviceRegistry::with_persistence("./data/devices.redb").await?;
+//! // In-memory (synchronous)
+//! let _in_memory = DeviceRegistry::new();
+//! # Ok(())
+//! # }
 //! ```
 
 use dashmap::DashMap;

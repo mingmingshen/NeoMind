@@ -251,19 +251,18 @@ pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```no_run
 /// use neomind_devices::image_storage::save_image_binary;
 /// use std::path::PathBuf;
-///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let device_id = "camera-001";
 /// let metric = "image";
 /// let timestamp = 1634567890000i64;
 /// let bytes = b"\xFF\xD8\xFF\xE0\x00\x10\x4A\x46..."; // JPEG bytes
 /// let data_dir = PathBuf::from("/data");
 ///
-/// let url = save_image_binary(device_id, metric, timestamp, &bytes, &data_dir)?;
-/// assert_eq!(url, "/api/images/camera-001/image/1634567890000.jpg");
+/// let url = save_image_binary(device_id, metric, timestamp, bytes, &data_dir)?;
+/// assert_eq!(url.as_str(), "/api/images/camera-001/image/1634567890000.jpg");
 /// # Ok(())
 /// # }
 /// ```
