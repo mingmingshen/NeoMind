@@ -422,6 +422,9 @@ jobs:
     needs: [build-frontend, build-desktop, build-server]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/')
+    permissions:
+      contents: write   # create the release + upload assets
+      actions: write    # dispatch the release-notify workflow (see step below)
 
     steps:
       - name: Checkout repository
@@ -585,6 +588,24 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Announce release on Discord
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # The default GITHUB_TOKEN that published this release does NOT emit a
+          # `release: published` event that triggers other workflows (GitHub
+          # blocks token-generated events to prevent loops). So dispatch the
+          # release-notify workflow explicitly — workflow_dispatch is one of the
+          # two events exempted from that rule. release-notify.yml then
+          # self-fetches the release notes via `gh release view`.
+          echo "Dispatching release-notify for ${GITHUB_REF_NAME}…"
+          if gh workflow run release-notify.yml --repo "${REPO}" -f tag_name="${GITHUB_REF_NAME}"; then
+            echo "✅ dispatched release-notify"
+          else
+            echo "⚠️ failed to dispatch release-notify (non-fatal — release itself succeeded)"
+          fi
 
   # ========== Auto-cleanup old releases (keep latest 3) ==========
   cleanup-releases:
