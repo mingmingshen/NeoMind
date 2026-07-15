@@ -315,10 +315,7 @@ impl ExtensionState {
                         // because "configure" is a lifecycle method, not a registered
                         // command — execute_command would silently fail).
                         if let Some(ref config) = record_config {
-                            if let Err(e) = runtime
-                                .send_config_update(&metadata.id, config)
-                                .await
-                            {
+                            if let Err(e) = runtime.send_config_update(&metadata.id, config).await {
                                 tracing::warn!(
                                     extension_id = %metadata.id,
                                     error = %e,

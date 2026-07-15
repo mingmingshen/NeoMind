@@ -22,13 +22,13 @@ use serde_json::json;
 use crate::handlers::common::{ok, HandlerResult};
 use crate::handlers::devices::models::TimeRangeQuery;
 use crate::models::error::ErrorResponse;
+use crate::server::types::MAX_EXTENSION_DOWNLOAD_SIZE;
 use crate::server::ServerState;
+use futures::StreamExt;
 use neomind_core::datasource::DataSourceId;
 use neomind_core::extension::{MetricDataType, ParameterDefinition};
 use neomind_storage::{ExtensionRecord, ExtensionStore};
-use futures::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::server::types::MAX_EXTENSION_DOWNLOAD_SIZE;
 
 /// Validate an extension ID to prevent path traversal in filesystem operations.
 /// Extension IDs are kebab-case identifiers (e.g. "weather-forecast-v2").
@@ -2415,25 +2415,22 @@ pub async fn install_marketplace_extension_handler(
         // Stream the package body to a temp file (never buffer the whole
         // .nep in memory — large ML model bundles would OOM). The temp file
         // is cleaned up via _guard on every exit path.
-        let tmp_path = match download_to_temp_file(
-            package_response,
-            MAX_EXTENSION_DOWNLOAD_SIZE,
-            &req.id,
-        )
-        .await
-        {
-            Ok(p) => p,
-            Err(msg) => {
-                return ok(MarketplaceInstallResponse {
-                    success: false,
-                    extension_id: req.id.clone(),
-                    downloaded: false,
-                    installed: false,
-                    path: None,
-                    error: Some(msg),
-                });
-            }
-        };
+        let tmp_path =
+            match download_to_temp_file(package_response, MAX_EXTENSION_DOWNLOAD_SIZE, &req.id)
+                .await
+            {
+                Ok(p) => p,
+                Err(msg) => {
+                    return ok(MarketplaceInstallResponse {
+                        success: false,
+                        extension_id: req.id.clone(),
+                        downloaded: false,
+                        installed: false,
+                        path: None,
+                        error: Some(msg),
+                    });
+                }
+            };
         let _guard = AutoRemove(tmp_path.clone());
 
         // Verify it's a valid ZIP file by reading only the magic bytes from
@@ -2613,7 +2610,8 @@ pub async fn install_marketplace_extension_handler(
         // which we built from metadata.builds.keys() — so .get() is guaranteed Some.
         // (If select_build_key is ever refactored to emit keys NOT derived from
         // available_keys, this invariant breaks — keep it subset-bound.)
-        let build = metadata.builds
+        let build = metadata
+            .builds
             .get(build_key.as_str())
             .expect("select_build_key invariant: returned key must exist in metadata.builds");
 
@@ -2642,13 +2640,10 @@ pub async fn install_marketplace_extension_handler(
 
         // Stream the binary to a temp file (don't buffer large ORT/model
         // blobs in memory). _guard removes the temp file on every exit path.
-        let tmp_path = download_to_temp_file(
-            download_response,
-            MAX_EXTENSION_DOWNLOAD_SIZE,
-            &req.id,
-        )
-        .await
-        .map_err(ErrorResponse::internal)?;
+        let tmp_path =
+            download_to_temp_file(download_response, MAX_EXTENSION_DOWNLOAD_SIZE, &req.id)
+                .await
+                .map_err(ErrorResponse::internal)?;
         let _guard = AutoRemove(tmp_path.clone());
 
         // Verify SHA256 if provided — hash the temp file in a streaming fashion.
@@ -2706,9 +2701,8 @@ pub async fn install_marketplace_extension_handler(
             // WASM: write both .wasm and .json files
             let wasm_path = extensions_dir.join(&wasm_filename);
 
-            std::fs::copy(&tmp_path, &wasm_path).map_err(|e| {
-                ErrorResponse::internal(format!("Failed to copy WASM file: {}", e))
-            })?;
+            std::fs::copy(&tmp_path, &wasm_path)
+                .map_err(|e| ErrorResponse::internal(format!("Failed to copy WASM file: {}", e)))?;
 
             // Download and write JSON sidecar
             let json_path = extensions_dir.join(&json_filename);
@@ -3066,10 +3060,7 @@ pub async fn reload_extension_handler(
                 // IPC channel (ConfigUpdate) that the runner turns into a
                 // call to `neomind_extension_configure_json`.
                 if let Some(ref cfg) = config {
-                    if let Err(e) = runtime
-                        .send_config_update(&metadata.id, cfg)
-                        .await
-                    {
+                    if let Err(e) = runtime.send_config_update(&metadata.id, cfg).await {
                         tracing::warn!(
                             extension_id = %id,
                             error = %e,

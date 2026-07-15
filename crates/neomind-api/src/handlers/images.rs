@@ -197,7 +197,9 @@ mod tests {
         assert!(is_safe_filename("abc123.png"));
         assert!(is_safe_filename("1634567890000.jpg"));
         assert!(is_safe_filename("image_edit_2026.webp"));
-        assert!(is_safe_filename("550e8400-e29b-41d4-a716-446655440000.jpeg"));
+        assert!(is_safe_filename(
+            "550e8400-e29b-41d4-a716-446655440000.jpeg"
+        ));
     }
 
     #[test]

@@ -1285,7 +1285,10 @@ fn build_duplicate_dashboard(
         };
 
         // Find the source transform
-        let src_t = match available_transforms.iter().find(|t| t.metadata.id == old_t_id) {
+        let src_t = match available_transforms
+            .iter()
+            .find(|t| t.metadata.id == old_t_id)
+        {
             Some(t) => t.clone(),
             None => continue, // Spec edge case: missing transform → leave refs as-is
         };
@@ -1385,10 +1388,9 @@ pub async fn duplicate_dashboard_handler(
     }
 
     // Persist new dashboard
-    state
-        .dashboard_store
-        .save(&build.dashboard)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to save duplicated dashboard: {}", e)))?;
+    state.dashboard_store.save(&build.dashboard).map_err(|e| {
+        ErrorResponse::internal(format!("Failed to save duplicated dashboard: {}", e))
+    })?;
 
     emit_dashboard_event(&state, &build.dashboard.id, "create");
 
@@ -1645,8 +1647,14 @@ mod tests {
             id: "comp_1".to_string(),
             component_type: "chart".to_string(),
             position: neomind_storage::dashboards::ComponentPosition {
-                x: 0, y: 0, w: 6, h: 4,
-                min_w: None, min_h: None, max_w: None, max_h: None,
+                x: 0,
+                y: 0,
+                w: 6,
+                h: 4,
+                min_w: None,
+                min_h: None,
+                max_w: None,
+                max_h: None,
             },
             title: None,
             data_source: Some(serde_json::json!({
@@ -1691,26 +1699,32 @@ mod tests {
             sort_order: Some(3),
         };
 
-        let result = build_duplicate_dashboard(
-            &src_dashboard,
-            vec![src_transform],
-            10,
-        );
+        let result = build_duplicate_dashboard(&src_dashboard, vec![src_transform], 10);
 
         // Dashboard-level assertions
         assert_ne!(result.dashboard.id, "dashboard_src");
         assert!(result.dashboard.id.starts_with("dashboard_"));
         assert_eq!(result.dashboard.name, "My Dashboard (copy)");
-        assert_eq!(result.dashboard.is_default, None, "is_default must NOT be inherited");
+        assert_eq!(
+            result.dashboard.is_default, None,
+            "is_default must NOT be inherited"
+        );
         assert_eq!(result.dashboard.sort_order, Some(11), "appended to end");
         assert!(result.dashboard.created_at > 100, "fresh created_at");
 
         // Transform clones
-        assert_eq!(result.new_transforms.len(), 1, "exactly one transform cloned");
+        assert_eq!(
+            result.new_transforms.len(),
+            1,
+            "exactly one transform cloned"
+        );
         let new_t = &result.new_transforms[0];
         assert_ne!(new_t.metadata.id, "t_old");
         assert_eq!(new_t.metadata.name, "Fish Counter (copy)");
-        assert_ne!(new_t.output_prefix, "detection_count", "output_prefix must change");
+        assert_ne!(
+            new_t.output_prefix, "detection_count",
+            "output_prefix must change"
+        );
         assert!(new_t.output_prefix.starts_with("detection_count_"));
         assert_eq!(new_t.metadata.execution_count, 0, "execution_count reset");
         assert_eq!(new_t.metadata.last_executed, None, "last_executed cleared");
@@ -1722,7 +1736,10 @@ mod tests {
         assert_eq!(ds["sourceId"], format!("transform:{}", new_t.metadata.id));
         assert_eq!(ds["id"], new_t.metadata.id);
         assert_eq!(ds["metricId"], format!("{}.fish", new_t.output_prefix));
-        assert_eq!(new_comp.config.as_ref().unwrap()["_transformId"], new_t.metadata.id);
+        assert_eq!(
+            new_comp.config.as_ref().unwrap()["_transformId"],
+            new_t.metadata.id
+        );
     }
 
     #[test]

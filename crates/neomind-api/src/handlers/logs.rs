@@ -145,16 +145,14 @@ pub async fn download_logs_handler(
     entries.truncate(MAX_FILES);
 
     if entries.is_empty() {
-        return Err(ErrorResponse::not_found(
-            if filtered_by_date > 0 {
-                format!(
-                    "No log files match the selected time range ({} file(s) filtered out).",
-                    filtered_by_date
-                )
-            } else {
-                "No log files found in log directory.".to_string()
-            },
-        ));
+        return Err(ErrorResponse::not_found(if filtered_by_date > 0 {
+            format!(
+                "No log files match the selected time range ({} file(s) filtered out).",
+                filtered_by_date
+            )
+        } else {
+            "No log files found in log directory.".to_string()
+        }));
     }
 
     // Build the archive in memory. Logs are small (capped by per-file + count
@@ -217,16 +215,10 @@ pub async fn download_logs_handler(
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown.log");
             if let Err(e) = zip.start_file(name, opts) {
-                return Err(ErrorResponse::internal(format!(
-                    "Zip write failed: {}",
-                    e
-                )));
+                return Err(ErrorResponse::internal(format!("Zip write failed: {}", e)));
             }
             if let Err(e) = zip.write_all(&data) {
-                return Err(ErrorResponse::internal(format!(
-                    "Zip write failed: {}",
-                    e
-                )));
+                return Err(ErrorResponse::internal(format!("Zip write failed: {}", e)));
             }
             included += 1;
         }
