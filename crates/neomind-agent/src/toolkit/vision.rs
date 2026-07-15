@@ -1,13 +1,15 @@
 //! Vision tool for multi-modal image analysis using VLM backends.
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use neomind_core::llm::backend::{LlmInput, LlmRuntime};
 use neomind_core::message::{Content, ContentPart, Message, MessageRole};
 use neomind_core::tools::ToolCategory;
 use serde_json::Value;
+use tokio::sync::RwLock;
 
 use super::error::{Result, ToolError};
 use super::tool::{object_schema, string_property, Tool, ToolOutput};
@@ -53,10 +55,90 @@ impl Default for VisionConfig {
 ///
 /// Accepts base64 data, data URLs, local file paths, or HTTP/HTTPS URLs.
 /// Returns natural language analysis of the image content.
+/// Process-local health tracking for VLM candidate backends. Lets
+/// `resolve_vlm_candidates` skip backends that recently failed in a way that
+/// either won't self-heal soon (404 model-missing, 403/quota exhausted) or
+/// just needs a short cool-down (429 rate limit, a "can't see the image"
+/// reply from a fake-multimodal model). Every window is best-effort: when
+/// all candidates are blocked, `resolve_vlm_candidates` falls back to the
+/// full list, so vision never hard-deadlocks on stale state.
+#[derive(Debug, Default)]
+struct VlmHealthTable {
+    /// Hard failures (404 model-not-found, 403/quota). Won't recover without
+    /// admin action (reinstall model, top up quota), so a long window.
+    hard: HashMap<String, Instant>,
+    /// "Produced no usable analysis" — a model marked multimodal that can't
+    /// actually see images. Stable per model, but shorter than hard so a
+    /// future model swap / re-check still gets a chance.
+    cant_see: HashMap<String, Instant>,
+    /// Transient: 429 rate limit / network. Recovers quickly.
+    rate_limited: HashMap<String, Instant>,
+}
+
+impl VlmHealthTable {
+    const HARD_TTL: Duration = Duration::from_secs(600);
+    const CANT_SEE_TTL: Duration = Duration::from_secs(300);
+    const RATE_TTL: Duration = Duration::from_secs(60);
+
+    /// Record a runtime error from a candidate. Classifies by content:
+    /// 404 / model-not-found / 403 / quota → hard; 429 / rate-limit → rate;
+    /// anything else is ignored (don't penalize one-off unknown errors).
+    fn record_failure(&mut self, id: &str, err: &str) {
+        let e = err.to_lowercase();
+        let now = Instant::now();
+        if e.contains("404")
+            || e.contains("not found")
+            || e.contains("insufficient_quota")
+            || e.contains("free quota")
+            || e.contains("freetieronly")
+            || e.contains("quota")
+            || e.contains("403")
+        {
+            self.hard.insert(id.to_string(), now);
+        } else if e.contains("429") || e.contains("rate limit") || e.contains("rate_limit") {
+            self.rate_limited.insert(id.to_string(), now);
+        }
+        // Unknown error → don't penalize (could be a one-off transient).
+    }
+
+    /// Record a "produced no usable analysis" (empty or can't-see reply).
+    fn record_cant_see(&mut self, id: &str) {
+        self.cant_see.insert(id.to_string(), Instant::now());
+    }
+
+    /// Clear all failure records for a backend that just succeeded.
+    fn clear(&mut self, id: &str) {
+        self.hard.remove(id);
+        self.cant_see.remove(id);
+        self.rate_limited.remove(id);
+    }
+
+    /// True if `id` is still inside any failure cool-down window.
+    fn is_blocked(&self, id: &str) -> bool {
+        let now = Instant::now();
+        Self::within(self.hard.get(id), Self::HARD_TTL, now)
+            || Self::within(self.cant_see.get(id), Self::CANT_SEE_TTL, now)
+            || Self::within(self.rate_limited.get(id), Self::RATE_TTL, now)
+    }
+
+    fn within(ts: Option<&Instant>, ttl: Duration, now: Instant) -> bool {
+        match ts {
+            Some(t) => now.duration_since(*t) < ttl,
+            None => false,
+        }
+    }
+}
+
 pub struct VisionTool {
     llm_manager: Arc<LlmBackendInstanceManager>,
     config: VisionConfig,
     http_client: reqwest::Client,
+    /// Process-local VLM candidate health: backends that recently failed in a
+    /// non-self-healing way (404 model-missing, 403/quota) or that need a
+    /// short cool-down (429, "can't see the image"). Lets
+    /// `resolve_vlm_candidates` skip known-bad backends instead of re-trying
+    /// them every call — each 429 also pays a multi-second backoff.
+    health: Arc<RwLock<VlmHealthTable>>,
 }
 
 impl VisionTool {
@@ -93,6 +175,7 @@ impl VisionTool {
             llm_manager,
             config,
             http_client,
+            health: Arc::new(RwLock::new(VlmHealthTable::default())),
         }
     }
 
@@ -161,6 +244,27 @@ impl VisionTool {
             return Err(ToolError::Execution(
                 "No vision model configured. Install a VLM (e.g., qwen2.5-vl, minicpm-v) via Ollama and `neomind llm activate` it.".into(),
             ));
+        }
+        // Drop backends still inside a failure cool-down window, so we don't
+        // re-try a 404-model / quota-exhausted / rate-limited backend on every
+        // call. If ALL candidates are blocked, keep the full list rather than
+        // hard-failing — a window may be about to expire, or the user pinned a
+        // `model` that's temporarily blocked and deserves one attempt.
+        let blocked: Vec<String> = {
+            let h = self.health.read().await;
+            candidates
+                .iter()
+                .filter_map(|(id, _)| {
+                    if h.is_blocked(id) {
+                        Some(id.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+        if blocked.len() < candidates.len() {
+            candidates.retain(|(id, _)| !blocked.contains(id));
         }
         Ok(candidates)
     }
@@ -248,13 +352,18 @@ impl VisionTool {
                 Ok(output) if !output.text.trim().is_empty()
                     && !looks_like_vision_failure(&output.text) =>
                 {
+                    // Recovered: clear any stale failure record so this
+                    // backend is preferred again next time.
+                    self.health.write().await.clear(id);
                     return Ok(output.text)
                 }
                 Ok(output) => {
                     // Empty, OR a non-empty "I can't see the image" reply —
                     // typically a text-only model that silently ignored the
                     // image bytes. Treat as failure so we fall through to the
-                    // next (hopefully truly multimodal) candidate.
+                    // next (hopefully truly multimodal) candidate, and cool
+                    // this backend down so we don't keep asking a blind model.
+                    self.health.write().await.record_cant_see(id);
                     tracing::warn!(
                         backend_id = %id,
                         analysis_preview = %output.text.chars().take(80).collect::<String>(),
@@ -268,6 +377,7 @@ impl VisionTool {
                 }
                 Err(e) => {
                     let m = e.to_string();
+                    self.health.write().await.record_failure(id, &m);
                     tracing::warn!(backend_id = %id, error = %m, "VLM candidate failed, trying next");
                     errors.push(format!("{}: {}", id, m));
                 }
@@ -545,5 +655,64 @@ mod tests {
         let (out, mime) = resize_image_if_needed(bytes.clone(), "image/jpeg", 1280);
         assert_eq!(out, bytes, "decode failure → original bytes returned");
         assert_eq!(mime, "image/jpeg");
+    }
+
+    // --- VlmHealthTable: candidate failure cool-down ---
+
+    #[test]
+    fn health_404_blocks_and_clear_releases() {
+        let mut h = super::VlmHealthTable::default();
+        assert!(!h.is_blocked("ollama_x"));
+        h.record_failure(
+            "ollama_x",
+            "API error 404: {\"error\":\"model 'qwen3.6' not found\"}",
+        );
+        assert!(h.is_blocked("ollama_x"), "404 model-not-found must block");
+        h.clear("ollama_x");
+        assert!(!h.is_blocked("ollama_x"), "clear releases the block");
+    }
+
+    #[test]
+    fn health_quota_is_hard_failure() {
+        let mut h = super::VlmHealthTable::default();
+        // Real-world OpenAI/DashScope quota-exhausted payload. Must block.
+        h.record_failure(
+            "openai_x",
+            "API error 429: insufficient_quota / FreeTierOnly free quota exhausted",
+        );
+        assert!(h.is_blocked("openai_x"));
+    }
+
+    #[test]
+    fn health_rate_limit_blocks_within_window() {
+        let mut h = super::VlmHealthTable::default();
+        h.record_failure("cloud_x", "API error 429: rate limit exceeded");
+        assert!(h.is_blocked("cloud_x"));
+    }
+
+    #[test]
+    fn health_unknown_error_not_penalized() {
+        let mut h = super::VlmHealthTable::default();
+        // A one-off parse / serialization error must NOT block the backend.
+        h.record_failure("cloud_x", "request body serialization failed");
+        assert!(!h.is_blocked("cloud_x"));
+    }
+
+    #[test]
+    fn health_cant_see_reply_blocks() {
+        let mut h = super::VlmHealthTable::default();
+        h.record_cant_see("ollama_tiny");
+        assert!(h.is_blocked("ollama_tiny"));
+    }
+
+    #[test]
+    fn health_clear_after_success_releases_all_kinds() {
+        let mut h = super::VlmHealthTable::default();
+        h.record_failure("a", "404 not found");
+        h.record_cant_see("a");
+        h.record_failure("a", "429 rate limit");
+        assert!(h.is_blocked("a"));
+        h.clear("a");
+        assert!(!h.is_blocked("a"));
     }
 }
