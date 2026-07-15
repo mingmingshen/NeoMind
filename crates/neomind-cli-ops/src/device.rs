@@ -195,38 +195,29 @@ async fn fetch_examples(
 }
 
 /// Sanitize a metric value for LLM consumption.
-/// Truncates long strings (likely base64 binary data) to avoid wasting tokens.
+/// Truncates long non-binary strings to avoid wasting tokens.
 ///
-/// **Image data URLs are passed through untouched when invoked from the agent
-/// shell tool** (detected via `NEOMIND_JSON=1`). The agent's streaming layer
-/// has its own `LargeDataCache` that handles size — it caches the raw payload
-/// and exposes a `$cached:shell` reference the LLM can pass to `vision` /
-/// image-analysis extensions. Truncating here would starve that mechanism
-/// (the 60-char remnants never hit the 32KB cache threshold).
-/// Human terminal callers (no `NEOMIND_JSON`) still get truncation so they
-/// don't get a wall of base64 in their terminal.
+/// **Image / binary payloads are passed through UNTRUNCATED, regardless of
+/// caller.** A char-truncated base64 or image URL is useless garbage — it
+/// can't be decoded, analyzed, or followed. The agent's streaming slim layer
+/// (`LargeDataCache`) turns large payloads into `$cached:` refs that the
+/// `vision` tool resolves back to the full bytes; terminal callers can scope
+/// with `--metric`.
+///
+/// This check is **data-type-based, not env-based.** The previous
+/// `NEOMIND_JSON`-gated passthrough silently failed across in-process
+/// dispatch, subprocess, and nested (e.g. `python → neomind`) call chains,
+/// truncating `device get --metric image_data` to 60 chars and starving the
+/// `$cached` mechanism (`<truncated, 42307 bytes total>` → vision sees
+/// nothing). Detecting by content is reliable in every call chain.
 fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
     match val {
         serde_json::Value::String(s) => {
-            let is_agent = std::env::var("NEOMIND_JSON").is_ok();
-            // Agent mode: pass large strings through UNTRUNCATED. This covers
-            // raw base64 WITHOUT a `data:image/` prefix (e.g. NE301 `image_data`)
-            // — the chat/scheduled slim layer (LargeDataCache) wraps strings
-            // >4KB into `$cached:` refs that the `vision` tool resolves back to
-            // the full bytes. Truncating here to 60 chars starves the cache and
-            // breaks vision. Image URLs (data:/api/images/http/https) also pass
-            // through regardless of length.
-            if is_agent
-                && (s.len() > 80
-                    || s.starts_with("data:image/")
-                    || s.starts_with("/api/images/")
-                    || s.starts_with("http://")
-                    || s.starts_with("https://"))
-            {
+            // Never truncate image / binary data — see doc comment above.
+            if is_image_value(s) || looks_like_base64_blob(s) {
                 return val.clone();
             }
-            // Terminal mode (human) or short strings: truncate large ones so the
-            // terminal isn't flooded with base64.
+            // Non-image long string: truncate so a terminal isn't flooded.
             if s.len() > 80 {
                 let prefix = &s[..s.floor_char_boundary(60)];
                 json!(format!(
@@ -240,6 +231,17 @@ fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
         }
         _ => val.clone(),
     }
+}
+
+/// Heuristic: a long string made purely of the base64 alphabet (no
+/// whitespace, punctuation, or multi-byte text) is almost certainly raw
+/// binary (image/audio/etc.) emitted without a `data:` prefix — e.g. some
+/// device firmwares send NE301 `image_data` as bare base64. Like image URLs,
+/// these must not be char-truncated.
+fn looks_like_base64_blob(s: &str) -> bool {
+    s.len() > 512
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
 }
 
 /// Sanitize the full /devices/{id}/current response to truncate binary metric values.
@@ -1145,26 +1147,67 @@ mod tests {
         assert!(!is_image_value("23.5"));
     }
 
-    /// URL-form image value should NOT be truncated by sanitize_metric_value
-    /// in agent (JSON) mode. We can't set env vars in unit tests safely, so
-    /// this test documents the contract by checking the branch logic
-    /// directly.
+    /// Image / binary payloads are NEVER char-truncated by
+    /// sanitize_metric_value, regardless of the `NEOMIND_JSON` env. The old
+    /// env-gated passthrough was unreliable across in-process / subprocess /
+    /// nested call chains; the new logic is data-type-based, so these tests
+    /// call the function directly.
     #[test]
-    fn test_sanitize_metric_value_url_branch() {
-        // Simulate agent mode by checking the predicate inline.
-        let long_url = format!(
-            "https://example.com/camera/snapshots/very-deep-path/with/many/segments/and-a-long-signed-token-that-exceeds-80-bytes.jpg?sig={}",
+    fn test_sanitize_metric_value_image_passthrough_no_env() {
+        // data: image URL — the NE301 `device get --metric image_data` case
+        // that was being truncated to "<truncated, 42307 bytes total>".
+        let data_url = format!("data:image/jpeg;base64,{}", "A".repeat(42_000));
+        let out = sanitize_metric_value(&json!(data_url)).as_str().unwrap().to_string();
+        assert!(
+            !out.contains("<truncated"),
+            "data:image/ must not be truncated: {}",
+            &out[..out.len().min(80)]
+        );
+        assert!(out.starts_with("data:image/jpeg;base64,"));
+
+        // Internal file-backed image URL (v0.9.6 storage format).
+        let internal = "/api/images/ne301-1/image_data/1700000001.jpg";
+        let out = sanitize_metric_value(&json!(internal)).as_str().unwrap().to_string();
+        assert_eq!(out, internal);
+
+        // External image URL (>80 bytes, image extension).
+        let ext = format!(
+            "https://cdn.example.com/cam/snapshots/deep-path/signed-token-{}.jpg",
             "a".repeat(100)
         );
-        assert!(long_url.len() > 80);
-        // Branch predicate matches the implementation.
-        let is_pass_through = (long_url.starts_with("data:image/")
-            || long_url.starts_with("http://")
-            || long_url.starts_with("https://"))
-            && std::env::var("NEOMIND_JSON").is_ok();
-        // Without env var → would be truncated (documenting the contract).
-        // Caller is responsible for setting NEOMIND_JSON in agent context.
-        let _ = is_pass_through; // just asserts it compiles + documents intent
+        let out = sanitize_metric_value(&json!(ext)).as_str().unwrap().to_string();
+        assert_eq!(out, ext);
+    }
+
+    /// Bare base64 (no `data:` prefix) >512 chars of pure base64 alphabet is
+    /// treated as raw binary and passed through untruncated.
+    #[test]
+    fn test_sanitize_metric_value_bare_base64_passthrough() {
+        let blob = "A".repeat(5_000);
+        let out = sanitize_metric_value(&json!(blob)).as_str().unwrap().to_string();
+        assert_eq!(out, blob);
+    }
+
+    /// Non-image long text is still truncated (terminal friendliness).
+    #[test]
+    fn test_sanitize_metric_value_truncates_plain_long_text() {
+        let long = "ordinary telemetry note with spaces and words ".repeat(50);
+        let out = sanitize_metric_value(&json!(long)).as_str().unwrap().to_string();
+        assert!(
+            out.contains("<truncated"),
+            "non-image long text should be truncated: {}",
+            &out[..out.len().min(80)]
+        );
+    }
+
+    /// Short strings pass through unchanged.
+    #[test]
+    fn test_sanitize_metric_value_short_passthrough() {
+        let out = sanitize_metric_value(&json!("23.5"))
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(out, "23.5");
     }
 
     /// format_ts converts millisecond timestamps to RFC 3339.

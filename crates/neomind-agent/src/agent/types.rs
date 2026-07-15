@@ -1443,6 +1443,33 @@ impl LargeDataCache {
 
                     *value = serde_json::Value::String(summary);
                     *count += 1;
+                } else if (s.contains("data:image/") || s.len() > SLIM_THRESHOLD_BYTES)
+                    && (s.starts_with('{') || s.starts_with('['))
+                {
+                    // Stringified-JSON nesting (the shell tool's `stdout`
+                    // field): the shell tool wraps a `neomind` CliResponse as
+                    // a JSON *string* inside `result.stdout` (double-encoded).
+                    // An image metric buried in that string is invisible to
+                    // the direct check above — `stdout` is one opaque string
+                    // that neither starts with `data:image/` nor exceeds the
+                    // size ceiling — so without this descent the `$cached`
+                    // flow never fires and `sanitize` later textually mangles
+                    // the base64 into `[image data, N]`, destroying the bytes
+                    // (the `device get --metric image_data` → vision failure).
+                    // Parse the inner JSON, recurse so every slimmable leaf
+                    // becomes a `$cached` ref + cache entry, then store the
+                    // re-serialized string back. `stdout` stays a string, so
+                    // the shell result contract and `result_format` are
+                    // untouched.
+                    if let Ok(mut inner) = serde_json::from_str::<serde_json::Value>(s.as_str()) {
+                        let before = *count;
+                        self.slim_value_recursive(&mut inner, path, count);
+                        if *count > before {
+                            if let Ok(reserialized) = serde_json::to_string(&inner) {
+                                *value = serde_json::Value::String(reserialized);
+                            }
+                        }
+                    }
                 }
             }
             serde_json::Value::Object(map) => {
@@ -1835,6 +1862,87 @@ mod tests {
             .expect("b resolves");
         assert!(resolved_a.ends_with("AAAA"));
         assert!(resolved_b.ends_with("AAAAB"));
+    }
+
+    /// Regression for the `device get --metric image_data` → `[image data, N]`
+    /// failure. The shell tool wraps a `neomind` CliResponse as a JSON
+    /// *string* inside `result.stdout` (double-encoded). An image metric
+    /// buried in that string must still become a `$cached` ref — otherwise
+    /// slim never fires (one opaque string: no `data:image/` prefix, under
+    /// the size ceiling) and `sanitize` later textually mangles the base64,
+    /// so the `vision` tool can never see the bytes.
+    #[test]
+    fn test_slim_descends_into_stringified_json_stdout() {
+        let mut cache = LargeDataCache::new();
+        // ~7KB — under SLIM_THRESHOLD_BYTES (64KB), so size alone must NOT
+        // trigger slim; only the nested `data:image/` leaf should.
+        let img = fake_jpeg_data_url(7_000);
+
+        // Inner CliResponse, serialized to a string exactly as the in-process
+        // shell dispatcher does, then placed under `stdout`.
+        let inner = serde_json::json!({
+            "success": true,
+            "data": {
+                "device_id": "ne301-1",
+                "metrics": {
+                    "image_data": {
+                        "value": img,
+                        "unit": "image",
+                        "timestamp": "2026-07-15T00:00:00Z"
+                    }
+                }
+            }
+        });
+        let stdout_str = serde_json::to_string(&inner).unwrap();
+        assert!(
+            stdout_str.contains("data:image/jpeg;base64,"),
+            "precondition: raw base64 present in stringified stdout"
+        );
+
+        let mut value = serde_json::json!({
+            "exit_code": 0,
+            "stdout": stdout_str,
+            "stderr": "",
+            "command": "neomind device get ne301-1 --metric image_data",
+            "timed_out": false
+        });
+
+        let n = cache.slim_large_strings_in_json(&mut value, "shell");
+        assert!(
+            n >= 1,
+            "buried image must be slimmed via stdout descent; n={}",
+            n
+        );
+
+        // stdout stays a STRING (shell contract + result_format rely on it),
+        // but its content no longer holds raw base64 and carries a $cached ref.
+        let slimmed_stdout = value["stdout"].as_str().expect("stdout stays a string");
+        assert!(
+            slimmed_stdout.contains("$cached:"),
+            "stdout must carry a $cached ref: {}",
+            slimmed_stdout
+        );
+        assert!(
+            !slimmed_stdout.contains("data:image/jpeg;base64,"),
+            "no raw base64 should remain: {}",
+            slimmed_stdout
+        );
+
+        // The ref must resolve back to the FULL image bytes — that is what the
+        // vision tool reads. If this resolves, the image is no longer lost.
+        let ref_key = slimmed_stdout
+            .split("$cached:")
+            .nth(1)
+            .and_then(|s| s.split_whitespace().next())
+            .expect("a $cached ref is present");
+        let resolved = cache
+            .resolve_reference(&format!("$cached:{}", ref_key))
+            .expect("vision must be able to resolve the full bytes");
+        assert!(
+            resolved.starts_with("data:image/jpeg;base64,"),
+            "resolved bytes must be the original image, got: {}...",
+            &resolved[..resolved.len().min(40)]
+        );
     }
 
     /// Strings under the threshold that aren't data URLs are NOT slimmed —
