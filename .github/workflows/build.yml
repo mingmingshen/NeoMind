@@ -594,21 +594,36 @@ jobs:
       contents: write
 
     steps:
-      - name: Delete old releases (keep latest 3)
+      - name: Delete drafts + old releases (keep latest 3)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           KEEP=3
-          echo "🧹 Cleaning up releases, keeping latest $KEEP..."
+          echo "🧹 Cleaning up releases..."
 
-          # List all non-draft releases sorted newest-first, skip top $KEEP
+          # 1. Delete ALL draft releases first.
+          # Drafts are incomplete releases that were never published. They linger on
+          # the /releases page (sorted to the top for collaborators) and obscure the
+          # real "latest" release. The previous filter (select(.isDraft == false))
+          # never touched them, so stale drafts from abandoned release attempts
+          # (e.g. the old v0.8.x drafts) piled up indefinitely. Tags are kept.
+          gh release list --repo "$REPO" --limit 100 --json tagName,isDraft \
+            --jq '[.[] | select(.isDraft == true)] | .[].tagName' \
+            | while read -r tag; do
+                echo "  deleting draft release: $tag"
+                gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag=false 2>/dev/null \
+                  && echo "    ✅ deleted draft" || echo "    ⚠️ skip"
+              done
+
+          # 2. Keep the latest $KEEP published releases, delete the rest.
           gh release list --repo "$REPO" --limit 100 --json tagName,isDraft,createdAt \
             --jq "[.[] | select(.isDraft == false)] | sort_by(.createdAt) | reverse | .[$KEEP:][] | .tagName" \
             | while read -r tag; do
-              echo "  deleting release: $tag"
-              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag=false 2>/dev/null && echo "    ✅ deleted" || echo "    ⚠️ skip (may be draft)"
-            done
+                echo "  deleting old release: $tag"
+                gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag=false 2>/dev/null \
+                  && echo "    ✅ deleted" || echo "    ⚠️ skip"
+              done
 
           REMAINING=$(gh release list --repo "$REPO" --limit 100 --json tagName --jq 'length')
           echo "✅ Cleanup done. Remaining releases: $REMAINING"
