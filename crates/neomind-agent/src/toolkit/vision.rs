@@ -96,57 +96,54 @@ impl VisionTool {
         }
     }
 
-    /// Resolve a VLM runtime for image analysis.
+    /// Resolve VLM candidate runtimes for image analysis, in priority order.
     ///
-    /// Priority order:
+    /// Returns MULTIPLE candidates so `analyze` can fall through on a 404
+    /// (model marked multimodal but not actually installed) to the next
+    /// multimodal backend, instead of failing the whole tool on one bad backend.
+    ///
+    /// Priority order (de-duplicated):
     /// 1. Explicit `vlm_backend_id` in config
     /// 2. Current active backend (if multimodal-capable)
-    /// 3. First multimodal-capable instance found
-    async fn resolve_vlm_runtime(&self) -> Result<Arc<dyn LlmRuntime>> {
-        // 1. Try explicit backend ID
+    /// 3. All other multimodal-capable instances
+    async fn resolve_vlm_candidates(&self) -> Result<Vec<(String, Arc<dyn LlmRuntime>)>> {
+        let mut candidates: Vec<(String, Arc<dyn LlmRuntime>)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // 1. Explicit backend ID
         if let Some(ref id) = self.config.vlm_backend_id {
-            return self
-                .llm_manager
-                .get_runtime(id)
-                .await
-                .map_err(|e| ToolError::Execution(format!("VLM backend '{}' error: {}", id, e)));
+            if let Ok(rt) = self.llm_manager.get_runtime(id).await {
+                seen.insert(id.clone());
+                candidates.push((id.clone(), rt));
+            }
         }
 
-        // 2. Try active backend (the one the user is currently chatting with)
+        // 2. Active backend (if multimodal-capable)
         if let Some(active) = self.llm_manager.get_active_instance() {
-            if active.capabilities.supports_multimodal {
-                let id = active.id.clone();
-                tracing::debug!(backend_id = %id, "Using active backend for vision (multimodal-capable)");
-                return self.llm_manager.get_runtime(&id).await.map_err(|e| {
-                    ToolError::Execution(format!(
-                        "VLM backend '{}' unavailable: {}. Check if the model service is running.",
-                        id, e
-                    ))
-                });
+            if active.capabilities.supports_multimodal && !seen.contains(&active.id) {
+                if let Ok(rt) = self.llm_manager.get_runtime(&active.id).await {
+                    seen.insert(active.id.clone());
+                    candidates.push((active.id.clone(), rt));
+                }
             }
         }
 
-        // 3. Fallback: first multimodal-capable instance
-        let instances = self.llm_manager.list_instances();
-        let vlm_instance = instances
-            .iter()
-            .find(|inst| inst.capabilities.supports_multimodal);
-
-        match vlm_instance {
-            Some(inst) => {
-                let id = inst.id.clone();
-                tracing::debug!(backend_id = %id, "Using fallback VLM backend for vision");
-                self.llm_manager.get_runtime(&id).await.map_err(|e| {
-                    ToolError::Execution(format!(
-                        "VLM backend '{}' unavailable: {}. Check if the model service is running.",
-                        id, e
-                    ))
-                })
+        // 3. Other multimodal-capable instances
+        for inst in self.llm_manager.list_instances() {
+            if inst.capabilities.supports_multimodal && !seen.contains(&inst.id) {
+                if let Ok(rt) = self.llm_manager.get_runtime(&inst.id).await {
+                    seen.insert(inst.id.clone());
+                    candidates.push((inst.id.clone(), rt));
+                }
             }
-            None => Err(ToolError::Execution(
-                "No vision model configured. Install a VLM (e.g., qwen2.5-vl) via Ollama.".into(),
-            )),
         }
+
+        if candidates.is_empty() {
+            return Err(ToolError::Execution(
+                "No vision model configured. Install a VLM (e.g., qwen2.5-vl, minicpm-v) via Ollama and `neomind llm activate` it.".into(),
+            ));
+        }
+        Ok(candidates)
     }
 
     /// Resolve image input to (base64_data, mime_type).
@@ -194,40 +191,53 @@ impl VisionTool {
     }
 
     /// Run VLM analysis on the resolved image.
+    ///
+    /// Tries each candidate VLM backend in priority order. A failure on one
+    /// (404 model-not-found, empty response, etc.) falls through to the next
+    /// — a backend can be marked multimodal yet have its model uninstalled,
+    /// and that shouldn't kill the whole tool. Only when ALL candidates fail
+    /// is a clear error returned naming every backend tried.
     async fn analyze(&self, data: &str, mime: &str, prompt: &str) -> Result<String> {
-        let runtime = self.resolve_vlm_runtime().await?;
+        let candidates = self.resolve_vlm_candidates().await?;
+        let mut errors: Vec<String> = Vec::new();
 
-        let msg = Message::new(
-            MessageRole::User,
-            Content::Parts(vec![
-                ContentPart::text(prompt),
-                ContentPart::image_base64(data, mime),
-            ]),
-        );
-
-        let input = LlmInput {
-            messages: vec![msg],
-            params: neomind_core::llm::GenerationParams {
-                max_tokens: Some(self.config.max_tokens as usize),
-                ..Default::default()
-            },
-            model: None,
-            stream: false,
-            tools: None,
-        };
-
-        let output = runtime
-            .generate(input)
-            .await
-            .map_err(|e| ToolError::Execution(format!("VLM inference failed: {}", e)))?;
-
-        if output.text.trim().is_empty() {
-            return Err(ToolError::Execution(
-                "VLM returned empty analysis. The image may not be processable.".into(),
-            ));
+        for (id, runtime) in &candidates {
+            let msg = Message::new(
+                MessageRole::User,
+                Content::Parts(vec![
+                    ContentPart::text(prompt),
+                    ContentPart::image_base64(data, mime),
+                ]),
+            );
+            let input = LlmInput {
+                messages: vec![msg],
+                params: neomind_core::llm::GenerationParams {
+                    max_tokens: Some(self.config.max_tokens as usize),
+                    ..Default::default()
+                },
+                model: None,
+                stream: false,
+                tools: None,
+            };
+            match runtime.generate(input).await {
+                Ok(output) if !output.text.trim().is_empty() => return Ok(output.text),
+                Ok(_) => {
+                    tracing::warn!(backend_id = %id, "VLM returned empty, trying next candidate");
+                    errors.push(format!("{}: empty response", id));
+                }
+                Err(e) => {
+                    let m = e.to_string();
+                    tracing::warn!(backend_id = %id, error = %m, "VLM candidate failed, trying next");
+                    errors.push(format!("{}: {}", id, m));
+                }
+            }
         }
 
-        Ok(output.text)
+        Err(ToolError::Execution(format!(
+            "VLM inference failed on all {} candidate backend(s) — {}. Activate a working multimodal backend via `neomind llm activate <id>` (its model must be installed in Ollama).",
+            candidates.len(),
+            errors.join("; ")
+        )))
     }
 }
 
