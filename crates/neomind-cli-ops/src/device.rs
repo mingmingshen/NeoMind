@@ -338,10 +338,39 @@ fn build_device_list(devs: &[serde_json::Value]) -> serde_json::Value {
 }
 
 /// Get device details (metadata + metrics + commands) via /current endpoint.
-pub async fn get_device(client: &ApiClient, id: &str) -> Result<CliResponse> {
+pub async fn get_device(
+    client: &ApiClient,
+    id: &str,
+    metric: Option<&str>,
+) -> Result<CliResponse> {
     let data = client.get(&format!("/devices/{}/current", id)).await?;
-    let sanitized = sanitize_device_current(&data);
+    let mut sanitized = sanitize_device_current(&data);
+    if let Some(field) = metric {
+        filter_single_metric(&mut sanitized, field);
+    }
     Ok(CliResponse::success(sanitized, "Device details retrieved"))
+}
+
+/// Reduce a /devices/{id}/current response to a single metric field.
+///
+/// Metric keys may contain dots (e.g. `values.battery`), so this is a flat
+/// key lookup on `data.metrics`, NOT a JSON-pointer path. If the field is
+/// absent, all metrics are returned with a `_note` explaining the miss.
+fn filter_single_metric(data: &mut serde_json::Value, field: &str) {
+    let Some(metrics) = data.pointer_mut("/data/metrics").and_then(|v| v.as_object_mut()) else {
+        return;
+    };
+    if metrics.contains_key(field) {
+        metrics.retain(|k, _| k == field);
+    } else if let Some(d) = data.pointer_mut("/data").and_then(|v| v.as_object_mut()) {
+        d.insert(
+            "_note".into(),
+            serde_json::json!(format!(
+                "metric '{}' not found; showing all current metrics",
+                field
+            )),
+        );
+    }
 }
 
 /// Create a new device

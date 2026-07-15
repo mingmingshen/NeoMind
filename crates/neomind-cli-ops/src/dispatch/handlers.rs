@@ -177,8 +177,8 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
                 base_format,
             )
         }
-        DeviceCommand::Get { id } => {
-            (get_device(&client, &id).await?, base_format)
+        DeviceCommand::Get { id, metric } => {
+            (get_device(&client, &id, metric.as_deref()).await?, base_format)
         }
         DeviceCommand::Create {
             name,
@@ -224,7 +224,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             (delete_device(&client, &id).await?, base_format)
         }
         DeviceCommand::Latest { id } => {
-            (get_device(&client, &id).await?, base_format)
+            (get_device(&client, &id, None).await?, base_format)
         }
         DeviceCommand::History {
             id,

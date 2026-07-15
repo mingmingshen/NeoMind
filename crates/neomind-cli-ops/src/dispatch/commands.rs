@@ -541,17 +541,23 @@ pub enum DeviceCommand {
     },
     /// Get device details (metadata + metrics + commands).
     ///
-    /// Returns full device info: metadata, connection config, all current
-    /// metric values, and available commands. This is the single command for
-    /// deep inspection of a specific device.
+    /// Returns full device info: metadata, connection config, current metric
+    /// values, and available commands. Pass `--metric` to return only that one
+    /// metric's current value — avoids pulling all metrics (e.g. AI-camera
+    /// inference fields) when you want a single reading like battery level.
     ///
     /// Workflow: Use `device list` for overview, then `device get <ID>` for detail.
     ///
     /// Example: `neomind device get device-001`
+    /// Example: `neomind device get device-001 --metric values.battery`
     Get {
         /// Device ID.
         #[arg(required = true)]
         id: String,
+        /// Return only this metric's current value (e.g. `values.battery`).
+        /// Omit to get all metrics.
+        #[arg(long)]
+        metric: Option<String>,
     },
     /// Create a new device.
     ///
