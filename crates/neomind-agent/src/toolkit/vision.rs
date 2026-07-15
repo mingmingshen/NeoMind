@@ -106,9 +106,28 @@ impl VisionTool {
     /// 1. Explicit `vlm_backend_id` in config
     /// 2. Current active backend (if multimodal-capable)
     /// 3. All other multimodal-capable instances
-    async fn resolve_vlm_candidates(&self) -> Result<Vec<(String, Arc<dyn LlmRuntime>)>> {
+    async fn resolve_vlm_candidates(
+        &self,
+        model: Option<&str>,
+    ) -> Result<Vec<(String, Arc<dyn LlmRuntime>)>> {
         let mut candidates: Vec<(String, Arc<dyn LlmRuntime>)> = Vec::new();
         let mut seen = std::collections::HashSet::new();
+
+        // 0. Explicit `model` param — pin a specific VLM by model name. Use
+        //    this when the auto-picked model can't handle images (text-only
+        //    model wrongly marked multimodal). Case-insensitive substring on
+        //    inst.model. Pinned first so it's tried before the fallbacks.
+        if let Some(m) = model {
+            let needle = m.to_lowercase();
+            for inst in self.llm_manager.list_instances() {
+                if inst.model.to_lowercase().contains(&needle) && !seen.contains(&inst.id) {
+                    if let Ok(rt) = self.llm_manager.get_runtime(&inst.id).await {
+                        seen.insert(inst.id.clone());
+                        candidates.push((inst.id.clone(), rt));
+                    }
+                }
+            }
+        }
 
         // 1. Explicit backend ID
         if let Some(ref id) = self.config.vlm_backend_id {
@@ -197,8 +216,14 @@ impl VisionTool {
     /// — a backend can be marked multimodal yet have its model uninstalled,
     /// and that shouldn't kill the whole tool. Only when ALL candidates fail
     /// is a clear error returned naming every backend tried.
-    async fn analyze(&self, data: &str, mime: &str, prompt: &str) -> Result<String> {
-        let candidates = self.resolve_vlm_candidates().await?;
+    async fn analyze(
+        &self,
+        data: &str,
+        mime: &str,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<String> {
+        let candidates = self.resolve_vlm_candidates(model).await?;
         let mut errors: Vec<String> = Vec::new();
 
         for (id, runtime) in &candidates {
@@ -275,14 +300,17 @@ Only use this tool when you need to analyze images from OTHER sources:
 - HTTP/HTTPS image URLs (e.g., camera snapshots, web images) — fetches automatically, private/local URLs blocked
 - /path/to/file.jpg — local image file on disk (must have an image extension)
 - data:image/...;base64,... — base64 data URL from extension outputs
-- raw base64 string — decoded as JPEG by default"#
+- raw base64 string — decoded as JPEG by default
+
+Optional `model` param (e.g. "minicpm-v4.6") forces a specific VLM backend. Use it when the auto-picked model replies it can't see the image (a text-only model wrongly selected). Find available model names via `neomind llm list`."#
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
                 "image": string_property("Image source: base64 data URL, raw base64, local image file path, or public HTTP/HTTPS URL"),
-                "prompt": string_property("Analysis instructions for the image. Match the user's language and detail level from the conversation.")
+                "prompt": string_property("Analysis instructions for the image. Match the user's language and detail level from the conversation."),
+                "model": serde_json::json!({"type": "string", "description": "Optional VLM model name to force (e.g. `minicpm-v4.6`). Use when the auto-picked model says it can't see the image. Find names via `neomind llm list`."})
             }),
             vec!["image".to_string(), "prompt".to_string()],
         )
@@ -299,6 +327,7 @@ Only use this tool when you need to analyze images from OTHER sources:
         let prompt = args["prompt"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("prompt is required".into()))?;
+        let model = args.get("model").and_then(|v| v.as_str());
 
         if image.trim().is_empty() {
             return Err(ToolError::InvalidArguments("image cannot be empty".into()));
@@ -310,7 +339,7 @@ Only use this tool when you need to analyze images from OTHER sources:
         tracing::info!(image_len = image.len(), "Vision tool: resolving image");
 
         let (data, mime) = self.resolve_image(image).await?;
-        let analysis = self.analyze(&data, &mime, prompt).await?;
+        let analysis = self.analyze(&data, &mime, prompt, model).await?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "analysis": analysis,
