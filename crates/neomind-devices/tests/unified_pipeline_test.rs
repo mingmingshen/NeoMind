@@ -94,12 +94,14 @@ fn test_unified_extractor_dot_notation() {
         Some(json!(1234567890))
     );
 
-    // Non-existent path returns None (not an error)
+    // Non-existent path returns Some(Null) (not None, not an error) — by
+    // design, missing keys map to Value::Null so null metrics stay
+    // representable. See `extract_by_path` docs + `test_extract_by_path_simple.
     assert_eq!(
         extractor
             .extract_by_path(&data, "missing.field", 0)
             .unwrap(),
-        None
+        Some(serde_json::Value::Null)
     );
 }
 
