@@ -9,7 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+Follow-ups to the 0.9.6 image-URL storage migration: completed cross-boundary
+coverage and hardened the on-disk file lifecycle.
+
+### Fixed
+
+- **Image URL storage — completed cross-boundary resolution.** Several
+  consumers of image metrics still expected base64 and silently mishandled
+  the `/api/images/` URL form. All now resolve through the centralized
+  helpers `image_storage::{read_internal_image_url,
+  resolve_internal_image_to_data_url}`:
+  - **Extension commands**: image args resolve to raw base64 before crossing
+    the extension process boundary (extensions are a separate process and
+    can't read hostless paths; previously failed with "Invalid base64").
+  - **Device command downlink**: command params carrying `/api/images/`
+    resolve to base64 data URLs before rendering, so external devices receive
+    usable bytes (mirrors the data-push outbound fix).
+  - **Chat `$cached:` references**: `LargeDataCache` recognizes `/api/images/`
+    URLs, so vision-tool chaining via cached (≥32 KB) tool results still feeds
+    vision tools the actual bytes instead of a raw JSON string.
+  - Centralized the URL→bytes / URL→data-URL read (with symlink-escape /
+    20 MB / magic-byte guards), replacing scattered local readers.
+  - data-push resolves `/api/images/` after the source filter, avoiding
+    resolution for sources that won't be delivered.
+  - Ingestion now converts base64-**string** image payloads (not just
+    `Binary`) to `/api/images/` URLs.
+  - Frontend: all image preview/download components recognize `/api/images/`
+    URLs (prepend server origin; fetch-as-blob for download).
+
+- **Image file lifecycle:**
+  - Unregistering a device now purges its `data/images/<device>/` directory
+    (previously lingered until age-based cleanup, up to `image_retention`).
+    Path-component validation + canonicalize guard prevent traversal/symlink
+    escape; best-effort, never blocks unregister.
+  - `cleanup_expired_images` reclaims stale `.tmp.*` temp files left by a
+    crashed `save_image_binary` (previously never collected — slow disk leak).
+  - `detect_content_type` no longer flags a result as image merely for
+    mentioning `/api/images/` in prose (e.g. an error message); requires a
+    bare URL or a JSON string value, avoiding false vision auto-injection.
+
+### Changed
+
+- `getServerOrigin()` is computed per call (dropped the memoized cache) to
+  avoid stale-origin risk on instance switch.
 
 ## [0.9.6] - 2026-07-14
 
