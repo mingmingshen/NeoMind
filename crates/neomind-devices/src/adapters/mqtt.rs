@@ -310,6 +310,22 @@ impl MqttAdapter {
         let mut subscribed_count = 0u32;
         for device in &devices {
             if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                // Skip if already covered by an existing subscription (e.g. "#"
+                // on the internal broker) — re-subscribing would make rumqttc
+                // deliver each message twice, duplicating every metric.
+                let covered = subscribed_topics
+                    .read()
+                    .await
+                    .iter()
+                    .any(|existing| topic_filter_covers(existing, telemetry_topic));
+                if covered {
+                    debug!(
+                        "Device telemetry topic '{}' already covered on broker {}, skipping re-subscribe",
+                        telemetry_topic, broker_id
+                    );
+                    continue;
+                }
+
                 debug!(
                     "Re-subscribing to device telemetry topic '{}' for broker '{}' (device '{}')",
                     telemetry_topic, broker_id, device.device_id
@@ -637,15 +653,7 @@ impl MqttAdapter {
         // and devices publishing to custom topics (e.g. "ne101/abc") are never seen.
         // add_broker_with_tls (external brokers) takes subscribe_topics as an explicit
         // parameter and is unaffected.
-        let mut initial_topics = vec![
-            "device/+/+/uplink".to_string(),
-            "device/+/+/downlink".to_string(),
-        ];
-        for topic in &self.config.subscribe_topics {
-            if !initial_topics.contains(topic) {
-                initial_topics.push(topic.clone());
-            }
-        }
+        let initial_topics = normalized_initial_subscription_topics(&self.config.subscribe_topics);
 
         // Bug 5: track subscription success so a total failure surfaces as an error
         // instead of silently marking the broker as "connected".
@@ -945,13 +953,7 @@ impl MqttAdapter {
         // self.config.subscribe_topics loop was removed (the API handler already sets
         // config.subscribe_topics from the same broker data, so adding it twice
         // caused rumqttc to receive duplicate SUBSCRIBE requests).
-        let mut initial_topics = vec![
-            "device/+/+/uplink".to_string(),
-            "device/+/+/downlink".to_string(),
-        ];
-        for topic in &subscribe_topics {
-            initial_topics.push(topic.clone());
-        }
+        let initial_topics = normalized_initial_subscription_topics(&subscribe_topics);
 
         // Bug 5: track subscription success so a total failure surfaces as an error
         // instead of silently marking the broker as "connected".
@@ -1542,6 +1544,27 @@ impl MqttAdapter {
                 continue;
             }
 
+            // Skip if an existing subscription already covers this topic. The
+            // internal broker subscribes to "#", so a per-device
+            // "device/.../uplink" is fully redundant — and worse, rumqttc
+            // delivers each matching message once PER subscription (twice here),
+            // duplicating every metric. Mirrors the overlap-dedup the initial
+            // topic list gets via normalized_initial_subscription_topics.
+            let covered = inner
+                .subscribed_topics
+                .read()
+                .await
+                .iter()
+                .any(|existing| topic_filter_covers(existing, topic));
+            if covered {
+                debug!(
+                    "Topic '{}' already covered by an existing subscription on broker {}, skipping to avoid duplicate delivery",
+                    topic, broker_id
+                );
+                subscribed_count += 1;
+                continue;
+            }
+
             match inner
                 .client
                 .subscribe(topic, rumqttc::QoS::AtLeastOnce)
@@ -2060,7 +2083,7 @@ impl MqttAdapter {
                                 for metric in result.metrics {
                                     // Convert Binary to URL before storage + event bus (fork point)
                                     let value = Self::convert_binary_to_url(
-                                        &device_id,
+                                        device_id,
                                         &metric.name,
                                         now.timestamp(),
                                         metric.value.clone(),
@@ -2119,7 +2142,7 @@ impl MqttAdapter {
 
                                     // Convert Binary to URL before storage + event bus (fork point)
                                     let value = Self::convert_binary_to_url(
-                                        &device_id,
+                                        device_id,
                                         metric_name,
                                         now.timestamp(),
                                         value,
@@ -2334,6 +2357,69 @@ fn parse_sys_presence_topic(topic: &str) -> Option<(String, bool)> {
 }
 
 /// Helper function to extract device ID from topic.
+fn normalized_initial_subscription_topics(configured_topics: &[String]) -> Vec<String> {
+    let topics = [
+        "device/+/+/uplink".to_string(),
+        "device/+/+/downlink".to_string(),
+    ]
+    .into_iter()
+    .chain(configured_topics.iter().cloned());
+
+    normalize_subscription_topics(topics)
+}
+
+fn normalize_subscription_topics<I>(topics: I) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut normalized: Vec<String> = Vec::new();
+
+    for topic in topics {
+        let topic = topic.trim();
+        if topic.is_empty() {
+            continue;
+        }
+
+        if normalized
+            .iter()
+            .any(|existing| topic_filter_covers(existing, topic))
+        {
+            continue;
+        }
+
+        normalized.retain(|existing| !topic_filter_covers(topic, existing));
+        normalized.push(topic.to_string());
+    }
+
+    normalized
+}
+
+fn topic_filter_covers(covering: &str, covered: &str) -> bool {
+    if covering == covered {
+        return true;
+    }
+
+    let covering_parts: Vec<&str> = covering.split('/').collect();
+    let covered_parts: Vec<&str> = covered.split('/').collect();
+    let mut i = 0usize;
+
+    loop {
+        match covering_parts.get(i).copied() {
+            Some("#") => return i == covering_parts.len() - 1,
+            Some("+") => match covered_parts.get(i).copied() {
+                Some("#") | None => return false,
+                Some(_) => i += 1,
+            },
+            Some(covering_part) => match covered_parts.get(i).copied() {
+                Some("#") | Some("+") | None => return false,
+                Some(covered_part) if covering_part == covered_part => i += 1,
+                Some(_) => return false,
+            },
+            None => return i == covered_parts.len(),
+        }
+    }
+}
+
 fn extract_device_id_from_topic(topic: &str, config: &MqttAdapterConfig) -> Option<String> {
     let parts: Vec<&str> = topic.split('/').collect();
 
@@ -2617,6 +2703,50 @@ mod tests {
             Ok(MetricValue::String(s)) => assert_eq!(s, "hello"),
             _ => panic!("Expected String value"),
         }
+    }
+
+    #[test]
+    fn test_normalized_initial_topics_removes_topics_covered_by_hash() {
+        let topics = normalized_initial_subscription_topics(&["#".to_string()]);
+        assert_eq!(topics, vec!["#"]);
+    }
+
+    #[test]
+    fn test_normalized_initial_topics_removes_topics_covered_by_device_hash() {
+        let topics = normalized_initial_subscription_topics(&["device/#".to_string()]);
+        assert_eq!(topics, vec!["device/#"]);
+    }
+
+    #[test]
+    fn test_normalized_initial_topics_keeps_uncovered_custom_topics() {
+        let topics = normalized_initial_subscription_topics(&["sensors/+/temperature".to_string()]);
+        assert_eq!(
+            topics,
+            vec![
+                "device/+/+/uplink".to_string(),
+                "device/+/+/downlink".to_string(),
+                "sensors/+/temperature".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_topic_filter_covers_standard_cases() {
+        assert!(topic_filter_covers("#", "device/+/+/uplink"));
+        assert!(topic_filter_covers("device/#", "device/+/+/uplink"));
+        assert!(topic_filter_covers(
+            "device/+/+/uplink",
+            "device/+/+/uplink"
+        ));
+        assert!(!topic_filter_covers("device/+/+/uplink", "device/#"));
+        assert!(topic_filter_covers(
+            "device/+/+/uplink",
+            "device/abc/001/uplink"
+        ));
+        assert!(!topic_filter_covers(
+            "device/abc/001/uplink",
+            "device/+/+/uplink"
+        ));
     }
 
     /// `$SYS` presence topics are the ONLY `$SYS` shape we synthesize
