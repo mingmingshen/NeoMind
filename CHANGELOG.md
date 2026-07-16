@@ -40,6 +40,13 @@ Data-push reliability + a nested batch format and a real-data test send.
   keyed by UUID, so iteration order was unrelated to recency).
 - Test-send auto-sampling skips `_raw`/`ts` but keeps `virtual.*` (extension/
   transform outputs are valid business data).
+- **Virtual metrics not forwarded** — transforms published their output events
+  only under `transform:{id}:`, but the source picker / telemetry dual-write
+  exposes them under `device:{id}:virtual.*`. A data-push target filtering on
+  the device namespace never matched, so virtual metrics (OCR/vision outputs,
+  etc.) were silently dropped. Transforms now also publish a
+  `device:{id}:virtual.*` DeviceMetric (`is_virtual`, feedback-safe), so
+  device-namespace filters forward them.
 
 ### Changed
 - Batch Aggregation UI gains a Payload Format dropdown, visible field labels,
