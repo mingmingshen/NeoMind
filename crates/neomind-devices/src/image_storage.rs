@@ -16,7 +16,15 @@
 //! GET /api/images/<device_id>/<metric>/<timestamp>.<ext>
 //! ```
 
+use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Monotonic counter appended to fallback image filenames when the primary
+/// `{ts}.{ext}` path is already taken (concurrent same-timestamp save, or a
+/// replayed timestamp): we retry `{ts}_{n}.{ext}`. A process-wide atomic
+/// counter guarantees concurrent fallbacks pick distinct `n`.
+static IMAGE_FILENAME_UNIQUIFIER: AtomicU64 = AtomicU64::new(0);
 
 /// Error types for image storage operations.
 #[derive(Debug)]
@@ -286,28 +294,94 @@ pub fn save_image_binary(
     // 2. Detect file extension from magic bytes
     let ext = detect_extension(bytes);
 
-    // 3. Build file path: <data_dir>/images/<device_id>/<metric>/<timestamp>.<ext>
-    let images_dir = data_dir.join("images");
-    let device_dir = images_dir.join(&safe_device_id);
-    let metric_dir = device_dir.join(&safe_metric);
-    let filename = format!("{}.{}", timestamp, ext);
-    let file_path = metric_dir.join(&filename);
-
-    // 4. Create parent directories if they don't exist
+    // 3. Build directory: <data_dir>/images/<device_id>/<metric>/
+    let metric_dir = data_dir
+        .join("images")
+        .join(&safe_device_id)
+        .join(&safe_metric);
     std::fs::create_dir_all(&metric_dir)?;
 
-    // 5. Write file atomically (write to temp file, then rename)
-    let temp_path = metric_dir.join(format!(".tmp.{}", timestamp));
-    std::fs::write(&temp_path, bytes)?;
-    std::fs::rename(&temp_path, &file_path)?;
+    // 4. Stage the bytes in a UNIQUE temp file inside metric_dir, then atomically
+    //    rename it into place. Decoupling the non-atomic write from the final
+    //    filename is what makes concurrent saves safe: two calls sharing the same
+    //    (device, metric, timestamp) — inevitable under dense reporting, since
+    //    both ingest adapters (mqtt.rs / webhook.rs) stamp metrics with a
+    //    second-granularity `now.timestamp()` — each write to their OWN temp file
+    //    instead of clobbering one shared `.tmp.<ts>` (which interleaved/truncated
+    //    bytes and produced corrupt images).
+    let mut tmp = tempfile::NamedTempFile::new_in(&metric_dir)?;
+    tmp.write_all(bytes)?;
+
+    // 5. Atomically move into place. The primary path keeps the historical
+    //    `{ts}.{ext}` shape so a non-colliding write still returns the same URL.
+    //    If the primary is already taken (concurrent same-timestamp save, or a
+    //    replayed timestamp), `persist_noclobber` refuses to overwrite and we
+    //    retry with unique `{ts}_{n}.{ext}` names — never dropping or overwriting
+    //    an earlier frame.
+    let primary_name = format!("{}.{}", timestamp, ext);
+    let primary_path = metric_dir.join(&primary_name);
+    let final_name = match tmp.persist_noclobber(&primary_path) {
+        Ok(_) => primary_name,
+        Err(err) => {
+            // Collision on the primary path. Two cases, told apart by the
+            // existing file's bytes:
+            //  * identical bytes → the SAME frame saved again. Ingest forks one
+            //    metric to BOTH storage and the event bus, so the same image is
+            //    converted twice; return the existing primary URL so both refer
+            //    to one image (idempotent, no duplicate file).
+            //  * different bytes → a genuinely distinct frame sharing the
+            //    timestamp. Pick a unique `{ts}_{n}.{ext}` name.
+            if existing_matches(&primary_path, bytes) {
+                primary_name
+            } else {
+                let mut last_err = err.error;
+                let mut pending = err.file;
+                let mut chosen = None;
+                for _ in 0..256 {
+                    let n = IMAGE_FILENAME_UNIQUIFIER.fetch_add(1, Ordering::Relaxed);
+                    let name = format!("{}_{}.{}", timestamp, n, ext);
+                    let path = metric_dir.join(&name);
+                    match pending.persist_noclobber(&path) {
+                        Ok(_) => {
+                            chosen = Some(name);
+                            break;
+                        }
+                        Err(e) => {
+                            // Same-frame idempotent hit on a fallback name is
+                            // astronomically unlikely, but guard it for safety.
+                            if existing_matches(&path, bytes) {
+                                chosen = Some(name);
+                                break;
+                            }
+                            last_err = e.error;
+                            pending = e.file;
+                        }
+                    }
+                }
+                match chosen {
+                    Some(name) => name,
+                    None => return Err(ImageStorageError::IoError(last_err)),
+                }
+            }
+        }
+    };
 
     // 6. Return URL path
-    let url_path = format!(
-        "/api/images/{}/{}/{}.{}",
-        safe_device_id, safe_metric, timestamp, ext
-    );
+    Ok(format!(
+        "/api/images/{}/{}/{}",
+        safe_device_id, safe_metric, final_name
+    ))
+}
 
-    Ok(url_path)
+/// True iff `path` exists and its contents are byte-identical to `bytes`.
+/// Makes [`save_image_binary`] idempotent: a frame saved twice (once into
+/// storage, once onto the event bus) resolves to the same file/URL rather than
+/// a duplicate, so both consumers stay consistent.
+fn existing_matches(path: &Path, bytes: &[u8]) -> bool {
+    match std::fs::read(path) {
+        Ok(existing) => existing == bytes,
+        Err(_) => false,
+    }
 }
 
 /// Detect MIME type from magic bytes. Falls back to `image/jpeg`.
@@ -621,6 +695,141 @@ mod tests {
         let (png_out, png_mime) = read_internal_image_url(&png_url, data_dir).unwrap();
         assert_eq!(png_out, png_bytes);
         assert_eq!(png_mime, "image/png");
+    }
+
+    /// Regression for v0.9.6 image-URL storage **corruption** under dense
+    /// reporting.
+    ///
+    /// `save_image_binary` derived BOTH the temp file (`.tmp.<ts>`) and the
+    /// target (`<ts>.<ext>`) from the timestamp alone. Both ingest adapters
+    /// (`mqtt.rs` `now.timestamp()`, `webhook.rs`) pass a **second-granularity**
+    /// timestamp, so frames arriving in the same second collide: concurrent
+    /// `std::fs::write` to the shared temp path interleave/truncate each other's
+    /// bytes, then each `rename`s onto the shared target — producing files that
+    /// exist and look sized but decode as corrupt images. This races N writers
+    /// on the SAME (device, metric, timestamp) and asserts every returned URL
+    /// resolves to EXACTLY that writer's bytes, with no frame lost.
+    #[test]
+    fn test_save_image_binary_concurrent_same_timestamp_no_corruption() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Barrier, Mutex};
+        use std::thread;
+
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = Arc::new(temp_dir.path().to_path_buf());
+
+        const N: usize = 8;
+        // Identical timestamp for every writer — emulates "same second" dense
+        // reporting (mqtt/webhook both use second-granularity `now.timestamp()`).
+        const TS: i64 = 1_700_000_000;
+
+        // Each writer gets a distinct, self-checking JPEG: a fixed magic header
+        // followed by that writer's index byte repeated. Interleaving/truncation
+        // changes a fill byte and the readback won't equal the original.
+        let payloads: Vec<Vec<u8>> = (0..N)
+            .map(|i| {
+                let mut v = vec![0xFF, 0xD8, 0xFF, 0xE0]; // JPEG magic
+                v.resize(4 + 8192, i as u8);
+                v
+            })
+            .collect();
+        let payloads = Arc::new(payloads);
+
+        let barrier = Arc::new(Barrier::new(N));
+        let results = Arc::new(Mutex::new(Vec::<(usize, String)>::with_capacity(N)));
+
+        let handles: Vec<_> = (0..N)
+            .map(|i| {
+                let data_dir = Arc::clone(&data_dir);
+                let payloads = Arc::clone(&payloads);
+                let barrier = Arc::clone(&barrier);
+                let results = Arc::clone(&results);
+                thread::spawn(move || {
+                    // Block until all writers are ready, then release together to
+                    // maximize the window for interleaving on the shared temp file.
+                    barrier.wait();
+                    let url = save_image_binary("cam-1", "image", TS, &payloads[i], &data_dir)
+                        .expect("save must succeed for every writer");
+                    results.lock().unwrap().push((i, url));
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("writer thread panicked");
+        }
+
+        let results = results.lock().unwrap();
+        assert_eq!(results.len(), N, "all {N} writers must complete");
+
+        // (1) No corruption: every URL must read back EXACTLY its writer's bytes.
+        for (i, url) in results.iter() {
+            let (bytes, _mime) =
+                read_internal_image_url(url, &data_dir).expect("file must be readable");
+            assert_eq!(
+                bytes, payloads[*i],
+                "writer {} image corrupted (interleaved/truncated) at {}",
+                i, url
+            );
+        }
+
+        // (2) No frame loss: each writer must land a distinct file (no overwrite).
+        let unique: HashSet<&str> = results.iter().map(|(_, u)| u.as_str()).collect();
+        assert_eq!(
+            unique.len(),
+            N,
+            "frames must not overwrite each other; URLs: {:?}",
+            results
+        );
+    }
+
+    /// Same root cause, serial symptom: saving the same (device, metric, ts)
+    /// twice must keep BOTH frames. Pre-fix the second write overwrote the first
+    /// (shared `<ts>.<ext>` target), silently dropping a frame.
+    #[test]
+    fn test_save_image_binary_same_timestamp_keeps_both() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+
+        let a = [0xFF, 0xD8, 0xFF, 0xE0, 0xAA];
+        let b = [0xFF, 0xD8, 0xFF, 0xE0, 0xBB];
+
+        let url_a = save_image_binary("cam-1", "image", 1000, &a, data_dir).unwrap();
+        let url_b = save_image_binary("cam-1", "image", 1000, &b, data_dir).unwrap();
+
+        assert_ne!(url_a, url_b, "same-timestamp saves must get distinct URLs");
+        let (ra, _) = read_internal_image_url(&url_a, data_dir).unwrap();
+        let (rb, _) = read_internal_image_url(&url_b, data_dir).unwrap();
+        assert_eq!(ra, a, "first frame must survive the second save");
+        assert_eq!(rb, b);
+    }
+
+    /// Idempotency contract: saving the SAME frame (identical device/metric/ts/
+    /// bytes) twice must resolve to the SAME URL. Ingest forks one metric to
+    /// both storage and the event bus, so the same image is converted twice —
+    /// both consumers must reference one file.
+    #[test]
+    fn test_save_image_binary_identical_bytes_is_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4];
+
+        let url1 = save_image_binary("cam-1", "image", 7000, &bytes, data_dir).unwrap();
+        let url2 = save_image_binary("cam-1", "image", 7000, &bytes, data_dir).unwrap();
+        assert_eq!(
+            url1, url2,
+            "identical frame saved twice must resolve to the same URL"
+        );
+
+        // Exactly one file on disk for this frame (no duplicate).
+        let files: Vec<_> = std::fs::read_dir(data_dir.join("images/cam-1/image"))
+            .unwrap()
+            .map(|e| e.unwrap())
+            .collect();
+        assert_eq!(files.len(), 1, "no duplicate file for an idempotent save");
+
+        let (back, _) = read_internal_image_url(&url1, data_dir).unwrap();
+        assert_eq!(back, bytes);
     }
 
     #[test]

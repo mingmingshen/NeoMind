@@ -22,7 +22,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// # File Format
 ///
 /// Images must be stored as: `<device>/<metric>/<timestamp>.<ext>`
-/// where `timestamp` is milliseconds since Unix epoch.
+/// where `timestamp` is **seconds** since Unix epoch — matching what
+/// `save_image_binary` writes (ingest adapters `mqtt.rs` / `webhook.rs` pass
+/// `now.timestamp()`, i.e. seconds). Comparing the filename ts in a different
+/// unit than it was written in makes every image parse as 1970 and get deleted.
 ///
 /// # Returns
 ///
@@ -36,14 +39,14 @@ pub async fn cleanup_expired_images(
         .duration_since(UNIX_EPOCH)
         .map_err(|e| anyhow::anyhow!("Failed to get current time: {}", e))?;
 
-    let cutoff_timestamp_ms = now
+    let cutoff_timestamp_secs = now
         .checked_sub(retention_duration)
         .ok_or_else(|| anyhow::anyhow!("Invalid retention duration: would underflow"))?
-        .as_millis() as i64;
+        .as_secs() as i64;
 
     tracing::debug!(
         retention_hours = retention_hours,
-        cutoff_timestamp_ms = cutoff_timestamp_ms,
+        cutoff_timestamp_secs = cutoff_timestamp_secs,
         "Starting image cleanup"
     );
 
@@ -56,16 +59,16 @@ pub async fn cleanup_expired_images(
 
     // Collect all files first to avoid borrowing issues
     let files_to_delete: Vec<(PathBuf, i64)> =
-        collect_expired_files(images_dir, cutoff_timestamp_ms)?;
+        collect_expired_files(images_dir, cutoff_timestamp_secs)?;
 
     // Delete files
-    for (file_path, timestamp_ms) in &files_to_delete {
+    for (file_path, timestamp_secs) in &files_to_delete {
         match fs::remove_file(file_path) {
             Ok(_) => {
                 files_deleted += 1;
                 tracing::debug!(
                     file = %file_path.display(),
-                    timestamp_ms = timestamp_ms,
+                    timestamp_secs = timestamp_secs,
                     "Deleted expired image file"
                 );
             }
@@ -102,7 +105,7 @@ pub async fn cleanup_expired_images(
 /// whose timestamp is older than the cutoff.
 fn collect_expired_files(
     images_dir: &Path,
-    cutoff_timestamp_ms: i64,
+    cutoff_timestamp_secs: i64,
 ) -> anyhow::Result<Vec<(PathBuf, i64)>> {
     let mut expired_files = Vec::new();
 
@@ -132,7 +135,7 @@ fn collect_expired_files(
 
         if file_type.is_dir() {
             // Recursively process subdirectories
-            let sub_files = collect_expired_files(&path, cutoff_timestamp_ms)?;
+            let sub_files = collect_expired_files(&path, cutoff_timestamp_secs)?;
             expired_files.extend(sub_files);
         } else if file_type.is_file() {
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -142,14 +145,14 @@ fn collect_expired_files(
                 // lingering .tmp.* means a crash mid-write. Expire by mtime
                 // (the temp name has no parseable timestamp) and only when
                 // older than the cutoff, so an in-flight write is never touched.
-                if let Some(mtime_ms) = file_mtime_ms(&path) {
-                    if mtime_ms < cutoff_timestamp_ms {
-                        expired_files.push((path, mtime_ms));
+                if let Some(mtime_secs) = file_mtime_secs(&path) {
+                    if mtime_secs < cutoff_timestamp_secs {
+                        expired_files.push((path, mtime_secs));
                     }
                 }
-            } else if let Some(timestamp_ms) = extract_timestamp_from_filename(&path) {
-                if timestamp_ms < cutoff_timestamp_ms {
-                    expired_files.push((path, timestamp_ms));
+            } else if let Some(timestamp_secs) = extract_timestamp_from_filename(&path) {
+                if timestamp_secs < cutoff_timestamp_secs {
+                    expired_files.push((path, timestamp_secs));
                 }
             }
         }
@@ -161,7 +164,7 @@ fn collect_expired_files(
 /// Extract timestamp from filename.
 ///
 /// Expects filename format: `<timestamp>.<ext>` where timestamp is
-/// milliseconds since Unix epoch.
+/// seconds since Unix epoch.
 fn extract_timestamp_from_filename(path: &Path) -> Option<i64> {
     let filename = path.file_name()?.to_str()?;
 
@@ -174,17 +177,17 @@ fn extract_timestamp_from_filename(path: &Path) -> Option<i64> {
     // The timestamp is the part before the extension
     let timestamp_str = parts.get(1)?;
 
-    // Parse as i64 (milliseconds)
+    // Parse as i64 (seconds)
     timestamp_str.parse::<i64>().ok()
 }
 
-/// File mtime in milliseconds since Unix epoch (for temp files that have no
+/// File mtime in seconds since Unix epoch (for temp files that have no
 /// parseable timestamp in their name).
-fn file_mtime_ms(path: &Path) -> Option<i64> {
+fn file_mtime_secs(path: &Path) -> Option<i64> {
     let meta = fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
     let age = mtime.duration_since(UNIX_EPOCH).ok()?;
-    Some(age.as_millis() as i64)
+    Some(age.as_secs() as i64)
 }
 
 /// Clean up empty directories in the images directory.
@@ -315,13 +318,13 @@ mod tests {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_secs() as i64;
 
         // Recent file (within retention period) - 1 hour ago
-        let recent_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 3600_000));
+        let recent_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 3600));
 
         // Expired file (older than retention period) - 5 hours ago
-        let expired_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18000_000));
+        let expired_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18000));
 
         // Run cleanup with 2 hours retention
         let result = cleanup_expired_images(&images_dir, 2).await.unwrap();
@@ -346,9 +349,9 @@ mod tests {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_secs() as i64;
 
-        let expired_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 5_000_000)); // ~1.4 hours ago
+        let expired_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 5_000)); // ~1.4 hours ago
 
         // Run cleanup with 1 hour retention to ensure file is deleted
         let result = cleanup_expired_images(&images_dir, 1).await.unwrap();
@@ -380,7 +383,7 @@ mod tests {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_secs() as i64;
 
         let recent_file = create_test_image_file(&metric_dir, &format!("{}.jpg", now));
 
@@ -400,7 +403,7 @@ mod tests {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_secs() as i64;
 
         // Create multiple devices with mixed file ages
         for device_id in 1..=3 {
@@ -409,10 +412,10 @@ mod tests {
             fs::create_dir_all(&metric_dir).unwrap();
 
             // Recent file (1 hour ago)
-            create_test_image_file(&metric_dir, &format!("{}.jpg", now - 3_600_000));
+            create_test_image_file(&metric_dir, &format!("{}.jpg", now - 3600));
 
             // Expired file (5 hours ago)
-            create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18_000_000));
+            create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18000));
         }
 
         // Run cleanup with 2 hours retention
@@ -445,8 +448,8 @@ mod tests {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
-        let expired = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18000_000));
+            .as_secs() as i64;
+        let expired = create_test_image_file(&metric_dir, &format!("{}.jpg", now - 18000));
 
         // Recent .tmp (in-flight write) — must NOT be deleted.
         let fresh_tmp = metric_dir.join(".tmp.9999");
@@ -458,5 +461,38 @@ mod tests {
         assert!(!expired.exists(), "expired image should be deleted");
         assert!(fresh_tmp.exists(), "fresh .tmp (in-flight) must be kept");
         assert_eq!(result.0, 2);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_keeps_new_image_stamped_in_seconds() {
+        // Regression (real production bug): ingest adapters stamp image
+        // filenames with a SECOND-granularity `now.timestamp()` (mqtt.rs /
+        // webhook.rs), NOT milliseconds. Pre-fix, cleanup treated the filename
+        // ts as milliseconds, so a brand-new image (ts ~= 1.75e9 seconds) parsed
+        // as 1970-01-21 and was ALWAYS deleted → every recent image returned
+        // "image not found" on download. Cleanup must interpret the filename ts
+        // as SECONDS to match what save_image_binary actually writes.
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let images_dir = temp_dir.path().join("images");
+        let metric_dir = create_test_dir_structure(&images_dir);
+
+        // Brand-new image, filename ts in SECONDS (exactly as production writes).
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let fresh = create_test_image_file(&metric_dir, &format!("{}.jpg", now_secs));
+
+        // 72h retention — a seconds-old image MUST survive.
+        let (deleted, _) = cleanup_expired_images(&images_dir, 72).await.unwrap();
+
+        assert!(
+            fresh.exists(),
+            "new second-granularity image must NOT be deleted"
+        );
+        assert_eq!(
+            deleted, 0,
+            "nothing should be deleted for a brand-new image"
+        );
     }
 }

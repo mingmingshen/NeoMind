@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-07-16
+
+Device image storage reliability (the headline), per-device-type raw-metric
+storage, telemetry memory tuning, and delivery-history UX.
+
+### Fixed
+
+- **Device image loss / "image not found" on download** — the real root cause
+  of the reported "image corruption under dense reporting". The image-retention
+  cleanup task interpreted the image filename timestamp as **milliseconds**, but
+  `save_image_binary` writes **seconds** (ingest adapters pass `now.timestamp()`).
+  A brand-new image (ts ≈ 1.75e9 s) parsed as 1970-01-21 — always older than the
+  cutoff — so cleanup deleted **every image, including just-uploaded ones**, while
+  the telemetry DB still held the `/api/images/` URL; downloads then returned
+  `404 image not found`. Cleanup now compares in seconds, matching the filename
+  unit, so existing second-granularity files are no longer mass-deleted.
+- **Concurrent image-write corruption** (secondary, latent hazard in the same
+  path). `save_image_binary` derived both the temp file (`.tmp.<ts>`) and the
+  target (`<ts>.<ext>`) from the timestamp alone; two same-second saves shared a
+  single temp file and the non-atomic `fs::write` interleaved/truncated bytes,
+  producing corrupt images. Each write is now staged in a unique
+  `tempfile::NamedTempFile` and atomically `persist_noclobber`-ed into place,
+  with an idempotency check so the same frame saved twice (storage + event bus)
+  resolves to one URL.
+
+### Added
+
+- **Per-device-type `store_raw`** (`DeviceTypeTemplate.store_raw: Option<bool>`)
+  controls whether the `UnifiedExtractor` emits the `_raw` metric (full payload
+  snapshot). Precedence: template > extractor config (default `true`). NE301 /
+  NE101 cameras ship `store_raw: false`, so their telemetry no longer redundantly
+  stores the full base64 image as `_raw` — the image is already kept as
+  `/api/images/...` via the dedicated image metric.
+- **Delivery-history payload copy & preview** — the payload column in
+  `DeliveryHistoryPanel` gains per-row Copy + Preview buttons; Preview opens a
+  nested dialog showing pretty-printed JSON, byte count, and copy.
+
+### Changed
+
+- **Telemetry redb cache capped** to shrink production RSS. redb 2.6.3 defaults
+  to a 1 GiB per-DB page cache; `telemetry.redb` is the only store large enough
+  to fill it (~916 MB anonymous heap, the dominant contributor to RSS ~2.4 GB).
+  Capped via `NEOMIND_TELEMETRY_CACHE_MB` (default 256 MiB); the OS page cache
+  backs reads regardless, so read perf is largely preserved while moving the
+  cache from non-reclaimable heap to reclaimable page cache. Target: RSS
+  ~2.4 GB → ~1.7 GB.
+
 ## [0.9.7] - 2026-07-15
 
 Hotfix for the 0.9.6 ARM64 server startup crash.
