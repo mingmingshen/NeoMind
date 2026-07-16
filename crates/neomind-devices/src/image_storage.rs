@@ -8,12 +8,12 @@
 //!
 //! Images are stored at:
 //! ```text
-//! <data_dir>/images/<device_id>/<metric>/<timestamp>.<ext>
+//! <data_dir>/images/<device_id>/<metric>/<timestamp>_<content_id>.<ext>
 //! ```
 //!
 //! And served via:
 //! ```text
-//! GET /api/images/<device_id>/<metric>/<timestamp>.<ext>
+//! GET /api/images/<device_id>/<metric>/<timestamp>_<content_id>.<ext>
 //! ```
 
 use std::io::Write;
@@ -247,14 +247,14 @@ pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
 ///
 /// Returns the URL path that can be used to serve the image:
 /// ```text
-/// /api/images/<device_id>/<metric>/<timestamp>.<ext>
+/// /api/images/<device_id>/<metric>/<timestamp>_<content_id>.<ext>
 /// ```
 ///
 /// # Path Structure
 ///
 /// Files are stored at:
 /// ```text
-/// <data_dir>/images/<device_id>/<metric>/<timestamp>.<ext>
+/// <data_dir>/images/<device_id>/<metric>/<timestamp>_<content_id>.<ext>
 /// ```
 ///
 /// # Example
@@ -270,7 +270,7 @@ pub fn try_decode_base64_image(s: &str) -> Option<Vec<u8>> {
 /// let data_dir = PathBuf::from("/data");
 ///
 /// let url = save_image_binary(device_id, metric, timestamp, bytes, &data_dir)?;
-/// assert_eq!(url.as_str(), "/api/images/camera-001/image/1634567890000.jpg");
+/// // url shape: "/api/images/camera-001/image/<timestamp>_<content_id>.jpg"
 /// # Ok(())
 /// # }
 /// ```
@@ -293,6 +293,16 @@ pub fn save_image_binary(
 
     // 2. Detect file extension from magic bytes
     let ext = detect_extension(bytes);
+
+    // 2b. Content-derived UUID (v5 of the image bytes). Two goals at once:
+    //   - idempotent: the same frame saved twice (ingest forks one metric to
+    //     both storage and the event bus) maps to the SAME filename, so both
+    //     resolve to one file/URL instead of a duplicate;
+    //   - non-enumerable: the UUID is a hash of the image content, so an
+    //     attacker cannot guess it from outside (they'd need the bytes first).
+    //     This defeats timestamp-based enumeration of
+    //     /api/images/<device>/<metric>/<ts>.<ext> on public deployments.
+    let content_id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, bytes);
 
     // 3. Build directory: <data_dir>/images/<device_id>/<metric>/
     let metric_dir = data_dir
@@ -318,7 +328,7 @@ pub fn save_image_binary(
     //    replayed timestamp), `persist_noclobber` refuses to overwrite and we
     //    retry with unique `{ts}_{n}.{ext}` names — never dropping or overwriting
     //    an earlier frame.
-    let primary_name = format!("{}.{}", timestamp, ext);
+    let primary_name = format!("{}_{}.{}", timestamp, content_id.simple(), ext);
     let primary_path = metric_dir.join(&primary_name);
     let final_name = match tmp.persist_noclobber(&primary_path) {
         Ok(_) => primary_name,
@@ -339,7 +349,7 @@ pub fn save_image_binary(
                 let mut chosen = None;
                 for _ in 0..256 {
                     let n = IMAGE_FILENAME_UNIQUIFIER.fetch_add(1, Ordering::Relaxed);
-                    let name = format!("{}_{}.{}", timestamp, n, ext);
+                    let name = format!("{}_{}_{}.{}", timestamp, content_id.simple(), n, ext);
                     let path = metric_dir.join(&name);
                     match pending.persist_noclobber(&path) {
                         Ok(_) => {
@@ -594,10 +604,20 @@ mod tests {
         let url =
             save_image_binary("camera-001", "image", 1634567890000, &jpeg_bytes, data_dir).unwrap();
 
-        assert_eq!(url, "/api/images/camera-001/image/1634567890000.jpg");
+        // Filename embeds a content-derived UUID so the URL is not enumerable
+        // by timestamp alone on public deployments: <ts>_<content_id>.<ext>
+        let content_id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, &jpeg_bytes);
+        let expected = format!(
+            "/api/images/camera-001/image/1634567890000_{}.jpg",
+            content_id.simple()
+        );
+        assert_eq!(url, expected);
 
         // Verify file exists
-        let file_path = data_dir.join("images/camera-001/image/1634567890000.jpg");
+        let file_path = data_dir.join(format!(
+            "images/camera-001/image/1634567890000_{}.jpg",
+            content_id.simple()
+        ));
         assert!(file_path.exists());
 
         // Verify file contents
@@ -624,9 +644,19 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(url, "/api/images/sensor-02/screenshot/1634567890001.png");
+        let content_id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, &png_bytes);
+        assert_eq!(
+            url,
+            format!(
+                "/api/images/sensor-02/screenshot/1634567890001_{}.png",
+                content_id.simple()
+            )
+        );
 
-        let file_path = data_dir.join("images/sensor-02/screenshot/1634567890001.png");
+        let file_path = data_dir.join(format!(
+            "images/sensor-02/screenshot/1634567890001_{}.png",
+            content_id.simple()
+        ));
         assert!(file_path.exists());
     }
 
@@ -927,20 +957,23 @@ mod tests {
         let url3 =
             save_image_binary("device-001", "metric-c", 1001, &jpeg_bytes, &data_dir).unwrap();
 
-        // All should succeed without conflicts
-        assert_eq!(url1, "/api/images/device-001/metric-a/1000.jpg");
-        assert_eq!(url2, "/api/images/device-002/metric-b/1000.jpg");
-        assert_eq!(url3, "/api/images/device-001/metric-c/1001.jpg");
+        // All should succeed without conflicts. Same bytes → same content_id
+        // segment; device/metric/ts differ so each URL is still distinct.
+        let content_id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, &jpeg_bytes);
+        let cid = content_id.simple();
+        assert_eq!(url1, format!("/api/images/device-001/metric-a/1000_{cid}.jpg"));
+        assert_eq!(url2, format!("/api/images/device-002/metric-b/1000_{cid}.jpg"));
+        assert_eq!(url3, format!("/api/images/device-001/metric-c/1001_{cid}.jpg"));
 
         // Verify all files exist
         assert!(data_dir
-            .join("images/device-001/metric-a/1000.jpg")
+            .join(format!("images/device-001/metric-a/1000_{cid}.jpg"))
             .exists());
         assert!(data_dir
-            .join("images/device-002/metric-b/1000.jpg")
+            .join(format!("images/device-002/metric-b/1000_{cid}.jpg"))
             .exists());
         assert!(data_dir
-            .join("images/device-001/metric-c/1001.jpg")
+            .join(format!("images/device-001/metric-c/1001_{cid}.jpg"))
             .exists());
     }
 
