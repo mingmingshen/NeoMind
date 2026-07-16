@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Data Explorer export missed images stored as URLs** — since 0.9.6's
+  image-URL storage, image metric values are short `/api/images/...` URLs (file
+  on disk), not base64. The export only detected base64 data-URIs as image
+  content, so URL-stored images exported as just the URL string in an Excel
+  table — a regression from the pre-0.9.6 base64 era where the image bytes were
+  bundled into a ZIP. The export now detects `/api/images/` values, fetches the
+  bytes (same auth headers as the rest of the API client), and bundles them into
+  the ZIP. Points whose file can't be fetched keep their URL in `data.csv`.
+
 ## [0.9.8] - 2026-07-16
 
 Device image storage reliability (the headline), per-device-type raw-metric
