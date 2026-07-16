@@ -111,9 +111,19 @@ impl DataSourceFilter {
         if self.source_patterns.is_empty() {
             return true;
         }
-        self.source_patterns
-            .iter()
-            .any(|pattern| source_id.starts_with(pattern) || source_id == pattern)
+        self.source_patterns.iter().any(|pattern| {
+            if pattern == "*" {
+                return true;
+            }
+            // Trailing wildcard: "device:sensor:*" matches "device:sensor:temperature".
+            // Without this the literal '*' fails starts_with and the filter
+            // silently matches nothing — a very common user/AI expectation.
+            if let Some(prefix) = pattern.strip_suffix('*') {
+                source_id.starts_with(prefix)
+            } else {
+                source_id.starts_with(pattern) || source_id == pattern
+            }
+        })
     }
 }
 
@@ -219,5 +229,25 @@ mod tests {
             only_changes: false,
         };
         assert!(filter.matches("anything"));
+    }
+
+    #[test]
+    fn test_data_source_filter_trailing_wildcard() {
+        // "device:sensor1:*" must match all fields under that device — the '*'
+        // is a wildcard, not a literal. Regression for the bug where push
+        // silently matched nothing because starts_with("...:*") failed.
+        let filter = DataSourceFilter {
+            source_patterns: vec!["device:sensor1:*".to_string()],
+            only_changes: false,
+        };
+        assert!(filter.matches("device:sensor1:temperature"));
+        assert!(filter.matches("device:sensor1:humidity"));
+        assert!(!filter.matches("device:sensor2:temperature"));
+        // Bare "*" matches everything.
+        let all = DataSourceFilter {
+            source_patterns: vec!["*".to_string()],
+            only_changes: false,
+        };
+        assert!(all.matches("anything"));
     }
 }
