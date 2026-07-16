@@ -45,11 +45,31 @@ export function PushTargetsTab() {
 
   const handleToggle = useCallback(async (target: PushTarget) => {
     if (target.enabled) {
-      await stopPushTarget(target.id)
+      // Stop interrupts the downstream data stream — confirm before executing.
+      // Start is harmless and runs immediately (no confirm, asymmetric by design).
+      const ok = await confirm({
+        title: t('common:dataPush.confirmStop', 'Stop this push target?'),
+        description: target.name,
+        confirmText: t('common:dataPush.stop', 'Stop'),
+        cancelText: t('common:cancel', 'Cancel'),
+        variant: 'default',
+      })
+      if (!ok) return
+      const success = await stopPushTarget(target.id)
+      if (success) {
+        notifySuccess(t('common:dataPush.stopped', 'Stopped'), target.name)
+      } else {
+        notifyError(t('common:dataPush.stopFailed', 'Stop failed'), target.name)
+      }
     } else {
-      await startPushTarget(target.id)
+      const success = await startPushTarget(target.id)
+      if (success) {
+        notifySuccess(t('common:dataPush.started', 'Started'), target.name)
+      } else {
+        notifyError(t('common:dataPush.startFailed', 'Start failed'), target.name)
+      }
     }
-  }, [startPushTarget, stopPushTarget])
+  }, [startPushTarget, stopPushTarget, t])
 
   const handleTest = useCallback(async (id: string, name: string) => {
     setTestingId(id)
