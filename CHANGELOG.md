@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Data-push reliability + a nested batch format and a real-data test send.
+
+### Added
+- **Nested batch payload format** for push targets (`BatchConfig.format`:
+  `flat` | `nested`, default `flat`). Nested groups events by source into
+  `items[].{source_type, id, data}`, splitting the source_id field on `.` to
+  rebuild the object nesting that ingestion flattens (`device:9999:values.devName`
+  → `data.values.devName`). Backward compatible — existing targets stay flat.
+- **Real-data test send** — `POST /api/data-push/:id/test` now sends the latest
+  metric for a bound source (falling back to the fixed sample when nothing is
+  bound/found). Telemetry is wired into `PushManager` via `new_with_telemetry`.
+
+### Fixed
+- **Duplicate pushed metrics** — the internal MQTT broker client subscribed to
+  `#` AND per-device telemetry topics, so rumqttc delivered each uplink once per
+  matching subscription (twice) and every metric was pushed twice (16 events
+  instead of 8). Overlap is now deduped on both the initial subscription list
+  and the dynamic per-device subscribe paths.
+- **Batch splitting** — the batch flush timer was set once at task start, so
+  after an idle period its deadline was already in the past and `sleep_until`
+  fired immediately, splitting a single uplink into spurious small batches
+  (e.g. `count:7` + `count:1`). The timer now restarts on the first event of
+  each new batch.
+- **`_raw` whole-payload dump** is dropped from push output (huge for cameras,
+  redundant with structured metrics).
+- Removed the always-null `metadata` field from push payloads (the EventBus
+  `EventMetadata` was discarded and never populated).
+- **Delivery history** now sorts newest-first by `created_at` (the table is
+  keyed by UUID, so iteration order was unrelated to recency).
+- Test-send auto-sampling skips `_raw`/`ts` but keeps `virtual.*` (extension/
+  transform outputs are valid business data).
+
+### Changed
+- Batch Aggregation UI gains a Payload Format dropdown, visible field labels,
+  and description/hint text (zh/en).
+
 ## [0.9.8] - 2026-07-16
 
 Device image storage reliability (the headline), per-device-type raw-metric
