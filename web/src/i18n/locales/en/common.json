@@ -699,7 +699,7 @@
     "updated": "Updated",
     "running": "Running",
     "stopped": "Stopped",
-    "toggle": "Toggle",
+    "toggle": "Start / Stop",
     "nameRequired": "Name Required",
     "urlRequired": "Url Required"
   },

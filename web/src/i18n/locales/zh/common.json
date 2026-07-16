@@ -695,7 +695,7 @@
     "updated": "已更新",
     "running": "运行中",
     "stopped": "已停止",
-    "toggle": "切换",
+    "toggle": "启停",
     "nameRequired": "名称为必填项",
     "urlRequired": "URL 为必填项"
   },

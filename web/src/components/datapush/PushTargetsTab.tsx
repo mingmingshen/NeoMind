@@ -172,7 +172,7 @@ export function PushTargetsTab() {
 
   const actions = [
     {
-      label: t('common:dataPush.toggle', 'Toggle'),
+      label: t('common:dataPush.toggle', 'Start / Stop'),
       icon: <Play className="h-4 w-4" />,
       onClick: (rowData?: Record<string, unknown>) => handleToggle(rowData as unknown as PushTarget),
     },
