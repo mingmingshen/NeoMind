@@ -174,11 +174,16 @@ fn extract_timestamp_from_filename(path: &Path) -> Option<i64> {
         return None;
     }
 
-    // The timestamp is the part before the extension
+    // The timestamp is the part before the extension. Primary format is
+    // `<timestamp>.<ext>`; save_image_binary also emits `<timestamp>_<n>.<ext>`
+    // on same-(device,metric,ts) write collisions. Strip the `_<n>` uniquifier
+    // so those files are still expired by retention — otherwise they parse as
+    // non-numeric and leak on disk forever (collect_expired_files skips them).
     let timestamp_str = parts.get(1)?;
+    let ts_segment = timestamp_str.split('_').next()?;
 
     // Parse as i64 (seconds)
-    timestamp_str.parse::<i64>().ok()
+    ts_segment.parse::<i64>().ok()
 }
 
 /// File mtime in seconds since Unix epoch (for temp files that have no
@@ -293,6 +298,18 @@ mod tests {
         assert_eq!(
             extract_timestamp_from_filename(Path::new("0.webp")),
             Some(0)
+        );
+
+        // Fallback collision format `<ts>_<n>.<ext>` emitted by save_image_binary
+        // on same-(device,metric,ts) writes — must still parse so retention can
+        // expire them (otherwise they leak forever).
+        assert_eq!(
+            extract_timestamp_from_filename(Path::new("1700000000_5.jpg")),
+            Some(1700000000)
+        );
+        assert_eq!(
+            extract_timestamp_from_filename(Path::new("1700000000_12.png")),
+            Some(1700000000)
         );
 
         // Invalid filenames
