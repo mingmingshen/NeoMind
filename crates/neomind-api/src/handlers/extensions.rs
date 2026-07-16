@@ -2244,11 +2244,20 @@ async fn download_to_temp_file(
         }
         file.write_all(&chunk)
             .await
-            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+            .map_err(|e| {
+                // Clean up the partial temp file on write failure (disk full,
+                // quota, perms) — the chunk-error and oversize paths already
+                // do this; without it a failed install leaks up to max_size bytes.
+                let _ = std::fs::remove_file(&tmp_path);
+                format!("Failed to write temp file: {}", e)
+            })?;
     }
     file.flush()
         .await
-        .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            format!("Failed to flush temp file: {}", e)
+        })?;
     tracing::info!("Downloaded {} bytes to {}", total, tmp_path.display());
     Ok(tmp_path)
 }
@@ -2356,16 +2365,21 @@ pub async fn install_marketplace_extension_handler(
         }
     };
 
-    // Detect platform
+    // Detect platform + hardware variant (jetson/cuda/cpu) so jetson/cuda
+    // installs download the accelerated .nep build, not the plain CPU one.
+    // Mirrors the legacy binary branch below (which already uses select_build_key);
+    // the .nep branch previously skipped variant selection entirely.
     let platform = detect_platform();
+    let variant = neomind_core::extension::accel::detect_variant();
 
     // Build platform-specific .nep package URL from builds metadata
     // The package_url field in metadata is hardcoded to darwin_aarch64, so we ignore it
     // and use the correct URL from builds for the current platform
     let package_url = if platform != "unknown" {
-        // Get the URL directly from builds for this platform
-        // builds keys use hyphen format (windows-x86_64), same as detect_platform()
-        metadata.builds.get(platform).map(|b| b.url.clone())
+        let available_keys: std::collections::HashSet<&str> =
+            metadata.builds.keys().map(|s| s.as_str()).collect();
+        select_build_key(&available_keys, platform, variant)
+            .and_then(|key| metadata.builds.get(key.as_str()).map(|b| b.url.clone()))
     } else {
         metadata.package_url.clone()
     };
