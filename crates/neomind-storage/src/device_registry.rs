@@ -899,7 +899,7 @@ impl DeviceRegistryStore {
             })?;
             // Builtin template version. Bump when pulling updated templates from
             // camthink-ai/NeoMind-DeviceTypes to propagate updates to existing installs.
-            bundled.builtin_version = Some("1.0.0".to_string());
+            bundled.builtin_version = Some("1.1.0".to_string());
 
             match self.load_template(device_type)? {
                 // Doesn't exist → insert
@@ -1230,7 +1230,7 @@ mod tests {
         assert!(ne101.name.contains("NE101") || ne101.name.contains("Sensing"));
         assert!(!ne101.metrics.is_empty());
         // Builtin templates should have version set
-        assert_eq!(ne101.builtin_version.as_deref(), Some("1.0.0"));
+        assert_eq!(ne101.builtin_version.as_deref(), Some("1.1.0"));
 
         // Verify NE301 content
         let ne301 = store.load_template("ne301_camera").unwrap().unwrap();
@@ -1238,11 +1238,46 @@ mod tests {
         assert!(ne301.name.contains("NE301") || ne301.name.contains("Edge AI"));
         assert!(!ne301.metrics.is_empty());
         assert!(!ne301.commands.is_empty()); // NE301 has capture/sleep commands
-        assert_eq!(ne301.builtin_version.as_deref(), Some("1.0.0"));
+        assert_eq!(ne301.builtin_version.as_deref(), Some("1.1.0"));
 
         // Second seed should not overwrite (same version = idempotent)
         let seeded_again = store.seed_builtin_templates().unwrap();
         assert_eq!(seeded_again, 0);
+    }
+
+    #[test]
+    fn test_seed_updates_templates_from_older_builtin_version() {
+        // Upgrades: a builtin template seeded at an older builtin_version
+        // (e.g. pre-0.9.8, before store_raw existed) must be rewritten when
+        // the bundled version bumps. Without this, store_raw:false (and any
+        // later template fix) never reaches existing installs — see store_raw
+        // optimization regression for upgraded users.
+        let store = create_temp_store();
+
+        // Pre-seed NE101 at the OLD version with store_raw unset (pre-0.9.8 state)
+        let stale = DeviceTypeTemplate {
+            device_type: "ne101_camera".to_string(),
+            name: "Stale NE101".to_string(),
+            description: "pre-0.9.8 install".to_string(),
+            categories: vec![],
+            mode: DeviceTypeMode::Full,
+            metrics: vec![],
+            uplink_samples: vec![],
+            commands: vec![],
+            default_offline_timeout_secs: None,
+            builtin_version: Some("1.0.0".to_string()),
+            store_raw: None,
+        };
+        store.save_template(&stale).unwrap();
+
+        // Bumped bundled version is newer → seeder must rewrite the stale template
+        let seeded = store.seed_builtin_templates().unwrap();
+        assert_eq!(seeded, 2, "stale NE101 updated + NE301 inserted fresh");
+
+        // Updated template now carries the new version AND store_raw:false
+        let updated = store.load_template("ne101_camera").unwrap().unwrap();
+        assert_eq!(updated.builtin_version.as_deref(), Some("1.1.0"));
+        assert_eq!(updated.store_raw, Some(false));
     }
 
     #[test]
