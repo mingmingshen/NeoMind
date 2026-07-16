@@ -2399,6 +2399,18 @@ fn topic_filter_covers(covering: &str, covered: &str) -> bool {
         return true;
     }
 
+    // MQTT spec: a root-level wildcard filter ("#", "+/...") never matches a
+    // topic whose first level starts with '$' (e.g. $SYS/...). Such topics
+    // require an explicit "$..." filter. Without this guard, a user's "#"
+    // device subscription would make normalize_subscription_topics treat the
+    // broker's $SYS presence subscriptions as redundant and drop them —
+    // silently breaking external-broker transport online/offline detection.
+    let covering_first = covering.split('/').next().unwrap_or("");
+    let covered_first = covered.split('/').next().unwrap_or("");
+    if covered_first.starts_with('$') && matches!(covering_first, "#" | "+") {
+        return false;
+    }
+
     let covering_parts: Vec<&str> = covering.split('/').collect();
     let covered_parts: Vec<&str> = covered.split('/').collect();
     let mut i = 0usize;
@@ -2747,6 +2759,32 @@ mod tests {
             "device/abc/001/uplink",
             "device/+/+/uplink"
         ));
+    }
+
+    /// MQTT spec: root-level wildcards ("#", "+") must NOT cover `$`-prefixed
+    /// topics (e.g. `$SYS/...`). Otherwise a user's "#" device subscription
+    /// would dedup away the broker `$SYS` presence subscriptions and silently
+    /// break external-broker transport online/offline detection.
+    #[test]
+    fn test_topic_filter_covers_wildcards_skip_dollar_topics() {
+        // Root "#" must not cover a $SYS topic
+        assert!(!topic_filter_covers(
+            "#",
+            "$SYS/brokers/emqx@host/clients/sensor-001/connected"
+        ));
+        // Root "+/..." must not cover a $SYS topic either
+        assert!(!topic_filter_covers("+/brokers", "$SYS/brokers"));
+        // But an explicit "$SYS/..." filter still covers $SYS topics normally
+        assert!(topic_filter_covers(
+            "$SYS/brokers/#",
+            "$SYS/brokers/emqx@host/clients/sensor-001/connected"
+        ));
+        assert!(topic_filter_covers(
+            "$SYS/brokers/+/clients/+/connected",
+            "$SYS/brokers/emqx@host/clients/sensor-001/connected"
+        ));
+        // Non-$ topics are unaffected: "#" still covers device topics
+        assert!(topic_filter_covers("#", "device/abc/001/uplink"));
     }
 
     /// `$SYS` presence topics are the ONLY `$SYS` shape we synthesize
