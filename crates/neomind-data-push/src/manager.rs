@@ -362,12 +362,14 @@ async fn query_latest_for_pattern(
     let mut best: Option<TemplateContext> = None;
 
     for metric in metrics {
-        // Skip derived/raw metrics when auto-selecting a representative sample:
-        // `virtual.*` are extension/transform outputs and `_raw` is the whole-
-        // payload dump. They're rarely what you want to test-push (and OCR/vision
-        // outputs can be large stringified blobs). Explicitly binding one as an
-        // exact metric still works — that path (above) is unaffected.
-        if metric.starts_with("virtual.") || metric == "_raw" {
+        // Skip non-data metrics when auto-selecting a representative sample:
+        // `virtual.*` are extension/transform outputs, `_raw` is the whole-
+        // payload dump, and `ts` is the device clock (a timestamp, not a
+        // reading). All metrics of one uplink share the same event timestamp,
+        // so without this the alphabetical tiebreak would hand the sample to
+        // `ts` over real `values.*` fields. Explicitly binding any of these as
+        // an exact metric still works — that path (above) is unaffected.
+        if metric.starts_with("virtual.") || metric == "_raw" || metric == "ts" {
             continue;
         }
         let Some(candidate) = latest_context_for_metric(telemetry, &source_id, &metric).await?
@@ -530,7 +532,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_latest_context_skips_virtual_and_raw_in_prefix() {
+    async fn test_latest_context_skips_non_data_metrics_in_prefix() {
         let telemetry = TimeSeriesStorage::memory().unwrap();
         telemetry
             .write(
@@ -540,8 +542,16 @@ mod tests {
             )
             .await
             .unwrap();
-        // virtual (extension output) and _raw are newer, but should be skipped
-        // when auto-selecting a representative sample from a prefix filter.
+        // ts (device clock), virtual.* (extension output) and _raw are all newer
+        // but should be skipped when auto-selecting a representative sample.
+        telemetry
+            .write(
+                "device:s1",
+                "ts",
+                DataPoint::new(1700000015, MetricValue::Integer(1740640441220)),
+            )
+            .await
+            .unwrap();
         telemetry
             .write(
                 "device:s1",
@@ -568,7 +578,7 @@ mod tests {
             .await
             .unwrap()
             .expect("latest context");
-        // The real metric wins even though virtual/_raw are newer.
+        // The real reading wins even though ts/virtual/_raw are newer.
         assert_eq!(ctx.source_id, "device:s1:temperature");
     }
 
