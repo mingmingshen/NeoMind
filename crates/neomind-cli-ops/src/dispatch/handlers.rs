@@ -806,7 +806,24 @@ pub async fn run_push_cmd(cmd: PushCommand) -> Result<(CliResponse, OutputFormat
             name,
             config,
             enabled,
-        } => update_target(&client, &id, name.as_deref(), config.as_deref(), enabled).await?,
+            sources,
+            schedule,
+            template,
+            only_changes,
+        } => {
+            update_target(
+                &client,
+                &id,
+                name.as_deref(),
+                config.as_deref(),
+                enabled,
+                sources.as_deref(),
+                schedule.as_deref(),
+                template.as_deref(),
+                only_changes,
+            )
+            .await?
+        }
         PushCommand::Delete { id } => delete_target(&client, &id).await?,
         PushCommand::Start { id } => start_target(&client, &id).await?,
         PushCommand::Stop { id } => stop_target(&client, &id).await?,

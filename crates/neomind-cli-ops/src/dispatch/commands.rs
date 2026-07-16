@@ -1758,12 +1758,28 @@ pub enum PushCommand {
         /// New name.
         #[arg(long)]
         name: Option<String>,
-        /// New config as JSON.
+        /// New target config as JSON (target-specific: webhook url/headers,
+        /// mqtt broker/topic). NOTE: data_filter/schedule/template are NOT
+        /// config — use --sources / --schedule / --template instead.
         #[arg(long)]
         config: Option<String>,
         /// Enable or disable.
         #[arg(long)]
         enabled: Option<bool>,
+        /// Comma-separated source patterns (TOP-LEVEL filter, e.g.
+        /// "device:sensor-001:"). Only matching DataSourceIds are pushed.
+        #[arg(long)]
+        sources: Option<String>,
+        /// Schedule: "event" (real-time) or "interval" (every 60s).
+        #[arg(long)]
+        schedule: Option<String>,
+        /// Handlebars template as a JSON string (transforms each payload).
+        #[arg(long)]
+        template: Option<String>,
+        /// Only push when the value changes. Requires --sources (the whole
+        /// data_filter is replaced, so patterns must be supplied with it).
+        #[arg(long)]
+        only_changes: Option<bool>,
     },
     /// Delete a push target.
     ///
