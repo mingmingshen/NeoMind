@@ -362,14 +362,12 @@ async fn query_latest_for_pattern(
     let mut best: Option<TemplateContext> = None;
 
     for metric in metrics {
-        // Skip non-data metrics when auto-selecting a representative sample:
-        // `virtual.*` are extension/transform outputs, `_raw` is the whole-
-        // payload dump, and `ts` is the device clock (a timestamp, not a
-        // reading). All metrics of one uplink share the same event timestamp,
-        // so without this the alphabetical tiebreak would hand the sample to
-        // `ts` over real `values.*` fields. Explicitly binding any of these as
-        // an exact metric still works — that path (above) is unaffected.
-        if metric.starts_with("virtual.") || metric == "_raw" || metric == "ts" {
+        // Skip non-business metrics when auto-selecting a sample: `_raw` is the
+        // whole-payload dump and `ts` is the device clock (a timestamp, not a
+        // reading). `virtual.*` (extension/transform outputs) ARE valid business
+        // data — keep them. Explicitly binding any field as an exact metric is
+        // unaffected either way (that path above never filtered).
+        if metric == "_raw" || metric == "ts" {
             continue;
         }
         let Some(candidate) = latest_context_for_metric(telemetry, &source_id, &metric).await?
@@ -532,26 +530,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_latest_context_skips_non_data_metrics_in_prefix() {
+    async fn test_latest_context_keeps_virtual_skips_raw_and_ts() {
         let telemetry = TimeSeriesStorage::memory().unwrap();
-        telemetry
-            .write(
-                "device:s1",
-                "temperature",
-                DataPoint::new(1700000000, MetricValue::Float(23.5)),
-            )
-            .await
-            .unwrap();
-        // ts (device clock), virtual.* (extension output) and _raw are all newer
-        // but should be skipped when auto-selecting a representative sample.
-        telemetry
-            .write(
-                "device:s1",
-                "ts",
-                DataPoint::new(1700000015, MetricValue::Integer(1740640441220)),
-            )
-            .await
-            .unwrap();
+        // virtual/transform outputs are valid business data — keep them.
         telemetry
             .write(
                 "device:s1",
@@ -560,11 +541,21 @@ mod tests {
             )
             .await
             .unwrap();
+        // _raw (dump) and ts (device clock) are not business data — skip them,
+        // even though they're newer than the virtual metric.
         telemetry
             .write(
                 "device:s1",
                 "_raw",
                 DataPoint::new(1700000030, MetricValue::String("{}".to_string())),
+            )
+            .await
+            .unwrap();
+        telemetry
+            .write(
+                "device:s1",
+                "ts",
+                DataPoint::new(1700000040, MetricValue::Integer(1740640441220)),
             )
             .await
             .unwrap();
@@ -578,8 +569,8 @@ mod tests {
             .await
             .unwrap()
             .expect("latest context");
-        // The real reading wins even though ts/virtual/_raw are newer.
-        assert_eq!(ctx.source_id, "device:s1:temperature");
+        // virtual is the newest eligible metric — _raw and ts are skipped.
+        assert_eq!(ctx.source_id, "device:s1:virtual.ocr.detections");
     }
 
     #[tokio::test]
