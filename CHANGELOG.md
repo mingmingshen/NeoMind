@@ -9,53 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Data-push reliability + a nested batch format and a real-data test send.
-
-### Added
-- **Nested batch payload format** for push targets (`BatchConfig.format`:
-  `flat` | `nested`, default `flat`). Nested groups events by source into
-  `items[].{source_type, id, data}`, splitting the source_id field on `.` to
-  rebuild the object nesting that ingestion flattens (`device:9999:values.devName`
-  → `data.values.devName`). Backward compatible — existing targets stay flat.
-- **Real-data test send** — `POST /api/data-push/:id/test` now sends the latest
-  metric for a bound source (falling back to the fixed sample when nothing is
-  bound/found). Telemetry is wired into `PushManager` via `new_with_telemetry`.
-
-### Fixed
-- **Duplicate pushed metrics** — the internal MQTT broker client subscribed to
-  `#` AND per-device telemetry topics, so rumqttc delivered each uplink once per
-  matching subscription (twice) and every metric was pushed twice (16 events
-  instead of 8). Overlap is now deduped on both the initial subscription list
-  and the dynamic per-device subscribe paths.
-- **Batch splitting** — the batch flush timer was set once at task start, so
-  after an idle period its deadline was already in the past and `sleep_until`
-  fired immediately, splitting a single uplink into spurious small batches
-  (e.g. `count:7` + `count:1`). The timer now restarts on the first event of
-  each new batch.
-- **`_raw` whole-payload dump** is dropped from push output (huge for cameras,
-  redundant with structured metrics).
-- Removed the always-null `metadata` field from push payloads (the EventBus
-  `EventMetadata` was discarded and never populated).
-- **Delivery history** now sorts newest-first by `created_at` (the table is
-  keyed by UUID, so iteration order was unrelated to recency).
-- Test-send auto-sampling skips `_raw`/`ts` but keeps `virtual.*` (extension/
-  transform outputs are valid business data).
-- **Virtual metrics not forwarded** — transforms published their output events
-  only under `transform:{id}:`, but the source picker / telemetry dual-write
-  exposes them under `device:{id}:virtual.*`. A data-push target filtering on
-  the device namespace never matched, so virtual metrics (OCR/vision outputs,
-  etc.) were silently dropped. Transforms now also publish a
-  `device:{id}:virtual.*` DeviceMetric (`is_virtual`, feedback-safe), so
-  device-namespace filters forward them.
-
-### Changed
-- Batch Aggregation UI gains a Payload Format dropdown, visible field labels,
-  and description/hint text (zh/en).
-
 ## [0.9.8] - 2026-07-16
 
 Device image storage reliability (the headline), per-device-type raw-metric
-storage, telemetry memory tuning, and delivery-history UX.
+storage, telemetry memory tuning, delivery-history UX, plus data-push
+reliability, a nested batch format, and a real-data test send.
 
 ### Fixed
 
@@ -76,6 +34,31 @@ storage, telemetry memory tuning, and delivery-history UX.
   `tempfile::NamedTempFile` and atomically `persist_noclobber`-ed into place,
   with an idempotency check so the same frame saved twice (storage + event bus)
   resolves to one URL.
+- **Duplicate pushed metrics** — the internal MQTT broker client subscribed to
+  `#` AND per-device telemetry topics, so rumqttc delivered each uplink once per
+  matching subscription (twice) and every metric was pushed twice (16 events
+  instead of 8). Overlap is now deduped on both the initial subscription list
+  and the dynamic per-device subscribe paths.
+- **Batch splitting** — the batch flush timer was set once at task start, so
+  after an idle period its deadline was already in the past and `sleep_until`
+  fired immediately, splitting a single uplink into spurious small batches
+  (e.g. `count:7` + `count:1`). The timer now restarts on the first event of
+  each new batch.
+- **Virtual metrics not forwarded** — transforms published their output events
+  only under `transform:{id}:`, but the source picker / telemetry dual-write
+  exposes them under `device:{id}:virtual.*`. A data-push target filtering on
+  the device namespace never matched, so virtual metrics (OCR/vision outputs,
+  etc.) were silently dropped. Transforms now also publish a
+  `device:{id}:virtual.*` DeviceMetric (`is_virtual`, feedback-safe), so
+  device-namespace filters forward them.
+- **`_raw` whole-payload dump** is dropped from push output (huge for cameras,
+  redundant with structured metrics).
+- Removed the always-null `metadata` field from push payloads (the EventBus
+  `EventMetadata` was discarded and never populated).
+- **Delivery history** now sorts newest-first by `created_at` (the table is
+  keyed by UUID, so iteration order was unrelated to recency).
+- Test-send auto-sampling skips `_raw`/`ts` but keeps `virtual.*` (extension/
+  transform outputs are valid business data).
 
 ### Added
 
@@ -88,6 +71,14 @@ storage, telemetry memory tuning, and delivery-history UX.
 - **Delivery-history payload copy & preview** — the payload column in
   `DeliveryHistoryPanel` gains per-row Copy + Preview buttons; Preview opens a
   nested dialog showing pretty-printed JSON, byte count, and copy.
+- **Nested batch payload format** for push targets (`BatchConfig.format`:
+  `flat` | `nested`, default `flat`). Nested groups events by source into
+  `items[].{source_type, id, data}`, splitting the source_id field on `.` to
+  rebuild the object nesting that ingestion flattens (`device:9999:values.devName`
+  → `data.values.devName`). Backward compatible — existing targets stay flat.
+- **Real-data test send** — `POST /api/data-push/:id/test` now sends the latest
+  metric for a bound source (falling back to the fixed sample when nothing is
+  bound/found). Telemetry is wired into `PushManager` via `new_with_telemetry`.
 
 ### Changed
 
@@ -98,6 +89,8 @@ storage, telemetry memory tuning, and delivery-history UX.
   backs reads regardless, so read perf is largely preserved while moving the
   cache from non-reclaimable heap to reclaimable page cache. Target: RSS
   ~2.4 GB → ~1.7 GB.
+- Batch Aggregation UI gains a Payload Format dropdown, visible field labels,
+  and description/hint text (zh/en).
 
 ## [0.9.7] - 2026-07-15
 
