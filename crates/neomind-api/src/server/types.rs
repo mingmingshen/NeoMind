@@ -1098,6 +1098,8 @@ impl ServerState {
             "All parallel store opens completed"
         );
 
+        let data_push_telemetry = devices.telemetry.clone();
+
         // Spawn periodic old message cleanup (every 6 hours)
         {
             let mm = core.message_manager.clone();
@@ -1143,9 +1145,10 @@ impl ServerState {
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
             data_dir,
             data_push: {
-                let push_manager = match PushManager::new(
+                let push_manager = match PushManager::new_with_telemetry(
                     std::path::Path::new("data"),
                     event_bus.clone(),
+                    data_push_telemetry,
                 ) {
                     Ok(m) => {
                         tracing::info!("Data push manager initialized");
@@ -1309,6 +1312,7 @@ impl ServerState {
 
         // Empty GPU info for testing
         let gpu_info = Arc::new(std::sync::OnceLock::from(vec![]));
+        let data_push_telemetry = time_series_storage.clone();
 
         Self {
             core,
@@ -1335,7 +1339,7 @@ impl ServerState {
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
             data_dir: std::path::PathBuf::from("data"),
             data_push: {
-                let push_manager = PushManager::memory().ok();
+                let push_manager = PushManager::memory_with_telemetry(data_push_telemetry).ok();
                 Arc::new(tokio::sync::RwLock::new(push_manager))
             },
             #[cfg(feature = "embedded-broker")]

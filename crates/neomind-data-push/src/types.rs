@@ -41,6 +41,19 @@ impl Default for RetryConfig {
     }
 }
 
+/// Output shape for a batched payload.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchFormat {
+    /// Flat list: `{ batch, count, items: [{source_id, value, timestamp}, ...] }`.
+    #[default]
+    Flat,
+    /// Nested by source: `{ batch, format, count, timestamp, data: {type: {id: {field: value}}} }`.
+    /// Field paths (e.g. `values.devName`) are split on `.` to rebuild nesting,
+    /// reversing the flattening applied at ingestion (`unified_extractor`).
+    Nested,
+}
+
 /// Batch/aggregation configuration for push delivery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchConfig {
@@ -52,6 +65,9 @@ pub struct BatchConfig {
     /// Default: 1000ms.
     #[serde(default = "default_batch_interval_ms")]
     pub batch_interval_ms: u64,
+    /// Output shape of the batch payload (flat list vs nested by source).
+    #[serde(default)]
+    pub format: BatchFormat,
 }
 
 fn default_batch_size() -> usize {
@@ -67,6 +83,7 @@ impl Default for BatchConfig {
         Self {
             batch_size: default_batch_size(),
             batch_interval_ms: default_batch_interval_ms(),
+            format: BatchFormat::default(),
         }
     }
 }
@@ -180,7 +197,6 @@ pub struct TemplateContext {
     pub source_id: String,
     pub value: serde_json::Value,
     pub timestamp: i64,
-    pub metadata: Option<serde_json::Value>,
 }
 
 /// Aggregated statistics for push targets.
