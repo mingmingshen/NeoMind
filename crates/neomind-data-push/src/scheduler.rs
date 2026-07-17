@@ -402,6 +402,11 @@ fn extract_event_data(
 
 /// Deliver data with retry logic.
 ///
+/// Default backoff (seconds) when a target is rate-limited (429/503) and the
+/// server didn't send `Retry-After`. Long enough to let a throttled endpoint
+/// recover instead of piling on with the normal exponential backoff.
+const DEFAULT_429_BACKOFF_SECS: u64 = 60;
+
 /// `cancel` — when `Some`, the inter-retry backoff sleeps are racing against
 /// this watch receiver. As soon as the receiver observes a change, the
 /// in-flight retry loop aborts and the function returns `Err`. This lets
@@ -456,15 +461,30 @@ async fn deliver_with_retry(
                 return Ok(());
             }
             Err(e) => {
+                // Rate-limiting (429/503) gets a long, fixed backoff honoring
+                // Retry-After; other failures use the configured exponential
+                // backoff. Without this, 429s reused the aggressive retry pace
+                // and hammered an already-throttled endpoint into a cascade.
+                let (effective_backoff, rate_limited) = match &e {
+                    crate::targets::DeliveryError::RateLimited { retry_after } => {
+                        let secs = retry_after
+                            .map(|d| d.as_secs())
+                            .unwrap_or(DEFAULT_429_BACKOFF_SECS);
+                        (secs, true)
+                    }
+                    crate::targets::DeliveryError::Other(_) => {
+                        (backoff.min(target.retry_config.max_backoff_secs), false)
+                    }
+                };
                 log.error = Some(e.to_string());
                 if attempt < max_retries {
                     log.status = DeliveryStatus::Retrying;
                     let _ = store.save_delivery_log(&log);
-                    let effective_backoff = backoff.min(target.retry_config.max_backoff_secs);
                     tracing::warn!(
                         target_id = %target.id,
                         attempt,
                         backoff_secs = effective_backoff,
+                        rate_limited,
                         error = %e,
                         "Delivery failed, retrying"
                     );
@@ -482,12 +502,14 @@ async fn deliver_with_retry(
                         );
                         return Err(anyhow::anyhow!("Cancelled during retry backoff: {}", e));
                     }
-                    backoff = backoff.saturating_mul(2);
+                    if !rate_limited {
+                        backoff = backoff.saturating_mul(2);
+                    }
                 } else {
                     log.status = DeliveryStatus::Failed;
                     log.completed_at = Some(chrono::Utc::now().timestamp());
                     let _ = store.save_delivery_log(&log);
-                    return Err(e);
+                    return Err(anyhow::Error::new(e));
                 }
             }
         }
@@ -717,16 +739,30 @@ async fn flush_batch(
                 return;
             }
             Err(e) => {
+                // Rate-limiting (429/503) backs off long (Retry-After / default)
+                // without the exponential ramp; other failures use the configured
+                // exponential backoff.
+                let (effective_backoff, rate_limited) = match &e {
+                    crate::targets::DeliveryError::RateLimited { retry_after } => {
+                        let secs = retry_after
+                            .map(|d| d.as_secs())
+                            .unwrap_or(DEFAULT_429_BACKOFF_SECS);
+                        (secs, true)
+                    }
+                    crate::targets::DeliveryError::Other(_) => {
+                        (backoff.min(target.retry_config.max_backoff_secs), false)
+                    }
+                };
                 log.error = Some(e.to_string());
                 if attempt < max_retries {
                     log.status = DeliveryStatus::Retrying;
                     let _ = store.save_delivery_log(&log);
-                    let effective_backoff = backoff.min(target.retry_config.max_backoff_secs);
                     tracing::warn!(
                         target_id = %target.id,
                         batch_count = count,
                         attempt,
                         backoff_secs = effective_backoff,
+                        rate_limited,
                         error = %e,
                         "Batch delivery failed, retrying"
                     );
@@ -746,7 +782,9 @@ async fn flush_batch(
                         buffer.clear();
                         return;
                     }
-                    backoff = backoff.saturating_mul(2);
+                    if !rate_limited {
+                        backoff = backoff.saturating_mul(2);
+                    }
                 } else {
                     log.status = DeliveryStatus::Failed;
                     log.completed_at = Some(chrono::Utc::now().timestamp());
