@@ -7,17 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.9.9] - 2026-07-17
+
+A consolidation release hardening 0.9.8's image-URL storage and data-push
+reliability, plus fixes surfaced by a 0.9.4→0.9.8 review.
 
 ### Fixed
-- **Data Explorer export missed images stored as URLs** — since 0.9.6's
-  image-URL storage, image metric values are short `/api/images/...` URLs (file
-  on disk), not base64. The export only detected base64 data-URIs as image
-  content, so URL-stored images exported as just the URL string in an Excel
-  table — a regression from the pre-0.9.6 base64 era where the image bytes were
-  bundled into a ZIP. The export now detects `/api/images/` values, fetches the
-  bytes (same auth headers as the rest of the API client), and bundles them into
-  the ZIP. Points whose file can't be fetched keep their URL in `data.csv`.
+- **store_raw now reaches upgraded installs** — the per-device-type `_raw` skip
+  (0.9.8) never applied to existing installs because the builtin template
+  version wasn't bumped; cameras kept writing `_raw` into telemetry. Bump so
+  the seeder rewrites them.
+- **Image URLs are no longer enumerable** — `/api/images/<dev>/<metric>/<ts>.ext`
+  had a linearly-guessable timestamp on the public route. Now
+  `<ts>_<content-id>.ext` (v5 of the bytes: same image → same file/idempotent,
+  not guessable from outside).
+- **Image retention no longer leaks `{ts}_{n}.ext` files** — collision-named
+  files weren't parsed by cleanup and leaked forever.
+- **Webhook 429/503 backs off instead of cascading** — rate-limited responses
+  now honor `Retry-After` (or a long default) instead of the aggressive
+  exponential backoff that hammered a throttled endpoint.
+- **Webhook self-loop guard** — reject push targets whose URL points at this
+  server's own ingestion endpoint (would loop forward→ingest→forward).
+- **Virtual metrics no longer double-delivered to wide filters** — transform's
+  double-publish made `*`/`device:*` deliver each virtual metric twice; deduped
+  per target within a short window.
+- **`.nep` downloads pick the right hardware variant** — jetson/cuda installs
+  got the CPU build (variant selection was skipped on the .nep branch); also
+  verify package SHA256 before install (was only checking the ZIP magic).
+- **MQTT `$SYS` survives a `#` device filter** — root wildcards no longer dedup
+  away broker presence subscriptions (broke external-broker transport state).
+- **Temp files cleaned on download write/flush failure** (was leaking up to
+  max_size on disk-full/quota).
+- **Data Explorer export bundles images stored as `/api/images/` URLs** (since
+  0.9.6 these exported as just the URL string, not image bytes).
+
+### Changed
+- Image-URL tests serialized (`serial_test`) — they set `NEOMIND_DATA_DIR` via
+  a process-global env var and raced under the multi-threaded test runner.
 
 ## [0.9.8] - 2026-07-16
 
