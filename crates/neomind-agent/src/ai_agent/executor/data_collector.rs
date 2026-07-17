@@ -1415,6 +1415,7 @@ mod tests {
     use super::*;
     use std::fs;
 
+    #[serial_test::serial]
     #[test]
     fn test_extract_image_data_api_images_url() {
         // Create a temporary test directory
@@ -1456,6 +1457,7 @@ mod tests {
         std::env::remove_var("NEOMIND_DATA_DIR");
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_extract_image_data_api_images_url_not_found() {
         // Create a temporary test directory (empty, no images)

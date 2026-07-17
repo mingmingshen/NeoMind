@@ -1006,6 +1006,7 @@ mod tests {
             );
         }
 
+        #[serial_test::serial]
         #[tokio::test]
         async fn resolve_image_api_images_url_reads_file() {
             // Create a temporary test directory
@@ -1051,6 +1052,7 @@ mod tests {
             std::env::remove_var("NEOMIND_DATA_DIR");
         }
 
+        #[serial_test::serial]
         #[tokio::test]
         async fn resolve_image_api_images_url_file_not_found() {
             // Create a temporary test directory (empty, no images)
@@ -1078,6 +1080,7 @@ mod tests {
             std::env::remove_var("NEOMIND_DATA_DIR");
         }
 
+        #[serial_test::serial]
         #[tokio::test]
         async fn resolve_image_api_images_url_rejects_traversal() {
             let temp_dir = std::env::temp_dir();
