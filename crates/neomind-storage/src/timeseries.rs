@@ -594,7 +594,9 @@ fn parse_telemetry_cache_mb(env_val: Option<&str>) -> usize {
 /// Telemetry redb cache size in bytes, from `NEOMIND_TELEMETRY_CACHE_MB`
 /// (falls back to `DEFAULT_TELEMETRY_CACHE_MB`). `set_cache_size` takes bytes.
 fn telemetry_cache_size_bytes() -> usize {
-    parse_telemetry_cache_mb(std::env::var("NEOMIND_TELEMETRY_CACHE_MB").ok().as_deref()) * 1024 * 1024
+    parse_telemetry_cache_mb(std::env::var("NEOMIND_TELEMETRY_CACHE_MB").ok().as_deref())
+        * 1024
+        * 1024
 }
 
 impl TimeSeriesStore {
@@ -2415,11 +2417,23 @@ mod tests {
         assert_eq!(parse_telemetry_cache_mb(Some("512")), 512);
         assert_eq!(parse_telemetry_cache_mb(Some("128")), 128);
         // Unparseable / empty → default
-        assert_eq!(parse_telemetry_cache_mb(Some("abc")), DEFAULT_TELEMETRY_CACHE_MB);
-        assert_eq!(parse_telemetry_cache_mb(Some("")), DEFAULT_TELEMETRY_CACHE_MB);
+        assert_eq!(
+            parse_telemetry_cache_mb(Some("abc")),
+            DEFAULT_TELEMETRY_CACHE_MB
+        );
+        assert_eq!(
+            parse_telemetry_cache_mb(Some("")),
+            DEFAULT_TELEMETRY_CACHE_MB
+        );
         // Zero / negative → default
-        assert_eq!(parse_telemetry_cache_mb(Some("0")), DEFAULT_TELEMETRY_CACHE_MB);
-        assert_eq!(parse_telemetry_cache_mb(Some("-1")), DEFAULT_TELEMETRY_CACHE_MB);
+        assert_eq!(
+            parse_telemetry_cache_mb(Some("0")),
+            DEFAULT_TELEMETRY_CACHE_MB
+        );
+        assert_eq!(
+            parse_telemetry_cache_mb(Some("-1")),
+            DEFAULT_TELEMETRY_CACHE_MB
+        );
     }
 
     #[tokio::test]
@@ -2635,7 +2649,10 @@ mod tests {
             .query_range("cam", "values.image", i64::MIN, i64::MAX, None)
             .await
             .unwrap();
-        assert!(img_left.points.is_empty(), "image metric must be empty after retention");
+        assert!(
+            img_left.points.is_empty(),
+            "image metric must be empty after retention"
+        );
 
         let num_left = store
             .query_range("cam", "temperature", i64::MIN, i64::MAX, None)
@@ -3084,15 +3101,15 @@ mod tests {
         assert!(value_looks_like_image(&raw_png));
 
         // GIF: R0lGOD → 47 49 46 38
-        let raw_gif = serde_json::json!(
-            "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-        );
+        let raw_gif = serde_json::json!("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
         assert!(value_looks_like_image(&raw_gif));
 
         // Non-image values
         assert!(!value_looks_like_image(&serde_json::json!(42.5)));
         assert!(!value_looks_like_image(&serde_json::json!("hello world")));
-        assert!(!value_looks_like_image(&serde_json::json!("temperature: 23.5")));
+        assert!(!value_looks_like_image(&serde_json::json!(
+            "temperature: 23.5"
+        )));
         // Short strings even if base64-decodable: not an image
         assert!(!value_looks_like_image(&serde_json::json!("dGVzdA==")));
         // Numeric metric value stored as string
