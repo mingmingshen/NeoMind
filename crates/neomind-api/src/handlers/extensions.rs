@@ -2375,13 +2375,25 @@ pub async fn install_marketplace_extension_handler(
     // Build platform-specific .nep package URL from builds metadata
     // The package_url field in metadata is hardcoded to darwin_aarch64, so we ignore it
     // and use the correct URL from builds for the current platform
-    let package_url = if platform != "unknown" {
+    let (package_url, expected_sha256): (Option<String>, Option<String>) = if platform != "unknown" {
         let available_keys: std::collections::HashSet<&str> =
             metadata.builds.keys().map(|s| s.as_str()).collect();
         select_build_key(&available_keys, platform, variant)
-            .and_then(|key| metadata.builds.get(key.as_str()).map(|b| b.url.clone()))
+            .and_then(|key| {
+                metadata.builds.get(key.as_str()).map(|b| {
+                    (
+                        Some(b.url.clone()),
+                        if b.sha256.is_empty() {
+                            None
+                        } else {
+                            Some(b.sha256.clone())
+                        },
+                    )
+                })
+            })
+            .unwrap_or((None, None))
     } else {
-        metadata.package_url.clone()
+        (metadata.package_url.clone(), metadata.package_sha256.clone())
     };
 
     // Check if .nep package is available (preferred method)
@@ -2467,6 +2479,38 @@ pub async fn install_marketplace_extension_handler(
                 path: None,
                 error: Some("Downloaded file is not a valid .nep package (ZIP format)".to_string()),
             });
+        }
+
+        // Verify SHA256 when the marketplace metadata provides one. Defends
+        // against CDN/transport corruption or a swapped package being loaded
+        // into the process via dlopen. The legacy binary branch already does
+        // this; the .nep branch previously only checked the 4-byte ZIP magic.
+        if let Some(ref expected) = expected_sha256 {
+            match compute_sha256_of_file(&tmp_path) {
+                Ok(actual) if actual == *expected => {
+                    tracing::debug!(extension_id = %req.id, "Package SHA256 verified");
+                }
+                Ok(actual) => {
+                    return ok(MarketplaceInstallResponse {
+                        success: false,
+                        extension_id: req.id.clone(),
+                        downloaded: true,
+                        installed: false,
+                        path: None,
+                        error: Some(format!(
+                            "Package SHA256 mismatch: expected {}, got {} — refusing to install",
+                            expected, actual
+                        )),
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        extension_id = %req.id,
+                        error = %e,
+                        "Failed to compute package SHA256; skipping verification"
+                    );
+                }
+            }
         }
 
         // Prepare target directory
