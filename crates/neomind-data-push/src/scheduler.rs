@@ -154,6 +154,11 @@ impl PushScheduler {
             // Buffer for batched events
             let mut buffer: Vec<(String, serde_json::Value, i64)> = Vec::new();
             let mut flush_timer = tokio::time::Instant::now() + batch_interval;
+            // Per-target dedup of transform's double-published virtual metrics.
+            let mut recent_virtual: std::collections::HashMap<
+                (String, i64),
+                tokio::time::Instant,
+            > = std::collections::HashMap::new();
 
             loop {
                 tokio::select! {
@@ -177,9 +182,18 @@ impl PushScheduler {
                                 if !matches_event_type(&event, &event_types) {
                                     continue;
                                 }
-                                if let Some((source_id, mut value, ts)) = extract_event_data(&event) {
+                                if let Some((source_id, mut value, ts, is_virtual)) = extract_event_data(&event) {
                                     let value_str = value.to_string();
                                     if matcher.should_push(&source_id, &value_str) {
+                                        if is_virtual
+                                            && is_duplicate_virtual(&mut recent_virtual, &value_str, ts)
+                                        {
+                                            tracing::debug!(
+                                                target_id = %target.id,
+                                                "Deduped duplicate virtual metric (transform double-publish)"
+                                            );
+                                            continue;
+                                        }
                                         resolve_image_urls_in_value(&mut value);
                                         if !batch_enabled {
                                             // Immediate delivery (batch_size=1)
@@ -260,6 +274,11 @@ impl PushScheduler {
             let mut matcher = DataSourceMatcher::new(target.data_filter.clone());
             let mut buffer: Vec<(String, serde_json::Value, i64)> = Vec::new();
             let flush_interval = std::time::Duration::from_secs(interval_secs);
+            // Per-target dedup of transform's double-published virtual metrics.
+            let mut recent_virtual: std::collections::HashMap<
+                (String, i64),
+                tokio::time::Instant,
+            > = std::collections::HashMap::new();
 
             tracing::info!(target_id = %target.id, interval_secs, "Interval push target started");
 
@@ -286,9 +305,14 @@ impl PushScheduler {
                             return;
                         }
                         if let Some((event, _metadata)) = result {
-                            if let Some((source_id, mut value, ts)) = extract_event_data(&event) {
+                            if let Some((source_id, mut value, ts, is_virtual)) = extract_event_data(&event) {
                                 let value_str = value.to_string();
                                 if matcher.should_push(&source_id, &value_str) {
+                                    if is_virtual
+                                        && is_duplicate_virtual(&mut recent_virtual, &value_str, ts)
+                                    {
+                                        continue;
+                                    }
                                     resolve_image_urls_in_value(&mut value);
                                     buffer.push((source_id, value, ts));
                                 }
@@ -372,18 +396,23 @@ pub(crate) fn resolve_image_urls_in_value(value: &mut serde_json::Value) {
 /// Extract data from a NeoMindEvent for push delivery.
 fn extract_event_data(
     event: &neomind_core::NeoMindEvent,
-) -> Option<(String, serde_json::Value, i64)> {
+) -> Option<(String, serde_json::Value, i64, bool)> {
+    // The 4th element is `is_virtual` (true for transform-produced metrics).
+    // transform double-publishes each virtual metric under `transform:{id}` and
+    // `device:{id}` (so device-namespace filters can see them); the scheduler
+    // uses this flag to dedup wide filters that would otherwise match both.
     match event {
         neomind_core::NeoMindEvent::DeviceMetric {
             device_id,
             metric,
             value,
             timestamp,
+            is_virtual,
             ..
         } => {
             let source_id = format!("device:{}:{}", device_id, metric);
             let val = metric_to_json(value);
-            Some((source_id, val, *timestamp))
+            Some((source_id, val, *timestamp, is_virtual.unwrap_or(false)))
         }
         neomind_core::NeoMindEvent::ExtensionOutput {
             extension_id,
@@ -394,10 +423,39 @@ fn extract_event_data(
         } => {
             let source_id = format!("extension:{}:{}", extension_id, output_name);
             let val = metric_to_json(value);
-            Some((source_id, val, *timestamp))
+            Some((source_id, val, *timestamp, false))
         }
         _ => None,
     }
+}
+
+/// Window for deduping transform's double-publish of virtual metrics. The two
+/// events are emitted back-to-back from the same transform run, so a few
+/// seconds is plenty.
+const VIRTUAL_DEDUP_WINDOW_SECS: u64 = 5;
+
+/// Returns `true` (without recording) if this `(value, ts)` virtual metric was
+/// already seen within the dedup window — i.e. the second copy of a transform
+/// double-publish that a wide filter (`*` / `device:*`) matched twice.
+/// Otherwise records it and returns `false`. Keeps the map bounded.
+fn is_duplicate_virtual(
+    recent: &mut std::collections::HashMap<(String, i64), tokio::time::Instant>,
+    value_str: &str,
+    ts: i64,
+) -> bool {
+    let now = tokio::time::Instant::now();
+    let window = std::time::Duration::from_secs(VIRTUAL_DEDUP_WINDOW_SECS);
+    let key = (value_str.to_string(), ts);
+    if let Some(seen) = recent.get(&key) {
+        if now.duration_since(*seen) < window {
+            return true;
+        }
+    }
+    recent.insert(key, now);
+    if recent.len() > 512 {
+        recent.retain(|_, t| now.duration_since(*t) < window);
+    }
+    false
 }
 
 /// Deliver data with retry logic.
@@ -808,6 +866,22 @@ async fn flush_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn virtual_dedup_skips_second_copy_within_window() {
+        let mut recent = std::collections::HashMap::new();
+        // First copy of a virtual metric → recorded, not a duplicate.
+        assert!(!is_duplicate_virtual(&mut recent, "value-1", 1000));
+        // Second copy (same value + ts, transform double-publish) → duplicate.
+        assert!(is_duplicate_virtual(&mut recent, "value-1", 1000));
+        // Different value at same ts → not a duplicate (different metric).
+        assert!(!is_duplicate_virtual(&mut recent, "value-2", 1000));
+        // Same value at different ts → not a duplicate (different frame).
+        assert!(!is_duplicate_virtual(&mut recent, "value-1", 2000));
+        // Those new (value, ts) keys got recorded; their repeats are dups.
+        assert!(is_duplicate_virtual(&mut recent, "value-2", 1000));
+        assert!(is_duplicate_virtual(&mut recent, "value-1", 2000));
+    }
     use serde_json::json;
 
     #[test]
