@@ -63,8 +63,19 @@ pub async fn create_rule(
     client: &ApiClient,
     json_body: &str,
 ) -> Result<CliResponse> {
-    let body: serde_json::Value = serde_json::from_str(json_body)
-        .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
+    let body: serde_json::Value = match serde_json::from_str(json_body) {
+        Ok(v) => v,
+        Err(e) => {
+            // Surface a copy-pasteable rule example so the caller (LLM agent
+            // or user) can self-correct instead of retrying blind. Matches the
+            // data_push/message error_with_suggestion gold standard.
+            return Ok(CliResponse::error_with_suggestion(
+                format!("Invalid JSON: {}", e),
+                "INVALID_JSON",
+                "Example: --body '{\"name\":\"HighTemp\",\"condition\":{\"condition_type\":\"comparison\",\"source\":\"device:sensor-001:temperature\",\"operator\":\"greater_than\",\"threshold\":30},\"actions\":[{\"type\":\"notify\",\"message\":\"Too hot!\"}]}'",
+            ));
+        }
+    };
 
     let data = client.post("/rules", &body).await?;
     let rule = data.get("data").and_then(|d| d.get("rule")).unwrap_or(&data);
@@ -88,8 +99,19 @@ pub async fn update_rule(
     id: &str,
     json_body: &str,
 ) -> Result<CliResponse> {
-    let body: serde_json::Value = serde_json::from_str(json_body)
-        .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
+    let body: serde_json::Value = match serde_json::from_str(json_body) {
+        Ok(v) => v,
+        Err(e) => {
+            // Surface a copy-pasteable rule example so the caller (LLM agent
+            // or user) can self-correct instead of retrying blind. Matches the
+            // data_push/message error_with_suggestion gold standard.
+            return Ok(CliResponse::error_with_suggestion(
+                format!("Invalid JSON: {}", e),
+                "INVALID_JSON",
+                "Example: --body '{\"name\":\"HighTemp\",\"condition\":{\"condition_type\":\"comparison\",\"source\":\"device:sensor-001:temperature\",\"operator\":\"greater_than\",\"threshold\":30},\"actions\":[{\"type\":\"notify\",\"message\":\"Too hot!\"}]}'",
+            ));
+        }
+    };
 
     let data = client.put(&format!("/rules/{}", id), &body).await?;
     Ok(CliResponse::success(data, "Rule updated"))
