@@ -510,6 +510,25 @@ impl WriteBuffer {
         std::mem::take(&mut *pending)
     }
 
+    /// Re-queue writes whose batch failed to flush, so the next flush retries
+    /// them instead of silently dropping them. Bounded by a hard cap
+    /// (`max_size * 10`) so a persistent write failure (e.g. disk full) can't
+    /// grow memory without bound — once at the cap, further failed writes are
+    /// dropped and the caller logs them. Returns the number dropped.
+    fn requeue(&self, writes: Vec<BufferedWrite>) -> usize {
+        let mut pending = self.pending.lock();
+        let hard_cap = self.max_size.saturating_mul(10);
+        let mut dropped = 0;
+        for w in writes {
+            if pending.len() >= hard_cap {
+                dropped += 1;
+            } else {
+                pending.push(w);
+            }
+        }
+        dropped
+    }
+
     /// Start the background periodic flush task.
     fn start_flush_task(&self, store: Arc<TimeSeriesStore>, interval: Duration) {
         let shutdown = self.shutdown.clone();
@@ -523,11 +542,15 @@ impl WriteBuffer {
                 }
                 // Offload synchronous redb writes to a blocking thread
                 let s = store.clone();
-                let _ = tokio::task::spawn_blocking(move || s.flush_buffer()).await;
+                if let Err(e) = tokio::task::spawn_blocking(move || s.flush_buffer()).await {
+                    tracing::error!("Periodic flush task join error: {}", e);
+                }
             }
             // Final flush on shutdown
             let s = store.clone();
-            let _ = tokio::task::spawn_blocking(move || s.flush_buffer()).await;
+            if let Err(e) = tokio::task::spawn_blocking(move || s.flush_buffer()).await {
+                tracing::error!("Shutdown flush task join error: {}", e);
+            }
         });
         *self.flush_task.lock() = Some(handle);
     }
@@ -838,10 +861,41 @@ impl TimeSeriesStore {
 
         let total_count: usize = groups.values().map(|v| v.len()).sum();
 
-        // Write each group in a single transaction
-        for ((source_id, metric), points) in &groups {
-            if let Err(e) = self.write_batch_sync(source_id, metric, points) {
-                tracing::error!("Failed to flush batch for {}/{}: {}", source_id, metric, e);
+        // Write each group in a single transaction. On failure, re-queue the
+        // group's points so the next flush retries them — previously a failed
+        // batch was logged and then permanently lost (the points had already
+        // been drained), which silently dropped telemetry on transient or
+        // persistent write errors (disk full, IO error).
+        let mut requeue: Vec<BufferedWrite> = Vec::new();
+        for ((source_id, metric), points) in groups {
+            if let Err(e) = self.write_batch_sync(&source_id, &metric, &points) {
+                tracing::error!(
+                    "Failed to flush batch for {}/{}: {} — re-queuing {} points for next flush",
+                    source_id,
+                    metric,
+                    e,
+                    points.len()
+                );
+                for point in points {
+                    requeue.push(BufferedWrite {
+                        source_id: source_id.clone(),
+                        metric: metric.clone(),
+                        point,
+                    });
+                }
+            }
+        }
+
+        // Re-queue failed points (bounded — drops once at the hard cap).
+        if !requeue.is_empty() {
+            let requeued = requeue.len();
+            let dropped = self.write_buffer.requeue(requeue);
+            if dropped > 0 {
+                tracing::error!(
+                    "Write buffer at hard cap under persistent flush failure — {} points re-queued, {} dropped",
+                    requeued - dropped,
+                    dropped
+                );
             }
         }
 
@@ -2407,6 +2461,35 @@ fn fmt_ts_range(start_ts: i64, end_ts: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_write_buffer_requeue_respects_hard_cap() {
+        // requeue bounds memory under persistent write failure: hard cap =
+        // max_size * 10. Below the cap, failed writes are re-queued for the
+        // next flush; at the cap, excess is dropped and reported.
+        let buf = WriteBuffer::new(10); // hard cap = 100
+
+        let mk = |i: i64| BufferedWrite {
+            source_id: "s".into(),
+            metric: "m".into(),
+            point: DataPoint {
+                timestamp: i,
+                value: serde_json::Value::Null,
+                quality: None,
+                metadata: None,
+            },
+        };
+
+        // 95 fit under the 100 cap — none dropped.
+        let fill: Vec<_> = (0..95).map(mk).collect();
+        assert_eq!(buf.requeue(fill), 0);
+        assert_eq!(buf.pending.lock().len(), 95);
+
+        // Re-queue 20 more: only 5 fit (95 -> 100), 15 dropped.
+        let more: Vec<_> = (100..120).map(mk).collect();
+        assert_eq!(buf.requeue(more), 15);
+        assert_eq!(buf.pending.lock().len(), 100);
+    }
 
     #[test]
     fn test_parse_telemetry_cache_mb() {
