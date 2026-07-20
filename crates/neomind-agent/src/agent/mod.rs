@@ -1363,9 +1363,14 @@ impl Agent {
             ),
         ];
 
-        // Check greetings
+        // Check greetings — EXACT match only. Prefix matching (starts_with)
+        // misfired on substantive messages: "ok here's my question..." -> "OK!",
+        // "行业发展" -> "好的，没问题." (matched "行"), "对称性" -> "是的，正确."
+        // (matched "对"). Anything that isn't exactly the greeting falls through
+        // to the LLM, which handles greetings contextually AND preserves intent
+        // (e.g. "ok, create a device" no longer short-circuits to a canned "OK!").
         for (pattern, response) in greeting_responses.iter() {
-            if trimmed == *pattern || trimmed.starts_with(*pattern) {
+            if trimmed == *pattern {
                 return Some(AgentResponse {
                     message: AgentMessage::assistant(*response),
                     tool_calls: vec![],
@@ -1376,9 +1381,9 @@ impl Agent {
             }
         }
 
-        // Check confirmations
+        // Check confirmations — EXACT match only (same rationale as greetings).
         for (pattern, response) in confirmation_responses.iter() {
-            if trimmed == *pattern || trimmed.starts_with(*pattern) {
+            if trimmed == *pattern {
                 return Some(AgentResponse {
                     message: AgentMessage::assistant(*response),
                     tool_calls: vec![],

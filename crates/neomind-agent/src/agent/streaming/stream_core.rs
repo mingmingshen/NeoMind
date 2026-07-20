@@ -757,15 +757,35 @@ pub async fn process_stream_events_with_safeguards(
                             } else {
                                 content_before_tools.clone()
                             };
-                            let partial_msg = if !thinking_content.is_empty() {
-                                let cleaned_thinking = cleanup_thinking_content(&thinking_content);
-                                AgentMessage::assistant_with_thinking(&partial_content, &cleaned_thinking)
-                            } else {
-                                AgentMessage::assistant(&partial_content)
+                            // Don't persist incomplete tool-call JSON — it would poison the
+                            // next turn's context (the LLM sees its own malformed JSON as a
+                            // prior assistant message). Only save when it looks like real
+                            // content, i.e. not a truncated {/[ fragment with tool markers.
+                            let looks_incomplete_tool_json = {
+                                let t = partial_content.trim();
+                                (t.starts_with('{') || t.starts_with('['))
+                                    && (t.contains("\"name\"")
+                                        || t.contains("\"arguments\"")
+                                        || t.contains("\"tool\""))
+                                    && !(t.ends_with('}') || t.ends_with(']'))
                             };
-                            internal_state.write().await.push_message(partial_msg);
-                            tracing::debug!("Saved partial response on error: {} chars content, {} chars thinking",
-                                partial_content.len(), thinking_content.len());
+                            if looks_incomplete_tool_json {
+                                tracing::warn!(
+                                    "Stream error with incomplete tool-call JSON in buffer ({} chars) \
+                                     — not persisting to avoid context poisoning",
+                                    partial_content.len()
+                                );
+                            } else {
+                                let partial_msg = if !thinking_content.is_empty() {
+                                    let cleaned_thinking = cleanup_thinking_content(&thinking_content);
+                                    AgentMessage::assistant_with_thinking(&partial_content, &cleaned_thinking)
+                                } else {
+                                    AgentMessage::assistant(&partial_content)
+                                };
+                                internal_state.write().await.push_message(partial_msg);
+                                tracing::debug!("Saved partial response on error: {} chars content, {} chars thinking",
+                                    partial_content.len(), thinking_content.len());
+                            }
                         }
                         break;
                     }
