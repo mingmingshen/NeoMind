@@ -1120,6 +1120,30 @@ impl ServerState {
             });
         }
 
+        // Spawn periodic old agent-execution cleanup (every 6 hours, >30 days).
+        // cleanup_executions exists on the store but was never wired to a
+        // scheduler, so execution history (input/output/journal per run) grew
+        // agents.redb without bound.
+        {
+            let agent_store = agents.agent_store.clone();
+            tokio::spawn(async move {
+                let mut cleanup_interval =
+                    tokio::time::interval(tokio::time::Duration::from_secs(6 * 60 * 60));
+                loop {
+                    cleanup_interval.tick().await;
+                    let cutoff = chrono::Utc::now().timestamp() - 30 * 24 * 60 * 60;
+                    if let Ok(cleaned) = agent_store.cleanup_executions(cutoff).await {
+                        if cleaned > 0 {
+                            tracing::info!(
+                                "Periodic cleanup: removed {} agent executions older than 30 days",
+                                cleaned
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
         Self {
             core,
             devices,
