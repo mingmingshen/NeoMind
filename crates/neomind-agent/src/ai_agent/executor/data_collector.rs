@@ -1235,6 +1235,29 @@ impl AgentExecutor {
 
 /// Extract image data from a metric value.
 /// Returns (image_url, base64_data, mime_type).
+/// Minimum base64 length to consider an image usable for analysis. Below
+/// this it's a header-only / preview / truncated fragment that extensions
+/// can't decode — emitting it misleads the agent into passing broken data.
+/// Observed in production (garbage-monitoring agent): a 109-byte
+/// JPEG-header-only `image_base64` made every extension image tool return
+/// null across multiple executions. Omit sub-threshold base64 so the agent
+/// falls back to `image_url` (the full image) or honestly reports no usable
+/// image, instead of silently feeding extensions undecodable bytes.
+fn usable_image_base64(b64: String) -> Option<String> {
+    const MIN_BASE64_LEN: usize = 1024;
+    if b64.len() < MIN_BASE64_LEN {
+        tracing::warn!(
+            target: "neomind::agent::event_value",
+            len = b64.len(),
+            "extract_image_data: base64 too small to be a usable image (<{} chars) — omitting from agent context",
+            MIN_BASE64_LEN
+        );
+        None
+    } else {
+        Some(b64)
+    }
+}
+
 pub(crate) fn extract_image_data(
     value: &serde_json::Value,
 ) -> (Option<String>, Option<String>, Option<String>) {
@@ -1298,7 +1321,11 @@ pub(crate) fn extract_image_data(
             let mime_type = crate::image_utils::infer_mime_from_base64_prefix(s);
             if let Some(mt) = mime_type {
                 tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched magic-bytes branch, len={}, mime={}", s.len(), mt);
-                (None, Some(s.to_string()), Some(mt.to_string()))
+                (
+                    None,
+                    usable_image_base64(s.to_string()),
+                    Some(mt.to_string()),
+                )
             } else {
                 tracing::warn!(
                     target: "neomind::agent::event_value",
@@ -1328,7 +1355,43 @@ pub(crate) fn extract_image_data(
             .and_then(|v| v.as_str())
         {
             tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched Object URL field");
-            return (Some(url.to_string()), None, None);
+            // Relative `/api/images/` URLs aren't callable by extensions (they
+            // run in a separate process and need bytes, not a relative path),
+            // and some extensions only accept `image_base64`. Resolve to FULL
+            // base64 here — same as the String `/api/images/` branch — so the
+            // agent hands complete image bytes to any extension. Absolute
+            // http(s) URLs are left as-is (the extension can fetch them).
+            if url.starts_with("/api/images/") {
+                let data_dir =
+                    std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+                match neomind_devices::image_storage::read_internal_image_url(
+                    url,
+                    std::path::Path::new(&data_dir),
+                ) {
+                    Ok((bytes, mime)) => {
+                        let b64 = base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            &bytes,
+                        );
+                        tracing::info!(
+                            target: "neomind::agent::event_value",
+                            url = %url, size = bytes.len(),
+                            "[DIAG] extract_image_data: resolved Object image_url (/api/images/) to full base64"
+                        );
+                        return (Some(url.to_string()), Some(b64), Some(mime.to_string()));
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "neomind::agent::event_value",
+                            url = %url, error = %e,
+                            "[DIAG] extract_image_data: failed to read /api/images/ for Object image_url — falling through to base64 field"
+                        );
+                        // Fall through to the base64 field below.
+                    }
+                }
+            } else {
+                return (Some(url.to_string()), None, None);
+            }
         }
         if let Some(base64) = obj
             .get("base64")
@@ -1350,7 +1413,7 @@ pub(crate) fn extract_image_data(
                     crate::image_utils::infer_mime_from_base64_prefix(base64).map(|s| s.to_string())
                 })
                 .unwrap_or_else(|| "image/jpeg".to_string());
-            return (None, Some(base64.to_string()), Some(mime));
+            return (None, usable_image_base64(base64.to_string()), Some(mime));
         }
         tracing::warn!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: OBJECT branch FALLTHROUGH — no recognized image keys");
         (None, None, None)
