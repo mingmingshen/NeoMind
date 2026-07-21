@@ -78,9 +78,12 @@ RUN if [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "aarch64" ]; then export
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime
 # ---------------------------------------------------------------------------
-FROM alpine:3.21 AS runtime
+FROM alpine:3.22 AS runtime
 
-RUN apk add --no-cache ca-certificates curl tzdata && \
+# `apk upgrade` patches base-image packages, keeping the shipped image clear
+# of known alpine CVEs between base-image refreshes (the main source of
+# "high" findings in image scans). Then add the runtime deps.
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates curl tzdata && \
     addgroup -S neomind && adduser -S neomind -G neomind
 
 WORKDIR /app
