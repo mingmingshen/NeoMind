@@ -48,8 +48,9 @@ The fastest way to deploy NeoMind on a server. Single container includes fronten
 
 ### Quick Start
 
-The pre-built image is published to GHCR on every release, so you can start
-NeoMind without building anything (no Rust toolchain, no `git clone`):
+The pre-built image is published to Docker Hub (`camthink/neomind`) on every
+release, so you can start NeoMind without building anything (no Rust toolchain,
+no `git clone`):
 
 ```bash
 # Download the compose file (+ optionally .env.example for custom ports/secrets)

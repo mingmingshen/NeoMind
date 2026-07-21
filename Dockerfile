@@ -26,15 +26,24 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2: Build backend
 # ---------------------------------------------------------------------------
-FROM --platform=$TARGETPLATFORM rust:1.85-alpine AS backend
+FROM --platform=$TARGETPLATFORM rust:1.92-alpine AS backend
 
+# Keep this rust tag in sync with rust-toolchain.toml (currently 1.92.0).
+# Cargo.lock deps require rustc >=1.89 (rmqtt-net, wide, time, …); an older
+# image fails at `cargo` resolution before any crate compiles.
 # jemalloc (used by neomind-cli as the global allocator) must assume 64KB
 # pages on ARM, else it crashes on 64KB-page hosts like Raspberry Pi 5 and
 # Jetson (same fix as the bare-metal ARM release — see release-build-glibc22.04).
 # No-op on amd64 (4KB pages, jemalloc default).
 ARG TARGETARCH
 
-RUN apk add --no-cache musl-dev
+# rust:*-alpine ships gcc + musl-dev but NOT `make`. tikv-jemalloc-sys runs a
+# real make-based C build (its build.rs spawns `make` at build.rs:407); without
+# it the build dies late with "failed to execute command: No such file or
+# directory". The glibc (Ubuntu) bare-metal release never hit this because
+# build-essential provides make — only the Docker/musl path did. See
+# release-build-glibc22.04 memory (glibc) vs this Dockerfile (musl).
+RUN apk add --no-cache musl-dev make
 
 WORKDIR /build
 

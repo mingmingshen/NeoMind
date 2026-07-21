@@ -1,10 +1,15 @@
 name: Build & Publish Docker Image
 
-# Publishes a multi-arch (amd64 + arm64) image to GHCR so customers can
-# `docker run`/`docker compose pull` instead of building from source.
-# Triggers on the same `v*` tag push as build.yml (NOT on:release — the
-# release is created with GITHUB_TOKEN, which doesn't fire release events).
+# Builds a multi-arch (amd64 + arm64) image on GitHub Actions and publishes it
+# to Docker Hub (docker.io/<DOCKERHUB_USERNAME>/neomind) so customers can
+# `docker compose pull` instead of building from source (~10-30 min Rust compile).
+# Triggers on the same `v*` tag push as build.yml (NOT on:release — the release
+# is created with GITHUB_TOKEN, which doesn't fire release events).
 # Manual dispatch for testing.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   DOCKERHUB_USERNAME — Docker Hub account name, e.g. camthink
+#   DOCKERHUB_TOKEN    — Docker Hub access token (PAT) with Read/Write/Delete scope
 
 on:
   push:
@@ -18,14 +23,13 @@ on:
         default: dev
 
 env:
-  REGISTRY: ghcr.io
+  IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/neomind
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -39,23 +43,17 @@ jobs:
             echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      # GHCR image names must be lowercase; the repo owner/name is mixed-case.
-      - name: Lowercase image name
-        id: img
-        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-
       - name: Set up QEMU (multi-arch emulation)
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push (amd64 + arm64)
         uses: docker/build-push-action@v6
@@ -65,7 +63,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}:${{ steps.ver.outputs.version }}
-            ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}:latest
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
+            ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
