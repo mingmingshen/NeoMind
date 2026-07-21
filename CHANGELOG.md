@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.10] - 2026-07-21
+
+Agent quality + reliability. After three plumbing-hardening releases
+(0.9.7–0.9.9), this one returns to the differentiator — the local AI
+agent — fixing silent-degradation paths across the HTTP chat path, the
+event-agent runtime, telemetry persistence, and the camera image-analysis
+pipeline.
+
+### Fixed
+- **HTTP chat is now multi-round** — `POST /api/sessions/:id/chat` called
+  the single-round `process_message` (one LLM call, tool results never fed
+  back), so any HTTP client silently degraded to a single-round agent. It
+  now consumes the same ReAct event stream as WebSocket (tool results fed
+  back each round) and aggregates `AgentEvent`s into `ChatResponse` — the
+  gap that cost eval 43.5 points purely on transport (HTTP F → WS B).
+- **Telemetry no longer lost on flush failure** — `flush_buffer` drained the
+  write buffer before writing, so a failed redb write permanently lost those
+  points (disk full, IO). Failed batches are now re-queued for the next
+  flush, bounded by a hard cap so a persistent failure can't grow memory.
+- **Agent execution history no longer grows unbounded** — `cleanup_executions`
+  existed but was never scheduled; executions now prune every 6h (>30 days,
+  matching messages).
+- **Greeting/confirmation fast-path no longer misfires** — `starts_with`
+  matched substantive messages ("ok here's my question…" → "OK!";
+  "ok, create a device" short-circuited without acting). Now exact match.
+- **Stream errors no longer poison the next turn** — a partial buffer
+  (possibly mid-tool-call JSON) was saved as the assistant message on
+  stream error. Now persisted only when it looks complete.
+- **Event-agent vision misconfiguration is surfaced** — a camera event-agent
+  whose active LLM lacks vision silently analyzed text-only. Now logged at
+  error level and the LLM is told to state the limitation in its findings.
+- **Vision tool no longer wastes a round on a fake-multimodal active backend**
+  — dedicated VLMs are now preferred over the active chat backend (a text
+  model wrongly marked multimodal burned a round before health-tracking
+  demoted it).
+- **Extension image tools now get the full image** — a camera metric stored
+  as `{image_url: "/api/images/…", image_base64: "<109-byte preview>"}` gave
+  extensions either a relative URL they can't fetch (they run in a separate
+  process) or a truncated header-only base64 they can't decode — every
+  extension image call returned null. `/api/images/` Object URLs are now
+  resolved to full base64 in the data collector; sub-threshold fragments
+  are omitted.
+
+### Added
+- **`neomind device history --limit <N>`** — caps data points per metric
+  (the API already supported `limit`; the flag was missing, so `--limit 20`
+  errored).
+- **`rule create` / `agent create` errors ship worked examples** — bare
+  "Invalid JSON" / "Focused mode requires --resources" gave the agent
+  nothing to self-correct from; they now include copy-pasteable examples.
+- **HTTP chat honors `backend_id` + `selected_skills`** (previously dropped)
+  and exposes `HTTP_CHAT_TIMEOUT_SECS` (default 300s, matching the global
+  agent execution budget — the old 120s cap was too tight for multi-round
+  ReAct with a thinking model).
+
+### Changed
+- HTTP chat timeout: 120s → 300s (`HTTP_CHAT_TIMEOUT_SECS`).
+- Greeting/confirmation matching: prefix → exact.
+
 ## [0.9.9] - 2026-07-17
 
 A consolidation release hardening 0.9.8's image-URL storage and data-push
