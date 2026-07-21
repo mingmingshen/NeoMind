@@ -57,6 +57,11 @@ pipeline.
   current vs remote for diagnosis.
 
 ### Added
+- **Pre-built Docker image on GHCR** (`ghcr.io/camthink-ai/neomind:<version>`,
+  amd64 + arm64) published on each release — customers can `docker compose pull`
+  instead of building from source. The ARM image sets `JEMALLOC_SYS_WITH_LG_PAGE=16`
+  so it doesn't crash on 64KB-page hosts (Raspberry Pi 5 / Jetson), matching the
+  bare-metal ARM release fix.
 - **`neomind device history --limit <N>`** — caps data points per metric
   (the API already supported `limit`; the flag was missing, so `--limit 20`
   errored).

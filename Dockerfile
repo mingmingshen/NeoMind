@@ -28,6 +28,12 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 FROM --platform=$TARGETPLATFORM rust:1.85-alpine AS backend
 
+# jemalloc (used by neomind-cli as the global allocator) must assume 64KB
+# pages on ARM, else it crashes on 64KB-page hosts like Raspberry Pi 5 and
+# Jetson (same fix as the bare-metal ARM release — see release-build-glibc22.04).
+# No-op on amd64 (4KB pages, jemalloc default).
+ARG TARGETARCH
+
 RUN apk add --no-cache musl-dev
 
 WORKDIR /build
@@ -61,11 +67,13 @@ RUN mkdir -p crates/neomind-core/src && echo "" > crates/neomind-core/src/lib.rs
     mkdir -p crates/neomind-extension-runner/src && echo "" > crates/neomind-extension-runner/src/lib.rs && \
     mkdir -p crates/neomind-data-push/src && echo "" > crates/neomind-data-push/src/lib.rs
 
-RUN cargo build --release -p neomind-cli -p neomind-extension-runner 2>/dev/null || true
+RUN if [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "aarch64" ]; then export JEMALLOC_SYS_WITH_LG_PAGE=16; fi && \
+    cargo build --release -p neomind-cli -p neomind-extension-runner 2>/dev/null || true
 
 # Copy real source code and build
 COPY crates/ crates/
-RUN cargo build --release -p neomind-cli -p neomind-extension-runner
+RUN if [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "aarch64" ]; then export JEMALLOC_SYS_WITH_LG_PAGE=16; fi && \
+    cargo build --release -p neomind-cli -p neomind-extension-runner
 
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime

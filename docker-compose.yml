@@ -17,10 +17,14 @@
 
 services:
   neomind:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: neomind:latest
+    # Pull the pre-built multi-arch image from GHCR (amd64 + arm64) — no
+    # Rust build, no toolchain needed on the host. To build from source
+    # instead, delete the next two lines and uncomment the build: block.
+    image: ghcr.io/camthink-ai/neomind:latest
+    pull_policy: always
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: neomind
     restart: unless-stopped
     ports:

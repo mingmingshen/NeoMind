@@ -48,12 +48,15 @@ The fastest way to deploy NeoMind on a server. Single container includes fronten
 
 ### Quick Start
 
-```bash
-# Clone the repository
-git clone https://github.com/camthink-ai/NeoMind.git
-cd NeoMind
+The pre-built image is published to GHCR on every release, so you can start
+NeoMind without building anything (no Rust toolchain, no `git clone`):
 
-# Start NeoMind
+```bash
+# Download the compose file (+ optionally .env.example for custom ports/secrets)
+curl -LO https://raw.githubusercontent.com/camthink-ai/NeoMind/main/docker-compose.yml
+curl -LO https://raw.githubusercontent.com/camthink-ai/NeoMind/main/.env.example && mv .env.example .env
+
+# Start NeoMind (pulls the multi-arch image — amd64/arm64 auto-selected)
 docker compose up -d
 
 # Check status
@@ -62,6 +65,11 @@ docker compose logs -f neomind
 ```
 
 Open browser and visit `http://your-server-ip:9375`
+
+> Building from source instead? Clone the repo and run
+> `docker compose up -d --build` (the compose file has a commented `build:`
+> block) — but this compiles Rust in Docker (~10-30 min) and is only needed
+> if you're modifying the code.
 
 ### Configuration
 
