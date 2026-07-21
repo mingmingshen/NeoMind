@@ -13,7 +13,10 @@ extensions/
 # =============================================================================
 # Runtime Data
 # =============================================================================
-data/
+/data/
+# Nested dev/run instance data dirs (redb + encryption_key/logs/memory — never commit)
+web/data/
+docs/img/data/
 config.toml
 *.redb
 *.db
