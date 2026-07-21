@@ -186,9 +186,12 @@ impl VisionTool {
     /// multimodal backend, instead of failing the whole tool on one bad backend.
     ///
     /// Priority order (de-duplicated):
-    /// 1. Explicit `vlm_backend_id` in config
-    /// 2. Current active backend (if multimodal-capable)
-    /// 3. All other multimodal-capable instances
+    /// 1. Explicit `vlm_backend_id` in config (and `model` param, handled above)
+    /// 2. Other multimodal-capable instances (dedicated VLMs)
+    /// 3. Current active backend (fallback) — tried last because a backend's
+    ///    `supports_multimodal` flag can be wrong (a text model wrongly marked
+    ///    multimodal); preferring a dedicated VLM avoids burning a round on the
+    ///    active backend's false claim before health-tracking demotes it.
     async fn resolve_vlm_candidates(
         &self,
         model: Option<&str>,
@@ -220,22 +223,29 @@ impl VisionTool {
             }
         }
 
-        // 2. Active backend (if multimodal-capable)
-        if let Some(active) = self.llm_manager.get_active_instance() {
-            if active.capabilities.supports_multimodal && !seen.contains(&active.id) {
-                if let Ok(rt) = self.llm_manager.get_runtime(&active.id).await {
-                    seen.insert(active.id.clone());
-                    candidates.push((active.id.clone(), rt));
-                }
-            }
-        }
-
-        // 3. Other multimodal-capable instances
+        // 2. Other multimodal-capable instances (dedicated VLMs) — preferred
+        //    over the active backend. A backend's `supports_multimodal` flag
+        //    can be wrong (text model wrongly marked multimodal), and the
+        //    active chat backend is the most common offender, so trying a
+        //    dedicated VLM first avoids a wasted failed round before
+        //    health-tracking demotes the fake-multimodal active backend.
         for inst in self.llm_manager.list_instances() {
             if inst.capabilities.supports_multimodal && !seen.contains(&inst.id) {
                 if let Ok(rt) = self.llm_manager.get_runtime(&inst.id).await {
                     seen.insert(inst.id.clone());
                     candidates.push((inst.id.clone(), rt));
+                }
+            }
+        }
+
+        // 3. Active backend (fallback) — only reached if no dedicated VLM was
+        //    found above. Gated on supports_multimodal; if that flag is a false
+        //    positive, health-tracking demotes it after one failure.
+        if let Some(active) = self.llm_manager.get_active_instance() {
+            if active.capabilities.supports_multimodal && !seen.contains(&active.id) {
+                if let Ok(rt) = self.llm_manager.get_runtime(&active.id).await {
+                    seen.insert(active.id.clone());
+                    candidates.push((active.id.clone(), rt));
                 }
             }
         }
