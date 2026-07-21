@@ -49,6 +49,12 @@ pipeline.
   extension image call returned null. `/api/images/` Object URLs are now
   resolved to full base64 in the data collector; sub-threshold fragments
   are omitted.
+- **Update prompt no longer re-appears after updating** — the post-update
+  version check read `app.config().version`, which can return empty in some
+  Tauri 2.x builds, making the comparison always find an "update" so the
+  dialog re-popped on every launch once the localStorage marker was
+  consumed. Now uses the compile-time `CARGO_PKG_VERSION` and logs
+  current vs remote for diagnosis.
 
 ### Added
 - **`neomind device history --limit <N>`** — caps data points per metric
