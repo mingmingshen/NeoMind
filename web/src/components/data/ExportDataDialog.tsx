@@ -238,10 +238,10 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
           description: `${baseName}.zip`,
         })
       } else {
-        await generateExcel(baseName, data)
+        await generateCsv(baseName, data)
         toast({
           title: t('export.success'),
-          description: `${baseName}.xlsx`,
+          description: `${baseName}.csv`,
         })
       }
 
@@ -363,33 +363,41 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
   )
 }
 
-/** Generate and download an Excel file */
-async function generateExcel(
+/** Generate and download a CSV file (opens natively in Excel).
+ *  Replaces the former xlsx-based export: xlsx (SheetJS 0.18.x) carries high
+ *  CVEs (CVE-2023-30533, CVE-2024-22363) on its read/parse path, and this
+ *  export only ever writes our own tabular data — so CSV removes the
+ *  vulnerable dependency entirely with no new dep and the same usability. */
+async function generateCsv(
   baseName: string,
   data: Array<{ timestamp: number; value: unknown; quality: number | null }>,
 ) {
-  const XLSX = await import('xlsx')
+  // RFC 4180: quote any field containing comma / quote / newline; double inner quotes
+  const esc = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 
   const rows = data.map(p => {
     const rawValue = typeof p.value === 'object' ? JSON.stringify(p.value) : String(p.value ?? '')
-    return {
-      Timestamp: formatTimestamp(p.timestamp),
-      Value: truncateForExcel(rawValue),
-      Quality: p.quality !== null ? `${(p.quality * 100).toFixed(0)}%` : '-',
-    }
+    return [
+      formatTimestamp(p.timestamp),
+      truncateForExcel(rawValue),
+      p.quality !== null ? `${(p.quality * 100).toFixed(0)}%` : '-',
+    ]
+      .map(esc)
+      .join(',')
   })
 
-  const ws = XLSX.utils.json_to_sheet(rows)
-  // Auto-width columns
-  ws['!cols'] = [
-    { wch: 22 }, // Timestamp
-    { wch: 30 }, // Value (wider to show more content)
-    { wch: 10 }, // Quality
-  ]
-
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Data')
-  XLSX.writeFile(wb, `${baseName}.xlsx`)
+  const header = ['Timestamp', 'Value', 'Quality'].map(esc).join(',')
+  // Leading UTF-8 BOM so Excel decodes Unicode (Chinese etc.) correctly
+  const csv = '﻿' + [header, ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${baseName}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 100)
 }
 
 /** Generate and download a ZIP file with decoded images */
