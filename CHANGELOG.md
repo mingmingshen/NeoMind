@@ -55,6 +55,47 @@ pipeline.
   dialog re-popped on every launch once the localStorage marker was
   consumed. Now uses the compile-time `CARGO_PKG_VERSION` and logs
   current vs remote for diagnosis.
+- **Docker image builds again** — the multi-stage build had three latent
+  breakages (docker.yml only runs on tag push, and no tag had been pushed, so
+  CI never caught them): the `rust:1.85-alpine` pin was stale (Cargo.lock deps
+  need rustc ≥1.89 — rmqtt-net, wide, time), `rust:*-alpine` ships gcc but not
+  `make` so tikv-jemalloc-sys's C build died late, and `.dockerignore` used
+  `target/` (root-only) so `web/src-tauri/target` (~22GB) leaked into the build
+  context. Fixed: `rust:1.92-alpine` (matches rust-toolchain.toml), `apk add
+  make`, `**/target/`. The glibc bare-metal release had masked the first two.
+- **Data export writes CSV instead of xlsx** — the security hardening that
+  removed the high-CVE `xlsx` dep missed a dynamic `await import('xlsx')` in
+  the export dialog (static-import grep blind spot), breaking the frontend
+  `tsc` build. Export now emits CSV (opens in Excel, zero dependency),
+  completing the dep removal that change intended.
+- **Frontend dependency vulnerabilities cleared** — `npm audit fix` removed
+  the 4 production-path advisories (picomatch HIGH ReDoS/glob-injection,
+  postcss CSS-stringify XSS, react-router open-redirect via `//path`).
+  Production-path npm audit is now 0; remaining hits are dev-only
+  (vitest/vite-node) and don't ship. Rust-side advisories (wasmtime, boa,
+  rustls-webpki, protobuf) are major-version ports, tracked for 0.9.11.
+- **HTTP chat now persists conversation history** — the multi-round rewrite
+  consumed the event stream but never saved the turn (WS saves on disconnect),
+  so HTTP/CLI/3rd-party chat forgot every turn on server restart. Now calls
+  `persist_history` after the stream completes.
+- **HTTP chat now honors images + page context** — the rewrite dropped
+  `req.images`/`page_context`, so a REST vision client silently degraded to
+  text-only. Now branches on images (multimodal stream) and prepends page
+  context, matching the WS path.
+- **Telemetry flush isolates poison points** — on a failed batch write, points
+  are retried per-transaction so a single undecodable/oversized payload no
+  longer blocks fresh writes for that metric forever. `write_count` also no
+  longer double-counts re-queued points on retry.
+- **Image junk-filter applied consistently** — the <1 KB base64 omission now
+  also covers `/api/images/` URL resolution (both branches), so a header-only
+  frame stored under `/api/images/` no longer feeds extensions undecodable bytes.
+- **Agent-execution cleanup no longer scans at startup** — the periodic
+  cleanup's first tick (immediate) is skipped, avoiding a full-table deserialize
+  during boot against the backlog this cleanup exists to clear; cleanup
+  failures are now logged instead of silently dropped.
+- **About page shows the real version** — `get_app_version` uses compile-time
+  `CARGO_PKG_VERSION` (was `app.config().version`, which returns None/"unknown"
+  in some Tauri 2.x builds).
 
 ### Added
 - **Pre-built Docker image on GHCR** (`ghcr.io/camthink-ai/neomind:<version>`,
