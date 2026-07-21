@@ -231,6 +231,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
             metric,
             time_range,
             compress,
+            limit,
         } => {
             (
                 get_telemetry_history(
@@ -239,6 +240,7 @@ pub async fn run_device_cmd(cmd: DeviceCommand) -> Result<(CliResponse, OutputFo
                     metric.as_deref(),
                     time_range.as_deref(),
                     compress.unwrap_or(false),
+                    limit,
                 )
                 .await?,
                 base_format,

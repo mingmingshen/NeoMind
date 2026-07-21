@@ -657,6 +657,10 @@ pub enum DeviceCommand {
         /// Use --compress=true to enable or --compress=false to disable.
         #[arg(long)]
         compress: Option<bool>,
+        /// Max data points per metric (API range 1-5000, default 100). Caps
+        /// payload size when you only need recent points.
+        #[arg(long)]
+        limit: Option<usize>,
     },
     /// Send control command.
     ///

@@ -463,6 +463,7 @@ pub async fn get_telemetry_history(
     metric: Option<&str>,
     time_range: Option<&str>,
     compress: bool,
+    limit: Option<usize>,
 ) -> Result<CliResponse> {
     let mut path = format!("/devices/{}/telemetry", id);
     let mut params = Vec::new();
@@ -478,6 +479,9 @@ pub async fn get_telemetry_history(
     }
     if compress {
         params.push("compress=true".to_string());
+    }
+    if let Some(n) = limit {
+        params.push(format!("limit={}", n));
     }
     if !params.is_empty() {
         path.push('?');
