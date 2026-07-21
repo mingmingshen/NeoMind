@@ -680,17 +680,61 @@ pub async fn chat_handler(
     // fed back), so any HTTP client silently degraded to a single-round agent.
     // Using the _with_backend_and_skills variant also honors ChatRequest.backend_id
     // + selected_skills, which the old handler dropped on the floor.
-    let mut stream = match state
-        .agents
-        .session_manager
-        .process_message_events_with_backend_and_skills(
-            &id,
-            &req.message,
-            req.backend_id.as_deref(),
-            &req.selected_skills,
-        )
-        .await
-    {
+    // Prepend page context if provided (mirrors the WS path; the old single-round
+    // HTTP handler dropped this).
+    let final_message = if let Some(ref ctx) = req.page_context {
+        if !ctx.is_empty() {
+            format!("{}\n\n{}", ctx, req.message)
+        } else {
+            req.message.clone()
+        }
+    } else {
+        req.message.clone()
+    };
+
+    // Branch on multimodal input for REST parity with WS. The old HTTP handler
+    // dropped req.images entirely, so a REST vision client silently degraded to
+    // text-only analysis.
+    let has_images = req.images.as_ref().is_some_and(|i| !i.is_empty());
+    let stream_result = if has_images {
+        // The multimodal stream variant has no selected_skills param; set pinned
+        // skills on the agent directly first (same as the WS multimodal path).
+        if !req.selected_skills.is_empty() {
+            if let Ok(agent) = state.agents.session_manager.get_session(&id).await {
+                agent.set_pinned_skills(req.selected_skills.clone()).await;
+            }
+        }
+        let images: Vec<String> = req
+            .images
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|img| img.data.clone())
+            .collect();
+        state
+            .agents
+            .session_manager
+            .process_message_multimodal_with_backend_stream(
+                &id,
+                &final_message,
+                images,
+                req.backend_id.as_deref(),
+            )
+            .await
+    } else {
+        state
+            .agents
+            .session_manager
+            .process_message_events_with_backend_and_skills(
+                &id,
+                &final_message,
+                req.backend_id.as_deref(),
+                &req.selected_skills,
+            )
+            .await
+    };
+
+    let mut stream = match stream_result {
         Ok(s) => s,
         Err(e) => {
             let err_msg = e.to_string();
@@ -772,6 +816,14 @@ pub async fn chat_handler(
         errored = error_msg.is_some(),
         "chat_handler: completed"
     );
+
+    // Persist the conversation turn to disk. The streaming path updates the
+    // agent's live history (agent.history()) but doesn't save it; persist_history
+    // reads that live history and saves it (same thing WS does on disconnect).
+    // Without this, HTTP chat turns vanish on server restart.
+    if let Err(e) = state.agents.session_manager.persist_history(&id).await {
+        tracing::warn!(session_id = %id, error = %e, "chat_handler: failed to persist history");
+    }
 
     Ok(Json(ChatResponse {
         response,

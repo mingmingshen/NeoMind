@@ -213,13 +213,12 @@ pub async fn download_and_install(
 
 /// Get the current application version
 ///
-/// Returns the version string from the Tauri config.
+/// Uses the compile-time `CARGO_PKG_VERSION` (baked from src-tauri/Cargo.toml,
+/// bumped alongside the release tag). `app.config().version` can return None/empty
+/// in some Tauri 2.x builds — same reason check_update was migrated off it.
 #[tauri::command]
-pub async fn get_app_version(app: AppHandle) -> Result<String, String> {
-    app.config()
-        .version
-        .clone()
-        .ok_or_else(|| "Failed to get app version".to_string())
+pub async fn get_app_version(_app: AppHandle) -> Result<String, String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
 }
 
 /// Restart the application

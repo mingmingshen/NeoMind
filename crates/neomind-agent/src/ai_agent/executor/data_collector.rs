@@ -1278,7 +1278,10 @@ pub(crate) fn extract_image_data(
                         url = %s, size = bytes.len(), mime = %mime,
                         "[DIAG] extract_image_data: successfully loaded /api/images/ file"
                     );
-                    (None, Some(base64), Some(mime.to_string()))
+                    // Route through usable_image_base64 so a header-only / preview
+                    // file stored under /api/images/ is omitted (same filter as the
+                    // base64 field) instead of feeding extensions undecodable bytes.
+                    (None, usable_image_base64(base64), Some(mime.to_string()))
                 }
                 Err(e) => {
                     tracing::error!(target: "neomind::agent::event_value",
@@ -1378,7 +1381,7 @@ pub(crate) fn extract_image_data(
                             url = %url, size = bytes.len(),
                             "[DIAG] extract_image_data: resolved Object image_url (/api/images/) to full base64"
                         );
-                        return (Some(url.to_string()), Some(b64), Some(mime.to_string()));
+                        return (Some(url.to_string()), usable_image_base64(b64), Some(mime.to_string()));
                     }
                     Err(e) => {
                         tracing::error!(
@@ -1494,6 +1497,19 @@ mod tests {
 
         // Set NEOMIND_DATA_DIR for this test
         std::env::set_var("NEOMIND_DATA_DIR", test_data_dir.to_str().unwrap());
+
+        // The shared helper writes minimal ~1x1 images (tens of bytes). The
+        // usable_image_base64 filter (<1024 base64 chars) correctly omits those,
+        // so pad the fixtures to a realistic size here — this test exercises
+        // /api/images/ EXTRACTION; the sub-threshold filter is covered by the
+        // base64-field path.
+        let image_dir = test_data_dir.join("images/test-device-001/image");
+        for name in ["1234567890000.png", "1234567890001.jpg"] {
+            let p = image_dir.join(name);
+            let mut data = std::fs::read(&p).expect("fixture image");
+            data.extend(std::iter::repeat(0u8).take(1024));
+            std::fs::write(&p, data).expect("pad fixture");
+        }
 
         // Test /api/images/ URL extraction
         let url_value = serde_json::json!("/api/images/test-device-001/image/1234567890000.png");

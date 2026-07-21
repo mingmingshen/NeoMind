@@ -861,49 +861,79 @@ impl TimeSeriesStore {
 
         let total_count: usize = groups.values().map(|v| v.len()).sum();
 
-        // Write each group in a single transaction. On failure, re-queue the
-        // group's points so the next flush retries them — previously a failed
-        // batch was logged and then permanently lost (the points had already
-        // been drained), which silently dropped telemetry on transient or
-        // persistent write errors (disk full, IO error).
+        // Write each group in a single transaction. On failure, isolate the
+        // offending point by retrying per-point in its own transaction —
+        // otherwise a single poison payload (e.g. a value exceeding redb's
+        // max_value_size) aborts the whole (source, metric) batch every flush
+        // and blocks fresh writes for that metric forever. Only the genuinely
+        // unwritable points are re-queued.
         let mut requeue: Vec<BufferedWrite> = Vec::new();
         for ((source_id, metric), points) in groups {
             if let Err(e) = self.write_batch_sync(&source_id, &metric, &points) {
                 tracing::error!(
-                    "Failed to flush batch for {}/{}: {} — re-queuing {} points for next flush",
-                    source_id,
-                    metric,
-                    e,
-                    points.len()
+                    "Failed to flush batch for {}/{}: {} — isolating per-point",
+                    source_id, metric, e
                 );
-                for point in points {
-                    requeue.push(BufferedWrite {
-                        source_id: source_id.clone(),
-                        metric: metric.clone(),
-                        point,
-                    });
+                let failed = self.write_points_isolated(&source_id, &metric, points);
+                if !failed.is_empty() {
+                    tracing::error!(
+                        "Per-point isolation {}/{}: {} poison point(s) failed and were re-queued",
+                        source_id, metric, failed.len()
+                    );
+                    for point in failed {
+                        requeue.push(BufferedWrite {
+                            source_id: source_id.clone(),
+                            metric: metric.clone(),
+                            point,
+                        });
+                    }
                 }
             }
         }
 
         // Re-queue failed points (bounded — drops once at the hard cap).
+        let mut requeued_count: usize = 0;
         if !requeue.is_empty() {
-            let requeued = requeue.len();
+            requeued_count = requeue.len();
             let dropped = self.write_buffer.requeue(requeue);
             if dropped > 0 {
                 tracing::error!(
                     "Write buffer at hard cap under persistent flush failure — {} points re-queued, {} dropped",
-                    requeued - dropped,
+                    requeued_count - dropped,
                     dropped
                 );
             }
         }
 
-        // Record stats
+        // Record stats — count only points that actually landed. Counting the
+        // full drained set would double-count re-queued points on every retry.
         if let Ok(mut stats) = self.stats.try_write() {
-            stats.write_count += total_count as u64;
+            stats.write_count += (total_count - requeued_count) as u64;
             stats.total_write_ns += start.elapsed().as_nanos() as u64;
         }
+    }
+
+    /// Write each point in its OWN transaction, returning only the points that
+    /// failed. Used after a batch write fails to isolate a poison point: the
+    /// good points in the group land, only the genuinely unwritable ones come
+    /// back for (bounded) re-queue.
+    fn write_points_isolated(
+        &self,
+        source_id: &str,
+        metric: &str,
+        points: Vec<DataPoint>,
+    ) -> Vec<DataPoint> {
+        let mut failed = Vec::new();
+        for point in points {
+            if let Err(e) = self.write_batch_sync(source_id, metric, std::slice::from_ref(&point)) {
+                tracing::error!(
+                    "Per-point write failed for {}/{} @{} (poison): {}",
+                    source_id, metric, point.timestamp, e
+                );
+                failed.push(point);
+            }
+        }
+        failed
     }
 
     /// Synchronous batch write (used by flush_buffer).

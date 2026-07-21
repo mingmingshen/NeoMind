@@ -1129,14 +1129,28 @@ impl ServerState {
             tokio::spawn(async move {
                 let mut cleanup_interval =
                     tokio::time::interval(tokio::time::Duration::from_secs(6 * 60 * 60));
+                // `interval`'s first tick fires immediately — consume it so the
+                // server doesn't do a full AGENT_EXECUTIONS_TABLE scan
+                // (deserializing every record) during startup, contending with
+                // the just-booted server against the very backlog this cleanup
+                // exists to clear. First real cleanup is delayed one interval.
+                cleanup_interval.tick().await;
                 loop {
                     cleanup_interval.tick().await;
                     let cutoff = chrono::Utc::now().timestamp() - 30 * 24 * 60 * 60;
-                    if let Ok(cleaned) = agent_store.cleanup_executions(cutoff).await {
-                        if cleaned > 0 {
-                            tracing::info!(
-                                "Periodic cleanup: removed {} agent executions older than 30 days",
-                                cleaned
+                    match agent_store.cleanup_executions(cutoff).await {
+                        Ok(cleaned) => {
+                            if cleaned > 0 {
+                                tracing::info!(
+                                    "Periodic cleanup: removed {} agent executions older than 30 days",
+                                    cleaned
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                "Periodic agent-execution cleanup failed — execution history may grow unbounded"
                             );
                         }
                     }
