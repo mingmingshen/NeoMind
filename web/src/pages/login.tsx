@@ -74,6 +74,35 @@ function translateError(error: string, t: (key: string, params?: Record<string, 
   return error || t("loginFailed")
 }
 
+// Honeycomb mesh — ported from NeoMind-Landing Capabilities.astro.
+// Pointy-top hex tight tiling (odd rows offset = true 6-neighbor honeycomb),
+// brand-orange, ripple-from-center breathe (delay based on distance to center).
+const HEX_S = 36
+const HEX_W = HEX_S * Math.sqrt(3)
+const HALF_W = HEX_W / 2
+const ROW_STEP = HEX_S * 1.5
+const HEXES: { pts: string; delay: string }[] = (() => {
+  const COLS = 32, ROWS = 22
+  const cCenter = COLS / 2, rCenter = ROWS / 2
+  const out: { pts: string; delay: string }[] = []
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cx = c * HEX_W + (r % 2) * HALF_W
+      const cy = r * ROW_STEP
+      const pts = [
+        [cx, cy - HEX_S], [cx + HALF_W, cy - HEX_S / 2],
+        [cx + HALF_W, cy + HEX_S / 2], [cx, cy + HEX_S],
+        [cx - HALF_W, cy + HEX_S / 2], [cx - HALF_W, cy - HEX_S / 2],
+      ].map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')
+      const dist = Math.sqrt((c - cCenter) ** 2 + (r - rCenter) ** 2)
+      const jitter = ((r * 31 + c * 17) % 13) * 0.08
+      const delay = (((dist * 0.15) + jitter) % 7).toFixed(2)
+      out.push({ pts, delay })
+    }
+  }
+  return out
+})()
+
 export function LoginPage() {
   const { t, i18n } = useTranslation(['common', 'auth', 'instances'])
   const { login, checkAuthStatus } = useStore()
@@ -90,6 +119,24 @@ export function LoginPage() {
   const [showInstancePicker, setShowInstancePicker] = useState(false)
 
   const cachedInstances = getCachedInstances()
+  const [instanceStatuses, setInstanceStatuses] = useState<Record<string, string>>({})
+
+  // Live health-check each backend when the picker opens, so the list shows
+  // online/offline status (like InstanceManagerDialog on the home page).
+  useEffect(() => {
+    if (!showInstancePicker) return
+    const instances = getCachedInstances()
+    setInstanceStatuses(Object.fromEntries(instances.map(i => [i.id, 'checking'])))
+    instances.forEach(async (inst) => {
+      const base = inst.is_local ? 'http://localhost:9375' : inst.url.replace(/\/+$/, '')
+      try {
+        const res = await fetch(`${base}/api/setup/status`, { signal: AbortSignal.timeout(4000) })
+        setInstanceStatuses(prev => ({ ...prev, [inst.id]: res.ok ? 'online' : 'offline' }))
+      } catch {
+        setInstanceStatuses(prev => ({ ...prev, [inst.id]: 'offline' }))
+      }
+    })
+  }, [showInstancePicker])
   const apiBase = getApiBase()
   const isRemote = !!(apiBase && apiBase !== '/api' && !apiBase.includes('localhost') && !apiBase.includes('127.0.0.1'))
 
@@ -282,6 +329,13 @@ export function LoginPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate flex items-center gap-2">
+                      {instanceStatuses[inst.id] && (
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          instanceStatuses[inst.id] === 'online' ? 'bg-success'
+                          : instanceStatuses[inst.id] === 'offline' ? 'bg-destructive'
+                          : 'bg-muted-foreground'
+                        }`} />
+                      )}
                       {inst.is_local ? t('instances:localBackend') : inst.name}
                       {isCurrent && (
                         <span className={`inline-flex items-center gap-0.5 ${textNano} font-medium px-1.5 py-0.5 rounded-full bg-primary-light text-primary`}>
@@ -317,21 +371,53 @@ export function LoginPage() {
       <div className="fixed inset-0">
         {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-        {/* Honeycomb grid — IoT sensor array + AI neural mesh feel.
-            Hex kept 1:1 (96x96) for clean tiling. Faint texture. */}
-        <svg className="absolute inset-0 h-full w-full" aria-hidden>
-          <defs>
-            <pattern id="login-honeycomb" width="80" height="105" patternUnits="userSpaceOnUse">
-              <path
-                d="M 20 0 L 60 0 L 80 35 L 60 70 L 20 70 L 0 35 Z M 60 52.5 L 100 52.5 L 120 87.5 L 100 122.5 L 60 122.5 L 40 87.5 Z"
-                fill="none"
-                stroke="var(--foreground)"
-                strokeOpacity="0.06"
-                strokeWidth="1"
+        {/* Honeycomb mesh — ported from Landing. Pointy-top tight tiling,
+            brand-orange, ripple-from-center breathe. Mask fades edges. */}
+        <svg
+          className="absolute inset-0 h-full w-full"
+          viewBox={`0 0 ${32 * HEX_W} ${22 * ROW_STEP}`}
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden
+        >
+          <style>{`
+            .login-hex-cell {
+              fill-opacity: 0;
+              stroke-opacity: 0.04;
+            }
+            @keyframes login-hex-breathe {
+              0%, 100% { fill-opacity: 0; stroke-opacity: 0.04; }
+              50% { fill-opacity: 0.06; stroke-opacity: 0.08; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .login-hex-cell {
+                animation: none !important;
+                fill-opacity: 0.03;
+                stroke-opacity: 0.06;
+              }
+            }
+          `}</style>
+          <g
+            style={{
+              maskImage: 'radial-gradient(ellipse 90% 80% at 50% 50%, black 30%, transparent 85%)',
+              WebkitMaskImage: 'radial-gradient(ellipse 90% 80% at 50% 50%, black 30%, transparent 85%)',
+            }}
+          >
+            {HEXES.map((h, i) => (
+              <polygon
+                key={i}
+                points={h.pts}
+                className="login-hex-cell"
+                style={{
+                  fill: 'var(--accent-orange)',
+                  stroke: 'var(--accent-orange)',
+                  strokeWidth: 1,
+                  vectorEffect: 'non-scaling-stroke',
+                  animation: 'login-hex-breathe 7s ease-in-out infinite',
+                  animationDelay: `${h.delay}s`,
+                }}
               />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#login-honeycomb)" />
+            ))}
+          </g>
         </svg>
         {/* One soft brand glow — restrained, just enough warmth to avoid
             feeling flat. Brand orange ties to the logo. */}
