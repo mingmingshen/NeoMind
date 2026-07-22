@@ -8,6 +8,7 @@ import { Check, MessageSquare, Settings, ChevronRight, Cpu, Zap, Globe } from 'l
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SetupBackground } from './SetupBackground'
+import { SetupHeader } from './SetupHeader'
 import { getLocalizedTimezones } from '@/lib/time/format'
 
 interface CompleteStepProps {
@@ -66,13 +67,20 @@ export function CompleteStep({ username, initialTimezone, token, getApiUrl, onCo
     <div className="viewport-full flex flex-col bg-background relative overflow-hidden">
       <SetupBackground />
 
-      {/* Header spacer to clear the status bar / notch on mobile */}
-      <div className="relative z-20 shrink-0 safe-top" />
+      {/* Floating header — absolute, matches AccountStep so both setup steps
+          share the same top-right language switcher without consuming flow. */}
+      <SetupHeader />
 
       <main className="relative z-10 flex-1 min-h-0 overflow-y-auto safe-bottom">
-        <div className="min-h-full flex items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
+        <div className="min-h-full flex items-center justify-center px-4 pt-20 pb-6 sm:px-6 sm:pt-24 sm:pb-10">
           <div className="w-full max-w-md text-center animate-fade-in-up">
-            <div className="bg-bg-50 backdrop-blur-md rounded-xl p-5 sm:p-8 border border-border shadow-2xl">
+            <div
+              className="backdrop-blur-xl rounded-2xl p-6 sm:p-8 border shadow-md"
+              style={{
+                backgroundColor: 'color-mix(in oklch, var(--background) 72%, transparent)',
+                borderColor: 'color-mix(in oklch, var(--border) 55%, transparent)',
+              }}
+            >
               {/* Success Icon */}
               <div className="flex justify-center mb-4 sm:mb-5">
                 <div className="flex size-12 sm:size-14 items-center justify-center rounded-full bg-success-light text-success ring-1 ring-border">

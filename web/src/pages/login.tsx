@@ -365,7 +365,7 @@ export function LoginPage() {
             feeling flat. Brand orange ties to the logo. */}
         <div
           className="absolute top-[28%] left-1/2 -translate-x-1/2 w-[42rem] h-[42rem] rounded-full blur-3xl"
-          style={{ background: 'color-mix(in oklch, var(--accent-orange) 12%, transparent)' }}
+          style={{ background: 'color-mix(in oklch, var(--accent-orange) 8%, transparent)' }}
         />
       </div>
 
@@ -424,7 +424,7 @@ export function LoginPage() {
       >
         <div className="w-full max-w-md">
           <div
-            className="backdrop-blur-xl rounded-2xl p-6 sm:p-8 border shadow-xl animate-fade-in-up"
+            className="backdrop-blur-xl rounded-2xl p-6 sm:p-8 border shadow-md animate-fade-in-up"
             style={{
               backgroundColor: 'color-mix(in oklch, var(--background) 72%, transparent)',
               borderColor: 'color-mix(in oklch, var(--border) 55%, transparent)',

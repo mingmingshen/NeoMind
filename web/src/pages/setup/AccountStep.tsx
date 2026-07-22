@@ -161,31 +161,28 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
     <div className="viewport-full flex flex-col bg-background relative overflow-hidden">
       <SetupBackground />
 
-      {/* Header — in-flow so it can never overlap the form (the old absolute
-          header sat on top of content when the form scrolled on small screens). */}
-      <div className="relative z-20 shrink-0 safe-top">
-        <SetupHeader />
-      </div>
+      {/* Floating header — absolute so it doesn't consume vertical flow.
+          The form is short enough to fit without scrolling; a full in-flow
+          bar just pushed content down and caused unnecessary scroll. */}
+      <SetupHeader />
 
-      {/* Scroll area.
-          `min-h-full` + `items-center` on the inner wrapper is the canonical
-          "center when it fits, top-align when it scrolls" pattern — avoids the
-          flexbox bug where `justify-center` + overflowing child makes the top
-          unreachable. `safe-bottom` clears the iPhone home indicator. */}
+      {/* Scroll area. `min-h-full` + `items-center` is the canonical
+          "center when it fits, top-align when it scrolls" pattern. `pt-20/24`
+          clears the floating header so a scrolled card never hides under it.
+          `safe-bottom` clears the iPhone home indicator. */}
       <main className="relative z-10 flex-1 min-h-0 overflow-y-auto safe-bottom">
-        <div className="min-h-full flex items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
+        <div className="min-h-full flex items-center justify-center px-4 pt-20 pb-6 sm:px-6 sm:pt-24 sm:pb-10">
           <div className="w-full max-w-md animate-fade-in-up">
-            <div className="bg-bg-50 backdrop-blur-md rounded-xl p-5 sm:p-8 border border-border shadow-2xl">
-              {/* Hero icon — responsive sizing + ring for definition */}
-              <div className="flex justify-center mb-4 sm:mb-5">
-                <div className="flex size-12 sm:size-14 items-center justify-center rounded-full bg-muted text-primary ring-1 ring-border">
-                  <User className="size-5 sm:size-6" />
-                </div>
-              </div>
-
+            <div
+              className="backdrop-blur-xl rounded-2xl p-6 sm:p-8 border shadow-md"
+              style={{
+                backgroundColor: 'color-mix(in oklch, var(--background) 72%, transparent)',
+                borderColor: 'color-mix(in oklch, var(--border) 55%, transparent)',
+              }}
+            >
               {/* Title */}
               <h2 className="text-xl sm:text-2xl font-semibold mb-1.5 text-center tracking-tight">{t('setup:createAccount')}</h2>
-              <p className="text-muted-foreground text-center mb-5 sm:mb-6 text-sm px-2">{t('setup:accountDescription')}</p>
+              <p className="text-muted-foreground text-center mb-5 text-sm px-2">{t('setup:accountDescription')}</p>
 
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 {/* Username */}

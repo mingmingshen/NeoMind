@@ -25,7 +25,7 @@ export function SetupHeader({ onBack, stepLabel }: SetupHeaderProps) {
   const { t, i18n } = useTranslation(['common', 'setup'])
 
   return (
-    <header className="relative z-10 backdrop-blur-sm safe-top">
+    <header className="absolute top-0 left-0 right-0 z-50 safe-top">
       <div className="flex items-center justify-between px-4 h-14 sm:px-6 sm:h-16">
         <div className="flex items-center gap-3">
           {onBack && (
