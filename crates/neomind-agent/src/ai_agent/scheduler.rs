@@ -168,6 +168,43 @@ impl Default for SchedulerConfig {
     }
 }
 
+impl SchedulerConfig {
+    /// Apply environment overrides for concurrency limits.
+    ///
+    /// Tuning knob for resource-constrained edge devices (e.g. RK3576 with
+    /// 4-8 GB RAM): the defaults (global 10 / per-backend 2) can OOM small
+    /// devices when many agents fire at once.
+    /// - `NEOMIND_MAX_CONCURRENT` (global execution limit, default 10)
+    /// - `NEOMIND_MAX_CONCURRENT_PER_BACKEND` (per-LLM-backend, default 2)
+    /// Unset or invalid values keep the defaults.
+    pub fn with_env_concurrency(mut self) -> Self {
+        if let Some(n) = parse_concurrency_env("NEOMIND_MAX_CONCURRENT") {
+            self.max_concurrent = n;
+        }
+        if let Some(n) = parse_concurrency_env("NEOMIND_MAX_CONCURRENT_PER_BACKEND") {
+            self.max_concurrent_per_backend = n;
+        }
+        self
+    }
+}
+
+/// Parse a usize concurrency env override (must be >= 1 — 0 would deadlock the
+/// semaphore forever). Invalid values are warned and ignored.
+fn parse_concurrency_env(name: &str) -> Option<usize> {
+    let raw = std::env::var(name).ok()?;
+    match raw.trim().parse::<usize>() {
+        Ok(n) if n >= 1 => Some(n),
+        Ok(_) => {
+            tracing::warn!(%name, value = %raw, "concurrency override must be >= 1, ignoring");
+            None
+        }
+        Err(_) => {
+            tracing::warn!(%name, value = %raw, "concurrency override is not a valid integer, ignoring");
+            None
+        }
+    }
+}
+
 /// Error types for scheduler operations.
 #[derive(Debug, Error)]
 pub enum SchedulerError {

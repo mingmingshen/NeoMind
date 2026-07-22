@@ -803,7 +803,13 @@ impl Agent {
             })),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
             memory_snapshot: std::sync::OnceLock::new(),
-            tool_concurrency_limit: Arc::new(Semaphore::new(5)),
+            tool_concurrency_limit: Arc::new(Semaphore::new(
+                std::env::var("NEOMIND_TOOL_CONCURRENCY")
+                    .ok()
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .filter(|&n| n >= 1)
+                    .unwrap_or(5),
+            )),
         }
     }
 

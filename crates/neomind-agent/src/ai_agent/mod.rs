@@ -123,7 +123,7 @@ impl AiAgentManager {
     /// Create a new AI Agent manager.
     pub async fn new(config: AgentExecutorConfig) -> Result<Arc<Self>, crate::error::NeoMindError> {
         // Create scheduler first so we can share its backend semaphores with the executor
-        let scheduler_config = SchedulerConfig::default();
+        let scheduler_config = SchedulerConfig::default().with_env_concurrency();
         let scheduler = Arc::new(AgentScheduler::new(scheduler_config).await?);
 
         // Share backend semaphores between scheduler and executor
