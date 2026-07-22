@@ -141,17 +141,29 @@ export function LoginPage() {
   const isRemote = !!(apiBase && apiBase !== '/api' && !apiBase.includes('localhost') && !apiBase.includes('127.0.0.1'))
 
   // Handle instance switch — use encrypted_key from backend
-  const handleInstanceSwitch = (instance: CachedInstance) => {
+  const handleInstanceSwitch = async (instance: CachedInstance) => {
     const fullKey = instance.encrypted_key ? decryptApiKey(instance.encrypted_key) : ''
-    // Show the switch overlay (like the home page's switchInstance) so the
-    // login page displays "Connecting to {name}..." instead of a silent reload.
-    // The store's instances are seeded from the cache, so currentInstanceId
-    // resolves to the target name in InstanceSwitchOverlay.
     useStore.setState({
       switchingState: 'switching',
       switchingError: null,
       currentInstanceId: instance.id,
     })
+    // Pre-validate the target backend BEFORE touching localStorage or reloading.
+    // If it's down/non-existent, error + revert INSTANTLY (no reload, no 30s
+    // StartupLoading wait) — the user stays on the current instance and sees
+    // the error/revert overlay. Only reload if the backend is actually
+    // reachable. A dead backend (e.g. connection refused) fails in <100ms.
+    try {
+      const base = instance.is_local ? 'http://localhost:9375' : instance.url.replace(/\/+$/, '')
+      const res = await fetch(`${base}/api/setup/status`, { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) {
+        useStore.setState({ switchingState: 'error', switchingError: 'unreachable' })
+        return
+      }
+    } catch {
+      useStore.setState({ switchingState: 'error', switchingError: 'unreachable' })
+      return
+    }
     localStorage.setItem(CURRENT_INSTANCE_KEY, instance.id)
     localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
       targetId: instance.id,
@@ -159,8 +171,7 @@ export function LoginPage() {
       apiUrl: instance.is_local ? '' : `${instance.url}/api`,
       apiKey: instance.is_local ? '' : fullKey,
     }))
-    // Brief delay so the InstanceSwitchOverlay paints before the reload.
-    setTimeout(() => window.location.reload(), 100)
+    window.location.reload()
   }
 
   const handleBackToLocal = () => {
