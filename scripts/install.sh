@@ -79,10 +79,20 @@ get_arch() {
 
 get_latest_version() {
     status "Fetching latest version..."
-    VERSION=$(curl -sfL https://api.github.com/repos/${REPO}/releases/latest |
-              grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    # Primary: the HTML /releases/latest endpoint 302-redirects to
+    # .../tag/vX.Y.Z. This is NOT the API, so it is immune to the 60 req/h
+    # unauthenticated rate limit that breaks installs behind shared NAT
+    # egress IPs (data centers, carrier/CGNAT, campus networks).
+    VERSION=$(curl -fsSI -o /dev/null -w '%{redirect_url}' \
+              https://github.com/${REPO}/releases/latest 2>/dev/null |
+              sed -nE 's#.*/tag/v([^/]+).*#\1#p')
+    # Fallback: the API endpoint (may itself be rate-limited on shared IPs).
     if [ -z "$VERSION" ]; then
-        error "Failed to fetch latest version from GitHub"
+        VERSION=$(curl -sfL https://api.github.com/repos/${REPO}/releases/latest 2>/dev/null |
+                  grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    fi
+    if [ -z "$VERSION" ]; then
+        error "Failed to fetch latest version (GitHub API rate-limited on a shared IP?). Re-run with an explicit version, e.g.: VERSION=0.9.10 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh"
     fi
 }
 
