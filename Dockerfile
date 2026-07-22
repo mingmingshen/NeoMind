@@ -1,15 +1,24 @@
 # =============================================================================
-# NeoMind Dockerfile — Multi-stage build
+# NeoMind Dockerfile — Multi-stage build (Ubuntu 22.04 / glibc 2.35)
 # =============================================================================
 # Usage:
 #   docker build -t neomind:latest .
 #   docker compose up -d
 #
 # Platforms: linux/amd64, linux/arm64
-# =============================================================================
+#
+# Why glibc (not Alpine/musl): extensions ship native binaries (`extension.so`)
+# built against glibc on Ubuntu — a musl container cannot dlopen a glibc-linked
+# shared library (different libc + dynamic linker), so the extension marketplace
+# is unusable in an Alpine image. Ubuntu 22.04 (glibc 2.35) matches the
+# bare-metal release baseline (see release-build-glibc22.04 memory), so Docker
+# and bare-metal load the exact same extension binaries. Both the build and
+# runtime stages use ubuntu:22.04 so the produced binary + loaded extensions
+# share one glibc version (2.35).
+# ============================================================================
 
 # ---------------------------------------------------------------------------
-# Stage 1: Build frontend
+# Stage 1: Build frontend (static output — libc-irrelevant, alpine is fine)
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
 
@@ -24,26 +33,29 @@ COPY web/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 2: Build backend
+# Stage 2: Build backend (ubuntu:22.04 = glibc 2.35, matches bare-metal)
 # ---------------------------------------------------------------------------
-FROM --platform=$TARGETPLATFORM rust:1.92-alpine AS backend
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS backend
 
-# Keep this rust tag in sync with rust-toolchain.toml (currently 1.92.0).
-# Cargo.lock deps require rustc >=1.89 (rmqtt-net, wide, time, …); an older
-# image fails at `cargo` resolution before any crate compiles.
-# jemalloc (used by neomind-cli as the global allocator) must assume 64KB
-# pages on ARM, else it crashes on 64KB-page hosts like Raspberry Pi 5 and
-# Jetson (same fix as the bare-metal ARM release — see release-build-glibc22.04).
-# No-op on amd64 (4KB pages, jemalloc default).
 ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
 
-# rust:*-alpine ships gcc + musl-dev but NOT `make`. tikv-jemalloc-sys runs a
-# real make-based C build (its build.rs spawns `make` at build.rs:407); without
-# it the build dies late with "failed to execute command: No such file or
-# directory". The glibc (Ubuntu) bare-metal release never hit this because
-# build-essential provides make — only the Docker/musl path did. See
-# release-build-glibc22.04 memory (glibc) vs this Dockerfile (musl).
-RUN apk add --no-cache musl-dev make
+# build-essential = gcc + g++ + make (make is required by tikv-jemalloc-sys's
+# C build). curl+ca-certificates for rustup. pkg-config for build scripts.
+# No libssl-dev: reqwest/lettre are rustls-only; the only "openssl" in the tree
+# is openssl-probe (pure-Rust cert-path lookup, no link).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        ca-certificates \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (pin to match rust-toolchain.toml). ubuntu:22.04 has no official
+# rust:*-jammy image, so rustup is the path to a glibc-2.35 toolchain.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain 1.92.0 --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /build
 
@@ -76,6 +88,10 @@ RUN mkdir -p crates/neomind-core/src && echo "" > crates/neomind-core/src/lib.rs
     mkdir -p crates/neomind-extension-runner/src && echo "" > crates/neomind-extension-runner/src/lib.rs && \
     mkdir -p crates/neomind-data-push/src && echo "" > crates/neomind-data-push/src/lib.rs
 
+# jemalloc (neomind-cli global allocator) must assume 64KB pages on ARM, else it
+# crashes on 64KB-page hosts like Raspberry Pi 5 / Jetson (the arm64 container
+# runs on the host kernel, so a 64KB-page Pi5 host still sees 64KB pages inside
+# the container). No-op on amd64 (4KB pages). See release-build-glibc22.04.
 RUN if [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "aarch64" ]; then export JEMALLOC_SYS_WITH_LG_PAGE=16; fi && \
     cargo build --release -p neomind-cli -p neomind-extension-runner 2>/dev/null || true
 
@@ -85,15 +101,18 @@ RUN if [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "aarch64" ]; then export
     cargo build --release -p neomind-cli -p neomind-extension-runner
 
 # ---------------------------------------------------------------------------
-# Stage 3: Runtime
+# Stage 3: Runtime (ubuntu:22.04 = glibc 2.35, same as build)
 # ---------------------------------------------------------------------------
-FROM alpine:3.22 AS runtime
+FROM ubuntu:22.04 AS runtime
 
-# `apk upgrade` patches base-image packages, keeping the shipped image clear
-# of known alpine CVEs between base-image refreshes (the main source of
-# "high" findings in image scans). Then add the runtime deps.
-RUN apk upgrade --no-cache && apk add --no-cache ca-certificates curl tzdata && \
-    addgroup -S neomind && adduser -S neomind -G neomind
+ENV DEBIAN_FRONTEND=noninteractive
+
+# apt-get upgrade patches base-image packages between refreshes (the main
+# source of "high" findings in image scans). Then add runtime deps.
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends ca-certificates curl tzdata && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system neomind && useradd --system --gid neomind --home-dir /app neomind
 
 WORKDIR /app
 
