@@ -35,7 +35,7 @@ neomind-data-push = { path = "../neomind-data-push" }
 # takes &Realm, Context lifetime removed) and this is the user-facing transform engine;
 # needs integration testing with real transforms, not a mid-0.9.10 change. The advisory
 # (RUSTSEC-2024-0444, AsyncGenerator) is also likely unexploitable on our simple sync JS.
-boa_engine = "0.17"
+boa_engine = "0.21"
 
 # Encoding (merged from neomind-automation)
 hex = { workspace = true }

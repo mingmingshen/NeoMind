@@ -489,7 +489,7 @@ impl JsTransformExecutor {
 
             // Provide extensions.invoke() function that looks up pre-computed results
             let invoke_fn = boa_engine::NativeFunction::from_copy_closure(
-                |_this, args: &[JsValue], context: &mut Context<'_>| {
+                |_this, args: &[JsValue], context: &mut Context| {
                     let extension_id = args
                         .first()
                         .and_then(|v| v.as_string())
@@ -518,7 +518,7 @@ impl JsTransformExecutor {
                 },
             );
 
-            let invoke_fn_obj = FunctionObjectBuilder::new(&mut context, invoke_fn)
+            let invoke_fn_obj = FunctionObjectBuilder::new(context.realm(), invoke_fn)
                 .name("invoke")
                 .length(3)
                 .build();
@@ -600,7 +600,7 @@ impl JsTransformExecutor {
                 message: format!("Failed to convert JS value to JSON: {}", e),
             })?;
 
-        Ok(json_value)
+        Ok(json_value.unwrap_or(serde_json::Value::Null))
     }
 
     /// Convert JSON result to vector of metrics
