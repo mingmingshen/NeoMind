@@ -376,6 +376,13 @@ export const createInstanceSlice: StateCreator<
       ? (getFullApiKey(id) || '') // from add/edit flow
       : ''
 
+    // Show the switch overlay immediately — on every page, including login —
+    // so the user sees "Connecting to {name}..." during the validation below.
+    // (Local + remote-no-apikey paths previously didn't set 'switching' until
+    // after validation, and reload fired immediately after, so the overlay
+    // never painted — the login page looked frozen.)
+    set({ switchingState: 'switching', switchingError: null })
+
     // For remote instances with API key: validate the key before switching
     if (!targetInstance.is_local && fullApiKey) {
       set({ switchingState: 'switching', switchingError: null })
