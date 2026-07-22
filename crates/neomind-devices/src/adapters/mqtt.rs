@@ -2229,7 +2229,10 @@ impl MqttAdapter {
 
                         // Generate a device_id for auto-discovery
                         // Try to extract from topic, or use a hash-based ID
+                        // Sanitize the extracted id (length + charset); fall back to a
+                        // hash-derived id (already safe format) if missing/invalid.
                         let auto_device_id = extract_device_id_from_topic(&topic, config)
+                            .and_then(sanitize_auto_device_id)
                             .unwrap_or_else(|| {
                                 // Use topic hash as device_id
                                 format!("mqtt_{}", {
@@ -2240,6 +2243,18 @@ impl MqttAdapter {
                                     format!("{:x}", hasher.finish())
                                 })
                             });
+
+                        // Bound the discovery sample — a huge payload would be stored
+                        // verbatim as the onboarding sample (audit: no size limit).
+                        if payload.len() > MAX_AUTOONBOARD_SAMPLE_BYTES {
+                            tracing::warn!(
+                                topic = %topic,
+                                size = payload.len(),
+                                limit = MAX_AUTOONBOARD_SAMPLE_BYTES,
+                                "Auto-onboard payload exceeds sample size limit, skipping"
+                            );
+                            return;
+                        }
 
                         // Determine data format and prepare sample
                         // Extract the actual device data from payload.data if it exists
@@ -2429,6 +2444,29 @@ fn topic_filter_covers(covering: &str, covered: &str) -> bool {
             },
             None => return i == covered_parts.len(),
         }
+    }
+}
+
+/// Max auto-onboard device_id length (extracted from topic; hash fallback is shorter).
+const MAX_AUTOONBOARD_DEVICE_ID_LEN: usize = 128;
+/// Max auto-onboard sample payload size. Bounds memory against malicious/buggy
+/// publishers (audit: sample was unbounded -> OOM). 2 MB lets camera image
+/// payloads through (NeoMind has camera device types) while still capping the
+/// worst case; MQTT brokers also cap packet size independently.
+const MAX_AUTOONBOARD_SAMPLE_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+
+/// Sanitize an auto-onboard device_id extracted from an MQTT topic: keep only
+/// device-id-safe chars (ascii alnum, `-`, `_`, `:`, `.`), cap length. Returns
+/// None if empty/over-length so the caller falls back to a hash-derived id.
+fn sanitize_auto_device_id(id: String) -> Option<String> {
+    let cleaned: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'))
+        .collect();
+    if cleaned.is_empty() || cleaned.len() > MAX_AUTOONBOARD_DEVICE_ID_LEN {
+        None
+    } else {
+        Some(cleaned)
     }
 }
 
@@ -2699,6 +2737,30 @@ pub async fn test_mqtt_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sanitize_auto_device_id() {
+        // valid id (mixed safe chars) kept verbatim
+        assert_eq!(
+            sanitize_auto_device_id("sensor-01_room.a:b".to_string()).as_deref(),
+            Some("sensor-01_room.a:b")
+        );
+        // unsafe chars (path separators) stripped; '.' kept
+        assert_eq!(
+            sanitize_auto_device_id("dev/../etc".to_string()).as_deref(),
+            Some("dev..etc")
+        );
+        // only-unsafe chars (no alnum/_-:.) -> None (caller falls back to hash)
+        assert_eq!(sanitize_auto_device_id("///".to_string()), None);
+        // empty -> None
+        assert_eq!(sanitize_auto_device_id(String::new()), None);
+        // over-length -> None
+        let long = "a".repeat(MAX_AUTOONBOARD_DEVICE_ID_LEN + 1);
+        assert_eq!(sanitize_auto_device_id(long), None);
+        // exactly at limit -> kept
+        let at = "a".repeat(MAX_AUTOONBOARD_DEVICE_ID_LEN);
+        assert!(sanitize_auto_device_id(at).is_some());
+    }
 
     #[test]
     fn test_default_parse_value() {
