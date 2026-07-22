@@ -4,6 +4,7 @@
 //! communicate through publishing and subscribing to events.
 
 use crate::event::{EventMetadata, NeoMindEvent};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -117,6 +118,7 @@ impl EventBus {
     pub fn subscribe(&self) -> EventBusReceiver {
         EventBusReceiver {
             rx: self.tx.subscribe(),
+            dropped: AtomicU64::new(0),
         }
     }
 
@@ -149,6 +151,9 @@ impl Default for EventBus {
 /// Receiver for all events from the event bus.
 pub struct EventBusReceiver {
     rx: broadcast::Receiver<(NeoMindEvent, EventMetadata)>,
+    /// Events silently dropped because this receiver lagged behind the buffer.
+    /// Non-zero ⇒ silent event loss (telemetry/rules/agents missed).
+    dropped: AtomicU64,
 }
 
 impl EventBusReceiver {
@@ -160,7 +165,15 @@ impl EventBusReceiver {
             match self.rx.recv().await {
                 Ok(event) => return Some(event),
                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::debug!("EventBusReceiver lagged, skipped {} events", n);
+                    let total = self.dropped.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+                    tracing::warn!(
+                        dropped_total = total,
+                        this_batch = n,
+                        capacity = DEFAULT_CHANNEL_CAPACITY,
+                        "EventBus receiver lagged: events dropped (slow subscriber). \
+                         Non-zero dropped_total means silent event loss — surface this, \
+                         don't let the system fail quietly."
+                    );
                     // Drain any immediately available event; if buffer is empty,
                     // loop back to recv().await instead of returning None —
                     // returning None terminates the caller's while-let loop permanently.
@@ -179,6 +192,12 @@ impl EventBusReceiver {
         self.rx.try_recv().ok()
     }
 
+    /// Total events silently dropped by this receiver because it lagged behind
+    /// the broadcast buffer (slow subscriber). Non-zero ⇒ missed events.
+    pub fn dropped_count(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+
     /// Get the underlying broadcast receiver.
     pub fn into_inner(self) -> broadcast::Receiver<(NeoMindEvent, EventMetadata)> {
         self.rx
@@ -192,6 +211,8 @@ where
 {
     rx: broadcast::Receiver<(NeoMindEvent, EventMetadata)>,
     filter: F,
+    /// Events silently dropped because this receiver lagged behind the buffer.
+    dropped: AtomicU64,
 }
 
 impl<F> FilteredReceiver<F>
@@ -199,7 +220,11 @@ where
     F: Fn(&NeoMindEvent) -> bool + Send,
 {
     fn new(rx: broadcast::Receiver<(NeoMindEvent, EventMetadata)>, filter: F) -> Self {
-        Self { rx, filter }
+        Self {
+            rx,
+            filter,
+            dropped: AtomicU64::new(0),
+        }
     }
 
     /// Receive the next event matching the filter.
@@ -214,7 +239,13 @@ where
                     }
                     // Event didn't match filter, continue waiting
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    let total = self.dropped.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+                    tracing::warn!(
+                        dropped_total = total,
+                        this_batch = n,
+                        "Filtered EventBus receiver lagged: events dropped (slow subscriber)."
+                    );
                     // We missed some events, try to continue
                     continue;
                 }
@@ -233,6 +264,12 @@ where
             // Continue trying to get events from buffer
         }
         None
+    }
+
+    /// Total events silently dropped by this receiver because it lagged behind
+    /// the broadcast buffer. Non-zero ⇒ missed events.
+    pub fn dropped_count(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
     }
 }
 
@@ -443,6 +480,69 @@ mod tests {
         // Should only receive the metric event
         let received = rx.recv().await.unwrap();
         assert!(matches!(received.0, NeoMindEvent::DeviceMetric { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_lagged_receiver_counts_dropped() {
+        // Small capacity so a few publishes with no recv force a lag.
+        let bus = EventBus::with_capacity(2);
+        let mut rx = bus.subscribe();
+
+        // Publish 5 events without receiving — buffer (cap 2) overflows,
+        // oldest dropped, receiver lags.
+        for i in 0..5u32 {
+            bus.publish(NeoMindEvent::DeviceOnline {
+                device_id: format!("dev{i}"),
+                device_type: "sensor".to_string(),
+                timestamp: i as i64,
+            })
+            .await;
+        }
+
+        // Drain the backlog; recv() surfaces Lagged internally (now warned + counted).
+        for _ in 0..10 {
+            if rx.recv().await.is_none() {
+                break;
+            }
+            if rx.dropped_count() > 0 {
+                break;
+            }
+        }
+        // capacity 2, published 5 with no recv -> at least 3 silently dropped.
+        assert!(
+            rx.dropped_count() >= 3,
+            "expected >=3 silent drops counted, got {}",
+            rx.dropped_count()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_filtered_lagged_counts_dropped() {
+        let bus = EventBus::with_capacity(2);
+        let mut rx = bus.filter().device_events();
+
+        for i in 0..5u32 {
+            bus.publish(NeoMindEvent::DeviceOnline {
+                device_id: format!("dev{i}"),
+                device_type: "sensor".to_string(),
+                timestamp: i as i64,
+            })
+            .await;
+        }
+
+        for _ in 0..10 {
+            if rx.recv().await.is_none() {
+                break;
+            }
+            if rx.dropped_count() > 0 {
+                break;
+            }
+        }
+        assert!(
+            rx.dropped_count() >= 3,
+            "expected >=3 silent drops counted, got {}",
+            rx.dropped_count()
+        );
     }
 
     #[tokio::test]
