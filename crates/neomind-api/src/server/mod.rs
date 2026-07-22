@@ -551,6 +551,11 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
 /// Binds to 0.0.0.0 to allow LAN access.
 /// Port can be configured via config.toml [server] section or NEOMIND_PORT env var.
 pub async fn start_server() -> anyhow::Result<()> {
+    // rustls 0.23 (via reqwest's rustls-tls-...-no-provider build) does NOT
+    // auto-select a process-level CryptoProvider. Install ring before any TLS
+    // use (MQTT adapter, HTTPS LLM calls) or the first TLS op panics:
+    // "Could not automatically determine the process-level CryptoProvider".
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let (host, port) = crate::config::get_server_config();
     let bind: SocketAddr = format!("{}:{}", host, port).parse()?;
     run(bind).await

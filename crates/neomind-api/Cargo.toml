@@ -51,6 +51,10 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 reqwest = { workspace = true }
+# rustls 0.23 (pulled via reqwest's rustls-tls-...-no-provider build) does not
+# auto-select a CryptoProvider — enable ring here so we can install it at startup
+# (server/mod.rs start_server). ring is portable (alpine/musl + cross-compile).
+rustls = { version = "0.23", features = ["ring"] }
 
 # Web framework
 axum = { workspace = true, features = ["ws", "multipart", "macros"] }

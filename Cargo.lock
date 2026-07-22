@@ -3558,6 +3558,7 @@ dependencies = [
  "redb",
  "reqwest",
  "rust-embed",
+ "rustls",
  "semver 1.0.28",
  "serde",
  "serde_json",
