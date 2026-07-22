@@ -65,12 +65,19 @@ function renderMetricValue(
   value: unknown,
   onImageClick?: (src: string) => void,
   truncate = true,
-  maxLength = 50
+  maxLength = 50,
+  t?: TFunction
 ): React.ReactNode {
   if (value === null || value === undefined) return <span className="text-muted-foreground">-</span>
   // Note: This is a helper function that will receive t through props when needed in i18n context
   // For now, we'll use the component's i18n context by moving this inside the component
-  if (typeof value === "boolean") return <span className={value ? "text-success" : "text-error"}>{value ? "Yes" : "No"}</span>
+  if (typeof value === "boolean") {
+    return (
+      <span className={value ? "text-success" : "text-error"}>
+        {value ? (t?.("common:yes") ?? "Yes") : (t?.("common:no") ?? "No")}
+      </span>
+    )
+  }
   if (typeof value === "number") return <span className="font-semibold tabular-nums">{parseFloat(value.toFixed(2))}</span>
   if (typeof value === "string" && isBase64Image(value)) {
     const imgSrc = getImageDataUrl(value) ?? value
@@ -385,7 +392,7 @@ export function DeviceDetail({
             </details>
           )
         }
-        return <span className="text-sm">{renderMetricValue(point.value, undefined, false)}</span>
+        return <span className="text-sm">{renderMetricValue(point.value, undefined, false, 50, t)}</span>
       }
       default:
         return null
@@ -406,7 +413,7 @@ export function DeviceDetail({
                 "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0",
                 device.status === 'online'
                   ? "bg-gradient-to-br from-success-light to-accent-emerald-light"
-                  : "bg-gradient-to-br from-muted to-muted"
+                  : "bg-gradient-to-br from-card to-muted"
               )}>
                 <Zap className={cn(
                   "h-5 w-5 sm:h-6 sm:w-6",
@@ -595,7 +602,7 @@ export function DeviceDetail({
                           isMobile ? "p-3 active:scale-[0.99]" : "p-6 hover:scale-[1.02]",
                           isVirtual
                             ? "bg-gradient-to-br from-accent-purple-light to-blue-500/5 border-accent-purple-light hover:border-accent-purple"
-                            : "bg-gradient-to-br from-muted to-muted border-border hover:border-border"
+                            : "bg-gradient-to-br from-card to-muted border-border hover:border-border"
                         )}
                       >
                         <div className="flex items-start justify-between">
@@ -614,7 +621,7 @@ export function DeviceDetail({
                               {renderMetricValue(value, (src) => {
                                 setPreviewImageSrc(src)
                                 setImagePreviewOpen(true)
-                              }, true, 40)}
+                              }, true, 40, t)}
                             </div>
                           </div>
                           {isVirtual ? (

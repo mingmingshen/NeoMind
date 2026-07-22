@@ -288,10 +288,11 @@ html {
 
 @layer base {
   :root {
-    /* Near-white canvas (~#FAFAFA). Pure neutral, Vercel/Linear-style:
-       bg sits just below card white so cards float via a 0.015 lightness
-       gap rather than heavy shadows. Airier than typical gray canvas. */
-    --background: oklch(0.985 0 0);
+    /* Light gray workspace canvas (~#F1F1F2). Classic layered pattern: gray
+       page + white raised surfaces (cards, tab strips, table headers) float
+       on it for strong hierarchy. --muted stays a touch darker for true
+       insets (code blocks) inside those white surfaces. */
+    --background: oklch(0.975 0 0);
     /* Solid white for stable chrome layers (TopNav, tab strips, toolbars,
        page headers). These anchor the layout — they should NOT float with
        the aurora the way the scrollable content area does. In dark mode
@@ -306,11 +307,11 @@ html {
        harmonizes with the brand orange instead of feeling disconnected. */
     --primary: oklch(0.22 0.03 265);
     --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(0.97 0 0);
+    --secondary: oklch(0.962 0 0);
     --secondary-foreground: oklch(0.21 0.01 264);
-    --muted: oklch(0.97 0 0);
+    --muted: oklch(0.962 0 0);
     --muted-foreground: oklch(0.48 0.012 264);
-    --accent: oklch(0.97 0 0);
+    --accent: oklch(0.962 0 0);
     --accent-foreground: oklch(0.21 0.01 264);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(1 0 0);
@@ -649,11 +650,21 @@ html {
     background-size: 150% 150%;
   }
 
-  /* Respect reduced-motion: freeze the gradient (still visible, just static).
-     Also the sensible default for battery/perf-sensitive contexts. */
+  /* Respect reduced-motion: freeze the aurora gradient (still visible, just
+     static) AND neutralize decorative animations/transitions app-wide. The
+     0.01ms duration (not `none`) lets Radix enter/exit animations still fire
+     their animationend/unmount so nothing gets stuck mid-transition. */
   @media (prefers-reduced-motion: reduce) {
     .aurora-bg {
       animation: none;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
     }
   }
 

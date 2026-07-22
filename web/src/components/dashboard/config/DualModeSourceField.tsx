@@ -217,7 +217,7 @@ export function DualModeSourceField({
               onChange={(e) => onValueChange(e.target.value)}
               placeholder={placeholder}
               rows={rows}
-              className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm resize-y"
+              className="w-full px-3 py-2 rounded-md border border-input bg-card text-sm resize-y"
             />
           ) : (
             <div className="flex gap-2">
@@ -315,7 +315,7 @@ export function DualModeSourceField({
           </div>
 
           {/* Footer: Cancel / Confirm */}
-          <DialogFooter className="px-5 py-3 border-t shrink-0 bg-background">
+          <DialogFooter className="px-5 py-3 border-t shrink-0">
             <Button variant="outline" onClick={handleCancel}>
               {t('common.cancel')}
             </Button>

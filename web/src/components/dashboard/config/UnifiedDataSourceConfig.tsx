@@ -1305,7 +1305,7 @@ export function UnifiedDataSourceConfig({
       <div className={cn('flex flex-col h-full', className)}>
         {/* Selected items bar - compact single row */}
       {selectedDataSources.length > 0 && (
-        <div className="px-3 py-2 border-b bg-muted flex flex-wrap gap-2 items-center">
+        <div className="px-3 py-2 border-b flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
             <Check className="h-4 w-4" />
             {t('dataSource.selectedItems', { count: selectedDataSources.length })}

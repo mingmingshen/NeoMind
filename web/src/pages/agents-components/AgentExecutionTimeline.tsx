@@ -788,7 +788,7 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
         <div className={cn("flex-1 min-w-0 pb-4 pl-1")}>
         {/* Description */}
         <div className="flex items-start gap-1.5">
-          {isError && <span className="text-error text-xs mt-0.5 shrink-0">&#x26A0;</span>}
+          {isError && <AlertCircle className="h-3.5 w-3.5 text-error mt-0.5 shrink-0" />}
           <div className={cn(
             "text-sm break-words",
             isError && "text-error"

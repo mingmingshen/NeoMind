@@ -26,7 +26,7 @@ import { ws, type ConnectionState } from "@/lib/websocket"
 import { api } from "@/lib/api"
 import type { Message, ServerMessage, ChatImage } from "@/types"
 import { cn } from "@/lib/utils"
-import { textNano, textMini } from "@/design-system/tokens/typography"
+import { textNano, textMini, textMicro } from "@/design-system/tokens/typography"
 import { getPortalRoot } from "@/lib/portal"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
@@ -1432,13 +1432,13 @@ export function ChatPage() {
                               <p className="text-sm truncate">{backend.name || backend.model}</p>
                               <div className="flex items-center gap-1 shrink-0">
                                 {backend.capabilities?.supports_multimodal && (
-                                  <span title={t('chat:model.supportsVision')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.vision', { defaultValue: 'Vision' })}</span>
+                                  <span title={t('chat:model.supportsVision')} className={cn("inline-flex items-center px-1 h-4 rounded font-medium bg-muted-30 text-muted-foreground", textMicro)}>{t('chat:capability.vision', { defaultValue: 'Vision' })}</span>
                                 )}
                                 {backend.capabilities?.supports_tools && (
-                                  <span title={t('chat:model.supportsTools')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.tools', { defaultValue: 'Tools' })}</span>
+                                  <span title={t('chat:model.supportsTools')} className={cn("inline-flex items-center px-1 h-4 rounded font-medium bg-muted-30 text-muted-foreground", textMicro)}>{t('chat:capability.tools', { defaultValue: 'Tools' })}</span>
                                 )}
                                 {backend.capabilities?.supports_thinking && (
-                                  <span title={t('chat:model.supportsThinking')} className="inline-flex items-center px-1 h-4 rounded text-[9px] font-medium bg-muted-30 text-muted-foreground">{t('chat:capability.thinking', { defaultValue: 'Thinking' })}</span>
+                                  <span title={t('chat:model.supportsThinking')} className={cn("inline-flex items-center px-1 h-4 rounded font-medium bg-muted-30 text-muted-foreground", textMicro)}>{t('chat:capability.thinking', { defaultValue: 'Thinking' })}</span>
                                 )}
                               </div>
                             </div>
