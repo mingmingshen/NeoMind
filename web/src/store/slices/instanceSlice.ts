@@ -420,6 +420,31 @@ export const createInstanceSlice: StateCreator<
         })
         return
       }
+    } else {
+      // Local instance — verify the app's own backend is running BEFORE
+      // committing the switch. Without this, a crashed local backend (e.g.
+      // the rustls startup panic) sent the user through window.location.reload()
+      // and then made them wait the full StartupLoading timeout (was 30s)
+      // before failing. Fail fast instead.
+      try {
+        const localUrl = (targetInstance.url || 'http://localhost:9375').replace(/\/+$/, '')
+        const res = await fetch(`${localUrl}/api/setup/status`, {
+          signal: AbortSignal.timeout(5000),
+        })
+        if (!res.ok) {
+          set({
+            switchingState: 'error',
+            switchingError: 'Local backend not running. Please restart the app.',
+          })
+          return
+        }
+      } catch {
+        set({
+          switchingState: 'error',
+          switchingError: 'unreachable',
+        })
+        return
+      }
     }
 
     // Show overlay
