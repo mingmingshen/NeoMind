@@ -97,6 +97,33 @@ pub enum Command {
     ///
     /// Example: `neomind check-update`
     CheckUpdate,
+    /// Self-upgrade the NeoMind server binary (and web frontend) to the latest
+    /// release. Downloads the host-arch server tarball, verifies its version,
+    /// backs up the current binary, swaps it in, and restarts the systemd
+    /// service if one is running. Linux only.
+    ///
+    /// Examples: `neomind upgrade`, `neomind upgrade --version 0.9.11 --yes`
+    Upgrade {
+        /// Specific version to upgrade to (default: latest release).
+        #[arg(long)]
+        version: Option<String>,
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Uninstall NeoMind: stop + disable the systemd service and remove the
+    /// binary + service unit. `--purge` also deletes the data and web dirs.
+    /// Linux only.
+    ///
+    /// Examples: `neomind uninstall`, `neomind uninstall --purge --yes`
+    Uninstall {
+        /// Also remove the data directory and web files.
+        #[arg(long)]
+        purge: bool,
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
     /// LLM backend management commands.
     Llm {
         #[command(subcommand)]
