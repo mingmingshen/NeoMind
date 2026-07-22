@@ -13,7 +13,7 @@ import { AlertTriangle } from 'lucide-react'
 import { clearPendingSwitch } from '@/store/slices/instanceSlice'
 
 export function InstanceSwitchOverlay() {
-  const { t } = useTranslation('instances')
+  const { t } = useTranslation(['instances', 'common'])
   const switchingState = useStore((s) => s.switchingState)
   const switchingError = useStore((s) => s.switchingError)
   const instances = useStore((s) => s.instances)
@@ -89,7 +89,7 @@ export function InstanceSwitchOverlay() {
                 </Button>
               )}
               <Button variant="default" size="sm" onClick={clearSwitchingError}>
-                {t('switch.retry')}
+                {t('common:back')}
               </Button>
             </div>
           </div>

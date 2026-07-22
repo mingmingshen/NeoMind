@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
+import { HoneycombBackground } from "@/components/shared/HoneycombBackground"
 import { LoadingState } from "@/components/shared/LoadingState"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { textNano } from '@/design-system/tokens/typography'
@@ -73,35 +74,6 @@ function translateError(error: string, t: (key: string, params?: Record<string, 
   }
   return error || t("loginFailed")
 }
-
-// Honeycomb mesh — ported from NeoMind-Landing Capabilities.astro.
-// Pointy-top hex tight tiling (odd rows offset = true 6-neighbor honeycomb),
-// brand-orange, ripple-from-center breathe (delay based on distance to center).
-const HEX_S = 36
-const HEX_W = HEX_S * Math.sqrt(3)
-const HALF_W = HEX_W / 2
-const ROW_STEP = HEX_S * 1.5
-const HEXES: { pts: string; delay: string }[] = (() => {
-  const COLS = 32, ROWS = 22
-  const cCenter = COLS / 2, rCenter = ROWS / 2
-  const out: { pts: string; delay: string }[] = []
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cx = c * HEX_W + (r % 2) * HALF_W
-      const cy = r * ROW_STEP
-      const pts = [
-        [cx, cy - HEX_S], [cx + HALF_W, cy - HEX_S / 2],
-        [cx + HALF_W, cy + HEX_S / 2], [cx, cy + HEX_S],
-        [cx - HALF_W, cy + HEX_S / 2], [cx - HALF_W, cy - HEX_S / 2],
-      ].map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')
-      const dist = Math.sqrt((c - cCenter) ** 2 + (r - rCenter) ** 2)
-      const jitter = ((r * 31 + c * 17) % 13) * 0.08
-      const delay = (((dist * 0.15) + jitter) % 7).toFixed(2)
-      out.push({ pts, delay })
-    }
-  }
-  return out
-})()
 
 export function LoginPage() {
   const { t, i18n } = useTranslation(['common', 'auth', 'instances'])
@@ -164,6 +136,10 @@ export function LoginPage() {
       useStore.setState({ switchingState: 'error', switchingError: 'unreachable' })
       return
     }
+    // Only close the picker + reload once the backend is confirmed reachable.
+    // If pre-validation failed above, the picker stays open UNDER the error
+    // overlay, so "Return" brings the user back to the picker (not the login form).
+    setShowInstancePicker(false)
     localStorage.setItem(CURRENT_INSTANCE_KEY, instance.id)
     localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
       targetId: instance.id,
@@ -330,7 +306,7 @@ export function LoginPage() {
               return (
                 <button
                   key={inst.id}
-                  onClick={() => { setShowInstancePicker(false); handleInstanceSwitch(inst) }}
+                  onClick={() => handleInstanceSwitch(inst)}
                   className={`w-full flex items-center gap-4 p-4 rounded-xl bg-bg-50 border transition-colors text-left ${
                     isCurrent ? 'border-primary' : 'border-border hover:border-primary'
                   }`}
@@ -382,54 +358,9 @@ export function LoginPage() {
       <div className="fixed inset-0">
         {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-        {/* Honeycomb mesh — ported from Landing. Pointy-top tight tiling,
+        {/* Honeycomb mesh — shared component. Pointy-top tight tiling,
             brand-orange, ripple-from-center breathe. Mask fades edges. */}
-        <svg
-          className="absolute inset-0 h-full w-full"
-          viewBox={`0 0 ${32 * HEX_W} ${22 * ROW_STEP}`}
-          preserveAspectRatio="xMidYMid slice"
-          aria-hidden
-        >
-          <style>{`
-            .login-hex-cell {
-              fill-opacity: 0;
-              stroke-opacity: 0.04;
-            }
-            @keyframes login-hex-breathe {
-              0%, 100% { fill-opacity: 0; stroke-opacity: 0.04; }
-              50% { fill-opacity: 0.06; stroke-opacity: 0.08; }
-            }
-            @media (prefers-reduced-motion: reduce) {
-              .login-hex-cell {
-                animation: none !important;
-                fill-opacity: 0.03;
-                stroke-opacity: 0.06;
-              }
-            }
-          `}</style>
-          <g
-            style={{
-              maskImage: 'radial-gradient(ellipse 90% 80% at 50% 50%, black 30%, transparent 85%)',
-              WebkitMaskImage: 'radial-gradient(ellipse 90% 80% at 50% 50%, black 30%, transparent 85%)',
-            }}
-          >
-            {HEXES.map((h, i) => (
-              <polygon
-                key={i}
-                points={h.pts}
-                className="login-hex-cell"
-                style={{
-                  fill: 'var(--accent-orange)',
-                  stroke: 'var(--accent-orange)',
-                  strokeWidth: 1,
-                  vectorEffect: 'non-scaling-stroke',
-                  animation: 'login-hex-breathe 7s ease-in-out infinite',
-                  animationDelay: `${h.delay}s`,
-                }}
-              />
-            ))}
-          </g>
-        </svg>
+        <HoneycombBackground />
         {/* One soft brand glow — restrained, just enough warmth to avoid
             feeling flat. Brand orange ties to the logo. */}
         <div
