@@ -96,6 +96,15 @@ export function LoginPage() {
   // Handle instance switch — use encrypted_key from backend
   const handleInstanceSwitch = (instance: CachedInstance) => {
     const fullKey = instance.encrypted_key ? decryptApiKey(instance.encrypted_key) : ''
+    // Show the switch overlay (like the home page's switchInstance) so the
+    // login page displays "Connecting to {name}..." instead of a silent reload.
+    // The store's instances are seeded from the cache, so currentInstanceId
+    // resolves to the target name in InstanceSwitchOverlay.
+    useStore.setState({
+      switchingState: 'switching',
+      switchingError: null,
+      currentInstanceId: instance.id,
+    })
     localStorage.setItem(CURRENT_INSTANCE_KEY, instance.id)
     localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
       targetId: instance.id,
@@ -103,7 +112,8 @@ export function LoginPage() {
       apiUrl: instance.is_local ? '' : `${instance.url}/api`,
       apiKey: instance.is_local ? '' : fullKey,
     }))
-    window.location.reload()
+    // Brief delay so the InstanceSwitchOverlay paints before the reload.
+    setTimeout(() => window.location.reload(), 100)
   }
 
   const handleBackToLocal = () => {
@@ -307,21 +317,27 @@ export function LoginPage() {
       <div className="fixed inset-0">
         {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-        {/* Subtle dot grid texture */}
-        <div className="absolute inset-0" style={{
-          backgroundImage: 'radial-gradient(circle, color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px)',
-          backgroundSize: '32px 32px'
-        }} />
-        {/* Two restrained ambient glows — neutral violet/indigo, easier to
-            live with at scale than the saturated brand orange. Echoes the
-            app's aurora-bg palette. */}
+        {/* Honeycomb grid — IoT sensor array + AI neural mesh feel.
+            Hex kept 1:1 (96x96) for clean tiling. Faint texture. */}
+        <svg className="absolute inset-0 h-full w-full" aria-hidden>
+          <defs>
+            <pattern id="login-honeycomb" width="80" height="105" patternUnits="userSpaceOnUse">
+              <path
+                d="M 20 0 L 60 0 L 80 35 L 60 70 L 20 70 L 0 35 Z M 60 52.5 L 100 52.5 L 120 87.5 L 100 122.5 L 60 122.5 L 40 87.5 Z"
+                fill="none"
+                stroke="var(--foreground)"
+                strokeOpacity="0.06"
+                strokeWidth="1"
+              />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#login-honeycomb)" />
+        </svg>
+        {/* One soft brand glow — restrained, just enough warmth to avoid
+            feeling flat. Brand orange ties to the logo. */}
         <div
-          className="absolute top-[12%] left-[8%] w-[28rem] h-[28rem] rounded-full blur-3xl"
-          style={{ background: 'color-mix(in oklch, var(--accent-indigo) 12%, transparent)' }}
-        />
-        <div
-          className="absolute bottom-[14%] right-[10%] w-[26rem] h-[26rem] rounded-full blur-3xl opacity-70"
-          style={{ background: 'color-mix(in oklch, var(--accent-purple) 10%, transparent)' }}
+          className="absolute top-[28%] left-1/2 -translate-x-1/2 w-[42rem] h-[42rem] rounded-full blur-3xl"
+          style={{ background: 'color-mix(in oklch, var(--accent-orange) 12%, transparent)' }}
         />
       </div>
 
@@ -379,7 +395,13 @@ export function LoginPage() {
         }}
       >
         <div className="w-full max-w-md">
-          <div className="bg-bg-50 backdrop-blur-md rounded-xl p-6 sm:p-8 border border-border shadow-2xl">
+          <div
+            className="backdrop-blur-xl rounded-2xl p-6 sm:p-8 border shadow-xl animate-fade-in-up"
+            style={{
+              backgroundColor: 'color-mix(in oklch, var(--background) 72%, transparent)',
+              borderColor: 'color-mix(in oklch, var(--border) 55%, transparent)',
+            }}
+          >
             <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-center">{t('auth:login')}</h2>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:gap-5">
               <div className="relative">

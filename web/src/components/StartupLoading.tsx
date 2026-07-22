@@ -81,16 +81,16 @@ export function StartupLoading({ onReady }: { onReady: () => void }) {
         }
 
         // If still not ready after polling, wait for the backend-ready event
-        // with a fail-fast timeout. In Tauri mode, the Rust side emits
+        // with a generous timeout. In Tauri mode, the Rust side emits
         // "backend-ready" once port 9375 is accepting connections, so the
-        // actual wait is only as long as the backend needs to start. 10s is
-        // enough for a slow first boot; a backend that hasn't come up by then
-        // is down (switchInstance pre-validates local/remote reachability, so
-        // a dead backend fails fast there instead of reaching this wait).
+        // actual wait is only as long as the backend needs to start. 30s
+        // accommodates a slow first boot (background-services init can take
+        // ~28s); switchInstance pre-validates reachability so a DEAD backend
+        // fails fast there, not here.
         timeoutId = setTimeout(() => {
                     setStatus("timeout")
           onReady()
-        }, 10_000)
+        }, 30_000)
       } catch (error) {
         console.error("Error in startup check:", error)
         // Proceed anyway on error
