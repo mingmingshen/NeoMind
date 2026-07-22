@@ -18,14 +18,9 @@ export function InstanceSwitchOverlay() {
   const switchingError = useStore((s) => s.switchingError)
   const instances = useStore((s) => s.instances)
   const currentInstanceId = useStore((s) => s.currentInstanceId)
-  const previousInstanceId = useStore((s) => s.previousInstanceId)
-  const revertSwitch = useStore((s) => s.revertSwitch)
   const clearSwitchingError = useStore((s) => s.clearSwitchingError)
 
   const targetInstance = instances.find((i) => i.id === currentInstanceId)
-  const previousInstance = previousInstanceId
-    ? instances.find((i) => i.id === previousInstanceId)
-    : null
 
   // Auto-dismiss the overlay once the app has booted successfully
   useEffect(() => {
@@ -82,14 +77,9 @@ export function InstanceSwitchOverlay() {
                     : switchingError}
               </p>
             )}
-            <div className="flex gap-3 justify-center">
-              {previousInstance && (
-                <Button variant="outline" size="sm" onClick={revertSwitch}>
-                  {t('switch.revert', { name: previousInstance.name })}
-                </Button>
-              )}
+            <div className="flex justify-center">
               <Button variant="default" size="sm" onClick={clearSwitchingError}>
-                {t('common:back')}
+                {t('common:cancel', { defaultValue: 'Cancel' })}
               </Button>
             </div>
           </div>
