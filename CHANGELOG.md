@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.11] - 2026-07-22
+
+Security hardening + edge (aarch64 / RK3576) readiness + the reliability
+tail of 0.9.10's silent-failure audit. The headline is closing the
+CRITICAL wasmtime aarch64 sandbox escape — the sandbox every ARM board
+we ship to runs untrusted extension code inside.
+
+### Security
+- **wasmtime 26 → 36** — fixes RUSTSEC-2026-0096, a CRITICAL (9.0) aarch64
+  Cranelift sandbox escape. Crossed 10 major versions but the port was a
+  2-line change (drop the redundant `component-model` feature + remove the
+  now-deleted `static_memory_maximum_size` knob; the core embed API is
+  stable). The official extension marketplace ships zero prebuilt WASM
+  extensions (all 26 are native binaries), so the blast radius is limited
+  to users who compile their own wasm extensions.
+- **boa_engine 0.17 → 0.21** — fixes RUSTSEC-2024-0444 (AsyncGenerator
+  DoS in the transform JS engine). The 0.20 Realm refactor needed three
+  mechanical adaptations (Context lifetime removed, FunctionObjectBuilder
+  takes `&Realm`, `to_json` returns `Option`); 19 transform tests pass.
+- **rumqttc 0.24 → 0.25** — unifies rustls 0.22 → 0.23 across the MQTT
+  stack (devices were on 0.22, data-push on 0.23). Zero breaking changes.
+  webpki 0.102 (4 advisories) remains — rumqttc 0.25.1 pins it directly,
+  upstream-blocked; re-checked on each rumqttc release.
+- **rustls CryptoProvider installed at startup** — `neomind-api`'s reqwest
+  uses a `-no-provider` rustls build, which doesn't auto-select a crypto
+  provider. `ring` is now enabled and `CryptoProvider::install_default()`
+  runs in `start_server`, fixing a startup panic on TLS-using builds.
+- **CI cargo-audit gate** — CI now fails on new advisories so debt can't
+  silently accumulate; evaluated-and-deferred ones are `--ignore`d with a
+  reason and a re-check trigger (webpki upstream-blocked, protobuf
+  output-only / not exploitable).
+- **Logout actually revokes the JWT** — `logout` now removes the server
+  session and `validate_token` checks the sessions map, so a logged-out
+  token is invalid immediately instead of being accepted until expiry.
+
+### Reliability / silent-failure
+- **No more force-seeded "Default Ollama"** — fresh installs no longer
+  create a `Default Ollama ministral-3:3b` backend that looks configured
+  but always fails (the box has no such model). Users add their own
+  backend; the active runtime returns "No active LLM backend configured"
+  instead of a phantom. Existing installs keep the stale row — delete it
+  in the UI.
+- **EventBus no longer drops events silently** — a slow subscriber used to
+  lag with only a debug log (FilteredReceiver logged nothing at all).
+  Receivers now count dropped events, warn on lag, and expose
+  `dropped_count()`.
+- **Auto-onboard is bounded** — the auto-registered device_id is
+  sanitized and the uplink sample is capped (2 MiB), so a malformed or
+  huge first payload can't pollute the registry or exhaust memory.
+
+### Edge / aarch64 (RK3576)
+- **Concurrency env overrides + target-cpu** — `NEOMIND_MAX_CONCURRENT`,
+  `NEOMIND_PER_BACKEND`, and `NEOMIND_TOOL_CONCURRENCY` (all validated
+  ≥1) let ops tune the scheduler to a board's cores; `.cargo/config.toml`
+  sets `target-cpu=cortex-a72` for aarch64-unknown-linux-gnu builds.
+- **install.sh rate-limit fix** — resolving "latest version" via the
+  GitHub API hit 403 on shared NAT IPs (60 req/h). Switched to the
+  `/releases/latest` 302-redirect endpoint, which is not rate-limited.
+- **Docker native arm64 runner** — arm64 images now build on a native
+  runner (no QEMU) and are merged into a multi-arch manifest, so they're
+  fast and binary-correct.
+
+### Added
+- **`neomind upgrade` + `neomind uninstall`** — the CLI can now
+  self-manage on Linux/systemd: `upgrade` pulls the latest release binary
+  and restarts the unit; `uninstall` removes the binary, unit, and data
+  dir.
+
+### Changed
+- **Auth-flow UI unified** — login + both setup steps now share a single
+  brand-orange honeycomb background (extracted to `HoneycombBackground`),
+  a floating top-right language switcher (frees vertical space and stops
+  the setup page scrolling when the form is short), and a common card
+  style (`backdrop-blur-xl` + `color-mix`, lighter shadow). The honeycomb
+  renders invisible on first paint — base opacity lives on the cell class,
+  not the keyframes, fixing the FOUC where every cell flashed solid orange
+  before the breathe animation started.
+- **macOS app icon** — squircle reduced to ~80% of the canvas; macOS does
+  not auto-mask Tauri's icns, so the icon must carry its own rounded
+  corners (a square fill renders as a flat square, which is worse).
+- **Instance switch fail-fast** — a dead backend is detected in <100 ms
+  before any localStorage write or reload, lands on an error overlay with
+  a single Cancel, and reverts instantly; the login instance picker shows
+  live online/offline dots per backend.
+
 ## [0.9.10] - 2026-07-21
 
 Agent quality + reliability. After three plumbing-hardening releases

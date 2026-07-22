@@ -92,7 +92,7 @@ get_latest_version() {
                   grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
     fi
     if [ -z "$VERSION" ]; then
-        error "Failed to fetch latest version (GitHub API rate-limited on a shared IP?). Re-run with an explicit version, e.g.: VERSION=0.9.10 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh"
+        error "Failed to fetch latest version (GitHub API rate-limited on a shared IP?). Re-run with an explicit version, e.g.: VERSION=0.9.11 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh"
     fi
 }
 
