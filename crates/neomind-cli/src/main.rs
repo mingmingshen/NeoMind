@@ -19,6 +19,8 @@ use tracing_subscriber::Layer;
 // Clap command types now live in neomind_cli_ops::dispatch::commands
 use neomind_cli_ops::dispatch::commands::*;
 
+mod self_update;
+
 // Jemalloc global allocator (Linux only): glibc malloc's per-thread arenas
 // fragment over time and don't return freed memory to the OS (server RSS
 // climbed to 4-6 GB over days). jemalloc packs allocations tightly and
@@ -130,6 +132,8 @@ async fn main() -> Result<()> {
         } => run_logs(tail, follow, level, since).await,
         Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
         Command::CheckUpdate => run_check_update().await,
+        Command::Upgrade { version, yes } => self_update::run_upgrade(version, yes).await,
+        Command::Uninstall { purge, yes } => self_update::run_uninstall(purge, yes).await,
         Command::ApiKey { key_cmd } => run_api_key_cmd(key_cmd).await,
         Command::Llm { llm_cmd } => print_result(
             neomind_cli_ops::dispatch::handlers::run_llm_cmd(llm_cmd).await,

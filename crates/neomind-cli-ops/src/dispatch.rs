@@ -64,7 +64,9 @@ pub async fn dispatch(argv: &[String]) -> Result<CliResponse, DispatchError> {
         | Command::ListModels { .. }
         | Command::Health
         | Command::Logs { .. }
-        | Command::CheckUpdate => Err(DispatchError::NotInProcess),
+        | Command::CheckUpdate
+        | Command::Upgrade { .. }
+        | Command::Uninstall { .. } => Err(DispatchError::NotInProcess),
 
         // --- Local-only commands (need redb/auth from neomind-api, or print
         //     directly to stdout and rely on subprocess capture) ---
