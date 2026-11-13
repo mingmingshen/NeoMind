@@ -42,6 +42,8 @@ import {
   getAllowedValues,
   getEnumOptions,
   isArrayDataType,
+  normalizeDataType,
+  scalarDataType,
 } from './parameterOptions'
 
 export interface ParameterInputProps {
@@ -87,11 +89,17 @@ export function ParameterInput({
 }: ParameterInputProps) {
   const { t } = useTranslation('devices')
 
+  const normalizedType = useMemo(
+    () => normalizeDataType(param.data_type),
+    [param.data_type],
+  )
+  const kind = useMemo(() => scalarDataType(normalizedType), [normalizedType])
+
   // ---------------------------------------------------------------- enum
   // Backend: { enum: { options: string[] } }; frontend editor: { enum: string[] }
   const enumOptions = useMemo(
-    () => getEnumOptions(param.data_type),
-    [param.data_type],
+    () => getEnumOptions(normalizedType),
+    [normalizedType],
   )
 
   // Explicit allowed_values — preferred over data_type.enum (may be tagged
@@ -154,7 +162,7 @@ export function ParameterInput({
   }
 
   // ------------------------------------------------------------- boolean
-  if (param.data_type === 'boolean') {
+  if (kind === 'boolean') {
     if (variant === 'compact') {
       return (
         <div className="flex gap-2">
@@ -200,8 +208,8 @@ export function ParameterInput({
   }
 
   // ------------------------------------------------------- integer / float
-  if (param.data_type === 'integer' || param.data_type === 'float') {
-    const isFloat = param.data_type === 'float'
+  if (kind === 'integer' || kind === 'float') {
+    const isFloat = kind === 'float'
     const lengthRule = findLengthRule(param.validation)
     return (
       <div className="flex items-center gap-2">
@@ -238,7 +246,7 @@ export function ParameterInput({
   }
 
   // ------------------------------------------------------------- binary
-  if (param.data_type === 'binary') {
+  if (kind === 'binary') {
     return (
       <Textarea
         value={typeof value === 'string' ? value : ''}
@@ -255,7 +263,7 @@ export function ParameterInput({
   }
 
   // ------------------------------------------------------------- array
-  if (isArrayDataType(param.data_type)) {
+  if (kind === 'array' || isArrayDataType(normalizedType)) {
     return (
       <Textarea
         value={

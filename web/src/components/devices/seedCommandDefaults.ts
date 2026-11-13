@@ -19,6 +19,8 @@ import {
   getAllowedValues,
   getEnumOptions,
   isArrayDataType,
+  normalizeDataType,
+  scalarDataType,
   unwrapMetricValue,
 } from './parameterOptions'
 
@@ -42,7 +44,7 @@ export function isAutoIdParam(param: ParameterDefinition): boolean {
   if (param.default_value !== undefined) return false
   // Only string-typed parameters are candidates. Numbers/booleans named
   // "request_id" would be nonsensical and we shouldn't second-guess that.
-  if (param.data_type !== 'string') return false
+  if (scalarDataType(normalizeDataType(param.data_type)) !== 'string') return false
   return AUTO_ID_PATTERNS.some((re) => re.test(param.name))
 }
 
@@ -91,7 +93,8 @@ export function seedCommandDefaults(
  * on first open.
  */
 function emptyValueFor(param: ParameterDefinition): unknown {
-  const enumOpts = getEnumOptions(param.data_type)
+  const normalized = normalizeDataType(param.data_type)
+  const enumOpts = getEnumOptions(normalized)
   if (enumOpts && enumOpts.length > 0) {
     return enumOpts[0]
   }
@@ -101,14 +104,13 @@ function emptyValueFor(param: ParameterDefinition): unknown {
     return allowed[0]
   }
 
-  const dt = param.data_type
-  if (isArrayDataType(dt)) return []
-  if (dt && typeof dt === 'object') {
+  if (isArrayDataType(normalized)) return []
+  if (normalized && typeof normalized === 'object') {
     // Unrecognized object form (e.g. empty enum) — leave unset.
     return undefined
   }
 
-  switch (dt) {
+  switch (scalarDataType(normalized)) {
     case 'integer':
     case 'float':
       if (typeof param.min === 'number') return param.min
@@ -121,7 +123,6 @@ function emptyValueFor(param: ParameterDefinition): unknown {
     case 'string':
     case 'binary':
     case null:
-    case undefined:
     default:
       return ''
   }

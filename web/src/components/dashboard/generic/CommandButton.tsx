@@ -24,6 +24,7 @@ import {
   prepareCommandParams,
   validateCommandParams,
 } from '@/components/devices/commandParams'
+import { mapJsonSchemaType } from '@/components/devices/parameterOptions'
 import { useToast } from '@/hooks/use-toast'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useStore } from '@/store'
@@ -118,7 +119,8 @@ export function CommandButton({
                 name,
                 display_name: schema.title || name,
                 help_text: schema.description,
-                data_type: schema.type || 'string',
+                // JSON Schema "number" → NeoMind "float" (mapJsonSchemaType).
+                data_type: mapJsonSchemaType(schema.type || 'string'),
                 required: required.includes(name),
                 default_value: schema.default,
                 min: schema.minimum,

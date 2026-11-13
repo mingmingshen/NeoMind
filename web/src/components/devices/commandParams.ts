@@ -7,7 +7,13 @@
 
 import type { ParameterDefinition, ValidationRule } from '@/types/device'
 import { evalVisibleWhen } from '@/lib/parameterExpr'
-import { getAllowedValues, getEnumOptions, isArrayDataType } from './parameterOptions'
+import {
+  getAllowedValues,
+  getEnumOptions,
+  isArrayDataType,
+  normalizeDataType,
+  scalarDataType,
+} from './parameterOptions'
 
 export interface CommandParamError {
   name: string
@@ -75,7 +81,9 @@ export function validateCommandParams(
     if (empty) continue
 
     // Array must be parsed JSON, not leftover textarea string.
-    if (isArrayDataType(param.data_type)) {
+    const kind = scalarDataType(normalizeDataType(param.data_type))
+
+    if (kind === 'array' || isArrayDataType(param.data_type)) {
       if (!Array.isArray(raw)) {
         errors.push({
           name: param.name,
@@ -85,7 +93,7 @@ export function validateCommandParams(
       }
     }
 
-    if (param.data_type === 'integer' || param.data_type === 'float') {
+    if (kind === 'integer' || kind === 'float') {
       if (typeof raw !== 'number' || Number.isNaN(raw)) {
         errors.push({
           name: param.name,
@@ -142,7 +150,7 @@ export function validateCommandParams(
       }
     }
 
-    const enumOpts = getEnumOptions(param.data_type)
+    const enumOpts = getEnumOptions(normalizeDataType(param.data_type))
     const allowed = getAllowedValues(param)
     if (allowed && allowed.length > 0) {
       if (!allowed.some((v) => v === raw || String(v) === String(raw))) {

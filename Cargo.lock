@@ -3201,6 +3201,7 @@ dependencies = [
  "neomind-core",
  "neomind-storage",
  "redb",
+ "regex",
  "rmqtt",
  "rumqttc",
  "rustls",

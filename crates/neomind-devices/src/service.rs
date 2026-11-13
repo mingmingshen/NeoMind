@@ -1700,10 +1700,143 @@ impl DeviceService {
                 }
             }
 
+            // allowed_values membership (plain MetricValue equality via to_json_value
+            // so Integer(1) can match a JSON `1` that deserialized as Integer).
+            if !param_def.allowed_values.is_empty() {
+                let ok = param_def.allowed_values.iter().any(|allowed| {
+                    allowed.to_json_value() == value.to_json_value()
+                        || Self::metric_values_loosely_equal(allowed, &value)
+                });
+                if !ok {
+                    return Err(DeviceError::InvalidParameter(format!(
+                        "Parameter '{}' value not in allowed_values",
+                        param_def.name
+                    )));
+                }
+            }
+
+            // Schema validation[] — pattern / range / length; custom is skipped
+            // (no host-injected validators) with a warning so templates don't hard-fail.
+            Self::apply_validation_rules(&param_def.name, &value, &param_def.validation)?;
+
             validated.insert(param_def.name.clone(), value);
         }
 
         Ok(validated)
+    }
+
+    /// Loose equality for allowed_values (string/number coercion like the UI).
+    fn metric_values_loosely_equal(a: &MetricValue, b: &MetricValue) -> bool {
+        if a == b {
+            return true;
+        }
+        match (a, b) {
+            (MetricValue::String(s), MetricValue::Integer(i))
+            | (MetricValue::Integer(i), MetricValue::String(s)) => s.parse::<i64>().ok() == Some(*i),
+            (MetricValue::String(s), MetricValue::Float(f))
+            | (MetricValue::Float(f), MetricValue::String(s)) => {
+                s.parse::<f64>().ok().is_some_and(|n| (n - *f).abs() < f64::EPSILON)
+            }
+            (MetricValue::Integer(i), MetricValue::Float(f))
+            | (MetricValue::Float(f), MetricValue::Integer(i)) => (*i as f64 - *f).abs() < f64::EPSILON,
+            (MetricValue::String(s), MetricValue::Boolean(b))
+            | (MetricValue::Boolean(b), MetricValue::String(s)) => {
+                matches!(
+                    (s.to_lowercase().as_str(), *b),
+                    ("true" | "1" | "yes" | "on", true) | ("false" | "0" | "no" | "off", false)
+                )
+            }
+            _ => false,
+        }
+    }
+
+    fn apply_validation_rules(
+        name: &str,
+        value: &MetricValue,
+        rules: &[super::mdl_format::ValidationRule],
+    ) -> Result<(), DeviceError> {
+        use super::mdl_format::ValidationRule;
+        for rule in rules {
+            match rule {
+                ValidationRule::Pattern {
+                    regex,
+                    error_message,
+                } => {
+                    if let MetricValue::String(s) = value {
+                        let re = regex::Regex::new(regex).map_err(|e| {
+                            DeviceError::InvalidParameter(format!(
+                                "Parameter '{}': invalid validation regex: {e}",
+                                name
+                            ))
+                        })?;
+                        if !re.is_match(s) {
+                            return Err(DeviceError::InvalidParameter(if error_message.is_empty()
+                            {
+                                format!("Parameter '{}' failed pattern validation", name)
+                            } else {
+                                error_message.clone()
+                            }));
+                        }
+                    }
+                }
+                ValidationRule::Range {
+                    min,
+                    max,
+                    error_message,
+                } => {
+                    let n = match value {
+                        MetricValue::Integer(i) => Some(*i as f64),
+                        MetricValue::Float(f) => Some(*f),
+                        _ => None,
+                    };
+                    if let Some(n) = n {
+                        if n < *min || n > *max {
+                            return Err(DeviceError::InvalidParameter(if error_message.is_empty()
+                            {
+                                format!(
+                                    "Parameter '{}' value {} out of validation range [{}, {}]",
+                                    name, n, min, max
+                                )
+                            } else {
+                                error_message.clone()
+                            }));
+                        }
+                    }
+                }
+                ValidationRule::Length {
+                    min,
+                    max,
+                    error_message,
+                } => {
+                    let len = match value {
+                        MetricValue::String(s) => Some(s.len()),
+                        MetricValue::Array(a) => Some(a.len()),
+                        _ => None,
+                    };
+                    if let Some(len) = len {
+                        if len < *min || len > *max {
+                            return Err(DeviceError::InvalidParameter(if error_message.is_empty()
+                            {
+                                format!(
+                                    "Parameter '{}' length {} out of range [{}, {}]",
+                                    name, len, min, max
+                                )
+                            } else {
+                                error_message.clone()
+                            }));
+                        }
+                    }
+                }
+                ValidationRule::Custom { validator, .. } => {
+                    tracing::warn!(
+                        parameter = %name,
+                        validator = %validator,
+                        "command parameter custom validation skipped (no host validators)"
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Convert JSON value to MetricValue based on expected type.
@@ -2473,6 +2606,80 @@ mod tests {
             &MetricDataType::Integer,
         );
         assert!(mismatch.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_allowed_values_and_validation_rules() {
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl::MetricDataType;
+        use crate::mdl_format::{CommandDefinition, ParameterDefinition, ValidationRule};
+
+        let command_def = CommandDefinition {
+            name: "set_mode".to_string(),
+            display_name: "Set Mode".to_string(),
+            payload_template: r#"{"mode":"${mode}","note":"${note}"}"#.to_string(),
+            parameters: vec![
+                ParameterDefinition {
+                    name: "mode".to_string(),
+                    display_name: "Mode".to_string(),
+                    data_type: MetricDataType::String,
+                    default_value: None,
+                    min: None,
+                    max: None,
+                    unit: String::new(),
+                    allowed_values: vec![
+                        MetricValue::String("on".into()),
+                        MetricValue::String("off".into()),
+                    ],
+                    required: true,
+                    visible_when: None,
+                    group: None,
+                    help_text: String::new(),
+                    validation: vec![],
+                },
+                ParameterDefinition {
+                    name: "note".to_string(),
+                    display_name: "Note".to_string(),
+                    data_type: MetricDataType::String,
+                    default_value: Some(MetricValue::String(String::new())),
+                    min: None,
+                    max: None,
+                    unit: String::new(),
+                    allowed_values: vec![],
+                    required: false,
+                    visible_when: None,
+                    group: None,
+                    help_text: String::new(),
+                    validation: vec![ValidationRule::Pattern {
+                        regex: r"^[a-z0-9_]*$".into(),
+                        error_message: "note must be lowercase slug".into(),
+                    }],
+                },
+            ],
+            samples: vec![],
+            description: String::new(),
+            fixed_values: std::collections::HashMap::new(),
+            parameter_groups: vec![],
+        };
+
+        let mut bad = HashMap::new();
+        bad.insert("mode".to_string(), serde_json::json!("maybe"));
+        assert!(service.validate_command_params(&command_def, bad).is_err());
+
+        let mut bad_note = HashMap::new();
+        bad_note.insert("mode".to_string(), serde_json::json!("on"));
+        bad_note.insert("note".to_string(), serde_json::json!("Hello!"));
+        assert!(service
+            .validate_command_params(&command_def, bad_note)
+            .is_err());
+
+        let mut ok = HashMap::new();
+        ok.insert("mode".to_string(), serde_json::json!("off"));
+        ok.insert("note".to_string(), serde_json::json!("ok_1"));
+        assert!(service.validate_command_params(&command_def, ok).is_ok());
     }
 
     #[tokio::test]

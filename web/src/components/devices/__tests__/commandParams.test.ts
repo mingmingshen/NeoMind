@@ -8,6 +8,8 @@ import { seedCommandDefaults } from '../seedCommandDefaults'
 import {
   getEnumOptions,
   isArrayDataType,
+  mapJsonSchemaType,
+  normalizeDataType,
   unwrapMetricValue,
 } from '../parameterOptions'
 
@@ -29,6 +31,18 @@ describe('parameterOptions', () => {
       true,
     )
     expect(isArrayDataType('string')).toBe(false)
+  })
+
+  it('normalizes TitleCase and JSON Schema number', () => {
+    expect(normalizeDataType('Integer')).toBe('integer')
+    expect(normalizeDataType('Float')).toBe('float')
+    expect(mapJsonSchemaType('number')).toBe('float')
+    expect(normalizeDataType({ Enum: { options: ['a', 'b'] } })).toEqual({
+      enum: { options: ['a', 'b'] },
+    })
+    expect(normalizeDataType({ Array: { element_type: 'String' } })).toEqual({
+      array: { element_type: 'string' },
+    })
   })
 })
 
