@@ -16,6 +16,7 @@ Frozen 138-case gate (Mac, Spark-1.7B): **97/138 (70.3%)**, identical to the 1.2
 - Multi-metric telemetry queries omit top-level `total` / `next_cursor` (they never described every metric); read `pagination.per_metric.<name>.{total,next_cursor}` instead.
 
 ### Fixed — agent context and compaction
+- **Bill-first auto-compact + evidence-only summaries**: truncation bypass for LLM summarize now needs ≥35% billed occupancy (was 5% — still blocked T4’s 0.5% spam but allowed estimate-trunc to summarize at ~18–45%); soft >60% path unchanged; garbage `0`/`u32::MAX` meters still rejected. LLM summaries that leak compressor meta, lack section headers, exceed ~720 chars, or cite none of the dialogue evidence needles fall back to the deterministic digest; summary feed caps raised to 800/500 chars so IDs and verbatim instructions reach the compressor.
 - **Tool-call results count toward the token estimate**: `tool_call.result` (including `$cached` read-back windows) was invisible to history assembly, so a prompt that “fit” could still need ~33.8K tokens on a 32K window; results are estimated with the same rates as message text.
 - **`$cached:` text is readable via `file_read`**: large tool blobs stay out of the prompt; `file_read(path="$cached:…", char_offset/char_length)` serves char windows (8K default, 64K char / 64KB byte caps) from the session cache, with explicit errors for unknown/evicted refs — resolve no longer expands the blob into the path argument.
 - **Stale cached windows are previewed before budgeting**: older `file_read` `$cached` windows shrink to a structured summary; the newest window (within 32KB serialized) stays intact so multi-window synthesis still works.
@@ -49,6 +50,7 @@ Frozen 138-case gate (Mac, Spark-1.7B): **97/138 (70.3%)**, identical to the 1.2
 ### Test
 - `revert_parity` pins shipped token rates and 8K/16K/32K compaction goldens (5688 / 14038).
 - Protection-cap, `$cached` door/FIFO/dual-cap, cached-read-chain (`test-utils`), telemetry `has_more` / multi-metric pagination, and CLI summarize cursor-vs-total tests cover the gate-critical contracts.
+- Bill-first trunc floor (35%) + evidence-only summary / digest-fallback unit tests in `summarization` (`auto_summarize_gate`, `trigger_meter_smoke`, meta-leak / grounded accept).
 
 ---
 

@@ -2634,8 +2634,8 @@ mod compact_clear_tests {
             history.push(AgentMessage::assistant("tool evidence ".repeat(100)));
         }
         agent.restore_history(history).await;
-        // Truncation bypass requires a plausible meter at ≥5% of the window
-        // (not a 1-token stand-in that looks like the T4 0.5% spam case).
+        // Truncation bypass requires a plausible meter at ≥35% of the window
+        // (bill-first; not a 1-token stand-in that looks like the T4 0.5% spam).
         let max_ctx = state
             .agents
             .session_manager
