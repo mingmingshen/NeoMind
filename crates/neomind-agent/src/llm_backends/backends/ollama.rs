@@ -1279,22 +1279,21 @@ impl LlmRuntime for OllamaRuntime {
                                                     ollama_chunk.eval_count
                                                 );
 
-                                            // Send token usage as in-band marker before closing
+                                            // Emit usage even when 0/MAX so End can
+                                            // distinguish invalid meters from missing usage.
                                             if let Some(prompt_tokens) =
                                                 ollama_chunk.prompt_eval_count
                                             {
                                                 let pt = prompt_tokens as u32;
-                                                if neomind_core::plausible_prompt_token_meter(pt) {
-                                                    let _ = tx
-                                                        .send(Ok((
-                                                            format!(
-                                                                "\n__NEOMIND_TOKEN_PROMPT:{}__",
-                                                                pt
-                                                            ),
-                                                            false,
-                                                        )))
-                                                        .await;
-                                                }
+                                                let _ = tx
+                                                    .send(Ok((
+                                                        format!(
+                                                            "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                            pt
+                                                        ),
+                                                        false,
+                                                    )))
+                                                    .await;
                                             }
 
                                             // A round that ends in tool calls and no prose is

@@ -10,6 +10,7 @@ import {
   isArrayDataType,
   mapJsonSchemaType,
   normalizeDataType,
+  truncateToUnicodeScalars,
   unicodeScalarLength,
   unwrapMetricValue,
 } from '../parameterOptions'
@@ -28,6 +29,9 @@ describe('parameterOptions', () => {
   it('counts Unicode scalars for length alignment', () => {
     expect(unicodeScalarLength('你好世界啊')).toBe(5)
     expect(unicodeScalarLength('😀😀😀😀😀')).toBe(5)
+    // Five emoji = 5 scalars / 10 UTF-16 units — truncate by scalars.
+    expect(truncateToUnicodeScalars('😀😀😀😀😀😀', 5)).toBe('😀😀😀😀😀')
+    expect(truncateToUnicodeScalars('😀😀😀😀😀', 5)).toBe('😀😀😀😀😀')
   })
 
   it('reads both enum wire shapes', () => {

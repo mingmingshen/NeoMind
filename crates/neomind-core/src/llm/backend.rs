@@ -318,8 +318,11 @@ pub type StreamChunk = Result<(String, bool), LlmError>;
 ///
 /// The marker is in-band metadata streaming backends inject to surface
 /// `prompt_tokens` (completion_tokens is not available via streaming).
-/// Implausible meters (`0`, `u32::MAX`) are stripped from the text but
-/// discarded so they never poison `last_prompt_tokens`.
+///
+/// **Meter kinds are preserved**: parsed `0` / `u32::MAX` return as
+/// `Some(n)` (invalid), distinct from `None` (usage never reported). Callers
+/// that drive auto-compact must reject invalid meters via
+/// [`plausible_prompt_token_meter`]; UI rings should also skip them.
 fn strip_token_marker(content: &str) -> (String, Option<u32>) {
     const MARKER: &str = "__NEOMIND_TOKEN_PROMPT:";
     if let Some(start) = content.find(MARKER) {
@@ -330,8 +333,7 @@ fn strip_token_marker(content: &str) -> (String, Option<u32>) {
                 let clean = format!("{}{}", &content[..start], &content[tail_start..])
                     .trim()
                     .to_string();
-                let meter = plausible_prompt_token_meter(n).then_some(n);
-                return (clean, meter);
+                return (clean, Some(n));
             }
         }
     }
@@ -1114,13 +1116,69 @@ mod tests {
         assert!(!plausible_prompt_token_meter(u32::MAX));
         assert!(plausible_prompt_token_meter(1));
         assert!(plausible_prompt_token_meter(32_768));
+        // Invalid meters stay Some(n) after strip — not collapsed to None.
         let (clean_zero, meter_zero) = strip_token_marker("\n__NEOMIND_TOKEN_PROMPT:0__");
         assert!(clean_zero.is_empty());
-        assert_eq!(meter_zero, None);
+        assert_eq!(meter_zero, Some(0));
         let (clean_max, meter_max) =
             strip_token_marker(&format!("\n__NEOMIND_TOKEN_PROMPT:{}__", u32::MAX));
         assert!(clean_max.is_empty());
-        assert_eq!(meter_max, None);
+        assert_eq!(meter_max, Some(u32::MAX));
+    }
+
+    /// Stream composition: discarding 0/MAX to None used to open the
+    /// truncation auto-compact path. Preserved invalid meters must not.
+    #[test]
+    fn streamed_invalid_meters_must_not_look_like_missing_usage() {
+        // Mirrors summarization::should_auto_summarize gate kinds.
+        fn trunc_auto_compact(prompt_tokens: Option<u32>, max_ctx: usize, truncated: bool) -> bool {
+            match prompt_tokens {
+                None => truncated,
+                Some(pt) if !plausible_prompt_token_meter(pt) => false,
+                Some(pt) => {
+                    let usage_ratio = pt as f64 / max_ctx.max(1) as f64;
+                    usage_ratio > 0.6 || (truncated && usage_ratio >= 0.35)
+                }
+            }
+        }
+        for n in [0_u32, u32::MAX] {
+            let (_, meter) = strip_token_marker(&format!("__NEOMIND_TOKEN_PROMPT:{n}__"));
+            assert_eq!(meter, Some(n), "stream must preserve invalid meter {n}");
+            assert!(
+                !trunc_auto_compact(meter, 32_768, true),
+                "invalid meter {n} must not trunc-compact"
+            );
+        }
+        let (_, small) = strip_token_marker("__NEOMIND_TOKEN_PROMPT:3277__");
+        assert_eq!(small, Some(3277));
+        assert!(
+            !trunc_auto_compact(small, 32_768, true),
+            "valid but sub-35% must not trunc-compact"
+        );
+        // True missing usage (no marker) + trunc may still compact.
+        assert!(trunc_auto_compact(None, 32_768, true));
+    }
+
+    #[tokio::test]
+    async fn generate_to_completion_preserves_invalid_prompt_token_marker() {
+        // Stream-level: backends may emit 0 / u32::MAX. Must land as Some(n)
+        // on usage — not None — so auto-compact can reject them.
+        for n in [0_u32, u32::MAX] {
+            let runtime = MockStreamRuntime {
+                chunks: vec![MockChunk::Content("ok".into()), MockChunk::TokenMarker(n)],
+            };
+            let out = runtime
+                .generate_to_completion(LlmInput::new("hi"))
+                .await
+                .unwrap();
+            assert_eq!(out.text, "ok");
+            let usage = out.usage.expect("usage present");
+            assert_eq!(
+                usage.prompt_tokens, n,
+                "invalid meter {n} must be recorded (not dropped before usage)"
+            );
+            assert!(!plausible_prompt_token_meter(usage.prompt_tokens));
+        }
     }
 
     #[tokio::test]

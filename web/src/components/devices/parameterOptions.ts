@@ -47,6 +47,18 @@ export function unicodeScalarLength(s: string): number {
 }
 
 /**
+ * Truncate to at most `max` Unicode scalars (not UTF-16 units).
+ * Use this instead of native `maxLength`, which counts UTF-16 and blocks
+ * valid supplementary-plane input (emoji) before validation runs.
+ */
+export function truncateToUnicodeScalars(s: string, max: number): string {
+  if (max < 0) return s
+  const chars = [...s]
+  if (chars.length <= max) return s
+  return chars.slice(0, max).join('')
+}
+
+/**
  * Resolve enum option strings from either frontend shape `{ enum: string[] }`
  * or backend shape `{ enum: { options: string[] } }`.
  */

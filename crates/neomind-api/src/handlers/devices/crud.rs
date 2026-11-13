@@ -41,8 +41,13 @@ fn get_transform_namespaces() -> &'static [&'static str; 5] {
 }
 
 /// True when an undeclared `value` reading looks like the legacy MQTT uplink
-/// whole-payload dump (object/array or stringified JSON), not a scalar
-/// auto-extract such as `{"value": 23}`.
+/// whole-payload dump — a JSON **object** (or stringified object).
+///
+/// UnifiedExtractor may legitimately store scalars and top-level arrays
+/// under `value` (e.g. `{"value":23}`, `{"value":[1,2]}`). Bracketed text
+/// like `"[ready]"` is not a payload dump either. Shape alone cannot prove
+/// legacy origin for arrays / bracketed strings — only object dumps match
+/// the historical whole-uplink pollution path.
 pub(crate) fn is_legacy_value_dump(
     metric_name: &str,
     template_declares_value: bool,
@@ -52,12 +57,15 @@ pub(crate) fn is_legacy_value_dump(
         return false;
     }
     match value {
-        Some(serde_json::Value::Object(_)) | Some(serde_json::Value::Array(_)) => true,
+        Some(serde_json::Value::Object(_)) => true,
         Some(serde_json::Value::String(s)) => {
-            let t = s.trim();
-            (t.starts_with('{') && t.ends_with('}')) || (t.starts_with('[') && t.ends_with(']'))
+            // Only hide stringified JSON *objects* — not arrays or "[ready]".
+            matches!(
+                serde_json::from_str::<serde_json::Value>(s.trim()),
+                Ok(serde_json::Value::Object(_))
+            )
         }
-        // Number / Bool / Null / plain string / missing → keep.
+        // Number / Bool / Null / Array / plain string / missing → keep.
         _ => false,
     }
 }
@@ -1318,15 +1326,25 @@ mod device_error_mapping_tests {
             false,
             Some(&serde_json::json!("ok"))
         ));
+        // Legitimate array / bracketed text must stay visible.
+        assert!(
+            !is_legacy_value_dump("value", false, Some(&serde_json::json!([1, 2]))),
+            "top-level array auto-extract is valid telemetry"
+        );
+        assert!(
+            !is_legacy_value_dump("value", false, Some(&serde_json::json!("[ready]"))),
+            "bracketed plain text is not a payload dump"
+        );
+        assert!(!is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!("[1,2]"))
+        ));
+        // Object dumps (live or stringified) are the legacy uplink path.
         assert!(is_legacy_value_dump(
             "value",
             false,
             Some(&serde_json::json!({"temp": 1}))
-        ));
-        assert!(is_legacy_value_dump(
-            "value",
-            false,
-            Some(&serde_json::json!([1, 2]))
         ));
         assert!(is_legacy_value_dump(
             "value",

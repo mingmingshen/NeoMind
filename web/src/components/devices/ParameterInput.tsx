@@ -44,6 +44,7 @@ import {
   isArrayDataType,
   normalizeDataType,
   scalarDataType,
+  truncateToUnicodeScalars,
 } from './parameterOptions'
 
 export interface ParameterInputProps {
@@ -210,7 +211,6 @@ export function ParameterInput({
   // ------------------------------------------------------- integer / float
   if (kind === 'integer' || kind === 'float') {
     const isFloat = kind === 'float'
-    const lengthRule = findLengthRule(param.validation)
     return (
       <div className="flex items-center gap-2">
         <Input
@@ -227,7 +227,6 @@ export function ParameterInput({
           }}
           min={param.min}
           max={param.max}
-          maxLength={lengthRule?.max}
           step={isFloat ? 'any' : '1'}
           placeholder={
             placeholder ??
@@ -295,9 +294,17 @@ export function ParameterInput({
     <Input
       type="text"
       value={value === undefined || value === null ? '' : String(value)}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        // Native maxlength counts UTF-16 units and blocks valid emoji before
+        // scalar Length validation. Cap with Unicode scalars instead.
+        const raw = e.target.value
+        onChange(
+          lengthRule?.max !== undefined
+            ? truncateToUnicodeScalars(raw, lengthRule.max)
+            : raw,
+        )
+      }}
       pattern={pattern}
-      maxLength={lengthRule?.max}
       placeholder={placeholder ?? param.display_name ?? param.name}
     />
   )
