@@ -20,6 +20,10 @@ import { api } from '@/lib/api'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { ParameterForm } from '@/components/devices/ParameterForm'
 import { seedCommandDefaults } from '@/components/devices/seedCommandDefaults'
+import {
+  prepareCommandParams,
+  validateCommandParams,
+} from '@/components/devices/commandParams'
 import { useToast } from '@/hooks/use-toast'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useStore } from '@/store'
@@ -150,19 +154,29 @@ export function CommandButton({
   const handleConfirmSend = async () => {
     if (!hasCommand || loadingParams) return
 
+    const validated = validateCommandParams(parameterDefinitions, commandParams)
+    if (!validated.ok) {
+      toast({
+        title: t('commandButton.commandFailed'),
+        description: validated.errors.map((e) => e.message).join('\n'),
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const payload = prepareCommandParams(parameterDefinitions, commandParams)
+
     setSending(true)
 
     try {
       if (isDeviceCommand && deviceId && commandName) {
-        // Send device command
-        await api.sendCommand(deviceId, commandName, commandParams)
+        await api.sendCommand(deviceId, commandName, payload)
         toast({
           title: t('commandButton.commandSent'),
           description: t('commandButton.commandSentDesc'),
         })
       } else if (isExtensionCommand && extensionId && extensionCommand) {
-        // Send extension command
-        await api.invokeExtension(extensionId, extensionCommand, commandParams)
+        await api.invokeExtension(extensionId, extensionCommand, payload)
         toast({
           title: t('commandButton.commandSent'),
           description: t('commandButton.commandSentDesc'),

@@ -647,11 +647,9 @@ pub async fn get_device_current_handler(
             "adapter_id": config.adapter_id,
         },
         "metrics": metrics_data,
-        "commands": template.commands.iter().map(|c| json!({
-            "name": c.name,
-            "display_name": c.display_name,
-            "parameters": c.parameters,
-        })).collect::<Vec<_>>(),
+        // Pass full command defs (payload_template, description, samples, …)
+        // so the detail UI can render enums / defaults / help_text correctly.
+        "commands": template.commands,
     }))
 }
 
