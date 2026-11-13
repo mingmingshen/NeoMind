@@ -297,6 +297,15 @@ impl TokenUsage {
     }
 }
 
+/// True when `prompt_tokens` is a usable billed/estimated meter.
+///
+/// Rejects the two garbage values seen on T4 production (2026-11-13):
+/// `0` (missing usage coerced to zero) and `u32::MAX` (force-sentinel /
+/// corrupt wrap). Callers must not treat those as real occupancy.
+pub fn plausible_prompt_token_meter(prompt_tokens: u32) -> bool {
+    prompt_tokens > 0 && prompt_tokens != u32::MAX
+}
+
 /// Stream chunk.
 /// Contains the text content and a boolean indicating if it's from a "thinking" field
 /// (e.g., qwen3-vl's thinking field vs actual content).
@@ -309,6 +318,8 @@ pub type StreamChunk = Result<(String, bool), LlmError>;
 ///
 /// The marker is in-band metadata streaming backends inject to surface
 /// `prompt_tokens` (completion_tokens is not available via streaming).
+/// Implausible meters (`0`, `u32::MAX`) are stripped from the text but
+/// discarded so they never poison `last_prompt_tokens`.
 fn strip_token_marker(content: &str) -> (String, Option<u32>) {
     const MARKER: &str = "__NEOMIND_TOKEN_PROMPT:";
     if let Some(start) = content.find(MARKER) {
@@ -319,7 +330,8 @@ fn strip_token_marker(content: &str) -> (String, Option<u32>) {
                 let clean = format!("{}{}", &content[..start], &content[tail_start..])
                     .trim()
                     .to_string();
-                return (clean, Some(n));
+                let meter = plausible_prompt_token_meter(n).then_some(n);
+                return (clean, meter);
             }
         }
     }
@@ -1094,6 +1106,21 @@ mod tests {
             .expect("usage populated when text/thinking exists");
         // text(12) + thinking(31) = 43 chars / 4 = 10 tokens
         assert_eq!(usage.completion_tokens, 10);
+    }
+
+    #[test]
+    fn plausible_prompt_token_meter_rejects_zero_and_u32_max() {
+        assert!(!plausible_prompt_token_meter(0));
+        assert!(!plausible_prompt_token_meter(u32::MAX));
+        assert!(plausible_prompt_token_meter(1));
+        assert!(plausible_prompt_token_meter(32_768));
+        let (clean_zero, meter_zero) = strip_token_marker("\n__NEOMIND_TOKEN_PROMPT:0__");
+        assert!(clean_zero.is_empty());
+        assert_eq!(meter_zero, None);
+        let (clean_max, meter_max) =
+            strip_token_marker(&format!("\n__NEOMIND_TOKEN_PROMPT:{}__", u32::MAX));
+        assert!(clean_max.is_empty());
+        assert_eq!(meter_max, None);
     }
 
     #[tokio::test]

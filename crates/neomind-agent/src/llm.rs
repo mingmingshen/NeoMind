@@ -2086,6 +2086,7 @@ impl LlmInterface {
                     Ok((content, is_thinking)) => {
                         let (clean, is_thinking, tokens) = extract_token_marker(&content, is_thinking);
                         if let Some(t) = tokens {
+                            // extract_token_marker already filters 0 / u32::MAX.
                             *token_tracker.lock().await = Some(t);
                         }
                         if !clean.is_empty() {
@@ -2578,6 +2579,7 @@ pub(crate) fn extract_skill_id_from_result(result_str: &str) -> String {
 /// Extract in-band token usage marker from a stream chunk.
 /// Returns (clean_content, is_thinking, extracted_prompt_tokens).
 /// The marker format is `\n__NEOMIND_TOKEN_PROMPT:NN__`.
+/// Implausible meters (`0`, `u32::MAX`) are stripped but not recorded.
 fn extract_token_marker(content: &str, is_thinking: bool) -> (String, bool, Option<u32>) {
     if is_thinking {
         return (content.to_string(), is_thinking, None);
@@ -2591,7 +2593,8 @@ fn extract_token_marker(content: &str, is_thinking: bool) -> (String, bool, Opti
                     &content[..start],
                     &content[start + "__NEOMIND_TOKEN_PROMPT:".len() + end + 2..]
                 );
-                return (clean.trim().to_string(), is_thinking, Some(tokens));
+                let meter = neomind_core::plausible_prompt_token_meter(tokens).then_some(tokens);
+                return (clean.trim().to_string(), is_thinking, meter);
             }
         }
     }
@@ -2663,6 +2666,21 @@ mod request_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_token_marker_drops_implausible_meters() {
+        let (clean, _, meter) = extract_token_marker("\n__NEOMIND_TOKEN_PROMPT:0__", false);
+        assert!(clean.is_empty());
+        assert_eq!(meter, None);
+        let (clean, _, meter) =
+            extract_token_marker(&format!("\n__NEOMIND_TOKEN_PROMPT:{}__", u32::MAX), false);
+        assert!(clean.is_empty());
+        assert_eq!(meter, None);
+        let (clean, _, meter) =
+            extract_token_marker("answer\n__NEOMIND_TOKEN_PROMPT:1234__", false);
+        assert_eq!(clean, "answer");
+        assert_eq!(meter, Some(1234));
+    }
 
     #[test]
     fn test_chat_config_default() {

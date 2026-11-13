@@ -1116,7 +1116,9 @@ impl CloudRuntime {
                                         {
                                             // Check for usage data in final chunk (stream_options.include_usage=true)
                                             if let Some(ref usage) = evt.usage {
-                                                if usage.prompt_tokens > 0 {
+                                                if neomind_core::plausible_prompt_token_meter(
+                                                    usage.prompt_tokens,
+                                                ) {
                                                     let _ = tx
                                                         .send(Ok((
                                                             format!(

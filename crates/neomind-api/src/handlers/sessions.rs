@@ -282,8 +282,14 @@ async fn process_stream_to_channel(
                             Some(llm) => llm.take_history_truncated(),
                             None => false,
                         };
-                        if prompt_tokens.is_some() || history_truncated {
-                            let pt_val = (*prompt_tokens).unwrap_or(0);
+                        // Only forward plausible meters (drop 0 / u32::MAX).
+                        // Truncation may still be considered inside
+                        // `trigger_summarization`, but only with a real meter
+                        // above the truncation floor.
+                        let pt_val = (*prompt_tokens)
+                            .filter(|pt| neomind_core::plausible_prompt_token_meter(*pt));
+                        if pt_val.is_some() || history_truncated {
+                            let pt_for_summary = pt_val.unwrap_or(0);
                             let sum_session_id = session_id.clone();
                             let sum_state = state.clone();
                             let summary_tx = tx.clone();
@@ -291,7 +297,7 @@ async fn process_stream_to_channel(
                                 match crate::handlers::summarization::trigger_summarization(
                                     &sum_session_id,
                                     &sum_state,
-                                    pt_val,
+                                    pt_for_summary,
                                     false,
                                     history_truncated,
                                 )
@@ -935,9 +941,11 @@ pub async fn compact_session_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    // Force mode: threshold and min-message gates bypassed.
+    // Force mode: threshold and min-message gates bypassed. Do NOT pass
+    // u32::MAX as a fake meter — that value poisoned auto-compact logs and
+    // was treated as a real occupancy on T4 (2026-11-13).
     let outcome =
-        crate::handlers::summarization::trigger_summarization(&id, &state, u32::MAX, true, false)
+        crate::handlers::summarization::trigger_summarization(&id, &state, 0, true, false)
             .await
             .map_err(ErrorResponse::with_message)?;
 
@@ -2626,8 +2634,20 @@ mod compact_clear_tests {
             history.push(AgentMessage::assistant("tool evidence ".repeat(100)));
         }
         agent.restore_history(history).await;
+        // Truncation bypass requires a plausible meter at ≥5% of the window
+        // (not a 1-token stand-in that looks like the T4 0.5% spam case).
+        let max_ctx = state
+            .agents
+            .session_manager
+            .get_agent_llm(&sid)
+            .await
+            .expect("session llm")
+            .max_context_length()
+            .await
+            .max(1);
+        let pt = ((max_ctx as f64) * 0.10).ceil() as u32;
         let out =
-            crate::handlers::summarization::trigger_summarization(&sid, &state, 1, false, true)
+            crate::handlers::summarization::trigger_summarization(&sid, &state, pt, false, true)
                 .await
                 .unwrap();
         assert!(out.summarized_messages > 0);

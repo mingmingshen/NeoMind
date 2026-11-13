@@ -1283,15 +1283,18 @@ impl LlmRuntime for OllamaRuntime {
                                             if let Some(prompt_tokens) =
                                                 ollama_chunk.prompt_eval_count
                                             {
-                                                let _ = tx
-                                                    .send(Ok((
-                                                        format!(
-                                                            "\n__NEOMIND_TOKEN_PROMPT:{}__",
-                                                            prompt_tokens
-                                                        ),
-                                                        false,
-                                                    )))
-                                                    .await;
+                                                let pt = prompt_tokens as u32;
+                                                if neomind_core::plausible_prompt_token_meter(pt) {
+                                                    let _ = tx
+                                                        .send(Ok((
+                                                            format!(
+                                                                "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                                pt
+                                                            ),
+                                                            false,
+                                                        )))
+                                                        .await;
+                                                }
                                             }
 
                                             // A round that ends in tool calls and no prose is

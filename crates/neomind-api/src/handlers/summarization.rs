@@ -14,6 +14,20 @@ use neomind_agent::AgentMessage;
 /// Context usage ratio threshold to trigger summarization (60%)
 const SUMMARIZATION_THRESHOLD: f64 = 0.6;
 
+/// Truncation bypass still requires meaningful billed occupancy.
+/// Soft-budget pressure at ~0.5% (T4 2026-11-13) must not auto-summarize.
+const TRUNCATION_BYPASS_MIN_RATIO: f64 = 0.05;
+
+/// Auto-compact gate (manual `force` does not call this).
+pub(crate) fn should_auto_summarize(prompt_tokens: u32, max_ctx: usize, truncated: bool) -> bool {
+    if !neomind_core::plausible_prompt_token_meter(prompt_tokens) {
+        return false;
+    }
+    let usage_ratio = prompt_tokens as f64 / max_ctx.max(1) as f64;
+    usage_ratio > SUMMARIZATION_THRESHOLD
+        || (truncated && usage_ratio >= TRUNCATION_BYPASS_MIN_RATIO)
+}
+
 /// Structured summarization prompt. Free-form "总结以下对话" produced
 /// paraphrases that dropped open tasks and verbatim user instructions;
 /// structured sections (the pattern Cursor/Cline use) keep the summary
@@ -342,22 +356,33 @@ pub async fn trigger_summarization(
         }
     };
 
-    let max_ctx = llm_interface.max_context_length().await;
-    let usage_ratio = prompt_tokens as f64 / max_ctx as f64;
+    let max_ctx = llm_interface.max_context_length().await.max(1);
+    let meter_ok = neomind_core::plausible_prompt_token_meter(prompt_tokens);
+    let usage_ratio = if meter_ok {
+        prompt_tokens as f64 / max_ctx as f64
+    } else {
+        0.0
+    };
 
-    // `truncated` is the signal that history is ALREADY being dropped: the
-    // percentage of the total window can stay below the threshold forever
-    // when the prompt/tool overhead is large, so truncation must trigger a
-    // summary on its own (2026-10-30: 32K window, ~10K overhead, history
-    // truncated every turn, zero summaries).
-    if !force && !truncated && usage_ratio <= SUMMARIZATION_THRESHOLD {
-        // Below threshold, not forced — nothing was summarized.
+    // Auto path gates (manual `force` bypasses all of these). See
+    // [`should_auto_summarize`].
+    if !force && !should_auto_summarize(prompt_tokens, max_ctx, truncated) {
+        if !meter_ok {
+            tracing::info!(
+                session_id = %session_id,
+                prompt_tokens,
+                truncated,
+                "Skipping summarization: implausible prompt_tokens meter"
+            );
+        }
         return Ok(idle_outcome(0));
     }
 
     tracing::info!(
         session_id = %session_id,
-        prompt_tokens,
+        prompt_tokens = if meter_ok { prompt_tokens } else { 0 },
+        force,
+        truncated,
         max_context = max_ctx,
         usage_ratio = format!("{:.1}%", usage_ratio * 100.0),
         "Triggering conversation summarization"
@@ -871,6 +896,35 @@ mod tests {
             new_up_to < protected,
             "summary must never cover the protected user messages"
         );
+    }
+}
+
+#[cfg(test)]
+mod auto_summarize_gate_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zero_and_u32_max_even_when_truncated() {
+        assert!(!should_auto_summarize(0, 32_768, true));
+        assert!(!should_auto_summarize(u32::MAX, 32_768, true));
+        assert!(!should_auto_summarize(0, 32_768, false));
+        assert!(!should_auto_summarize(u32::MAX, 32_768, false));
+    }
+
+    #[test]
+    fn truncation_bypass_needs_few_percent_occupancy() {
+        // 0.5% of 32K ≈ 164 — the T4 spam case must stay closed.
+        assert!(!should_auto_summarize(164, 32_768, true));
+        // 5% of 32K = 1638.4 → 1639 clears the floor.
+        assert!(should_auto_summarize(1_639, 32_768, true));
+        // Same 5% occupancy without truncation stays idle (below 60%).
+        assert!(!should_auto_summarize(1_639, 32_768, false));
+    }
+
+    #[test]
+    fn soft_threshold_still_fires_without_truncation() {
+        assert!(should_auto_summarize(20_000, 32_768, false)); // ~61%
+        assert!(!should_auto_summarize(19_000, 32_768, false)); // ~58%
     }
 }
 
