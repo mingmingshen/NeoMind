@@ -528,11 +528,20 @@ pub async fn get_device_current_handler(
         metrics_to_process.insert(metric.name.clone());
     }
 
-    // Add all storage metrics (this includes auto-extracted metrics like values.battery)
+    // Add all storage metrics (this includes auto-extracted metrics like values.battery).
+    // Skip the legacy MQTT dump name `value` when it is not declared on the
+    // device-type template — standard `device/{type}/{id}/uplink` used to
+    // fall back to storing the whole (often invalid) JSON payload under
+    // that name, which then stuck on the detail page forever.
+    let template_declares_value = template.metrics.iter().any(|m| m.name == "value");
     for metric_name in &all_storage_metrics {
-        if metric_name != "_raw" {
-            metrics_to_process.insert(metric_name.clone());
+        if metric_name == "_raw" {
+            continue;
         }
+        if metric_name == "value" && !template_declares_value {
+            continue;
+        }
+        metrics_to_process.insert(metric_name.clone());
     }
 
     // Process all metrics
