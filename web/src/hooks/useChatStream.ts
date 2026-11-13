@@ -395,7 +395,14 @@ export function useChatStream(options: UseChatStreamOptions) {
 
     switch (data.type) {
       case "ContextCompacted":
-        if (data.summarizedMessages > 0) optionsRef.current.onContextCompacted?.(data.summarizedMessages, data.sessionId)
+        if (data.summarizedMessages > 0) {
+          // Prefer the post-compact estimate so the meter refreshes without
+          // waiting for the next chat turn (and without flashing pending).
+          if (data.tokenUsage) {
+            optionsRef.current.onTokenUsage?.(data.tokenUsage, data.sessionId)
+          }
+          optionsRef.current.onContextCompacted?.(data.summarizedMessages, data.sessionId)
+        }
         break
 
       case "ContextUsage":

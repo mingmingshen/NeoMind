@@ -267,12 +267,47 @@ fn summarizable_target(
     (unsummarized_len / 2).min(protected_first.saturating_sub(covered_count))
 }
 
+/// Post-compact meter snapshot (same shape as WS `ContextUsage.tokenUsage`).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactTokenUsage {
+    pub prompt_tokens: u32,
+    pub system_prompt_tokens: u32,
+    pub tool_tokens: u32,
+    pub max_context_tokens: u32,
+}
+
+impl From<neomind_agent::agent::streaming::PostSummaryContextUsage> for CompactTokenUsage {
+    fn from(u: neomind_agent::agent::streaming::PostSummaryContextUsage) -> Self {
+        Self {
+            prompt_tokens: u.prompt_tokens,
+            system_prompt_tokens: u.system_prompt_tokens,
+            tool_tokens: u.tool_tokens,
+            max_context_tokens: u.max_context_tokens,
+        }
+    }
+}
+
 /// Outcome of a summarization run — surfaced to the manual compact endpoint.
 #[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SummarizationOutcome {
     pub summarized_messages: usize,
     pub new_up_to_index: usize,
     pub fallback_used: bool,
+    /// Estimated next-turn usage after the new summary is applied. Absent when
+    /// nothing was summarized.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<CompactTokenUsage>,
+}
+
+fn idle_outcome(new_up_to_index: usize) -> SummarizationOutcome {
+    SummarizationOutcome {
+        summarized_messages: 0,
+        new_up_to_index,
+        fallback_used: false,
+        token_usage: None,
+    }
 }
 
 /// Trigger background summarization if context usage exceeds threshold
@@ -303,11 +338,7 @@ pub async fn trigger_summarization(
                 "No agent found for session {}, skipping summarization",
                 session_id
             );
-            return Ok(SummarizationOutcome {
-                summarized_messages: 0,
-                new_up_to_index: 0,
-                fallback_used: false,
-            });
+            return Ok(idle_outcome(0));
         }
     };
 
@@ -321,11 +352,7 @@ pub async fn trigger_summarization(
     // truncated every turn, zero summaries).
     if !force && !truncated && usage_ratio <= SUMMARIZATION_THRESHOLD {
         // Below threshold, not forced — nothing was summarized.
-        return Ok(SummarizationOutcome {
-            summarized_messages: 0,
-            new_up_to_index: 0,
-            fallback_used: false,
-        });
+        return Ok(idle_outcome(0));
     }
 
     tracing::info!(
@@ -349,11 +376,7 @@ pub async fn trigger_summarization(
     };
 
     if history.is_empty() {
-        return Ok(SummarizationOutcome {
-            summarized_messages: 0,
-            new_up_to_index: 0,
-            fallback_used: false,
-        });
+        return Ok(idle_outcome(0));
     }
 
     // [boundary alignment] `summary_up_to_index` stores the INCLUSIVE index
@@ -377,11 +400,7 @@ pub async fn trigger_summarization(
     // Force mode compacts whatever is summarizable (manual endpoint); the
     // auto path keeps the meaningful-minimum gate.
     if !force && unsummarized.len() < 4 {
-        return Ok(SummarizationOutcome {
-            summarized_messages: 0,
-            new_up_to_index: current_up_to,
-            fallback_used: false,
-        });
+        return Ok(idle_outcome(current_up_to));
     }
 
     // [verbatim floor] The last few user messages must never be summarized
@@ -399,16 +418,14 @@ pub async fn trigger_summarization(
             protected_from = protected_first,
             "Nothing summarizable without covering recent user messages — skipping"
         );
-        return Ok(SummarizationOutcome {
-            summarized_messages: 0,
-            new_up_to_index: current_up_to,
-            fallback_used: false,
-        });
+        return Ok(idle_outcome(current_up_to));
     }
 
     // The dedicated summary runtime can have a smaller window than the chat
     // runtime. Keep the no-work gates above unchanged, then reserve its prompt
     // overhead and use the smaller window for this auxiliary request.
+    // Keep the session LLM for the post-compact meter (next chat turn uses it).
+    let session_llm = llm_interface.clone();
     let summary_llm = resolve_summary_llm(llm_interface).await;
     let summary_context = max_ctx.min(summary_llm.max_context_length().await);
     let previous = metadata.conversation_summary.as_deref();
@@ -480,11 +497,7 @@ pub async fn trigger_summarization(
     }
 
     if summarized_count == 0 || conv_text.is_empty() {
-        return Ok(SummarizationOutcome {
-            summarized_messages: 0,
-            new_up_to_index: current_up_to,
-            fallback_used: false,
-        });
+        return Ok(idle_outcome(current_up_to));
     }
     let summarize_count = summarized_count;
 
@@ -538,11 +551,24 @@ pub async fn trigger_summarization(
         return Err(format!("Failed to save metadata: {}", e));
     }
 
+    let usage: CompactTokenUsage =
+        neomind_agent::agent::streaming::estimate_post_summary_context_usage(
+            &history,
+            metadata.conversation_summary.as_deref(),
+            metadata.summary_up_to_index,
+            &session_llm,
+        )
+        .await
+        .into();
+    let prompt_tokens = usage.prompt_tokens;
+    let token_usage = Some(usage);
+
     tracing::info!(
         session_id = %session_id,
         summarized_messages = summarize_count,
         new_up_to_index = new_up_to,
         fallback_used,
+        prompt_tokens,
         "Conversation summary generated and saved"
     );
 
@@ -550,6 +576,7 @@ pub async fn trigger_summarization(
         summarized_messages: summarize_count,
         new_up_to_index: new_up_to,
         fallback_used,
+        token_usage,
     })
 }
 

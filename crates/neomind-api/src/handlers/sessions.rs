@@ -298,9 +298,15 @@ async fn process_stream_to_channel(
                                 .await
                                 {
                                     Ok(outcome) if outcome.summarized_messages > 0 => {
-                                        let event = json!({"type":"ContextCompacted", "sessionId":sum_session_id,
-                                            "summarizedMessages":outcome.summarized_messages,
-                                            "fallbackUsed":outcome.fallback_used});
+                                        let mut event = json!({
+                                            "type": "ContextCompacted",
+                                            "sessionId": sum_session_id,
+                                            "summarizedMessages": outcome.summarized_messages,
+                                            "fallbackUsed": outcome.fallback_used,
+                                        });
+                                        if let Some(usage) = outcome.token_usage {
+                                            event["tokenUsage"] = json!(usage);
+                                        }
                                         let _ = summary_tx
                                             .send(StreamEvent {
                                                 json: event.to_string(),
@@ -935,12 +941,16 @@ pub async fn compact_session_handler(
             .await
             .map_err(ErrorResponse::with_message)?;
 
-    Ok(Json(ApiResponse::success(json!({
+    let mut data = json!({
         "sessionId": id,
         "summarizedMessages": outcome.summarized_messages,
         "newUpToIndex": outcome.new_up_to_index,
         "fallbackUsed": outcome.fallback_used,
-    }))))
+    });
+    if let Some(usage) = outcome.token_usage {
+        data["tokenUsage"] = json!(usage);
+    }
+    Ok(Json(ApiResponse::success(data)))
 }
 
 /// Clear a session's conversation history and reset any stored summary —
@@ -2651,6 +2661,17 @@ mod compact_clear_tests {
             data["fallbackUsed"],
             serde_json::json!(true),
             "no LLM backend in the test state → deterministic fallback"
+        );
+        let usage = data["tokenUsage"]
+            .as_object()
+            .expect("compact must return post-summary tokenUsage for the meter");
+        assert!(
+            usage["promptTokens"].as_u64().unwrap_or(0) > 0,
+            "post-compact usage must be a positive estimate: {usage:?}"
+        );
+        assert!(
+            usage["maxContextTokens"].as_u64().unwrap_or(0) > 0,
+            "maxContextTokens required for the ring denominator: {usage:?}"
         );
 
         // Boundary math: 12 messages, users at 0,2,4,6,8,10. keep=3 →

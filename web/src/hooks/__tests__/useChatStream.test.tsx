@@ -45,6 +45,24 @@ describe('useChatStream', () => {
     expect(latest.isStreaming).toBe(false)
   })
 
+  it('applies post-compact tokenUsage to the meter without ending the turn', () => {
+    const onTokenUsage = vi.fn()
+    const onContextCompacted = vi.fn()
+    render(<Harness sessionId="s1" onTokenUsage={onTokenUsage} onContextCompacted={onContextCompacted} />)
+    act(() => emit({
+      type: 'ContextCompacted',
+      sessionId: 's1',
+      summarizedMessages: 8,
+      tokenUsage: { promptTokens: 4200, systemPromptTokens: 1000, toolTokens: 2000, maxContextTokens: 32768 },
+    }))
+    expect(onContextCompacted).toHaveBeenCalledWith(8, 's1')
+    expect(onTokenUsage).toHaveBeenCalledWith(
+      { promptTokens: 4200, systemPromptTokens: 1000, toolTokens: 2000, maxContextTokens: 32768 },
+      's1',
+    )
+    expect(latest.isStreaming).toBe(false)
+  })
+
   it('updates measured context during a turn without ending it or accepting another session', () => {
     const onTokenUsage = vi.fn()
     render(<Harness sessionId="s1" onTokenUsage={onTokenUsage} />)
