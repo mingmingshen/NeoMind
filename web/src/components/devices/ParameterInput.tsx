@@ -7,13 +7,14 @@
  *
  * Field coverage (vs. ParameterDefinition in `types/device.ts`):
  *   ✅ data_type: string | integer | float | boolean | binary | array
- *   ✅ data_type: { enum: [...] }  (object form)
+ *   ✅ data_type: { enum: [...] } or { enum: { options: [...] } }
+ *   ✅ data_type: { array: { element_type?: ... } } (object form)
  *   ✅ allowed_values             (preferred over enum-object when both exist)
- *   ✅ min / max / unit / step
+ *   ✅ min / max / unit
  *   ✅ default_value              (used as initial value by parent)
  *   ✅ help_text                  (rendered below)
  *   ✅ required                   (red asterisk on the label)
- *   ✅ validation: pattern | range | length  (HTML5 + onSubmit checks)
+ *   ✅ validation: pattern | range | length attrs (submit checks in commandParams)
  *
  * Non-goals:
  *   - visible_when / parameter_groups: handled by `ParameterForm`.
@@ -37,6 +38,11 @@ import type {
   ParameterDefinition,
   ValidationRule,
 } from '@/types/device'
+import {
+  getAllowedValues,
+  getEnumOptions,
+  isArrayDataType,
+} from './parameterOptions'
 
 export interface ParameterInputProps {
   param: ParameterDefinition
@@ -82,23 +88,15 @@ export function ParameterInput({
   const { t } = useTranslation('devices')
 
   // ---------------------------------------------------------------- enum
-  // Object-form enum on data_type — { enum: string[] }
-  const enumOptions = useMemo(() => {
-    if (
-      param.data_type &&
-      typeof param.data_type === 'object' &&
-      'enum' in param.data_type
-    ) {
-      return param.data_type.enum
-    }
-    return null
-  }, [param.data_type])
+  // Backend: { enum: { options: string[] } }; frontend editor: { enum: string[] }
+  const enumOptions = useMemo(
+    () => getEnumOptions(param.data_type),
+    [param.data_type],
+  )
 
-  // Explicit allowed_values array — preferred over data_type.enum because
-  // it can carry non-string values (numbers, booleans).
-  const allowedValues = param.allowed_values && param.allowed_values.length > 0
-    ? param.allowed_values
-    : null
+  // Explicit allowed_values — preferred over data_type.enum (may be tagged
+  // MetricValue objects from the API; unwrap to plain values).
+  const allowedValues = useMemo(() => getAllowedValues(param), [param])
 
   // Combined list of {label, value} pairs for Select/ButtonGroup rendering.
   const options = useMemo(() => {
@@ -257,7 +255,7 @@ export function ParameterInput({
   }
 
   // ------------------------------------------------------------- array
-  if (param.data_type === 'array') {
+  if (isArrayDataType(param.data_type)) {
     return (
       <Textarea
         value={

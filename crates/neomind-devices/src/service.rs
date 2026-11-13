@@ -1635,13 +1635,28 @@ impl DeviceService {
         let mut validated = HashMap::new();
 
         for param_def in &command_def.parameters {
-            // Check if parameter is provided or has default
+            // Check if parameter is provided or has default. Optional params
+            // without a value/default are omitted (not forced empty).
             let value = if let Some(param_value) = params.get(&param_def.name) {
-                // Convert JSON value to MetricValue
-                self.json_to_metric_value(param_value, &param_def.data_type)?
+                // Treat JSON null as "not provided" so optional clears omit.
+                if param_value.is_null() {
+                    if let Some(default) = &param_def.default_value {
+                        default.clone()
+                    } else if !param_def.required {
+                        continue;
+                    } else {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "Required parameter '{}' not provided and has no default",
+                            param_def.name
+                        )));
+                    }
+                } else {
+                    self.json_to_metric_value(param_value, &param_def.data_type)?
+                }
             } else if let Some(default) = &param_def.default_value {
-                // Use default value
                 default.clone()
+            } else if !param_def.required {
+                continue;
             } else {
                 return Err(DeviceError::InvalidParameter(format!(
                     "Required parameter '{}' not provided and has no default",
@@ -1649,22 +1664,36 @@ impl DeviceService {
                 )));
             };
 
-            // Validate min/max if applicable
-            if let (Some(min), Some(max)) = (param_def.min, param_def.max) {
+            // Validate min/max independently (either bound may be absent).
+            if let Some(min) = param_def.min {
                 match &value {
-                    MetricValue::Integer(i) => {
-                        let i_f64 = *i as f64;
-                        if i_f64 < min || i_f64 > max {
-                            return Err(DeviceError::InvalidParameter(format!(
-                                "Parameter '{}' value {} out of range [{}, {}]",
-                                param_def.name, i, min, max
-                            )));
-                        }
-                    }
-                    MetricValue::Float(f) if (*f < min || *f > max) => {
+                    MetricValue::Integer(i) if (*i as f64) < min => {
                         return Err(DeviceError::InvalidParameter(format!(
-                            "Parameter '{}' value {} out of range [{}, {}]",
-                            param_def.name, f, min, max
+                            "Parameter '{}' value {} below minimum {}",
+                            param_def.name, i, min
+                        )));
+                    }
+                    MetricValue::Float(f) if *f < min => {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "Parameter '{}' value {} below minimum {}",
+                            param_def.name, f, min
+                        )));
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(max) = param_def.max {
+                match &value {
+                    MetricValue::Integer(i) if (*i as f64) > max => {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "Parameter '{}' value {} above maximum {}",
+                            param_def.name, i, max
+                        )));
+                    }
+                    MetricValue::Float(f) if *f > max => {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "Parameter '{}' value {} above maximum {}",
+                            param_def.name, f, max
                         )));
                     }
                     _ => {}
@@ -1677,12 +1706,18 @@ impl DeviceService {
         Ok(validated)
     }
 
-    /// Convert JSON value to MetricValue based on expected type
+    /// Convert JSON value to MetricValue based on expected type.
+    ///
+    /// Never uses `serde_json::Value::to_string()` for string-typed results —
+    /// that Display form wraps JSON strings in quotes (`"white"` → `"\"white\""`)
+    /// and was the Enum/Array command-send corruption path.
     fn json_to_metric_value(
         &self,
         json: &serde_json::Value,
         expected_type: &super::mdl::MetricDataType,
     ) -> Result<MetricValue, DeviceError> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
         match (json, expected_type) {
             (serde_json::Value::Number(n), super::mdl::MetricDataType::Integer) => {
                 if let Some(i) = n.as_i64() {
@@ -1710,6 +1745,31 @@ impl DeviceService {
             (serde_json::Value::String(s), super::mdl::MetricDataType::String) => {
                 Ok(MetricValue::String(s.clone()))
             }
+            (serde_json::Value::String(s), super::mdl::MetricDataType::Enum { options }) => {
+                if !options.is_empty() && !options.iter().any(|o| o == s) {
+                    return Err(DeviceError::InvalidParameter(format!(
+                        "Value '{}' is not in enum options {:?}",
+                        s, options
+                    )));
+                }
+                Ok(MetricValue::String(s.clone()))
+            }
+            (serde_json::Value::Array(arr), super::mdl::MetricDataType::Array { element_type }) => {
+                let elem_ty = element_type
+                    .as_deref()
+                    .unwrap_or(&super::mdl::MetricDataType::String);
+                let mut out = Vec::with_capacity(arr.len());
+                for item in arr {
+                    out.push(self.json_to_metric_value(item, elem_ty)?);
+                }
+                Ok(MetricValue::Array(out))
+            }
+            (serde_json::Value::String(s), super::mdl::MetricDataType::Binary) => STANDARD
+                .decode(s.trim())
+                .map(MetricValue::Binary)
+                .map_err(|e| {
+                    DeviceError::InvalidParameter(format!("Invalid base64 for Binary: {e}"))
+                }),
             (serde_json::Value::Null, _) => Ok(MetricValue::Null),
             (serde_json::Value::String(s), super::mdl::MetricDataType::Integer) => s
                 .trim()
@@ -1736,10 +1796,18 @@ impl DeviceService {
                     ))),
                 }
             }
-            (v, _) => {
-                // Try to convert to string as fallback
-                Ok(MetricValue::String(v.to_string()))
-            }
+            (v, expected) => Err(DeviceError::InvalidParameter(format!(
+                "Type mismatch: expected {:?}, got {}",
+                expected,
+                match v {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Bool(_) => "boolean",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::String(_) => "string",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                }
+            ))),
         }
     }
 
@@ -2362,6 +2430,105 @@ mod tests {
         let params = HashMap::new();
         let result = service.validate_command_params(&command_def, params);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_json_to_metric_value_enum_and_array() {
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl::MetricDataType;
+
+        // Enum: plain JSON string must NOT pick up Display quotes.
+        let enum_ty = MetricDataType::Enum {
+            options: vec!["white".into(), "black".into()],
+        };
+        let got = service
+            .json_to_metric_value(&serde_json::json!("white"), &enum_ty)
+            .unwrap();
+        assert_eq!(got, MetricValue::String("white".into()));
+
+        let bad = service.json_to_metric_value(&serde_json::json!("red"), &enum_ty);
+        assert!(bad.is_err());
+
+        // Array of strings
+        let arr_ty = MetricDataType::Array {
+            element_type: Some(Box::new(MetricDataType::String)),
+        };
+        let got = service
+            .json_to_metric_value(&serde_json::json!(["a", "b"]), &arr_ty)
+            .unwrap();
+        assert_eq!(
+            got,
+            MetricValue::Array(vec![
+                MetricValue::String("a".into()),
+                MetricValue::String("b".into()),
+            ])
+        );
+
+        // Catch-all must not stringify a JSON string into "\"white\""
+        let mismatch = service.json_to_metric_value(
+            &serde_json::json!("white"),
+            &MetricDataType::Integer,
+        );
+        assert!(mismatch.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_optional_param_may_be_omitted() {
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl::MetricDataType;
+        use crate::mdl_format::CommandDefinition;
+        use crate::mdl_format::ParameterDefinition;
+
+        let command_def = CommandDefinition {
+            name: "clear".to_string(),
+            display_name: "Clear".to_string(),
+            payload_template: r#"{"cmd":"clear","color":"${color}"}"#.to_string(),
+            parameters: vec![ParameterDefinition {
+                name: "color".to_string(),
+                display_name: "Color".to_string(),
+                data_type: MetricDataType::Enum {
+                    options: vec!["white".into(), "black".into()],
+                },
+                default_value: Some(MetricValue::String("white".into())),
+                min: None,
+                max: None,
+                unit: String::new(),
+                allowed_values: vec![],
+                required: false,
+                visible_when: None,
+                group: None,
+                help_text: String::new(),
+                validation: vec![],
+            }],
+            samples: vec![],
+            description: String::new(),
+            fixed_values: std::collections::HashMap::new(),
+            parameter_groups: vec![],
+        };
+
+        // Omitted → schema default
+        let result = service
+            .validate_command_params(&command_def, HashMap::new())
+            .unwrap();
+        assert_eq!(
+            result.get("color"),
+            Some(&MetricValue::String("white".into()))
+        );
+
+        // Explicit enum value
+        let mut params = HashMap::new();
+        params.insert("color".to_string(), serde_json::json!("black"));
+        let result = service.validate_command_params(&command_def, params).unwrap();
+        assert_eq!(
+            result.get("color"),
+            Some(&MetricValue::String("black".into()))
+        );
     }
 
     #[tokio::test]
