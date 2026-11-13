@@ -282,14 +282,27 @@ async fn process_stream_to_channel(
                             Some(llm) => llm.take_history_truncated(),
                             None => false,
                         };
-                        // Only forward plausible meters (drop 0 / u32::MAX).
-                        // Truncation may still be considered inside
-                        // `trigger_summarization`, but only with a real meter
-                        // above the truncation floor.
-                        let pt_val = (*prompt_tokens)
-                            .filter(|pt| neomind_core::plausible_prompt_token_meter(*pt));
-                        if pt_val.is_some() || history_truncated {
-                            let pt_for_summary = pt_val.unwrap_or(0);
+                        // Meter kinds:
+                        // - Some(plausible) → bill-first gate
+                        // - None (usage omitted) + truncated → still compact
+                        // - Some(0/MAX) → never compact (corrupt ≠ missing)
+                        let pt_for_summary: Option<Option<u32>> = match prompt_tokens {
+                            Some(pt) if neomind_core::plausible_prompt_token_meter(*pt) => {
+                                Some(Some(*pt))
+                            }
+                            Some(pt) => {
+                                tracing::info!(
+                                    session_id = %session_id,
+                                    prompt_tokens = pt,
+                                    truncated = history_truncated,
+                                    "Skipping summarization spawn: corrupt prompt_tokens meter"
+                                );
+                                None
+                            }
+                            None if history_truncated => Some(None),
+                            None => None,
+                        };
+                        if let Some(meter) = pt_for_summary {
                             let sum_session_id = session_id.clone();
                             let sum_state = state.clone();
                             let summary_tx = tx.clone();
@@ -297,7 +310,7 @@ async fn process_stream_to_channel(
                                 match crate::handlers::summarization::trigger_summarization(
                                     &sum_session_id,
                                     &sum_state,
-                                    pt_for_summary,
+                                    meter,
                                     false,
                                     history_truncated,
                                 )
@@ -945,7 +958,7 @@ pub async fn compact_session_handler(
     // u32::MAX as a fake meter — that value poisoned auto-compact logs and
     // was treated as a real occupancy on T4 (2026-11-13).
     let outcome =
-        crate::handlers::summarization::trigger_summarization(&id, &state, 0, true, false)
+        crate::handlers::summarization::trigger_summarization(&id, &state, None, true, false)
             .await
             .map_err(ErrorResponse::with_message)?;
 
@@ -2645,11 +2658,16 @@ mod compact_clear_tests {
             .max_context_length()
             .await
             .max(1);
-        let pt = ((max_ctx as f64) * 0.10).ceil() as u32;
-        let out =
-            crate::handlers::summarization::trigger_summarization(&sid, &state, pt, false, true)
-                .await
-                .unwrap();
+        let pt = ((max_ctx as f64) * 0.35).ceil() as u32;
+        let out = crate::handlers::summarization::trigger_summarization(
+            &sid,
+            &state,
+            Some(pt),
+            false,
+            true,
+        )
+        .await
+        .unwrap();
         assert!(out.summarized_messages > 0);
         let metadata = manager.session_store().get_session_metadata(&sid).unwrap();
         assert!(metadata.conversation_summary.is_some());

@@ -13,6 +13,7 @@ import {
   isArrayDataType,
   normalizeDataType,
   scalarDataType,
+  unicodeScalarLength,
 } from './parameterOptions'
 
 export interface CommandParamError {
@@ -127,7 +128,9 @@ export function validateCommandParams(
     if (typeof raw === 'string') {
       const lengthRule = findRule(param.validation, 'length')
       if (lengthRule && lengthRule.type === 'length') {
-        if (raw.length < lengthRule.min || raw.length > lengthRule.max) {
+        // Unicode scalars — same contract as Rust ValidationRule::Length.
+        const len = unicodeScalarLength(raw)
+        if (len < lengthRule.min || len > lengthRule.max) {
           errors.push({
             name: param.name,
             message: lengthRule.error_message || `${labelOf(param)}: invalid length`,

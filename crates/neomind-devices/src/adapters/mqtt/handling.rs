@@ -454,10 +454,7 @@ impl MqttAdapter {
                             return;
                         }
                     } else {
-                        warn!(
-                            "Standard uplink topic missing device_id: {}",
-                            topic
-                        );
+                        warn!("Standard uplink topic missing device_id: {}", topic);
                         return;
                     }
                 } // Close: if is_standard_uplink

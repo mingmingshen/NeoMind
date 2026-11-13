@@ -26,13 +26,26 @@ const SUMMARIZATION_THRESHOLD: f64 = 0.6;
 const TRUNCATION_BYPASS_MIN_RATIO: f64 = 0.35;
 
 /// Auto-compact gate (manual `force` does not call this).
-pub(crate) fn should_auto_summarize(prompt_tokens: u32, max_ctx: usize, truncated: bool) -> bool {
-    if !neomind_core::plausible_prompt_token_meter(prompt_tokens) {
-        return false;
+///
+/// `prompt_tokens`:
+/// - `None` — usage unavailable (stream omitted the meter). Real truncation
+///   may still compact; this is **not** the same as billed `0`.
+/// - `Some(n)` — must be a plausible meter (`0` / `u32::MAX` rejected). Soft
+///   >60% or trunc∧≥35% then apply.
+pub(crate) fn should_auto_summarize(
+    prompt_tokens: Option<u32>,
+    max_ctx: usize,
+    truncated: bool,
+) -> bool {
+    match prompt_tokens {
+        None => truncated,
+        Some(pt) if !neomind_core::plausible_prompt_token_meter(pt) => false,
+        Some(pt) => {
+            let usage_ratio = pt as f64 / max_ctx.max(1) as f64;
+            usage_ratio > SUMMARIZATION_THRESHOLD
+                || (truncated && usage_ratio >= TRUNCATION_BYPASS_MIN_RATIO)
+        }
     }
-    let usage_ratio = prompt_tokens as f64 / max_ctx.max(1) as f64;
-    usage_ratio > SUMMARIZATION_THRESHOLD
-        || (truncated && usage_ratio >= TRUNCATION_BYPASS_MIN_RATIO)
 }
 
 /// Structured summarization prompt. Free-form "总结以下对话" produced
@@ -226,16 +239,11 @@ pub(crate) fn collect_evidence_needles(messages: &[&AgentMessage]) -> Vec<String
         for tok in
             text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_'))
         {
-            if tok.len() >= 3
-                && tok.chars().any(|c| c.is_ascii_digit())
-                && !needles.iter().any(|n| n == tok)
-            {
-                needles.push(tok.to_string());
-            } else if tok.len() >= 4
+            let digit_id = tok.len() >= 3 && tok.chars().any(|c| c.is_ascii_digit());
+            let alpha_token = tok.len() >= 4
                 && tok.chars().any(|c| c.is_ascii_alphabetic())
-                && !is_evidence_stopword(tok)
-                && !needles.iter().any(|n| n == tok)
-            {
+                && !is_evidence_stopword(tok);
+            if (digit_id || alpha_token) && !needles.iter().any(|n| n == tok) {
                 needles.push(tok.to_string());
             }
         }
@@ -494,7 +502,7 @@ fn idle_outcome(new_up_to_index: usize) -> SummarizationOutcome {
 pub async fn trigger_summarization(
     session_id: &str,
     state: &ServerState,
-    prompt_tokens: u32,
+    prompt_tokens: Option<u32>,
     force: bool,
     truncated: bool,
 ) -> Result<SummarizationOutcome, String> {
@@ -511,30 +519,49 @@ pub async fn trigger_summarization(
     };
 
     let max_ctx = llm_interface.max_context_length().await.max(1);
-    let meter_ok = neomind_core::plausible_prompt_token_meter(prompt_tokens);
-    let usage_ratio = if meter_ok {
-        prompt_tokens as f64 / max_ctx as f64
-    } else {
-        0.0
+    let meter_ok = prompt_tokens
+        .map(neomind_core::plausible_prompt_token_meter)
+        .unwrap_or(false);
+    let usage_ratio = match prompt_tokens {
+        Some(pt) if meter_ok => pt as f64 / max_ctx as f64,
+        _ => 0.0,
     };
 
     // Auto path gates (manual `force` bypasses all of these). See
     // [`should_auto_summarize`].
     if !force && !should_auto_summarize(prompt_tokens, max_ctx, truncated) {
-        if !meter_ok {
-            tracing::info!(
-                session_id = %session_id,
-                prompt_tokens,
-                truncated,
-                "Skipping summarization: implausible prompt_tokens meter"
-            );
+        match prompt_tokens {
+            Some(pt) if !neomind_core::plausible_prompt_token_meter(pt) => {
+                tracing::info!(
+                    session_id = %session_id,
+                    prompt_tokens = pt,
+                    truncated,
+                    "Skipping summarization: implausible prompt_tokens meter"
+                );
+            }
+            Some(pt) => {
+                tracing::debug!(
+                    session_id = %session_id,
+                    prompt_tokens = pt,
+                    truncated,
+                    usage_ratio,
+                    "Skipping summarization: below bill-first / soft thresholds"
+                );
+            }
+            None => {
+                tracing::debug!(
+                    session_id = %session_id,
+                    truncated,
+                    "Skipping summarization: usage unavailable and not truncated"
+                );
+            }
         }
         return Ok(idle_outcome(0));
     }
-
     tracing::info!(
         session_id = %session_id,
-        prompt_tokens = if meter_ok { prompt_tokens } else { 0 },
+        prompt_tokens = prompt_tokens.filter(|_| meter_ok).unwrap_or(0),
+        usage_known = prompt_tokens.is_some(),
         force,
         truncated,
         max_context = max_ctx,
@@ -1129,30 +1156,37 @@ mod auto_summarize_gate_tests {
 
     #[test]
     fn rejects_zero_and_u32_max_even_when_truncated() {
-        assert!(!should_auto_summarize(0, 32_768, true));
-        assert!(!should_auto_summarize(u32::MAX, 32_768, true));
-        assert!(!should_auto_summarize(0, 32_768, false));
-        assert!(!should_auto_summarize(u32::MAX, 32_768, false));
+        assert!(!should_auto_summarize(Some(0), 32_768, true));
+        assert!(!should_auto_summarize(Some(u32::MAX), 32_768, true));
+        assert!(!should_auto_summarize(Some(0), 32_768, false));
+        assert!(!should_auto_summarize(Some(u32::MAX), 32_768, false));
     }
 
     #[test]
     fn truncation_bypass_needs_bill_first_occupancy() {
         // 0.5% of 32K ≈ 164 — the T4 spam case must stay closed.
-        assert!(!should_auto_summarize(164, 32_768, true));
+        assert!(!should_auto_summarize(Some(164), 32_768, true));
         // Former 5% floor (1639) is no longer enough under bill-first.
-        assert!(!should_auto_summarize(1_639, 32_768, true));
+        assert!(!should_auto_summarize(Some(1_639), 32_768, true));
         // T4 mid-band (~18–21%) still idle — estimate trunc must not LLM-summarize yet.
-        assert!(!should_auto_summarize(7_051, 32_768, true));
+        assert!(!should_auto_summarize(Some(7_051), 32_768, true));
         // 35% of 32K = 11468.8 → 11469 clears the bill-first trunc floor.
-        assert!(should_auto_summarize(11_469, 32_768, true));
+        assert!(should_auto_summarize(Some(11_469), 32_768, true));
         // Same occupancy without truncation stays idle (below 60%).
-        assert!(!should_auto_summarize(11_469, 32_768, false));
+        assert!(!should_auto_summarize(Some(11_469), 32_768, false));
     }
 
     #[test]
     fn soft_threshold_still_fires_without_truncation() {
-        assert!(should_auto_summarize(20_000, 32_768, false)); // ~61%
-        assert!(!should_auto_summarize(19_000, 32_768, false)); // ~58%
+        assert!(should_auto_summarize(Some(20_000), 32_768, false)); // ~61%
+        assert!(!should_auto_summarize(Some(19_000), 32_768, false)); // ~58%
+    }
+
+    #[test]
+    fn unknown_usage_with_truncation_still_compacts() {
+        // Backends that omit streamed usage must not lose the trunc path.
+        assert!(should_auto_summarize(None, 32_768, true));
+        assert!(!should_auto_summarize(None, 32_768, false));
     }
 }
 
@@ -1181,7 +1215,7 @@ mod trigger_meter_smoke_tests {
     async fn trigger_writes_nothing_for_zero_or_u32_max() {
         let (state, sid) = seeded_session().await;
         for pt in [0_u32, u32::MAX] {
-            let out = trigger_summarization(&sid, &state, pt, false, true)
+            let out = trigger_summarization(&sid, &state, Some(pt), false, true)
                 .await
                 .expect("trigger");
             assert_eq!(
@@ -1202,6 +1236,28 @@ mod trigger_meter_smoke_tests {
     }
 
     #[tokio::test]
+    async fn trigger_compacts_when_usage_unavailable_but_truncated() {
+        let (state, sid) = seeded_session().await;
+        let out = trigger_summarization(&sid, &state, None, false, true)
+            .await
+            .expect("trigger");
+        assert!(
+            out.summarized_messages > 0,
+            "unavailable usage with truncation must still compact"
+        );
+        let meta = state
+            .agents
+            .session_manager
+            .session_store()
+            .get_session_metadata(&sid)
+            .unwrap_or_default();
+        assert!(
+            meta.conversation_summary.is_some(),
+            "unknown-usage trunc path must write a summary"
+        );
+    }
+
+    #[tokio::test]
     async fn trigger_writes_nothing_for_sub_bill_first_truncation() {
         let (state, sid) = seeded_session().await;
         let max_ctx = state
@@ -1216,7 +1272,7 @@ mod trigger_meter_smoke_tests {
         // Just under the 35% bill-first trunc floor.
         let pt = ((max_ctx as f64) * 0.349).floor() as u32;
         assert!(pt > 0, "test ctx too small");
-        let out = trigger_summarization(&sid, &state, pt, false, true)
+        let out = trigger_summarization(&sid, &state, Some(pt), false, true)
             .await
             .expect("trigger");
         assert_eq!(

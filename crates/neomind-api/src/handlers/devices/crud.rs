@@ -40,6 +40,28 @@ fn get_transform_namespaces() -> &'static [&'static str; 5] {
     })
 }
 
+/// True when an undeclared `value` reading looks like the legacy MQTT uplink
+/// whole-payload dump (object/array or stringified JSON), not a scalar
+/// auto-extract such as `{"value": 23}`.
+pub(crate) fn is_legacy_value_dump(
+    metric_name: &str,
+    template_declares_value: bool,
+    value: Option<&serde_json::Value>,
+) -> bool {
+    if metric_name != "value" || template_declares_value {
+        return false;
+    }
+    match value {
+        Some(serde_json::Value::Object(_)) | Some(serde_json::Value::Array(_)) => true,
+        Some(serde_json::Value::String(s)) => {
+            let t = s.trim();
+            (t.starts_with('{') && t.ends_with('}')) || (t.starts_with('[') && t.ends_with(']'))
+        }
+        // Number / Bool / Null / plain string / missing → keep.
+        _ => false,
+    }
+}
+
 /// Convert AdapterConnectionStatus to MdlConnectionStatus
 fn convert_status(status: AdapterConnectionStatus) -> MdlConnectionStatus {
     match status {
@@ -528,17 +550,14 @@ pub async fn get_device_current_handler(
         metrics_to_process.insert(metric.name.clone());
     }
 
-    // Add all storage metrics (this includes auto-extracted metrics like values.battery).
-    // Skip the legacy MQTT dump name `value` when it is not declared on the
-    // device-type template — standard `device/{type}/{id}/uplink` used to
-    // fall back to storing the whole (often invalid) JSON payload under
-    // that name, which then stuck on the detail page forever.
+    // Add all storage metrics (this includes auto-extracted metrics like
+    // values.battery and a legitimate root `value` from empty-template
+    // auto-extract, e.g. `{"value":23}`). Do NOT drop undeclared `value` by
+    // name alone — only skip proven legacy whole-payload dumps after the
+    // latest reading is fetched (see `is_legacy_value_dump` below).
     let template_declares_value = template.metrics.iter().any(|m| m.name == "value");
     for metric_name in &all_storage_metrics {
         if metric_name == "_raw" {
-            continue;
-        }
-        if metric_name == "value" && !template_declares_value {
             continue;
         }
         metrics_to_process.insert(metric_name.clone());
@@ -619,6 +638,12 @@ pub async fn get_device_current_handler(
                 None
             }
         };
+
+        // Hide only legacy uplink dumps stored under undeclared `value`
+        // (object/array / stringified JSON). Scalar auto-extract stays.
+        if is_legacy_value_dump(&metric_name, template_declares_value, value.as_ref()) {
+            continue;
+        }
 
         metrics_data.insert(
             metric_name.clone(),
@@ -1270,5 +1295,54 @@ mod device_error_mapping_tests {
             DeviceError::Storage("redb: disk full".into()),
         );
         assert_eq!(resp.status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn legacy_value_dump_keeps_scalar_auto_extract() {
+        assert!(
+            !is_legacy_value_dump("value", false, Some(&serde_json::json!(23))),
+            "numeric auto-extract must stay visible"
+        );
+        assert!(!is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!(23.5))
+        ));
+        assert!(!is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!(true))
+        ));
+        assert!(!is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!("ok"))
+        ));
+        assert!(is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!({"temp": 1}))
+        ));
+        assert!(is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!([1, 2]))
+        ));
+        assert!(is_legacy_value_dump(
+            "value",
+            false,
+            Some(&serde_json::json!("{\"raw\":true}"))
+        ));
+        // Template-declared `value` is never treated as legacy pollution.
+        assert!(!is_legacy_value_dump(
+            "value",
+            true,
+            Some(&serde_json::json!({"temp": 1}))
+        ));
+        assert!(!is_legacy_value_dump(
+            "temperature",
+            false,
+            Some(&serde_json::json!({"x": 1}))
+        ));
     }
 }

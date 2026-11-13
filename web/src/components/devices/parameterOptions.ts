@@ -12,23 +12,38 @@
 
 import type { ParameterDataType, ParameterDefinition } from '@/types/device'
 
-/** Unwrap tagged MetricValue objects like `{ String: "white" }` / `{ string: "white" }`. */
+const TAGGED_METRIC_KEY =
+  /^(String|string|Integer|integer|Float|float|Boolean|boolean|Null|null|Array|array|Binary|binary)$/
+
+/**
+ * Unwrap tagged MetricValue objects like `{ String: "white" }` /
+ * `{ Array: [{ Integer: 1 }] }`. Array/Binary unwrap recursively so seeded
+ * defaults become plain JS arrays / base64 strings for the form.
+ */
 export function unwrapMetricValue(v: unknown): unknown {
   if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
     const obj = v as Record<string, unknown>
     const keys = Object.keys(obj)
     if (keys.length === 1) {
       const k = keys[0]
-      if (
-        /^(String|string|Integer|integer|Float|float|Boolean|boolean|Null|null)$/.test(
-          k,
-        )
-      ) {
-        return obj[k]
+      if (TAGGED_METRIC_KEY.test(k)) {
+        const inner = obj[k]
+        if (/^(Array|array)$/.test(k) && Array.isArray(inner)) {
+          return inner.map(unwrapMetricValue)
+        }
+        return inner
       }
     }
   }
+  if (Array.isArray(v)) {
+    return v.map(unwrapMetricValue)
+  }
   return v
+}
+
+/** Unicode scalar count — matches Rust `chars().count()` for Length rules. */
+export function unicodeScalarLength(s: string): number {
+  return [...s].length
 }
 
 /**

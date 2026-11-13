@@ -10,6 +10,7 @@ import {
   isArrayDataType,
   mapJsonSchemaType,
   normalizeDataType,
+  unicodeScalarLength,
   unwrapMetricValue,
 } from '../parameterOptions'
 
@@ -18,6 +19,15 @@ describe('parameterOptions', () => {
     expect(unwrapMetricValue({ String: 'white' })).toBe('white')
     expect(unwrapMetricValue({ string: 'white' })).toBe('white')
     expect(unwrapMetricValue(42)).toBe(42)
+    expect(
+      unwrapMetricValue({ Array: [{ Integer: 1 }, { Integer: 2 }] }),
+    ).toEqual([1, 2])
+    expect(unwrapMetricValue({ Binary: 'YQ==' })).toBe('YQ==')
+  })
+
+  it('counts Unicode scalars for length alignment', () => {
+    expect(unicodeScalarLength('你好世界啊')).toBe(5)
+    expect(unicodeScalarLength('😀😀😀😀😀')).toBe(5)
   })
 
   it('reads both enum wire shapes', () => {
@@ -71,6 +81,20 @@ describe('seedCommandDefaults', () => {
     ]
     expect(seedCommandDefaults(params)).toEqual({ color: 'white' })
   })
+
+  it('unwraps tagged Array defaults into plain arrays', () => {
+    const params: ParameterDefinition[] = [
+      {
+        name: 'ids',
+        data_type: 'array',
+        default_value: { Array: [{ Integer: 1 }, { Integer: 2 }] } as never,
+      },
+    ]
+    expect(seedCommandDefaults(params)).toEqual({ ids: [1, 2] })
+    expect(
+      validateCommandParams(params, seedCommandDefaults(params)).ok,
+    ).toBe(true)
+  })
 })
 
 describe('validateCommandParams / prepareCommandParams', () => {
@@ -117,5 +141,22 @@ describe('validateCommandParams / prepareCommandParams', () => {
     ]
     const r = validateCommandParams(params, { items: '[1, 2' })
     expect(r.ok).toBe(false)
+  })
+
+  it('accepts CJK within Length max by Unicode scalars', () => {
+    const params: ParameterDefinition[] = [
+      {
+        name: 'text',
+        data_type: 'string',
+        required: true,
+        validation: [
+          { type: 'length', min: 1, max: 5, error_message: 'max 5' },
+        ],
+      },
+    ]
+    expect(validateCommandParams(params, { text: '你好世界啊' }).ok).toBe(true)
+    expect(validateCommandParams(params, { text: '你好世界啊六' }).ok).toBe(
+      false,
+    )
   })
 })

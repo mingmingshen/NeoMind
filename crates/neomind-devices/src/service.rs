@@ -1732,13 +1732,18 @@ impl DeviceService {
         }
         match (a, b) {
             (MetricValue::String(s), MetricValue::Integer(i))
-            | (MetricValue::Integer(i), MetricValue::String(s)) => s.parse::<i64>().ok() == Some(*i),
-            (MetricValue::String(s), MetricValue::Float(f))
-            | (MetricValue::Float(f), MetricValue::String(s)) => {
-                s.parse::<f64>().ok().is_some_and(|n| (n - *f).abs() < f64::EPSILON)
+            | (MetricValue::Integer(i), MetricValue::String(s)) => {
+                s.parse::<i64>().ok() == Some(*i)
             }
+            (MetricValue::String(s), MetricValue::Float(f))
+            | (MetricValue::Float(f), MetricValue::String(s)) => s
+                .parse::<f64>()
+                .ok()
+                .is_some_and(|n| (n - *f).abs() < f64::EPSILON),
             (MetricValue::Integer(i), MetricValue::Float(f))
-            | (MetricValue::Float(f), MetricValue::Integer(i)) => (*i as f64 - *f).abs() < f64::EPSILON,
+            | (MetricValue::Float(f), MetricValue::Integer(i)) => {
+                (*i as f64 - *f).abs() < f64::EPSILON
+            }
             (MetricValue::String(s), MetricValue::Boolean(b))
             | (MetricValue::Boolean(b), MetricValue::String(s)) => {
                 matches!(
@@ -1770,12 +1775,13 @@ impl DeviceService {
                             ))
                         })?;
                         if !re.is_match(s) {
-                            return Err(DeviceError::InvalidParameter(if error_message.is_empty()
-                            {
-                                format!("Parameter '{}' failed pattern validation", name)
-                            } else {
-                                error_message.clone()
-                            }));
+                            return Err(DeviceError::InvalidParameter(
+                                if error_message.is_empty() {
+                                    format!("Parameter '{}' failed pattern validation", name)
+                                } else {
+                                    error_message.clone()
+                                },
+                            ));
                         }
                     }
                 }
@@ -1791,15 +1797,16 @@ impl DeviceService {
                     };
                     if let Some(n) = n {
                         if n < *min || n > *max {
-                            return Err(DeviceError::InvalidParameter(if error_message.is_empty()
-                            {
-                                format!(
-                                    "Parameter '{}' value {} out of validation range [{}, {}]",
-                                    name, n, min, max
-                                )
-                            } else {
-                                error_message.clone()
-                            }));
+                            return Err(DeviceError::InvalidParameter(
+                                if error_message.is_empty() {
+                                    format!(
+                                        "Parameter '{}' value {} out of validation range [{}, {}]",
+                                        name, n, min, max
+                                    )
+                                } else {
+                                    error_message.clone()
+                                },
+                            ));
                         }
                     }
                 }
@@ -1808,22 +1815,25 @@ impl DeviceService {
                     max,
                     error_message,
                 } => {
+                    // Unicode scalar count — matches frontend `[...s].length`
+                    // (not UTF-8 bytes; CJK "你好世界啊" is 5, not 15).
                     let len = match value {
-                        MetricValue::String(s) => Some(s.len()),
+                        MetricValue::String(s) => Some(s.chars().count()),
                         MetricValue::Array(a) => Some(a.len()),
                         _ => None,
                     };
                     if let Some(len) = len {
                         if len < *min || len > *max {
-                            return Err(DeviceError::InvalidParameter(if error_message.is_empty()
-                            {
-                                format!(
-                                    "Parameter '{}' length {} out of range [{}, {}]",
-                                    name, len, min, max
-                                )
-                            } else {
-                                error_message.clone()
-                            }));
+                            return Err(DeviceError::InvalidParameter(
+                                if error_message.is_empty() {
+                                    format!(
+                                        "Parameter '{}' length {} out of range [{}, {}]",
+                                        name, len, min, max
+                                    )
+                                } else {
+                                    error_message.clone()
+                                },
+                            ));
                         }
                     }
                 }
@@ -1837,6 +1847,27 @@ impl DeviceService {
             }
         }
         Ok(())
+    }
+
+    /// Infer a `MetricDataType` from a JSON value when Array `element_type`
+    /// is unset (schema `"Array"` without typed elements).
+    fn infer_metric_data_type_from_json(json: &serde_json::Value) -> super::mdl::MetricDataType {
+        use super::mdl::MetricDataType;
+        match json {
+            serde_json::Value::Bool(_) => MetricDataType::Boolean,
+            serde_json::Value::Number(n) => {
+                if n.is_i64() || n.is_u64() {
+                    MetricDataType::Integer
+                } else {
+                    MetricDataType::Float
+                }
+            }
+            serde_json::Value::String(_) => MetricDataType::String,
+            serde_json::Value::Array(_) => MetricDataType::Array { element_type: None },
+            // Objects / null have no dedicated command param type — String
+            // keeps conversion failure-open via the Null / catch-all arms.
+            _ => MetricDataType::String,
+        }
     }
 
     /// Convert JSON value to MetricValue based on expected type.
@@ -1888,11 +1919,19 @@ impl DeviceService {
                 Ok(MetricValue::String(s.clone()))
             }
             (serde_json::Value::Array(arr), super::mdl::MetricDataType::Array { element_type }) => {
-                let elem_ty = element_type
-                    .as_deref()
-                    .unwrap_or(&super::mdl::MetricDataType::String);
                 let mut out = Vec::with_capacity(arr.len());
                 for item in arr {
+                    let inferred;
+                    let elem_ty = match element_type.as_deref() {
+                        Some(ty) => ty,
+                        None => {
+                            // Plain `"Array"` / `{ Array: {} }` leaves element_type
+                            // unset — infer from each JSON item so `[1,2]` becomes
+                            // integers instead of failing String conversion.
+                            inferred = Self::infer_metric_data_type_from_json(item);
+                            &inferred
+                        }
+                    };
                     out.push(self.json_to_metric_value(item, elem_ty)?);
                 }
                 Ok(MetricValue::Array(out))
@@ -2600,12 +2639,82 @@ mod tests {
             ])
         );
 
-        // Catch-all must not stringify a JSON string into "\"white\""
-        let mismatch = service.json_to_metric_value(
-            &serde_json::json!("white"),
-            &MetricDataType::Integer,
+        // Untyped Array: infer element types from JSON (`[1,2]` → integers).
+        let untyped = MetricDataType::Array { element_type: None };
+        let got = service
+            .json_to_metric_value(&serde_json::json!([1, 2]), &untyped)
+            .unwrap();
+        assert_eq!(
+            got,
+            MetricValue::Array(vec![MetricValue::Integer(1), MetricValue::Integer(2),])
         );
+        let got = service
+            .json_to_metric_value(&serde_json::json!([1.5, 2.25]), &untyped)
+            .unwrap();
+        assert_eq!(
+            got,
+            MetricValue::Array(vec![MetricValue::Float(1.5), MetricValue::Float(2.25),])
+        );
+
+        // Catch-all must not stringify a JSON string into "\"white\""
+        let mismatch =
+            service.json_to_metric_value(&serde_json::json!("white"), &MetricDataType::Integer);
         assert!(mismatch.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_length_rule_counts_unicode_scalars() {
+        let event_bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let service = DeviceService::new(registry.clone(), event_bus);
+
+        use crate::mdl::MetricDataType;
+        use crate::mdl_format::{CommandDefinition, ParameterDefinition, ValidationRule};
+
+        let command_def = CommandDefinition {
+            name: "label".to_string(),
+            display_name: "Label".to_string(),
+            payload_template: r#"{"text":"${text}"}"#.to_string(),
+            parameters: vec![ParameterDefinition {
+                name: "text".to_string(),
+                display_name: "Text".to_string(),
+                data_type: MetricDataType::String,
+                default_value: None,
+                min: None,
+                max: None,
+                unit: String::new(),
+                allowed_values: vec![],
+                required: true,
+                visible_when: None,
+                group: None,
+                help_text: String::new(),
+                validation: vec![ValidationRule::Length {
+                    min: 1,
+                    max: 5,
+                    error_message: "max 5 chars".into(),
+                }],
+            }],
+            samples: vec![],
+            description: String::new(),
+            fixed_values: std::collections::HashMap::new(),
+            parameter_groups: vec![],
+        };
+
+        // Five CJK characters = 5 Unicode scalars (15 UTF-8 bytes) → OK.
+        let mut ok = HashMap::new();
+        ok.insert("text".to_string(), serde_json::json!("你好世界啊"));
+        assert!(service.validate_command_params(&command_def, ok).is_ok());
+
+        // Supplementary plane emoji: one scalar (may be 2 UTF-16 units).
+        let mut emoji = HashMap::new();
+        emoji.insert("text".to_string(), serde_json::json!("😀😀😀😀😀"));
+        assert!(service.validate_command_params(&command_def, emoji).is_ok());
+
+        let mut too_long = HashMap::new();
+        too_long.insert("text".to_string(), serde_json::json!("你好世界啊六"));
+        assert!(service
+            .validate_command_params(&command_def, too_long)
+            .is_err());
     }
 
     #[tokio::test]
@@ -2731,7 +2840,9 @@ mod tests {
         // Explicit enum value
         let mut params = HashMap::new();
         params.insert("color".to_string(), serde_json::json!("black"));
-        let result = service.validate_command_params(&command_def, params).unwrap();
+        let result = service
+            .validate_command_params(&command_def, params)
+            .unwrap();
         assert_eq!(
             result.get("color"),
             Some(&MetricValue::String("black".into()))
