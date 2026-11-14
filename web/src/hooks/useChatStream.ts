@@ -480,13 +480,14 @@ export function useChatStream(options: UseChatStreamOptions) {
         stopWatchdog()
         // Skip 0 / u32::MAX — invalid meters must not paint or persist the ring.
         // Compact gating uses the server-side AgentEvent, not this UI payload.
-        if (plausiblePromptTokenMeter(data.tokenUsage?.promptTokens)) {
+        const endUsage = data.tokenUsage
+        if (endUsage && plausiblePromptTokenMeter(endUsage.promptTokens)) {
           optionsRef.current.onTokenUsage?.(
             {
-              promptTokens: data.tokenUsage.promptTokens,
-              systemPromptTokens: data.tokenUsage.systemPromptTokens,
-              toolTokens: data.tokenUsage.toolTokens,
-              maxContextTokens: data.tokenUsage.maxContextTokens,
+              promptTokens: endUsage.promptTokens,
+              systemPromptTokens: endUsage.systemPromptTokens,
+              toolTokens: endUsage.toolTokens,
+              maxContextTokens: endUsage.maxContextTokens,
             },
             data.sessionId,
           )
