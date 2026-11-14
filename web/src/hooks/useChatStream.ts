@@ -31,6 +31,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { plausiblePromptTokenMeter } from "@/lib/contextUsage"
 import { generateId } from "@/lib/id"
 import { ws } from "@/lib/websocket"
 import type { ServerMessage, ToolCall } from "@/types"
@@ -477,7 +478,9 @@ export function useChatStream(options: UseChatStreamOptions) {
 
       case "end": {
         stopWatchdog()
-        if (data.tokenUsage?.promptTokens) {
+        // Skip 0 / u32::MAX — invalid meters must not paint or persist the ring.
+        // Compact gating uses the server-side AgentEvent, not this UI payload.
+        if (plausiblePromptTokenMeter(data.tokenUsage?.promptTokens)) {
           optionsRef.current.onTokenUsage?.(
             {
               promptTokens: data.tokenUsage.promptTokens,

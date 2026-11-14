@@ -350,7 +350,13 @@ async fn process_stream_to_channel(
                             // the user to wonder why old facts are forgotten.
                             "historyTruncated": history_truncated,
                         });
-                        if let Some(pt) = prompt_tokens {
+                        // Compact gate above keeps invalid meters as Some(0/MAX);
+                        // the UI ring must not — omit tokenUsage for implausible.
+                        if let Some(pt) = prompt_tokens
+                            .as_ref()
+                            .copied()
+                            .filter(|pt| neomind_core::plausible_prompt_token_meter(*pt))
+                        {
                             // Context meter denominator: the session model's
                             // real window, so the UI can show usage as a
                             // ratio instead of a raw token count.
@@ -364,7 +370,7 @@ async fn process_stream_to_channel(
                                 None => 0,
                             };
                             let ratio = if max_ctx > 0 {
-                                (*pt as f64 / max_ctx as f64 * 1000.0).round() / 1000.0
+                                (pt as f64 / max_ctx as f64 * 1000.0).round() / 1000.0
                             } else {
                                 0.0
                             };
@@ -2579,6 +2585,22 @@ mod history_pagination_tests {
         let (full, has_more) = slice_history(&h, Some(0), None); // 0 = no paging
         assert_eq!(full.len(), 8);
         assert!(!has_more);
+    }
+}
+
+#[cfg(test)]
+mod end_token_usage_ui_tests {
+    /// Mirror of the End JSON gate: only plausible meters become tokenUsage.
+    fn end_ui_prompt_tokens(prompt_tokens: Option<u32>) -> Option<u32> {
+        prompt_tokens.filter(|pt| neomind_core::plausible_prompt_token_meter(*pt))
+    }
+
+    #[test]
+    fn invalid_end_meters_omit_ui_token_usage() {
+        assert_eq!(end_ui_prompt_tokens(Some(0)), None);
+        assert_eq!(end_ui_prompt_tokens(Some(u32::MAX)), None);
+        assert_eq!(end_ui_prompt_tokens(None), None);
+        assert_eq!(end_ui_prompt_tokens(Some(4200)), Some(4200));
     }
 }
 

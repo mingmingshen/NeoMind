@@ -244,6 +244,41 @@ describe('useChatStream', () => {
     )
   })
 
+  it('end with u32::MAX does not replace a previously valid meter', async () => {
+    const onTokenUsage = vi.fn()
+    render(<Harness onEnd={vi.fn()} onTokenUsage={onTokenUsage} />)
+
+    act(() => latest.beginTurn())
+    await act(async () => {
+      emit({
+        type: 'end',
+        sessionId: 's1',
+        tokenUsage: {
+          promptTokens: 4200,
+          systemPromptTokens: 1000,
+          toolTokens: 200,
+          maxContextTokens: 32768,
+        },
+      } as ServerMessage)
+    })
+    expect(onTokenUsage).toHaveBeenCalledTimes(1)
+    expect(onTokenUsage.mock.calls[0][0].promptTokens).toBe(4200)
+
+    act(() => latest.beginTurn())
+    await act(async () => {
+      emit({
+        type: 'end',
+        sessionId: 's1',
+        tokenUsage: {
+          promptTokens: 0xffffffff,
+          maxContextTokens: 32768,
+        },
+      } as ServerMessage)
+    })
+    // Invalid End must not call onTokenUsage — prior valid meter stands.
+    expect(onTokenUsage).toHaveBeenCalledTimes(1)
+  })
+
   // ── mid-turn interruption (session switch / detach-restore) ──
 
   it('a mid-turn hardReset marks the end result interrupted (view takes server history)', async () => {
