@@ -1,4 +1,4 @@
-import { MessageSquare, Settings } from "lucide-react"
+import { Compass, MessageSquare } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
@@ -6,7 +6,7 @@ import { useIsMobile } from "@/hooks/useMobile"
 
 const items = [
   { id: "chat", path: "/chat", icon: MessageSquare, label: "nav.dashboard" },
-  { id: "system", path: "/system", icon: Settings, label: "system.pageTitle" },
+  { id: "system", path: "/system", icon: Compass, label: "system.pageTitle" },
 ] as const
 
 function activeItem(pathname: string) {
@@ -16,7 +16,7 @@ function activeItem(pathname: string) {
 
 /** Chat is the immersive home surface: the composer owns the bottom edge, so
  * the capsule would only compete with it for space. Chat exits to the System
- * hub via the page-header hamburger (→ /system). */
+ * hub from the left workspace drawer footer (sessions + 工作台). */
 function isChatRoute(pathname: string) {
   return pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/")
 }

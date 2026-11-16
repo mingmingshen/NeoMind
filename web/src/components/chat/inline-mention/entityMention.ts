@@ -11,6 +11,8 @@ export type EntityMentionAttrs = {
   id: string | null
   label: string | null
   entityType: EntityType | null
+  /** Localized type word for display (falls back to entityType). */
+  typeLabel: string | null
   mentionSuggestionChar?: string
 }
 
@@ -18,6 +20,7 @@ export type EntityMentionItem = {
   id: string
   label: string
   entityType: EntityType
+  typeLabel?: string
 }
 
 export const EntityMention = Mention.extend<
@@ -37,6 +40,14 @@ export const EntityMention = Mention.extend<
           return { "data-entity-type": attributes.entityType }
         },
       },
+      typeLabel: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-type-label"),
+        renderHTML: (attributes) => {
+          if (!attributes.typeLabel) return {}
+          return { "data-type-label": attributes.typeLabel }
+        },
+      },
     }
   },
 
@@ -47,6 +58,8 @@ export const EntityMention = Mention.extend<
   renderHTML({ node, HTMLAttributes }) {
     const label = node.attrs.label ?? node.attrs.id ?? ""
     const entityType = node.attrs.entityType ?? ""
+    const typeLabel = (node.attrs.typeLabel as string | null) || entityType
+    const typeClass = entityType ? ` nm-mention--${entityType}` : ""
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
@@ -54,10 +67,13 @@ export const EntityMention = Mention.extend<
         "data-id": node.attrs.id,
         "data-label": label,
         "data-entity-type": entityType,
-        class: "nm-mention",
+        // Dense multi-mention: `@name` only; type lives in title + color.
+        title: typeLabel ? `${typeLabel} · ${node.attrs.id ?? ""}` : undefined,
+        class: `nm-mention${typeClass}`,
         contenteditable: "false",
       }),
-      `@${label}`,
+      ["span", { class: "nm-mention-at", "aria-hidden": "true" }, "@"],
+      ["span", { class: "nm-mention-label" }, label],
     ]
   },
 })

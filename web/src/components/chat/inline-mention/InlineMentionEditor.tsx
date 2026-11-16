@@ -24,6 +24,7 @@ import {
   inlineDocToTipTapJson,
   tipTapJsonToInlineDoc,
 } from "./docBridge"
+import { mentionChipHostSelectors } from "@/components/chat/mentionChipStyles"
 
 export type MentionSuggestionApi = {
   query: string
@@ -51,7 +52,11 @@ export interface InlineMentionEditorProps {
   }) => void
   onSuggestionStart: (api: MentionSuggestionApi) => void
   onSuggestionUpdate: (api: MentionSuggestionApi) => void
-  onSuggestionExit: () => void
+  /**
+   * TipTap suggestion exited. `editorFocused` distinguishes blur (mobile Sheet
+   * / option tap) from an in-editor dismiss (deleted `@`, Escape).
+   */
+  onSuggestionExit: (meta?: { editorFocused: boolean }) => void
   onSuggestionKeyDown?: (props: SuggestionKeyDownProps) => boolean
   /** Return true to claim the key (e.g. Enter-to-send). */
   onKeyDown?: (event: KeyboardEvent) => boolean | void
@@ -59,6 +64,12 @@ export interface InlineMentionEditorProps {
   onBlur?: () => void
   /** Bump to insert `@` at the caret (toolbar). */
   openMentionRequest?: number
+  /** TipTap composition lifecycle — host uses this for IME Enter/mention guards. */
+  onCompositionChange?: (composing: boolean) => void
+}
+
+function contentNodesKey(nodes: ChatContentNode[] | undefined): string {
+  return nodes?.length ? JSON.stringify(nodes) : ""
 }
 
 function toSuggestionApi(
@@ -71,6 +82,7 @@ function toSuggestionApi(
         id: item.id,
         label: item.label,
         entityType: item.entityType,
+        typeLabel: item.typeLabel ?? null,
       })
     },
   }
@@ -97,6 +109,7 @@ export function InlineMentionEditor({
   onFocus,
   onBlur,
   openMentionRequest = 0,
+  onCompositionChange,
 }: InlineMentionEditorProps) {
   const suggestionKeyDownRef = useRef(onSuggestionKeyDown)
   const onSuggestionStartRef = useRef(onSuggestionStart)
@@ -104,8 +117,12 @@ export function InlineMentionEditor({
   const onSuggestionExitRef = useRef(onSuggestionExit)
   const onPayloadChangeRef = useRef(onPayloadChange)
   const onKeyDownRef = useRef(onKeyDown)
+  const onCompositionChangeRef = useRef(onCompositionChange)
   const skipEmit = useRef(false)
+  const isComposing = useRef(false)
   const lastPlain = useRef(value)
+  // Empty until the first sync/emit — initial contentNodes (history fill) must
+  // still enter via setContent; only post-emit echoes share this key.
   const lastNodesKey = useRef("")
   const lastOpenMention = useRef(openMentionRequest)
   const hostDivRef = useRef<HTMLDivElement | null>(null)
@@ -117,6 +134,7 @@ export function InlineMentionEditor({
     onSuggestionExitRef.current = onSuggestionExit
     onPayloadChangeRef.current = onPayloadChange
     onKeyDownRef.current = onKeyDown
+    onCompositionChangeRef.current = onCompositionChange
   })
 
   const mentionExtension = useMemo(
@@ -144,8 +162,10 @@ export function InlineMentionEditor({
             onUpdate: (props) => {
               onSuggestionUpdateRef.current(toSuggestionApi(props))
             },
-            onExit: () => {
-              onSuggestionExitRef.current()
+            onExit: (props) => {
+              onSuggestionExitRef.current({
+                editorFocused: props.editor.view.hasFocus(),
+              })
             },
             onKeyDown: (props) => {
               if (suggestionKeyDownRef.current) {
@@ -167,6 +187,7 @@ export function InlineMentionEditor({
                     id: attrs.id,
                     label: attrs.label,
                     entityType: attrs.entityType,
+                    typeLabel: attrs.typeLabel ?? null,
                     mentionSuggestionChar: "@",
                   },
                 },
@@ -218,10 +239,15 @@ export function InlineMentionEditor({
       },
     },
     onUpdate: ({ editor: ed }) => {
-      if (skipEmit.current) return
+      // Mid-IME: ProseMirror may fire updates for intermediate marks; do not
+      // push those to the controlled parent (echo setContent kills composition).
+      if (skipEmit.current || isComposing.current) return
       const doc = tipTapJsonToInlineDoc(ed.getJSON())
       const payload = inlineDocToChatPayload(doc)
       lastPlain.current = payload.message
+      // Mark this snapshot as already applied so the controlled contentNodes
+      // prop does not bounce back through setContent on every keystroke.
+      lastNodesKey.current = contentNodesKey(payload.contentNodes)
       onPayloadChangeRef.current({ ...payload, doc })
     },
     onFocus: () => onFocus?.(),
@@ -243,12 +269,39 @@ export function InlineMentionEditor({
     }
   }, [editor, listboxId, mentionOpen])
 
-  // Sync external clear / welcome prompt / draft restore.
+  // CJK/Japanese IME: never rewrite the document while composing.
   useEffect(() => {
     if (!editor) return
-    const nodesKey = contentNodes?.length
-      ? JSON.stringify(contentNodes)
-      : ""
+    const dom = editor.view.dom
+    const onStart = () => {
+      isComposing.current = true
+      onCompositionChangeRef.current?.(true)
+    }
+    const onEnd = () => {
+      isComposing.current = false
+      onCompositionChangeRef.current?.(false)
+      if (skipEmit.current) return
+      const doc = tipTapJsonToInlineDoc(editor.getJSON())
+      const payload = inlineDocToChatPayload(doc)
+      lastPlain.current = payload.message
+      lastNodesKey.current = contentNodesKey(payload.contentNodes)
+      onPayloadChangeRef.current({ ...payload, doc })
+    }
+    dom.addEventListener("compositionstart", onStart)
+    dom.addEventListener("compositionend", onEnd)
+    return () => {
+      dom.removeEventListener("compositionstart", onStart)
+      dom.removeEventListener("compositionend", onEnd)
+    }
+  }, [editor])
+
+  // Sync external clear / welcome prompt / draft restore.
+  // Own emits update lastPlain/lastNodesKey first so they never re-enter here.
+  useEffect(() => {
+    if (!editor) return
+    // setContent mid-composition aborts the IME session (CJK input breaks).
+    if (isComposing.current) return
+    const nodesKey = contentNodesKey(contentNodes)
     if (contentNodes && contentNodes.length > 0 && nodesKey !== lastNodesKey.current) {
       const fromNodes = contentNodesToInlineDoc(contentNodes)
       const fromPayload = inlineDocToChatPayload(fromNodes)
@@ -333,13 +386,7 @@ export function InlineMentionEditor({
         "[&_.is-editor-empty:first-child::before]:h-0",
         "[&_.is-editor-empty:first-child::before]:text-muted-foreground",
         "[&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]",
-        "[&_.nm-mention]:inline-flex [&_.nm-mention]:items-center",
-        "[&_.nm-mention]:rounded-full [&_.nm-mention]:border [&_.nm-mention]:border-border",
-        "[&_.nm-mention]:bg-muted [&_.nm-mention]:px-1.5 [&_.nm-mention]:py-px",
-        "[&_.nm-mention]:text-xs [&_.nm-mention]:align-baseline",
-        "[&_.nm-mention[data-invalid=true]]:border-error",
-        "[&_.nm-mention[data-invalid=true]]:bg-error-light",
-        "[&_.nm-mention[data-invalid=true]]:text-error",
+        mentionChipHostSelectors,
         disabled && "opacity-60",
         className,
       )}

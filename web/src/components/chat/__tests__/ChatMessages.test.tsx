@@ -213,8 +213,34 @@ describe('ChatMessages', () => {
     expect(chips[0].getAttribute('data-id')).toBe('green-01')
     expect(chips[1].getAttribute('data-id')).toBe('green-02')
     expect(chips[0].textContent).toContain('温室A')
+    // Dense `@name` tint — no type word / fill clutter when many refs stack.
+    expect(chips[0].className).toContain('text-accent-cyan')
+    expect(chips[0].className).not.toMatch(/\btext-xs\b|\bbg-card\b|\bbg-muted\b/)
+    expect(chips[0].textContent).toBe('@温室A')
+    expect(chips[0].querySelector('.nm-mention-label')?.textContent).toBe('温室A')
+    expect(chips[0].getAttribute('title') ?? '').toMatch(/device|设备/)
     // Plain markdown path must not swallow the ordered nodes.
     expect(screen.queryByText('把 @温室A 复制给 @温室B')).toBeNull()
+  })
+
+  it('shows in-thread compacting status instead of relying on toasts', () => {
+    render(
+      <ChatMessages
+        messages={[]}
+        user={null}
+        isStreaming={false}
+        streamingContent=""
+        streamingThinking=""
+        streamingRoundThinking={{}}
+        streamingToolCalls={[]}
+        roundContents={{}}
+        currentRound={1}
+        contextAction={{ phase: 'running' }}
+      />,
+    )
+    const status = document.querySelector('[data-context-action="running"]')
+    expect(status).toBeTruthy()
+    expect(status!.textContent).toMatch(/Compacting|压缩|context\.compacting/i)
   })
 
   it('reuse button fills the composer via onReuseUserMessage', () => {

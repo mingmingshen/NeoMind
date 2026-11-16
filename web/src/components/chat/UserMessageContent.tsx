@@ -8,6 +8,11 @@ import { useTranslation } from "react-i18next"
 import type { ChatContentNode } from "@/types"
 import { contentNodesHaveReferences } from "@/lib/chat/contentProtocol"
 import { MarkdownMessage } from "./MarkdownMessage"
+import {
+  mentionAtClass,
+  mentionChipClass,
+  mentionLabelClass,
+} from "./mentionChipStyles"
 
 interface UserMessageContentProps {
   content: string
@@ -33,15 +38,17 @@ export function UserMessageContent({ content, contentNodes }: UserMessageContent
         ) : (
           <span
             key={i}
-            className="nm-mention mx-0.5 inline-flex items-center rounded-full border border-border bg-muted px-1.5 py-px text-xs align-baseline"
+            className={mentionChipClass(n.type, "mx-0.5")}
             data-type={n.type}
             data-id={n.id}
             title={`${t(`mention.${n.type}`, n.type)} · ${n.id}`}
           >
-            <span className="mr-1 text-muted-foreground">
-              {t(`mention.${n.type}`, n.type)}
+            <span className={mentionAtClass()} aria-hidden="true">
+              @
             </span>
-            {n.labelSnapshot || n.id}
+            <span className={mentionLabelClass()}>
+              {n.labelSnapshot || n.id}
+            </span>
           </span>
         ),
       )}
