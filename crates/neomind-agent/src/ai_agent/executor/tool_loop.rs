@@ -142,33 +142,6 @@ impl AgentExecutor {
                 skill_injected = true;
             }
 
-            // Generation budget shrinks with the history so the REQUEST
-            // (prompt + completion) can never exceed the window: the old
-            // fixed 4,000 max_tokens rode on top of whatever the history
-            // had grown to — a 26K-token history on a 32K window with ~7K
-            // prompt overhead produced a 33K-token request that errored
-            // 400 before the overflow-retry could even run (2026-11-11
-            // ctxfix validation, en/A3). Reserve for response first, floor
-            // at 512 so a nearly-full window still yields a usable reply.
-            let history_tokens = neomind_core::llm::compaction::estimate_messages_tokens(messages);
-            let response_budget =
-                executor_response_budget(context_window, tool_overhead_tokens, history_tokens);
-            let input = LlmInput {
-                messages: messages.clone(),
-                params: GenerationParams {
-                    // AgentDefaults is the /api/settings/agent surface — the
-                    // loop used to hardcode 0.7 and ignore it (config only
-                    // fed the chat path).
-                    temperature: Some(agent_defaults.default_temperature),
-                    top_p: Some(agent_defaults.default_top_p),
-                    max_tokens: Some(response_budget),
-                    ..Default::default()
-                },
-                model: None,
-                stream: false,
-                tools: Some(filtered_tools.to_vec()),
-            };
-
             self.send_thinking(
                 &agent.id,
                 execution_id,
@@ -201,10 +174,35 @@ impl AgentExecutor {
                 let mut overflow_retried = false;
                 let mut result: Option<neomind_core::llm::backend::LlmOutput> = None;
                 loop {
+                    // Rebuild LlmInput inside the retry loop (C1) so
+                    // overflow compaction of `messages` and a recomputed
+                    // response budget actually reach the next request.
+                    let history_tokens =
+                        neomind_core::llm::compaction::estimate_messages_tokens(messages);
+                    let response_budget = executor_response_budget(
+                        context_window,
+                        tool_overhead_tokens,
+                        history_tokens,
+                    );
+                    let input = LlmInput {
+                        messages: messages.clone(),
+                        params: GenerationParams {
+                            // AgentDefaults is the /api/settings/agent surface —
+                            // the loop used to hardcode 0.7 and ignore it
+                            // (config only fed the chat path).
+                            temperature: Some(agent_defaults.default_temperature),
+                            top_p: Some(agent_defaults.default_top_p),
+                            max_tokens: Some(response_budget),
+                            ..Default::default()
+                        },
+                        model: None,
+                        stream: false,
+                        tools: Some(filtered_tools.to_vec()),
+                    };
                     let generate_result = if use_streaming {
-                        llm_runtime.generate_to_completion(input.clone()).await
+                        llm_runtime.generate_to_completion(input).await
                     } else {
-                        llm_runtime.generate(input.clone()).await
+                        llm_runtime.generate(input).await
                     };
                     match generate_result {
                         Ok(o) => {
@@ -1368,6 +1366,43 @@ mod response_budget_tests {
             budget, 4000,
             "system tokens were subtracted from both overhead and history: history={history}"
         );
+    }
+
+    /// C1 contract: after messages shrink (overflow compact), the rebuilt
+    /// response budget must rise vs the pre-compact estimate.
+    #[test]
+    fn overflow_compact_raises_response_budget_for_retry_input() {
+        let ctx = 8_192usize;
+        let overhead = 500usize;
+        let big = Message {
+            role: MessageRole::User,
+            content: Content::Text("知".repeat(20_000)),
+            tool_name: None,
+            timestamp: None,
+            compress_evidence: None,
+        };
+        let before = neomind_core::llm::compaction::estimate_messages_tokens(std::slice::from_ref(
+            &big,
+        ));
+        let budget_before = executor_response_budget(ctx, overhead, before);
+
+        // Simulate hard-compact by keeping a short message only.
+        let compact = Message {
+            role: MessageRole::User,
+            content: Content::Text("summary".into()),
+            tool_name: None,
+            timestamp: None,
+            compress_evidence: None,
+        };
+        let after = neomind_core::llm::compaction::estimate_messages_tokens(std::slice::from_ref(
+            &compact,
+        ));
+        let budget_after = executor_response_budget(ctx, overhead, after);
+        assert!(
+            budget_after > budget_before,
+            "retry must recompute max_tokens after compact (before={budget_before}, after={budget_after})"
+        );
+        assert!(after < before, "compacted history must be smaller");
     }
 
     #[test]

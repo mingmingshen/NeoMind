@@ -498,18 +498,43 @@ impl WebhookAdapter {
             .extract(&device_id, &device_type, &payload.data)
             .await;
 
-        // Emit all extracted metrics. The payload-level quality indicator
-        // applies to every metric in this uplink.
+        // A3: two-phase — convert+write the full batch first, then emit
+        // DeviceEvent + EventBus so whole-device agents see every field
+        // (incl. image) before the cooldown window starts.
+        let mut prepared: Vec<(String, MetricValue)> = Vec::with_capacity(result.metrics.len());
         for metric in result.metrics {
-            self.emit_metric_event(
-                device_id.clone(),
-                metric.name,
+            let value = Self::convert_binary_to_url(
+                &device_id,
+                &metric.name,
+                timestamp,
                 metric.value,
+                self.data_dir.clone(),
+            )
+            .await;
+            prepared.push((metric.name, value));
+            metrics_count += 1;
+        }
+
+        for (metric_name, value) in &prepared {
+            self.persist_metric(
+                device_id.clone(),
+                metric_name.clone(),
+                value.clone(),
                 timestamp,
                 payload.quality,
             )
             .await;
-            metrics_count += 1;
+        }
+
+        for (metric_name, value) in prepared {
+            self.publish_metric_events(
+                device_id.clone(),
+                metric_name,
+                value,
+                timestamp,
+                payload.quality,
+            )
+            .await;
         }
 
         // Log warnings if any
@@ -589,8 +614,40 @@ impl WebhookAdapter {
         }
     }
 
-    /// Emit a metric event to both channels and EventBus.
-    async fn emit_metric_event(
+    /// Persist one metric to time-series storage (A3 phase 1).
+    async fn persist_metric(
+        &self,
+        device_id: String,
+        metric_name: String,
+        value: MetricValue,
+        timestamp: i64,
+        quality: Option<f32>,
+    ) {
+        let storage_guard = self.telemetry_storage.read().await;
+        if let Some(storage) = storage_guard.as_ref() {
+            let data_point = crate::telemetry::DataPoint {
+                timestamp,
+                value,
+                // The payload's quality indicator (0-1) used to be
+                // parsed and then dropped on the floor here — the API
+                // docs promise it and devices send it.
+                quality,
+                metadata: None,
+            };
+            if let Err(e) = storage
+                .write(&format!("device:{}", device_id), &metric_name, data_point)
+                .await
+            {
+                warn!(
+                    "Failed to write telemetry for {}/{}: {}",
+                    device_id, metric_name, e
+                );
+            }
+        }
+    }
+
+    /// Publish one metric to the device channel and EventBus (A3 phase 2).
+    async fn publish_metric_events(
         &self,
         device_id: String,
         metric_name: String,
@@ -600,17 +657,6 @@ impl WebhookAdapter {
     ) {
         use neomind_core::NeoMindEvent;
 
-        // Convert Binary to URL before storage + event bus (fork point)
-        let value = Self::convert_binary_to_url(
-            &device_id,
-            &metric_name,
-            timestamp,
-            value,
-            self.data_dir.clone(),
-        )
-        .await;
-
-        // Emit to device event channel
         let _ = self.event_tx.send(DeviceEvent::Metric {
             device_id: device_id.clone(),
             metric: metric_name.clone(),
@@ -618,32 +664,6 @@ impl WebhookAdapter {
             timestamp,
         });
 
-        // Store to time series storage
-        {
-            let storage_guard = self.telemetry_storage.read().await;
-            if let Some(storage) = storage_guard.as_ref() {
-                let data_point = crate::telemetry::DataPoint {
-                    timestamp,
-                    value: value.clone(),
-                    // The payload's quality indicator (0-1) used to be
-                    // parsed and then dropped on the floor here — the API
-                    // docs promise it and devices send it.
-                    quality,
-                    metadata: None,
-                };
-                if let Err(e) = storage
-                    .write(&format!("device:{}", device_id), &metric_name, data_point)
-                    .await
-                {
-                    warn!(
-                        "Failed to write telemetry for {}/{}: {}",
-                        device_id, metric_name, e
-                    );
-                }
-            }
-        }
-
-        // Publish to EventBus if available
         if let Some(bus) = &self.event_bus {
             let core_value = match &value {
                 MetricValue::Integer(i) => neomind_core::MetricValue::Integer(*i),
@@ -651,7 +671,6 @@ impl WebhookAdapter {
                 MetricValue::String(s) => neomind_core::MetricValue::String(s.clone()),
                 MetricValue::Boolean(b) => neomind_core::MetricValue::Boolean(*b),
                 MetricValue::Array(arr) => {
-                    // Convert array to JSON
                     let json_arr: Vec<serde_json::Value> = arr
                         .iter()
                         .map(|v| match v {
@@ -678,6 +697,41 @@ impl WebhookAdapter {
             })
             .await;
         }
+    }
+
+    /// Emit a metric event to both channels and EventBus.
+    ///
+    /// Single-metric convenience wrapper (convert → persist → publish).
+    /// Batch uplinks use the two-phase path in `process_webhook` instead.
+    #[allow(dead_code)] // retained for single-metric / future callers
+    async fn emit_metric_event(
+        &self,
+        device_id: String,
+        metric_name: String,
+        value: MetricValue,
+        timestamp: i64,
+        quality: Option<f32>,
+    ) {
+        let value = Self::convert_binary_to_url(
+            &device_id,
+            &metric_name,
+            timestamp,
+            value,
+            self.data_dir.clone(),
+        )
+        .await;
+
+        self.persist_metric(
+            device_id.clone(),
+            metric_name.clone(),
+            value.clone(),
+            timestamp,
+            quality,
+        )
+        .await;
+
+        self.publish_metric_events(device_id, metric_name, value, timestamp, quality)
+            .await;
     }
 
     /// Get the webhook URL for a device.

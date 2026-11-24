@@ -409,6 +409,20 @@ struct DecisionDto {
     expected_outcome: String,
 }
 
+/// Lightweight input summary for API responses (D1).
+#[derive(Debug, serde::Serialize)]
+struct ExecutionInputSummaryDto {
+    metrics_collected: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_extracted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_source_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vision_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skip_reason: Option<String>,
+}
+
 /// Decision process for API responses.
 #[derive(Debug, serde::Serialize)]
 struct DecisionProcessDto {
@@ -482,6 +496,8 @@ struct AgentExecutionDetailDto {
     decision_process: Option<DecisionProcessDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<ExecutionResultDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_summary: Option<ExecutionInputSummaryDto>,
 }
 
 /// Request body for creating a new AI Agent.
@@ -874,6 +890,13 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                 confidence: record.decision_process.confidence,
                 stop_reason: record.decision_process.stop_reason,
                 tokens_used: record.decision_process.tokens_used,
+            }),
+            input_summary: record.input_summary.map(|s| ExecutionInputSummaryDto {
+                metrics_collected: s.metrics_collected,
+                image_extracted: s.image_extracted,
+                image_source_field: s.image_source_field,
+                vision_path: s.vision_path,
+                skip_reason: s.skip_reason,
             }),
             result: record.result.map(|r| ExecutionResultDto {
                 actions_executed: r

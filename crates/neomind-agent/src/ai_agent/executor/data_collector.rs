@@ -700,10 +700,13 @@ impl AgentExecutor {
             let end_time = chrono::Utc::now().timestamp();
             let start_time = end_time - (3600); // Last 1 hour for regular metrics
 
-            // Image metrics to check separately (only collect one image)
-            let image_metric_names = vec![
+            // Known image-ish metric names get a tighter 5-minute window.
+            // Classification still uses value shape via `is_image_metric`
+            // after the point is loaded (A2) — this list only picks the window.
+            let image_metric_names = [
                 "values.image",
                 "image",
+                "image_data",
                 "snapshot",
                 "values.snapshot",
                 "camera.image",
@@ -739,7 +742,10 @@ impl AgentExecutor {
                 // range query read only flushed redb — 12 metrics bound, 0
                 // collected, every time the freshest report is the point.
                 // Images get a tighter window (5 min) than regular (1 h).
-                let window_start = if image_metric_names.contains(&metric_name.as_str()) {
+                let name_suggests_image = image_metric_names.contains(&metric_name.as_str())
+                    || metric_name.to_lowercase().contains("image")
+                    || metric_name.to_lowercase().contains("snapshot");
+                let window_start = if name_suggests_image {
                     end_time - 300
                 } else {
                     start_time
@@ -1171,6 +1177,35 @@ impl AgentExecutor {
         Ok(results)
     }
 
+    /// True when this device event should pull a full-device metric snapshot.
+    fn wants_whole_device_snapshot(agent: &AiAgent, device_id: &str, field: &str) -> bool {
+        if field.is_empty() {
+            return true;
+        }
+        if agent.resources.iter().any(|r| {
+            r.resource_type == ResourceType::Device && r.resource_id == device_id
+        }) {
+            return true;
+        }
+        agent
+            .schedule
+            .parsed_event_filter()
+            .map(|f| {
+                f.any
+                    .iter()
+                    .chain(f.all.iter())
+                    .any(|s| {
+                        s.source_type == "device"
+                            && (s.id == device_id || s.id == "all")
+                            && s.field
+                                .as_deref()
+                                .map(|ff| ff.is_empty())
+                                .unwrap_or(true)
+                    })
+            })
+            .unwrap_or(false)
+    }
+
     /// Collect data including the triggering event data.
     pub(crate) async fn collect_data_with_event(
         &self,
@@ -1319,7 +1354,7 @@ impl AgentExecutor {
         // resources=[] — collect_bound_source_data must not emit the
         // misleading NO DATA COLLECTED placeholder in that case.
         let event_image_provided = is_image && (image_url.is_some() || image_base64.is_some());
-        let regular_data = self
+        let mut regular_data = self
             .collect_bound_source_data(
                 agent,
                 BoundCollectionOpts {
@@ -1328,12 +1363,45 @@ impl AgentExecutor {
             )
             .await?;
 
+        // Whole-device event snapshot (A1): when the trigger is a device with an
+        // empty field, a Device resource binding, or an event_filter source that
+        // matches this device without a field, pull the device's remaining
+        // latest metrics so the run sees the full batch (depends on A3
+        // write-before-emit so image_data is already in storage).
+        let event_source_device = &event_data.source.source_id;
+        let event_source_field = &event_data.source.field;
+        if event_data.source.source_type == "device"
+            && Self::wants_whole_device_snapshot(agent, event_source_device, event_source_field)
+        {
+            if let (Some(device_service), Some(storage)) = (
+                self.device_service.clone(),
+                self.time_series_storage.clone(),
+            ) {
+                match Self::collect_single_device_data(
+                    device_service,
+                    storage,
+                    event_source_device,
+                    None,
+                    event_data.timestamp,
+                )
+                .await
+                {
+                    Ok(snapshot) => regular_data.extend(snapshot),
+                    Err(e) => {
+                        tracing::warn!(
+                            device_id = %event_source_device,
+                            error = %e,
+                            "Whole-device snapshot collection failed; continuing with event + bound data"
+                        );
+                    }
+                }
+            }
+        }
+
         // Build the set of source keys already covered by the event data.
         // The event value's image may be expanded into sub-fields (e.g.
         // "values.image" → "values.image.image_base64"), so we match by
         // prefix to catch all variants.
-        let event_source_device = &event_data.source.source_id;
-        let event_source_field = &event_data.source.field;
 
         // Add regular data (excluding duplicates)
         for item in regular_data {
@@ -1574,51 +1642,105 @@ pub(crate) fn extract_image_data(
     }
 }
 
-/// Check if a metric value contains image data.
-pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> bool {
-    // Check metric name for image-related keywords
-    let name_indicates_image = metric_name.to_lowercase().contains("image")
-        || metric_name.to_lowercase().contains("snapshot")
-        || metric_name.to_lowercase().contains("photo")
-        || metric_name.to_lowercase().contains("picture")
-        || metric_name.to_lowercase().contains("camera")
-        || metric_name.to_lowercase().contains("video")
-        || metric_name.to_lowercase().contains("frame");
+/// Build a lightweight execution input summary (D1) — no image bytes.
+pub(crate) fn build_execution_input_summary(
+    data_collected: &[DataCollected],
+    skip_reason: Option<&str>,
+) -> neomind_storage::ExecutionInputSummary {
+    let metrics_collected = data_collected.len();
+    let image_row = data_collected.iter().find(|d| {
+        d.values
+            .get("_is_image")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    });
+    let image_extracted = image_row.map(|_| true);
+    let image_source_field = image_row.map(|d| {
+        if d.data_type.is_empty() {
+            d.source.clone()
+        } else {
+            d.data_type.clone()
+        }
+    });
+    let vision_path = image_row.map(|_| "inline_or_collected".to_string());
+    neomind_storage::ExecutionInputSummary {
+        metrics_collected,
+        image_extracted,
+        image_source_field,
+        vision_path,
+        skip_reason: skip_reason.map(|s| s.to_string()),
+    }
+}
 
-    if name_indicates_image {
+/// True when `s` looks like an image URL / path (not a bare firmware link).
+fn string_looks_like_image(s: &str) -> bool {
+    // NeoMind internal image URL (file-backed since v0.9.6). MUST be
+    // recognized here, else a non-image-keyword metric is never classified
+    // and extract_image_data never runs → silent vision loss.
+    if s.starts_with("/api/images/") {
         return true;
     }
+    if s.starts_with("data:image/") {
+        return true;
+    }
+    // Common base64 prefixes without data URL scheme.
+    // IMPORTANT: use starts_with (not contains) so a text string that
+    // merely mentions "/9j/" somewhere in the middle isn't misclassified.
+    if s.len() > 100 && crate::image_utils::infer_mime_from_base64_prefix(s).is_some() {
+        return true;
+    }
+    // External URL: only when the path has an image extension — bare
+    // https:// firmware_url / CDN links must stay ordinary metrics.
+    if let Some(path) = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+    {
+        let path_lower = path.to_lowercase();
+        let path_only = path_lower.split('?').next().unwrap_or(&path_lower);
+        return path_only.ends_with(".jpg")
+            || path_only.ends_with(".jpeg")
+            || path_only.ends_with(".png")
+            || path_only.ends_with(".gif")
+            || path_only.ends_with(".webp")
+            || path_only.ends_with(".bmp")
+            || path_only.contains("/api/images/");
+    }
+    false
+}
 
-    // Check value for URL or base64 data
+/// Check if a metric value contains image data.
+///
+/// Value-shape first (A2): name keywords alone are NOT enough — scalars like
+/// `metadata.image_id` / `image_count` must stay ordinary metrics. Bare
+/// `http(s)://` without an image path must also stay ordinary.
+pub(crate) fn is_image_metric(_metric_name: &str, value: &serde_json::Value) -> bool {
     if let Some(s) = value.as_str() {
-        // Check for URL
-        if s.starts_with("http://") || s.starts_with("https://") {
-            return true;
-        }
-        // NeoMind internal image URL (file-backed since v0.9.6). MUST be
-        // recognized here, else a non-image-keyword metric is never classified
-        // and extract_image_data never runs → silent vision loss.
-        if s.starts_with("/api/images/") {
-            return true;
-        }
-        // Check for base64 image data
-        if s.starts_with("data:image/") {
-            return true;
-        }
-        // Check for common base64 prefixes without data URL scheme.
-        // IMPORTANT: use starts_with (not contains) so a text string that
-        // merely mentions "/9j/" somewhere in the middle isn't misclassified.
-        if s.len() > 100 && crate::image_utils::infer_mime_from_base64_prefix(s).is_some() {
-            return true;
+        return string_looks_like_image(s);
+    }
+    if let Some(obj) = value.as_object() {
+        // Prefer explicit image_url / image_data keys when their values look
+        // like images; never treat presence of generic `url`/`data` alone as
+        // proof (firmware_url-style objects must not enter the vision path).
+        for key in ["image_url", "image_data", "base64", "url", "data"] {
+            if let Some(v) = obj.get(key) {
+                if let Some(s) = v.as_str() {
+                    if string_looks_like_image(s) || (key == "base64" && s.len() > 100) {
+                        return true;
+                    }
+                    if key == "base64"
+                        && crate::image_utils::infer_mime_from_base64_prefix(s).is_some()
+                    {
+                        return true;
+                    }
+                } else if key == "image_data" || key == "base64" {
+                    // Nested binary/object payloads under image keys.
+                    if !v.is_null() && !v.is_number() && !v.is_boolean() {
+                        return true;
+                    }
+                }
+            }
         }
         false
-    } else if let Some(obj) = value.as_object() {
-        // Check for image_url, url, base64, or data fields
-        obj.contains_key("image_url")
-            || obj.contains_key("url")
-            || obj.contains_key("base64")
-            || obj.contains_key("data")
-            || obj.contains_key("image_data")
     } else {
         false
     }
@@ -1791,43 +1913,48 @@ mod tests {
 
     #[test]
     fn test_is_image_metric() {
-        // Test metric name detection
-        assert!(is_image_metric("image", &serde_json::json!("some data")));
-        assert!(is_image_metric(
+        // Value-shape contract (A2): name alone is never enough.
+        assert!(!is_image_metric("image", &serde_json::json!("some data")));
+        assert!(!is_image_metric(
             "camera_image",
             &serde_json::json!("some data")
         ));
-        assert!(is_image_metric("snapshot", &serde_json::json!("some data")));
-        assert!(is_image_metric("photo", &serde_json::json!("some data")));
-
-        // Test case insensitivity
-        assert!(is_image_metric("Image", &serde_json::json!("some data")));
-        assert!(is_image_metric(
-            "IMAGE_DATA",
-            &serde_json::json!("some data")
+        assert!(!is_image_metric("snapshot", &serde_json::json!("some data")));
+        assert!(!is_image_metric(
+            "metadata.image_id",
+            &serde_json::json!("img-abc-001")
         ));
-
-        // Test negative cases
+        assert!(!is_image_metric("image_count", &serde_json::json!(3)));
+        assert!(!is_image_metric(
+            "firmware_url",
+            &serde_json::json!("https://cdn.example.com/fw/v1.2.3.bin")
+        ));
         assert!(!is_image_metric(
             "temperature",
             &serde_json::json!("some data")
         ));
+
+        // Real image payloads
+        assert!(is_image_metric(
+            "data",
+            &serde_json::json!("http://example.com/cam/shot.jpg")
+        ));
+        let obj_value = serde_json::json!({"image_url": "http://example.com/cam.jpg"});
+        assert!(is_image_metric("data", &obj_value));
+        // Generic url key with non-image value must not classify.
         assert!(!is_image_metric(
-            "humidity",
-            &serde_json::json!("some data")
+            "payload",
+            &serde_json::json!({"url": "https://cdn.example.com/fw.bin"})
         ));
 
-        // Test with object values containing image fields
-        let obj_value = serde_json::json!({"image_url": "http://example.com.jpg"});
-        assert!(is_image_metric("data", &obj_value));
-
-        // Test with base64 data
         let base64_value = serde_json::json!("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCgAyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg");
         assert!(is_image_metric("data", &base64_value));
+        assert!(is_image_metric(
+            "payload",
+            &serde_json::json!("data:image/png;base64,iVBORw0KGgo=")
+        ));
 
         // Internal /api/images/ URL with a NON-image keyword metric name.
-        // Regression guard for v0.9.6: image values are now short URL strings,
-        // so value-only detection must recognize the /api/images/ prefix.
         assert!(is_image_metric(
             "payload",
             &serde_json::json!("/api/images/dev-001/feed/1700000000.jpg")
@@ -1835,6 +1962,10 @@ mod tests {
         assert!(is_image_metric(
             "values.image",
             &serde_json::json!("/api/images/9999/values.image/1784027451.jpg")
+        ));
+        assert!(is_image_metric(
+            "image_data",
+            &serde_json::json!("/api/images/cam/image_data/1.png")
         ));
     }
 }

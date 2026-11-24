@@ -941,7 +941,11 @@ async fn busy_event_admission_drops_without_the_retry_backoff() {
         AgentExecutor::execute_with_retry(&executor, agent.clone(), event, 1, &agent.id).await;
     super::in_flight_agents().lock().unwrap().remove(&agent.id);
 
-    assert!(out.is_ok(), "busy is a drop, not an error: {out:?}");
+    assert_eq!(
+        out,
+        super::event_trigger::EventRetryOutcome::Skipped,
+        "busy is a drop/skip, not a failure: {out:?}"
+    );
     assert!(
         started.elapsed() < std::time::Duration::from_secs(3),
         "must return without the 5s retry backoff (took {:?})",
@@ -1908,6 +1912,7 @@ async fn an_agent_without_channels_still_records_its_alert_in_app() {
         result: None,
         duration_ms: 12,
         error: None,
+        input_summary: None,
     };
 
     executor
@@ -2001,6 +2006,7 @@ async fn a_failed_run_reports_even_without_routing() {
         result: None,
         duration_ms: 12,
         error: error.map(str::to_string),
+        input_summary: None,
     };
 
     // A failure: one message, and it carries the reason.
@@ -4181,14 +4187,18 @@ async fn empty_event_skip_does_not_trip_breaker_or_stats() {
     });
     executor.store().save_agent(&agent).await.expect("seed");
 
-    // Image-named field with non-image value → extraction fails → empty skip.
+    // Value looks like an image URL (/api/images/…) but the file is missing →
+    // extraction fails → empty skip. (A2: name alone no longer classifies;
+    // scalars like image_id must NOT skip.)
     let event = super::context::EventTriggerData {
         source: super::context::DataSourceRef {
             source_type: "device".into(),
             source_id: "cam-1".into(),
-            field: "image_data".into(),
+            field: "payload".into(),
         },
-        value: neomind_core::event::MetricValue::Float(1.0),
+        value: neomind_core::event::MetricValue::String(
+            "/api/images/cam-1/missing/9999999999999.jpg".into(),
+        ),
         timestamp: 0,
     };
 

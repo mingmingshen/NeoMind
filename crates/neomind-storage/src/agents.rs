@@ -794,6 +794,28 @@ pub struct UserMessage {
     pub message_type: Option<String>,
 }
 
+/// Lightweight input summary for an execution (D1).
+///
+/// Stored on [`AgentExecutionRecord`] — NOT on journal [`ExecutionRecord`] —
+/// so large payloads / image bytes never re-enter the prompt via memory.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ExecutionInputSummary {
+    /// Number of `data_collected` rows (metrics / device_info / input_status…).
+    pub metrics_collected: usize,
+    /// Whether an image payload was extracted for multimodal / vision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_extracted: Option<bool>,
+    /// Source field name that carried the image, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_source_field: Option<String>,
+    /// Vision execution path label (`inline_multimodal`, `vision_tool`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision_path: Option<String>,
+    /// Skip / empty-input reason code when the run short-circuited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_reason: Option<String>,
+}
+
 /// Agent execution record with full decision process.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecutionRecord {
@@ -815,6 +837,9 @@ pub struct AgentExecutionRecord {
     pub duration_ms: u64,
     /// Error message if failed
     pub error: Option<String>,
+    /// Lightweight input provenance for ops (no image bytes / raw payloads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_summary: Option<ExecutionInputSummary>,
 }
 
 /// Execution status.
@@ -2009,12 +2034,48 @@ mod tests {
             result: None,
             duration_ms: 150,
             error: None,
+            input_summary: Some(ExecutionInputSummary {
+                metrics_collected: 2,
+                image_extracted: Some(true),
+                image_source_field: Some("image_data".into()),
+                vision_path: Some("inline_or_collected".into()),
+                skip_reason: None,
+            }),
         };
 
         store.save_execution(&execution).await.unwrap();
         let retrieved = store.get_execution("exec-1").await.unwrap().unwrap();
         assert_eq!(retrieved.id, "exec-1");
         assert_eq!(retrieved.agent_id, "agent-1");
+        assert_eq!(
+            retrieved.input_summary.as_ref().map(|s| s.metrics_collected),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn old_execution_record_json_deserializes_without_input_summary() {
+        let json = r#"{
+            "id": "exec-legacy",
+            "agent_id": "agent-1",
+            "timestamp": 1,
+            "trigger_type": "manual",
+            "status": "completed",
+            "decision_process": {
+                "situation_analysis": "ok",
+                "data_collected": [],
+                "reasoning_steps": [],
+                "decisions": [],
+                "conclusion": "done"
+            },
+            "result": null,
+            "duration_ms": 10,
+            "error": null
+        }"#;
+        let record: AgentExecutionRecord =
+            serde_json::from_str(json).expect("legacy JSON must deserialize");
+        assert!(record.input_summary.is_none());
+        assert_eq!(record.id, "exec-legacy");
     }
 
     #[tokio::test]

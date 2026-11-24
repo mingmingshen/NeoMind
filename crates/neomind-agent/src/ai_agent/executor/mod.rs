@@ -1155,6 +1155,14 @@ impl AgentExecutor {
                     )
                 };
 
+                let input_summary = Some(data_collector::build_execution_input_summary(
+                    &decision_process.data_collected,
+                    if is_skip {
+                        Some("event_data_extraction_failed")
+                    } else {
+                        None
+                    },
+                ));
                 AgentExecutionRecord {
                     id: execution_id.clone(),
                     agent_id: agent_id.clone(),
@@ -1165,6 +1173,7 @@ impl AgentExecutor {
                     result: Some(result),
                     duration_ms,
                     error,
+                    input_summary,
                 }
             }
             Err(e) => {
@@ -1229,6 +1238,7 @@ impl AgentExecutor {
                     result: None,
                     duration_ms,
                     error: Some(e.to_string()),
+                    input_summary: None,
                 }
             }
         };

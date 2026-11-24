@@ -14,6 +14,24 @@ use super::{
     HistoryConfig, ToolLoopConfig,
 };
 
+/// Hard cap for Focused/Free resource value strings rendered into the prompt
+/// (C2). Large enough for readable scalars; small enough to block raw base64.
+pub(crate) const PROMPT_VALUE_CHAR_LIMIT: usize = 512;
+
+/// Truncate with an explicit original-length marker so the model sees the cut.
+pub(crate) fn truncate_prompt_value(text: &str, max_chars: usize) -> String {
+    let len = text.chars().count();
+    if len <= max_chars {
+        return text.to_string();
+    }
+    let keep = max_chars.saturating_sub(48);
+    let truncated: String = text.chars().take(keep).collect();
+    format!(
+        "{}…[truncated, original_chars={}]",
+        truncated, len
+    )
+}
+
 /// Build the system prompt for tool-calling (Free) mode.
 ///
 /// Unlike the Focused analysis path which filters out memory data for small
@@ -363,9 +381,14 @@ pub(crate) fn build_focused_resource_section(
             continue;
         }
         let val_str = if let Some(v) = d.values.get("value") {
-            format!("{}", v)
+            // Hard cap large string/JSON payloads so base64 never enters the
+            // focused resource table verbatim (C2).
+            truncate_prompt_value(&format!("{}", v), PROMPT_VALUE_CHAR_LIMIT)
         } else if d.values != serde_json::Value::Null {
-            truncate_to(&serde_json::to_string(&d.values).unwrap_or_default(), 80)
+            truncate_prompt_value(
+                &serde_json::to_string(&d.values).unwrap_or_default(),
+                PROMPT_VALUE_CHAR_LIMIT,
+            )
         } else {
             continue;
         };
@@ -589,21 +612,29 @@ pub(crate) fn build_free_resource_section(
                     .filter(|(k, _)| !k.starts_with('_')) // skip internal fields
                     .map(|(k, v)| {
                         let val = match v {
-                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::String(s) => {
+                                truncate_prompt_value(s, PROMPT_VALUE_CHAR_LIMIT)
+                            }
                             serde_json::Value::Number(n) => n.to_string(),
                             serde_json::Value::Bool(b) => b.to_string(),
-                            other => truncate_to(&other.to_string(), 100),
+                            other => truncate_prompt_value(&other.to_string(), PROMPT_VALUE_CHAR_LIMIT),
                         };
                         format!("{}={}", k, val)
                     })
                     .collect();
                 if pairs.is_empty() {
-                    serde_json::to_string_pretty(&d.values).unwrap_or_default()
+                    truncate_prompt_value(
+                        &serde_json::to_string_pretty(&d.values).unwrap_or_default(),
+                        PROMPT_VALUE_CHAR_LIMIT,
+                    )
                 } else {
                     pairs.join(", ")
                 }
             } else {
-                serde_json::to_string_pretty(&d.values).unwrap_or_default()
+                truncate_prompt_value(
+                    &serde_json::to_string_pretty(&d.values).unwrap_or_default(),
+                    PROMPT_VALUE_CHAR_LIMIT,
+                )
             };
             format!("**{}** [{}]: {}", d.source, age_str, formatted)
         })
@@ -1275,5 +1306,47 @@ mod tests {
             timestamp: 0,
         };
         assert!(bound_image_data_url(&[dc]).is_none());
+    }
+
+    #[test]
+    fn focused_and_free_prompt_hard_cap_long_strings() {
+        let huge = "X".repeat(80_000);
+        let agent = minimal_agent("watch");
+        let focused_dc = DataCollected {
+            source: "dev:metric".into(),
+            data_type: "metric".into(),
+            values: serde_json::json!({"value": huge.clone()}),
+            timestamp: 0,
+        };
+        let focused = build_focused_resource_section(
+            &agent,
+            &[focused_dc],
+            VisionExecutionPath::None,
+        );
+        assert!(
+            focused.len() < 5_000,
+            "focused section must hard-cap values (len={})",
+            focused.len()
+        );
+        assert!(focused.contains("truncated"));
+        assert!(
+            focused.contains("original_chars="),
+            "focused must annotate original length: {focused}"
+        );
+
+        let free_dc = DataCollected {
+            source: "dev:metric".into(),
+            data_type: "metric".into(),
+            values: serde_json::json!({"payload": huge}),
+            timestamp: 0,
+        };
+        let free =
+            build_free_resource_section(&agent, &[free_dc], VisionExecutionPath::None);
+        assert!(
+            free.len() < 5_000,
+            "free section must hard-cap strings (len={})",
+            free.len()
+        );
+        assert!(free.contains("truncated"));
     }
 }

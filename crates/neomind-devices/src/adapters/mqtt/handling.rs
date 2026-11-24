@@ -823,6 +823,11 @@ impl MqttAdapter {
                                 );
                             }
 
+                            // A3: two-phase — persist+cache the full batch first,
+                            // then emit events so whole-device agents see every
+                            // field (incl. image) before the 60s cooldown starts.
+                            let mut prepared: Vec<(String, MetricValue)> =
+                                Vec::with_capacity(result.metrics.len());
                             for metric in result.metrics {
                                 let value = Self::convert_binary_to_url(
                                     &device_id,
@@ -831,13 +836,16 @@ impl MqttAdapter {
                                     metric.value.clone(),
                                     data_dir,
                                 );
+                                prepared.push((metric.name, value));
+                            }
 
+                            for (metric_name, value) in &prepared {
                                 {
                                     let mut cache = metric_cache.write().await;
                                     cache
                                         .entry(device_id.clone())
                                         .or_default()
-                                        .insert(metric.name.clone(), (value.clone(), now));
+                                        .insert(metric_name.clone(), (value.clone(), now));
                                 }
 
                                 if let Some(storage) = telemetry_storage.read().await.as_ref() {
@@ -850,27 +858,29 @@ impl MqttAdapter {
                                     if let Err(e) = storage
                                         .write(
                                             &format!("device:{}", device_id),
-                                            &metric.name,
+                                            metric_name,
                                             data_point,
                                         )
                                         .await
                                     {
                                         error!(
                                             "Failed to write telemetry for {}/{}: {}",
-                                            device_id, metric.name, e
+                                            device_id, metric_name, e
                                         );
                                     }
                                 }
+                            }
 
+                            for (metric_name, value) in prepared {
                                 if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                     device_id: device_id.clone(),
-                                    metric: metric.name.clone(),
-                                    value: value.clone(),
+                                    metric: metric_name.clone(),
+                                    value,
                                     timestamp: point_ts,
                                 }) {
                                     error!(
                                         "Failed to send metric event to channel: {}/{} - {}",
-                                        device_id, metric.name, e
+                                        device_id, metric_name, e
                                     );
                                 }
                             }
