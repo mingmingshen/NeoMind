@@ -1182,26 +1182,22 @@ impl AgentExecutor {
         if field.is_empty() {
             return true;
         }
-        if agent.resources.iter().any(|r| {
-            r.resource_type == ResourceType::Device && r.resource_id == device_id
-        }) {
+        if agent
+            .resources
+            .iter()
+            .any(|r| r.resource_type == ResourceType::Device && r.resource_id == device_id)
+        {
             return true;
         }
         agent
             .schedule
             .parsed_event_filter()
             .map(|f| {
-                f.any
-                    .iter()
-                    .chain(f.all.iter())
-                    .any(|s| {
-                        s.source_type == "device"
-                            && (s.id == device_id || s.id == "all")
-                            && s.field
-                                .as_deref()
-                                .map(|ff| ff.is_empty())
-                                .unwrap_or(true)
-                    })
+                f.any.iter().chain(f.all.iter()).any(|s| {
+                    s.source_type == "device"
+                        && (s.id == device_id || s.id == "all")
+                        && s.field.as_deref().map(|ff| ff.is_empty()).unwrap_or(true)
+                })
             })
             .unwrap_or(false)
     }
@@ -1919,7 +1915,10 @@ mod tests {
             "camera_image",
             &serde_json::json!("some data")
         ));
-        assert!(!is_image_metric("snapshot", &serde_json::json!("some data")));
+        assert!(!is_image_metric(
+            "snapshot",
+            &serde_json::json!("some data")
+        ));
         assert!(!is_image_metric(
             "metadata.image_id",
             &serde_json::json!("img-abc-001")

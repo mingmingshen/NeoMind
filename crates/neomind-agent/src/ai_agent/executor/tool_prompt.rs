@@ -26,10 +26,7 @@ pub(crate) fn truncate_prompt_value(text: &str, max_chars: usize) -> String {
     }
     let keep = max_chars.saturating_sub(48);
     let truncated: String = text.chars().take(keep).collect();
-    format!(
-        "{}…[truncated, original_chars={}]",
-        truncated, len
-    )
+    format!("{}…[truncated, original_chars={}]", truncated, len)
 }
 
 /// Build the system prompt for tool-calling (Free) mode.
@@ -617,7 +614,9 @@ pub(crate) fn build_free_resource_section(
                             }
                             serde_json::Value::Number(n) => n.to_string(),
                             serde_json::Value::Bool(b) => b.to_string(),
-                            other => truncate_prompt_value(&other.to_string(), PROMPT_VALUE_CHAR_LIMIT),
+                            other => {
+                                truncate_prompt_value(&other.to_string(), PROMPT_VALUE_CHAR_LIMIT)
+                            }
                         };
                         format!("{}={}", k, val)
                     })
@@ -1318,11 +1317,8 @@ mod tests {
             values: serde_json::json!({"value": huge.clone()}),
             timestamp: 0,
         };
-        let focused = build_focused_resource_section(
-            &agent,
-            &[focused_dc],
-            VisionExecutionPath::None,
-        );
+        let focused =
+            build_focused_resource_section(&agent, &[focused_dc], VisionExecutionPath::None);
         assert!(
             focused.len() < 5_000,
             "focused section must hard-cap values (len={})",
@@ -1340,8 +1336,7 @@ mod tests {
             values: serde_json::json!({"payload": huge}),
             timestamp: 0,
         };
-        let free =
-            build_free_resource_section(&agent, &[free_dc], VisionExecutionPath::None);
+        let free = build_free_resource_section(&agent, &[free_dc], VisionExecutionPath::None);
         assert!(
             free.len() < 5_000,
             "free section must hard-cap strings (len={})",

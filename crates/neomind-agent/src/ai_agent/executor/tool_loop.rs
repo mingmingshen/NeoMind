@@ -1381,9 +1381,8 @@ mod response_budget_tests {
             timestamp: None,
             compress_evidence: None,
         };
-        let before = neomind_core::llm::compaction::estimate_messages_tokens(std::slice::from_ref(
-            &big,
-        ));
+        let before =
+            neomind_core::llm::compaction::estimate_messages_tokens(std::slice::from_ref(&big));
         let budget_before = executor_response_budget(ctx, overhead, before);
 
         // Simulate hard-compact by keeping a short message only.
@@ -1394,9 +1393,8 @@ mod response_budget_tests {
             timestamp: None,
             compress_evidence: None,
         };
-        let after = neomind_core::llm::compaction::estimate_messages_tokens(std::slice::from_ref(
-            &compact,
-        ));
+        let after =
+            neomind_core::llm::compaction::estimate_messages_tokens(std::slice::from_ref(&compact));
         let budget_after = executor_response_budget(ctx, overhead, after);
         assert!(
             budget_after > budget_before,

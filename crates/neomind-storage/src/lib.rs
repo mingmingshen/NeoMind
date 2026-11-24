@@ -98,9 +98,10 @@ pub use agents::{
     ActionExecuted, AgentExecutionRecord, AgentFilter, AgentMemory, AgentNotify, AgentResource,
     AgentSchedule, AgentStats, AgentStatus, AgentStore, AgentToolConfig, AiAgent, DataCollected,
     DataSummary, Decision, DecisionProcess, ExecutionInputSummary, ExecutionJournal, ExecutionMode,
-    ExecutionRecord, ExecutionResult, ExecutionStatus, GeneratedReport, IntentType, KnowledgeFileRef,
-    MemoryMode, NotificationSent, NotifyOn, OperatorConfig, OperatorField, OperatorFieldType,
-    ParsedIntent, ReasoningStep, ResourceType, ScheduleType, UserMessage, DEFAULT_MAX_CHAIN_DEPTH,
+    ExecutionRecord, ExecutionResult, ExecutionStatus, GeneratedReport, IntentType,
+    KnowledgeFileRef, MemoryMode, NotificationSent, NotifyOn, OperatorConfig, OperatorField,
+    OperatorFieldType, ParsedIntent, ReasoningStep, ResourceType, ScheduleType, UserMessage,
+    DEFAULT_MAX_CHAIN_DEPTH,
 };
 
 pub use device_registry::DeviceRegistryStore;

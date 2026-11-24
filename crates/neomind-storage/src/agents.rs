@@ -2048,7 +2048,10 @@ mod tests {
         assert_eq!(retrieved.id, "exec-1");
         assert_eq!(retrieved.agent_id, "agent-1");
         assert_eq!(
-            retrieved.input_summary.as_ref().map(|s| s.metrics_collected),
+            retrieved
+                .input_summary
+                .as_ref()
+                .map(|s| s.metrics_collected),
             Some(2)
         );
     }
