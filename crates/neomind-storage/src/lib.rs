@@ -105,6 +105,11 @@ pub use agents::{
     DEFAULT_MAX_CHAIN_DEPTH,
 };
 
+pub use agents_v2::{
+    copy_agents_v1_to_v2_keep_legacy, ensure_v2_tables, migrate_agents_v1_to_v2,
+    table_exists_agents_v1, AgentStoreV2,
+};
+
 pub use device_registry::DeviceRegistryStore;
 
 // System memory exports (Markdown-based)

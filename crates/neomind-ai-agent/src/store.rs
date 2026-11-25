@@ -44,14 +44,16 @@ impl InMemoryAgentStore {
         let mut g = self.inner.lock().expect("store lock");
         let id = spec.id.clone();
         g.specs.insert(id.clone(), spec.clone());
-        g.runtime.entry(id.clone()).or_insert_with(|| AgentRuntimeRecord {
-            agent_id: id,
-            status: AgentStatus::Active,
-            stats: AgentStats::default(),
-            error_message: None,
-            next_probe_at: None,
-            updated_at: now_ms,
-        });
+        g.runtime
+            .entry(id.clone())
+            .or_insert_with(|| AgentRuntimeRecord {
+                agent_id: id,
+                status: AgentStatus::Active,
+                stats: AgentStats::default(),
+                error_message: None,
+                next_probe_at: None,
+                updated_at: now_ms,
+            });
         Ok(spec)
     }
 
@@ -66,7 +68,13 @@ impl InMemoryAgentStore {
     }
 
     pub fn list_specs(&self) -> Vec<AgentSpec> {
-        self.inner.lock().expect("store lock").specs.values().cloned().collect()
+        self.inner
+            .lock()
+            .expect("store lock")
+            .specs
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn delete_spec(&self, id: &str) -> Result<()> {

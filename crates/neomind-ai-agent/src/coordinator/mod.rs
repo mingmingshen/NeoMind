@@ -1,8 +1,10 @@
 //! ExecutionCoordinator — sole admission point.
 
 mod runtime_state;
+pub mod scheduler;
 
 pub use runtime_state::AgentRuntimeState;
+pub use scheduler::AgentScheduler;
 
 use std::sync::Arc;
 
@@ -48,10 +50,7 @@ impl ExecutionCoordinator {
         source: SubmitSource,
     ) -> Result<crate::model::RunResponse> {
         let runtime = self.store.get_runtime(agent_id)?;
-        if matches!(
-            runtime.status,
-            AgentStatus::Paused | AgentStatus::Stopped
-        ) {
+        if matches!(runtime.status, AgentStatus::Paused | AgentStatus::Stopped) {
             return Err(AgentError::NotRunnable(format!("{:?}", runtime.status)));
         }
         if !self.state.try_enter(agent_id) {
@@ -66,9 +65,7 @@ impl ExecutionCoordinator {
         let mut runtime = self.store.get_runtime(agent_id)?;
         let spec = self.store.get_spec(agent_id)?;
         if let Some(max) = spec.pacing.max_runs_per_day {
-            if runtime.stats.total_runs >= max as u64
-                && !matches!(source, SubmitSource::Manual)
-            {
+            if runtime.stats.total_runs >= max as u64 && !matches!(source, SubmitSource::Manual) {
                 runtime.stats.skipped_daily_limit += 1;
                 runtime.updated_at = self.clock.now_ms();
                 self.store.set_runtime(runtime)?;

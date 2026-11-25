@@ -916,8 +916,32 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/tools", get(agents::list_agent_tools))
         .route("/api/agents/test-preview", post(agents::test_agent_preview))
         // Clean-slate v2 surface (schema runtime stays 1 until five-table cutover)
+        // IMPORTANT: `/api/agents/v2/*` MUST be declared before `/api/agents/:id`
+        // or Axum routes `v2` as an agent id.
         .route("/api/agents/v2/schema", get(agents_v2::agent_v2_schema))
         .route("/api/agents/v2/plan-preview", post(agents_v2::plan_preview))
+        .route(
+            "/api/agents/v2",
+            get(agents_v2::list_agents_v2).post(agents_v2::create_agent_v2),
+        )
+        .route(
+            "/api/agents/v2/:id",
+            get(agents_v2::get_agent_v2)
+                .put(agents_v2::update_agent_v2)
+                .delete(agents_v2::delete_agent_v2),
+        )
+        .route(
+            "/api/agents/v2/:id/invoke",
+            post(agents_v2::invoke_agent_v2),
+        )
+        .route(
+            "/api/agents/v2/:id/dry-run",
+            post(agents_v2::dry_run_agent_v2),
+        )
+        .route(
+            "/api/agents/v2/:id/explain-last",
+            get(agents_v2::explain_last_agent_v2),
+        )
         .route("/api/agents/:id", get(agents::get_agent))
         .route("/api/agents/:id", put(agents::update_agent))
         .route("/api/agents/:id", delete(agents::delete_agent))

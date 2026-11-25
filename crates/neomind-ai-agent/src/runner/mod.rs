@@ -1,9 +1,9 @@
 //! Agent runners: single-pass and tool-loop skeleton.
 
+pub mod hooks;
 mod prompt_builder;
 mod single_pass;
 mod tool_loop;
-pub mod hooks;
 
 pub use prompt_builder::build_evidence_prompt;
 pub use single_pass::SinglePassRunner;

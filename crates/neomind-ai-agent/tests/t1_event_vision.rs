@@ -7,8 +7,8 @@
 use neomind_ai_agent::harness::build_harness;
 use neomind_ai_agent::input::{fixture_image_with_report_id, FrameBinding, ReportMetricPoint};
 use neomind_ai_agent::model::{
-    event_vision_draft, temperature_glance_draft, EvidenceDetail, EvidenceQuality,
-    ExecutionStatus, FreshnessPolicy, InputModality,
+    event_vision_draft, temperature_glance_draft, EvidenceDetail, EvidenceQuality, ExecutionStatus,
+    FreshnessPolicy, InputModality,
 };
 use neomind_ai_agent::ports::SourceReadResult;
 use serde_json::json;

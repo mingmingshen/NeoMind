@@ -39,7 +39,11 @@ async fn busy_rejects_second_submit() {
     let h = build_harness(now);
     let (spec, _) = h
         .service
-        .create(daily_brief_draft("weather_cn", "tariff_tou", "test-channel"))
+        .create(daily_brief_draft(
+            "weather_cn",
+            "tariff_tou",
+            "test-channel",
+        ))
         .unwrap();
     seed_brief(&h, now);
     let coord = ExecutionCoordinator::new(h.service.clone(), h.store.clone(), h.clock.clone());
@@ -58,7 +62,11 @@ async fn operator_pause_cas_wins() {
     let h = build_harness(now);
     let (spec, _) = h
         .service
-        .create(daily_brief_draft("weather_cn", "tariff_tou", "test-channel"))
+        .create(daily_brief_draft(
+            "weather_cn",
+            "tariff_tou",
+            "test-channel",
+        ))
         .unwrap();
     let pipeline = PostRunPipeline {
         store: h.store.clone(),
@@ -76,7 +84,11 @@ async fn crash_before_receipt_marks_outcome_unknown_no_resend() {
     let h = build_harness(now);
     let (spec, _) = h
         .service
-        .create(daily_brief_draft("weather_cn", "tariff_tou", "test-channel"))
+        .create(daily_brief_draft(
+            "weather_cn",
+            "tariff_tou",
+            "test-channel",
+        ))
         .unwrap();
     seed_brief(&h, now);
     h.notify.reset();

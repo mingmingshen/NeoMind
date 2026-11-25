@@ -1003,6 +1003,9 @@ impl ServerState {
         // holder at invocation time.
         let session_manager_holder: crate::capability_providers::SessionManagerHolder =
             Arc::new(tokio::sync::RwLock::new(None));
+        // Late-bound clean-slate runtime — filled after AgentStore opens below.
+        let clean_slate_holder: crate::server::state::CleanSlateHolder =
+            Arc::new(tokio::sync::RwLock::new(None));
         {
             use crate::capability_providers::CompositeCapabilityProvider;
             use neomind_core::extension::CapabilityServices;
@@ -1039,6 +1042,7 @@ impl ServerState {
                     .unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())),
                 event_dispatcher,
                 session_manager_holder.clone(),
+                clean_slate_holder.clone(),
             ));
 
             extensions.set_capability_provider(composite_provider).await;
@@ -1191,11 +1195,28 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
+            clean_slate_holder.clone(),
         );
 
         // Late-bind SessionManager into the ChatStream capability holder so
         // ChatStream invocations from isolated extensions can resolve it.
         *session_manager_holder.write().await = Some(agents.session_manager.clone());
+
+        // Build clean-slate HostedAiAgentRuntime on the shared agents.redb.
+        match crate::ai_agent_runtime::build_hosted_runtime(agents.agent_store.clone()) {
+            Ok(runtime) => {
+                runtime.start();
+                *clean_slate_holder.write().await = Some(runtime);
+                tracing::info!("Clean-slate HostedAiAgentRuntime ready");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    category = "agent",
+                    error = %e,
+                    "Failed to build clean-slate HostedAiAgentRuntime — v2 routes unavailable"
+                );
+            }
+        }
 
         // ========== Build AUTH STATE ==========
         let auth = AuthState {
@@ -1507,6 +1528,7 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
+            Arc::new(tokio::sync::RwLock::new(None)),
         );
 
         // ========== Build AUTH STATE ==========
@@ -2643,11 +2665,30 @@ impl ServerState {
         // Wire agent trigger callback for rule TriggerAgent actions
         {
             let agent_manager = self.agents.agent_manager.clone();
+            let clean_slate = self.agents.clean_slate.clone();
             let rule_engine = self.automation.rule_engine.clone();
             let callback: neomind_rules::AgentTriggerCallback = Arc::new(
                 move |agent_id: String, input: Option<String>, data: Option<serde_json::Value>| {
                     let agent_manager = agent_manager.clone();
+                    let clean_slate = clean_slate.clone();
                     Box::pin(async move {
+                        // Prefer clean-slate coordinator when the agent lives there.
+                        {
+                            let guard = clean_slate.read().await;
+                            if let Some(rt) = guard.as_ref() {
+                                if rt.has_agent(&agent_id) {
+                                    return match rt
+                                        .submit(&agent_id, neomind_ai_agent::SubmitSource::Rule)
+                                        .await
+                                    {
+                                        Ok(_) => Ok(()),
+                                        Err(e) => {
+                                            Err(format!("Failed to trigger clean-slate agent: {e}"))
+                                        }
+                                    };
+                                }
+                            }
+                        }
                         let mgr_guard = agent_manager.read().await;
                         if let Some(mgr) = mgr_guard.as_ref() {
                             let agent_input = if input.is_some() || data.is_some() {
@@ -3179,6 +3220,12 @@ impl ServerState {
             crate::models::ErrorResponse::internal(format!("Failed to start agent manager: {}", e))
         })?;
         tracing::info!("AI Agent manager scheduler started");
+
+        // Ensure clean-slate Cron/Interval ticker is running (idempotent).
+        if let Some(rt) = self.agents.clean_slate.read().await.as_ref() {
+            rt.start();
+        }
+
         Ok(())
     }
 

@@ -39,23 +39,24 @@ impl SideEffectBoundary {
         if should_notify_complete(&spec.notify, &exec) {
             for ch in &spec.notify.channels {
                 let fp = format!("on_complete:{}", exec.id);
-                let claimed = self
-                    .store
-                    .try_claim_delivery(ActionDeliveryRecord {
-                        execution_id: exec.id.clone(),
-                        destination: ch.clone(),
-                        action_fingerprint: fp.clone(),
-                        depends_on: vec![],
-                        idempotent: true,
-                        state: DeliveryState::IntentPending,
-                    })?;
+                let claimed = self.store.try_claim_delivery(ActionDeliveryRecord {
+                    execution_id: exec.id.clone(),
+                    destination: ch.clone(),
+                    action_fingerprint: fp.clone(),
+                    depends_on: vec![],
+                    idempotent: true,
+                    state: DeliveryState::IntentPending,
+                })?;
                 if claimed {
                     match self
                         .notifier
                         .deliver(
                             ch,
                             &format!("Agent {} completed", spec.name),
-                            exec.brief_text.as_deref().or(exec.conclusion.as_deref()).unwrap_or(""),
+                            exec.brief_text
+                                .as_deref()
+                                .or(exec.conclusion.as_deref())
+                                .unwrap_or(""),
                             &exec.id,
                         )
                         .await
@@ -95,16 +96,14 @@ impl SideEffectBoundary {
         if should_notify_alert(&spec.notify, &exec) {
             for ch in &spec.notify.channels {
                 let fp = format!("on_alert:{}", exec.id);
-                let claimed = self
-                    .store
-                    .try_claim_delivery(ActionDeliveryRecord {
-                        execution_id: exec.id.clone(),
-                        destination: ch.clone(),
-                        action_fingerprint: fp.clone(),
-                        depends_on: spec.notify.alert_depends_on.clone(),
-                        idempotent: true,
-                        state: DeliveryState::IntentPending,
-                    })?;
+                let claimed = self.store.try_claim_delivery(ActionDeliveryRecord {
+                    execution_id: exec.id.clone(),
+                    destination: ch.clone(),
+                    action_fingerprint: fp.clone(),
+                    depends_on: spec.notify.alert_depends_on.clone(),
+                    idempotent: true,
+                    state: DeliveryState::IntentPending,
+                })?;
                 if claimed {
                     let _ = self
                         .notifier
@@ -115,12 +114,8 @@ impl SideEffectBoundary {
                             &exec.id,
                         )
                         .await;
-                    self.store.update_delivery_state(
-                        &exec.id,
-                        ch,
-                        &fp,
-                        DeliveryState::Accepted,
-                    )?;
+                    self.store
+                        .update_delivery_state(&exec.id, ch, &fp, DeliveryState::Accepted)?;
                     exec.deliveries.push(ActionDeliveryRecord {
                         execution_id: exec.id.clone(),
                         destination: ch.clone(),
@@ -149,27 +144,20 @@ impl SideEffectBoundary {
                 continue;
             }
             let fp = format!("{}:{}", action.name, action.destination);
-            let claimed = self
-                .store
-                .try_claim_delivery(ActionDeliveryRecord {
-                    execution_id: exec.id.clone(),
-                    destination: action.destination.clone(),
-                    action_fingerprint: fp.clone(),
-                    depends_on: action.depends_on.clone(),
-                    idempotent: action.idempotent,
-                    state: DeliveryState::IntentPending,
-                })?;
+            let claimed = self.store.try_claim_delivery(ActionDeliveryRecord {
+                execution_id: exec.id.clone(),
+                destination: action.destination.clone(),
+                action_fingerprint: fp.clone(),
+                depends_on: action.depends_on.clone(),
+                idempotent: action.idempotent,
+                state: DeliveryState::IntentPending,
+            })?;
             if !claimed {
                 continue;
             }
             match self
                 .side_effects
-                .invoke(
-                    &action.destination,
-                    &action.name,
-                    &action.params,
-                    &exec.id,
-                )
+                .invoke(&action.destination, &action.name, &action.params, &exec.id)
                 .await
             {
                 Ok(()) => {

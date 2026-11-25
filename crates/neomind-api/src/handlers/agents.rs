@@ -2548,6 +2548,27 @@ pub async fn invoke_agent(
     Path(id): Path<String>,
     Json(request): Json<ExecuteAgentRequest>,
 ) -> HandlerResult<Value> {
+    // Prefer clean-slate when the agent lives there (dry_run or formal invoke).
+    {
+        let guard = state.agents.clean_slate.read().await;
+        if let Some(rt) = guard.as_ref() {
+            if rt.has_agent(&id) {
+                let resp = if request.dry_run {
+                    rt.dry_run(&id).await
+                } else {
+                    rt.invoke(&id).await
+                }
+                .map_err(|e| ErrorResponse::internal(format!("Clean-slate invoke failed: {e}")))?;
+                return ok(serde_json::to_value(resp).unwrap_or_else(|_| {
+                    json!({
+                        "agent_id": id,
+                        "dry_run": request.dry_run,
+                    })
+                }));
+            }
+        }
+    }
+
     let agent_manager = state
         .get_or_init_agent_manager()
         .await

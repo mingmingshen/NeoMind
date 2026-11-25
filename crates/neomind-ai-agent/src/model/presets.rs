@@ -12,7 +12,8 @@ pub fn daily_brief_draft(
     AgentSpecDraft {
         name: "daily-brief".into(),
         description: Some("Zero-device weather + tariff daily brief".into()),
-        user_prompt: "Summarize today's weather and time-of-use electricity price for the operator.".into(),
+        user_prompt:
+            "Summarize today's weather and time-of-use electricity price for the operator.".into(),
         llm_backend_id: None,
         preset: Some(PresetId::DailyBrief),
         trigger: TriggerSpec::Cron {
@@ -32,9 +33,7 @@ pub fn daily_brief_draft(
                     auth_scope: Some("extension:weather:read".into()),
                     timeout_secs: 10,
                     result_type: InputModality::StructuredJson,
-                    freshness: FreshnessPolicy::LatestWithin {
-                        max_age_secs: 3600,
-                    },
+                    freshness: FreshnessPolicy::LatestWithin { max_age_secs: 3600 },
                     on_missing: MissingPolicy::ReportStale,
                 },
                 InputRequirement {
@@ -83,7 +82,8 @@ pub fn partial_meter_draft(
     AgentSpecDraft {
         name: "partial-meter".into(),
         description: Some("Multi-source: meter overload alert + weather-gated control".into()),
-        user_prompt: "Diagnose meter overload; attribute heat only when weather is available.".into(),
+        user_prompt: "Diagnose meter overload; attribute heat only when weather is available."
+            .into(),
         llm_backend_id: None,
         preset: Some(PresetId::PartialMeter),
         trigger: TriggerSpec::Manual,
@@ -117,9 +117,7 @@ pub fn partial_meter_draft(
                     auth_scope: Some("extension:weather:read".into()),
                     timeout_secs: 5,
                     result_type: InputModality::StructuredJson,
-                    freshness: FreshnessPolicy::LatestWithin {
-                        max_age_secs: 1800,
-                    },
+                    freshness: FreshnessPolicy::LatestWithin { max_age_secs: 1800 },
                     on_missing: MissingPolicy::ReportStale,
                 },
             ],

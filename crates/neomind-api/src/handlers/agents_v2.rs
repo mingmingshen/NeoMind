@@ -4,14 +4,22 @@
 //! can adopt EffectivePlan preview before full schema-v2 cutover. Schema
 //! version stays 1 until AgentStore serves the five v2 tables.
 
-use axum::Json;
-use neomind_ai_agent::model::{AgentSpec, AgentSpecDraft, EffectivePlan, RunResponse};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
+use neomind_ai_agent::error::AgentError;
+use neomind_ai_agent::model::{
+    AgentSpec, AgentSpecDraft, AgentSpecPatch, EffectivePlan, RunResponse,
+};
 use neomind_ai_agent::service::plan_from_spec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::common::{ok, HandlerResult};
+use crate::ai_agent_runtime::HostedAiAgentRuntime;
 use crate::models::ErrorResponse;
+use crate::server::types::ServerState;
 
 /// Envelope returned by create/update/get once M2 cuts over.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +38,41 @@ pub struct AgentPlanPreviewRequest {
 pub struct AgentPlanPreviewResponse {
     pub effective_plan: EffectivePlan,
     pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainLastResponse {
+    pub agent_id: String,
+    pub explanation: String,
+}
+
+fn map_agent_error(e: AgentError) -> ErrorResponse {
+    match e {
+        AgentError::NotFound(id) => ErrorResponse::not_found(format!("Agent {id}")),
+        AgentError::InvalidConfig(m) => ErrorResponse::validation(m),
+        AgentError::Busy => ErrorResponse::conflict("agent is busy"),
+        AgentError::NotRunnable(s) => ErrorResponse::bad_request(format!("agent is {s}")),
+        AgentError::ToolRejected(m) => ErrorResponse::bad_request(m),
+        AgentError::Source { key, reason } => {
+            ErrorResponse::bad_request(format!("source {key}: {reason}"))
+        }
+        other => ErrorResponse::internal(other.to_string()),
+    }
+}
+
+async fn require_runtime(
+    state: &ServerState,
+) -> Result<std::sync::Arc<HostedAiAgentRuntime>, ErrorResponse> {
+    state
+        .agents
+        .clean_slate
+        .read()
+        .await
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| {
+            ErrorResponse::service_unavailable("clean-slate agent runtime not initialized")
+        })
 }
 
 /// Build a transient AgentSpec (config_version=0) for static preview without save.
@@ -82,9 +125,115 @@ pub async fn agent_v2_schema() -> HandlerResult<Value> {
         "samples": ["daily-brief", "partial-meter", "unknown-delivery", "legacy-history"],
         "operations": {
             "plan_preview": "POST /api/agents/v2/plan-preview",
-            "note": "Formal create/dry-run/invoke cutover lands with schema v2 activation"
+            "create": "POST /api/agents/v2",
+            "list": "GET /api/agents/v2",
+            "get": "GET /api/agents/v2/:id",
+            "update": "PUT /api/agents/v2/:id",
+            "delete": "DELETE /api/agents/v2/:id",
+            "invoke": "POST /api/agents/v2/:id/invoke",
+            "dry_run": "POST /api/agents/v2/:id/dry-run",
+            "explain_last": "GET /api/agents/v2/:id/explain-last"
         }
     }))
+}
+
+/// POST /api/agents/v2
+pub async fn create_agent_v2(
+    State(state): State<ServerState>,
+    Json(draft): Json<AgentSpecDraft>,
+) -> HandlerResult<AgentV2Response> {
+    let rt = require_runtime(&state).await?;
+    let (agent, effective_plan) = rt.create(draft).map_err(map_agent_error)?;
+    ok(AgentV2Response {
+        agent,
+        effective_plan,
+    })
+}
+
+/// GET /api/agents/v2
+pub async fn list_agents_v2(
+    State(state): State<ServerState>,
+) -> HandlerResult<Vec<AgentV2Response>> {
+    let rt = require_runtime(&state).await?;
+    let list = rt
+        .list()
+        .into_iter()
+        .map(|(agent, effective_plan)| AgentV2Response {
+            agent,
+            effective_plan,
+        })
+        .collect();
+    ok(list)
+}
+
+/// GET /api/agents/v2/:id
+pub async fn get_agent_v2(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<AgentV2Response> {
+    let rt = require_runtime(&state).await?;
+    let (agent, effective_plan) = rt.get(&id).map_err(map_agent_error)?;
+    ok(AgentV2Response {
+        agent,
+        effective_plan,
+    })
+}
+
+/// PUT /api/agents/v2/:id
+pub async fn update_agent_v2(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(patch): Json<AgentSpecPatch>,
+) -> HandlerResult<AgentV2Response> {
+    let rt = require_runtime(&state).await?;
+    let (agent, effective_plan) = rt.update(&id, patch).map_err(map_agent_error)?;
+    ok(AgentV2Response {
+        agent,
+        effective_plan,
+    })
+}
+
+/// DELETE /api/agents/v2/:id
+pub async fn delete_agent_v2(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Value> {
+    let rt = require_runtime(&state).await?;
+    rt.delete(&id).map_err(map_agent_error)?;
+    ok(serde_json::json!({ "deleted": id }))
+}
+
+/// POST /api/agents/v2/:id/invoke
+pub async fn invoke_agent_v2(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<RunResponse> {
+    let rt = require_runtime(&state).await?;
+    let resp = rt.invoke(&id).await.map_err(map_agent_error)?;
+    ok(resp)
+}
+
+/// POST /api/agents/v2/:id/dry-run
+pub async fn dry_run_agent_v2(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<RunResponse> {
+    let rt = require_runtime(&state).await?;
+    let resp = rt.dry_run(&id).await.map_err(map_agent_error)?;
+    ok(resp)
+}
+
+/// GET /api/agents/v2/:id/explain-last
+pub async fn explain_last_agent_v2(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<ExplainLastResponse> {
+    let rt = require_runtime(&state).await?;
+    let explanation = rt.explain_last(&id).map_err(map_agent_error)?;
+    ok(ExplainLastResponse {
+        agent_id: id,
+        explanation,
+    })
 }
 
 /// Placeholder type export so OpenAPI / future handlers share RunResponse.

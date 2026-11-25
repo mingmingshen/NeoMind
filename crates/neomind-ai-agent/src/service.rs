@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::error::{AgentError, Result};
 use crate::input::InputPipeline;
 use crate::model::{
-    AgentRuntimeRecord, AgentSpec, AgentSpecDraft, AgentSpecPatch, AgentStatus, AgentStats,
+    AgentRuntimeRecord, AgentSpec, AgentSpecDraft, AgentSpecPatch, AgentStats, AgentStatus,
     EffectivePlan, ExternalReadCounts, PlanRead, ReceiverCounts, RunResponse, ToolPolicy,
     TriggerSpec,
 };
@@ -67,6 +67,21 @@ impl AgentApplicationService {
 
     pub fn get(&self, id: &str) -> Result<AgentSpec> {
         self.store.get_spec(id)
+    }
+
+    pub fn list(&self) -> Vec<(AgentSpec, EffectivePlan)> {
+        self.store
+            .list_specs()
+            .into_iter()
+            .map(|spec| {
+                let plan = plan_from_spec(&spec);
+                (spec, plan)
+            })
+            .collect()
+    }
+
+    pub fn delete(&self, id: &str) -> Result<()> {
+        self.store.delete_spec(id)
     }
 
     pub fn update(&self, id: &str, patch: AgentSpecPatch) -> Result<(AgentSpec, EffectivePlan)> {
@@ -134,11 +149,7 @@ impl AgentApplicationService {
     async fn execute_inner(&self, id: &str, dry_run: bool, is_probe: bool) -> Result<RunResponse> {
         let spec = self.store.get_spec(id)?;
         let runtime = self.store.get_runtime(id)?;
-        if matches!(
-            runtime.status,
-            AgentStatus::Paused | AgentStatus::Stopped
-        ) && !dry_run
-        {
+        if matches!(runtime.status, AgentStatus::Paused | AgentStatus::Stopped) && !dry_run {
             return Err(AgentError::NotRunnable(format!("{:?}", runtime.status)));
         }
 
@@ -148,12 +159,7 @@ impl AgentApplicationService {
 
         let outcome = self
             .runner
-            .run(
-                &spec,
-                &evidence,
-                &execution_id,
-                CancellationToken::new(),
-            )
+            .run(&spec, &evidence, &execution_id, CancellationToken::new())
             .await?;
 
         let mut exec = crate::model::AgentExecutionRecord {
@@ -214,8 +220,16 @@ impl AgentApplicationService {
             effective_plan: Some(plan_from_spec(&spec)),
             external_read_counts: read_counts,
             receiver_counts: ReceiverCounts {
-                notify: if dry_run { 0 } else { self.notify_counter.count() },
-                device_control: if dry_run { 0 } else { self.write_counter.count() },
+                notify: if dry_run {
+                    0
+                } else {
+                    self.notify_counter.count()
+                },
+                device_control: if dry_run {
+                    0
+                } else {
+                    self.write_counter.count()
+                },
                 extension_write: 0,
             },
         })
@@ -246,7 +260,10 @@ impl AgentApplicationService {
         if exec.evidence.missing_keys.is_empty() {
             lines.push("missing: (none)".into());
         } else {
-            lines.push(format!("missing: {}", exec.evidence.missing_keys.join(", ")));
+            lines.push(format!(
+                "missing: {}",
+                exec.evidence.missing_keys.join(", ")
+            ));
         }
         let notify_n = exec
             .deliveries
@@ -268,7 +285,12 @@ impl AgentApplicationService {
 
 fn validate_draft(draft: &AgentSpecDraft) -> Result<()> {
     validate_keys_and_deps(
-        &draft.input.requirements.iter().map(|r| r.key.clone()).collect::<Vec<_>>(),
+        &draft
+            .input
+            .requirements
+            .iter()
+            .map(|r| r.key.clone())
+            .collect::<Vec<_>>(),
         &draft
             .output
             .fields
@@ -282,13 +304,23 @@ fn validate_draft(draft: &AgentSpecDraft) -> Result<()> {
                     .flat_map(|a| a.depends_on.clone()),
             )
             .collect::<Vec<_>>(),
-        &draft.input.requirements.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+        &draft
+            .input
+            .requirements
+            .iter()
+            .map(|r| r.key.as_str())
+            .collect::<Vec<_>>(),
     )
 }
 
 fn validate_spec(spec: &AgentSpec) -> Result<()> {
     validate_keys_and_deps(
-        &spec.input.requirements.iter().map(|r| r.key.clone()).collect::<Vec<_>>(),
+        &spec
+            .input
+            .requirements
+            .iter()
+            .map(|r| r.key.clone())
+            .collect::<Vec<_>>(),
         &spec
             .output
             .fields
@@ -301,15 +333,16 @@ fn validate_spec(spec: &AgentSpec) -> Result<()> {
                     .flat_map(|a| a.depends_on.clone()),
             )
             .collect::<Vec<_>>(),
-        &spec.input.requirements.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+        &spec
+            .input
+            .requirements
+            .iter()
+            .map(|r| r.key.as_str())
+            .collect::<Vec<_>>(),
     )
 }
 
-fn validate_keys_and_deps(
-    keys: &[String],
-    deps: &[String],
-    key_refs: &[&str],
-) -> Result<()> {
+fn validate_keys_and_deps(keys: &[String], deps: &[String], key_refs: &[&str]) -> Result<()> {
     let mut seen = HashSet::new();
     for k in keys {
         if !seen.insert(k.as_str()) {
@@ -330,12 +363,11 @@ fn validate_keys_and_deps(
 
 pub fn plan_from_spec(spec: &AgentSpec) -> EffectivePlan {
     let (trigger_summary, timezone) = match &spec.trigger {
-        TriggerSpec::Cron { expr, timezone } => {
-            (format!("cron `{expr}` ({timezone})"), Some(timezone.clone()))
-        }
-        TriggerSpec::Interval { every_secs } => {
-            (format!("every {every_secs}s"), None)
-        }
+        TriggerSpec::Cron { expr, timezone } => (
+            format!("cron `{expr}` ({timezone})"),
+            Some(timezone.clone()),
+        ),
+        TriggerSpec::Interval { every_secs } => (format!("every {every_secs}s"), None),
         TriggerSpec::Event { .. } => ("event".into(), None),
         TriggerSpec::Manual => ("manual".into(), None),
     };

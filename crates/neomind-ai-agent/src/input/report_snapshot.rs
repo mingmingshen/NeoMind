@@ -33,9 +33,7 @@ pub enum FrameBinding {
         proof: String,
     },
     /// Image present but ownership cannot be proven — not Fresh for vision.
-    Unconfirmed {
-        reason: String,
-    },
+    Unconfirmed { reason: String },
 }
 
 impl FrameBinding {
@@ -213,11 +211,7 @@ fn image_refs_equal_normalized_or_bytes_identical(a: &Value, b: &Value) -> bool 
     image_bytes_identical(a, b)
 }
 
-fn raw_envelope_links_image_to_id(
-    raw_value: &Value,
-    image_value: &Value,
-    report_id: &str,
-) -> bool {
+fn raw_envelope_links_image_to_id(raw_value: &Value, image_value: &Value, report_id: &str) -> bool {
     let obj = match raw_value {
         Value::String(s) => serde_json::from_str::<Value>(s).ok(),
         Value::Object(_) => Some(raw_value.clone()),

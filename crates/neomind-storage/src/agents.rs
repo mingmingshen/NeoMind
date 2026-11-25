@@ -36,12 +36,20 @@ pub enum TestHookState {
 
 /// AI Agent store for persisting autonomous agents.
 pub struct AgentStore {
-    /// redb database
+    /// redb database (shared with [`crate::agents_v2::AgentStoreV2`] during cutover).
     db: Arc<Database>,
     /// Per-instance deterministic-interleaving test hook (test builds only).
     /// Arc-cloned stores share the hook; separate stores are isolated.
     #[cfg(test)]
     pub(crate) test_hook: SharedTestHook,
+}
+
+impl AgentStore {
+    /// Shared redb handle — used to open [`crate::agents_v2::AgentStoreV2`] on the
+    /// same `agents.redb` without a second file.
+    pub fn db(&self) -> Arc<Database> {
+        self.db.clone()
+    }
 }
 
 /// An AI Agent definition.
@@ -1073,22 +1081,46 @@ impl AgentStore {
     }
 
     fn from_db(db: Database) -> Result<Arc<Self>, Error> {
-        // Rollback guard: refuse databases stamped by a newer build (see schema.rs).
-        // M2 will call `agents_v2::migrate_agents_v1_to_v2` HERE (before stamp)
-        // once handlers read the five v2 tables — not before, because migrate
-        // deletes the legacy `agents` table.
+        // Plan §2.3: when CURRENT_SCHEMA_VERSION >= 2, migrate (delete legacy
+        // `agents`) BEFORE stamping. While version stays 1, only soft-copy.
+        let stored = crate::schema::read_version(&db)
+            .map_err(|e| Error::Storage(format!("schema version: {e}")))?;
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2
+            && stored.unwrap_or(0) < 2
+            && crate::agents_v2::table_exists_agents_v1(&db).unwrap_or(false)
+        {
+            crate::agents_v2::migrate_agents_v1_to_v2(&db)
+                .map_err(|e| Error::Storage(format!("agents v1→v2 migrate: {e}")))?;
+        }
         crate::schema::check_or_stamp(&db)
             .map_err(|e| Error::Storage(format!("schema version: {e}")))?;
+        let db = Arc::new(db);
         let write_txn = db.begin_write()?;
 
-        // Create tables if they don't exist
-        write_txn.open_table(AGENTS_TABLE)?;
+        // Legacy tables: still created while schema=1 (and after migrate the
+        // `agents` table is gone so open_table recreates an empty shell only
+        // if migrate did not run — migrate deletes it; open below no-ops when
+        // CURRENT_SCHEMA_VERSION>=2 after migrate removed the table... actually
+        // open_table creates if missing, so post-migrate we avoid re-creating
+        // the legacy definition table).
+        if crate::schema::CURRENT_SCHEMA_VERSION < 2 {
+            write_txn.open_table(AGENTS_TABLE)?;
+        }
         write_txn.open_table(AGENT_EXECUTIONS_TABLE)?;
         write_txn.open_table(AGENT_MEMORY_TABLE)?;
         write_txn.commit()?;
 
+        if crate::schema::CURRENT_SCHEMA_VERSION < 2 {
+            if let Err(e) = crate::agents_v2::copy_agents_v1_to_v2_keep_legacy(&db) {
+                tracing::warn!(category = "storage", error = %e, "agents soft-copy v1→v2 failed");
+            }
+        } else {
+            // Ensure five-table layout exists even on a fresh DB stamped at 2.
+            crate::agents_v2::ensure_v2_tables(&db)?;
+        }
+
         Ok(Arc::new(Self {
-            db: Arc::new(db),
+            db,
             #[cfg(test)]
             test_hook: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::agents::TestHookState::Disarmed,

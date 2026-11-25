@@ -17,10 +17,7 @@ pub enum AgentError {
     NotRunnable(String),
 
     #[error("input source error ({key}): {reason}")]
-    Source {
-        key: String,
-        reason: String,
-    },
+    Source { key: String, reason: String },
 
     #[error("tool rejected: {0}")]
     ToolRejected(String),

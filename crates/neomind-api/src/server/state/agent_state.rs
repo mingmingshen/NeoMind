@@ -6,6 +6,7 @@
 //! - AgentManager for executing user-defined agents
 //! - MarkdownMemoryStore for system-level memory
 //! - MemoryScheduler for background memory tasks
+//! - HostedAiAgentRuntime for clean-slate M2 agents
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -14,8 +15,13 @@ use neomind_agent::memory::MemoryScheduler;
 use neomind_agent::SessionManager;
 use neomind_storage::{AgentStore, MarkdownMemoryStore, MemoryConfig};
 
+use crate::ai_agent_runtime::HostedAiAgentRuntime;
+
 /// AI Agent manager type alias.
 pub type AgentManager = Arc<neomind_agent::ai_agent::AiAgentManager>;
+
+/// Late-bound clean-slate runtime (filled after AgentStore opens).
+pub type CleanSlateHolder = Arc<RwLock<Option<Arc<HostedAiAgentRuntime>>>>;
 
 /// AI Agent state.
 ///
@@ -30,6 +36,9 @@ pub struct AgentState {
 
     /// AI Agent manager for executing user-defined agents (lazy-initialized).
     pub agent_manager: Arc<RwLock<Option<AgentManager>>>,
+
+    /// Clean-slate hosted runtime (schema v2 soft-copy / five tables).
+    pub clean_slate: CleanSlateHolder,
 
     /// System memory store for Markdown-based persistent memory.
     pub system_memory_store: Arc<MarkdownMemoryStore>,
@@ -48,11 +57,13 @@ impl AgentState {
         agent_store: Arc<AgentStore>,
         agent_manager: Arc<RwLock<Option<AgentManager>>>,
         system_memory_store: Arc<MarkdownMemoryStore>,
+        clean_slate: CleanSlateHolder,
     ) -> Self {
         Self {
             session_manager,
             agent_store,
             agent_manager,
+            clean_slate,
             system_memory_store,
             memory_session_handle: Arc::new(RwLock::new(None)),
             memory_scheduler: Arc::new(RwLock::new(None)),
@@ -107,6 +118,7 @@ impl AgentState {
             session_manager: Arc::new(SessionManager::memory()),
             agent_store: AgentStore::memory().unwrap(),
             agent_manager: Arc::new(RwLock::new(None)),
+            clean_slate: Arc::new(RwLock::new(None)),
             system_memory_store: Arc::new(MarkdownMemoryStore::with_config(
                 std::env::temp_dir().join("test-memory"),
                 neomind_storage::MemoryConfig::default(),

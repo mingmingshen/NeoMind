@@ -46,16 +46,10 @@ pub struct LlmResponse {
 
 #[async_trait]
 pub trait LlmPort: Send + Sync {
-    async fn resolve_backend(
-        &self,
-        backend_id: Option<&str>,
-    ) -> Result<LlmBackendCapabilities>;
+    async fn resolve_backend(&self, backend_id: Option<&str>) -> Result<LlmBackendCapabilities>;
 
-    async fn complete(
-        &self,
-        request: LlmRequest,
-        cancel: CancellationToken,
-    ) -> Result<LlmResponse>;
+    async fn complete(&self, request: LlmRequest, cancel: CancellationToken)
+        -> Result<LlmResponse>;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -231,10 +225,7 @@ pub struct LocalBriefLlm;
 
 #[async_trait]
 impl LlmPort for LocalBriefLlm {
-    async fn resolve_backend(
-        &self,
-        _backend_id: Option<&str>,
-    ) -> Result<LlmBackendCapabilities> {
+    async fn resolve_backend(&self, _backend_id: Option<&str>) -> Result<LlmBackendCapabilities> {
         Ok(LlmBackendCapabilities {
             multimodal: false,
             tools: false,

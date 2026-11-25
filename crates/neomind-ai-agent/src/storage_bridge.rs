@@ -4,14 +4,13 @@
 //! depending on storage from the hot path in unit tests (InMemoryAgentStore).
 
 use neomind_storage::agents_v2::{
-    AgentRuntimeRecord as StorageRuntime, AgentSpecRecord, AgentStatsV2, InputContract as StorageInput,
-    NotifyPolicy as StorageNotify, OutputContract as StorageOutput, PacingPolicy as StoragePacing,
-    ToolPolicy as StorageToolPolicy, TriggerSpec as StorageTrigger,
+    AgentRuntimeRecord as StorageRuntime, AgentSpecRecord, AgentStatsV2,
+    InputContract as StorageInput, NotifyPolicy as StorageNotify, OutputContract as StorageOutput,
+    PacingPolicy as StoragePacing, ToolPolicy as StorageToolPolicy, TriggerSpec as StorageTrigger,
 };
 
 use crate::model::{
-    AgentRuntimeRecord, AgentSpec, AgentStatus, NotifyPolicy, PacingPolicy, ToolPolicy,
-    TriggerSpec,
+    AgentRuntimeRecord, AgentSpec, AgentStatus, NotifyPolicy, PacingPolicy, ToolPolicy, TriggerSpec,
 };
 
 pub fn spec_to_record(spec: &AgentSpec) -> AgentSpecRecord {
@@ -218,7 +217,7 @@ fn notify_from_storage(n: &StorageNotify) -> NotifyPolicy {
     }
 }
 
-fn status_to_storage(s: AgentStatus) -> neomind_storage::AgentStatus {
+pub fn status_to_storage(s: AgentStatus) -> neomind_storage::AgentStatus {
     match s {
         AgentStatus::Active => neomind_storage::AgentStatus::Active,
         AgentStatus::Executing => neomind_storage::AgentStatus::Executing,
@@ -226,6 +225,17 @@ fn status_to_storage(s: AgentStatus) -> neomind_storage::AgentStatus {
         AgentStatus::Stopped => neomind_storage::AgentStatus::Stopped,
         AgentStatus::Error => neomind_storage::AgentStatus::Error,
         AgentStatus::Completed => neomind_storage::AgentStatus::Completed,
+    }
+}
+
+pub fn status_from_storage(s: neomind_storage::AgentStatus) -> AgentStatus {
+    match s {
+        neomind_storage::AgentStatus::Active => AgentStatus::Active,
+        neomind_storage::AgentStatus::Executing => AgentStatus::Executing,
+        neomind_storage::AgentStatus::Paused => AgentStatus::Paused,
+        neomind_storage::AgentStatus::Stopped => AgentStatus::Stopped,
+        neomind_storage::AgentStatus::Error => AgentStatus::Error,
+        neomind_storage::AgentStatus::Completed => AgentStatus::Completed,
     }
 }
 

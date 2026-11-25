@@ -13,8 +13,8 @@ use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
 use crate::agents::{
-    AgentMemory, AgentNotify, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentToolConfig,
-    AiAgent, ExecutionMode, NotifyOn, ResourceType, ScheduleType, UserMessage,
+    AgentMemory, AgentNotify, AgentResource, AgentSchedule, AgentStats, AgentStatus,
+    AgentToolConfig, AiAgent, ExecutionMode, NotifyOn, ResourceType, ScheduleType, UserMessage,
 };
 use crate::error::{Error, Result};
 
@@ -311,10 +311,7 @@ fn map_trigger(schedule: &AgentSchedule) -> TriggerSpec {
                 .cron_expression
                 .clone()
                 .unwrap_or_else(|| "0 * * * *".into()),
-            timezone: schedule
-                .timezone
-                .clone()
-                .unwrap_or_else(|| "UTC".into()),
+            timezone: schedule.timezone.clone().unwrap_or_else(|| "UTC".into()),
         },
         ScheduleType::Interval => TriggerSpec::Interval {
             every_secs: schedule.interval_seconds.unwrap_or(300),
@@ -364,7 +361,11 @@ fn map_output(agent: &AiAgent) -> OutputContract {
     OutputContract { fields, publish }
 }
 
-fn map_stats(stats: &AgentStats, consecutive_failures: u32, last_execution_at: Option<i64>) -> AgentStatsV2 {
+fn map_stats(
+    stats: &AgentStats,
+    consecutive_failures: u32,
+    last_execution_at: Option<i64>,
+) -> AgentStatsV2 {
     AgentStatsV2 {
         total_runs: stats.total_executions,
         successful_runs: stats.successful_executions,
@@ -381,7 +382,12 @@ fn map_stats(stats: &AgentStats, consecutive_failures: u32, last_execution_at: O
 /// Convert a v1 [`AiAgent`] row into the v2 spec + runtime + user-message slices.
 pub fn map_agent_v1_to_v2(
     agent: &AiAgent,
-) -> (AgentSpecRecord, AgentRuntimeRecord, Vec<UserMessage>, AgentMemory) {
+) -> (
+    AgentSpecRecord,
+    AgentRuntimeRecord,
+    Vec<UserMessage>,
+    AgentMemory,
+) {
     let spec = AgentSpecRecord {
         id: agent.id.clone(),
         name: agent.name.clone(),
@@ -402,7 +408,11 @@ pub fn map_agent_v1_to_v2(
     let runtime = AgentRuntimeRecord {
         agent_id: agent.id.clone(),
         status: agent.status,
-        stats: map_stats(&agent.stats, agent.consecutive_failures, agent.last_execution_at),
+        stats: map_stats(
+            &agent.stats,
+            agent.consecutive_failures,
+            agent.last_execution_at,
+        ),
         error_message: agent.error_message.clone(),
         next_probe_at: None,
         updated_at: agent.updated_at,
@@ -691,6 +701,11 @@ fn table_exists(
 ) -> std::result::Result<bool, String> {
     let read = db.begin_read().map_err(|e| e.to_string())?;
     Ok(read.open_table(name).is_ok())
+}
+
+/// Whether the legacy single-table `agents` layout is still present.
+pub fn table_exists_agents_v1(db: &Database) -> std::result::Result<bool, String> {
+    table_exists(db, AGENTS_V1_TABLE)
 }
 
 /// Copy v1 `agents` rows into the five v2 tables WITHOUT deleting the legacy table.
@@ -1261,12 +1276,7 @@ mod tests {
         assert!(!store.try_claim_delivery(claim).unwrap());
 
         store
-            .update_delivery_state(
-                "exec-formal",
-                "dev-1",
-                "fp",
-                DeliveryState::Accepted,
-            )
+            .update_delivery_state("exec-formal", "dev-1", "fp", DeliveryState::Accepted)
             .unwrap();
         let exec = store.get_execution("exec-formal").unwrap().unwrap();
         assert_eq!(exec.deliveries.len(), 1);

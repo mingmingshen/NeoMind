@@ -10,10 +10,7 @@ pub enum CasOutcome {
 }
 
 /// Operator pause/stop/delete always wins over in-flight completion.
-pub fn apply_operator_status(
-    current: AgentStatus,
-    operator: AgentStatus,
-) -> AgentStatus {
+pub fn apply_operator_status(current: AgentStatus, operator: AgentStatus) -> AgentStatus {
     match operator {
         AgentStatus::Paused | AgentStatus::Stopped => operator,
         _ => current,

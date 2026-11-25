@@ -26,20 +26,10 @@ pub enum InputModality {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InputSourceRef {
-    DeviceMetric {
-        device_id: String,
-        field: String,
-    },
-    WholeDevice {
-        device_id: String,
-    },
-    ExtensionInstance {
-        id: String,
-    },
-    UpstreamAi {
-        agent_id: String,
-        field: String,
-    },
+    DeviceMetric { device_id: String, field: String },
+    WholeDevice { device_id: String },
+    ExtensionInstance { id: String },
+    UpstreamAi { agent_id: String, field: String },
     CallerPayload,
 }
 
@@ -48,10 +38,7 @@ pub enum InputSourceRef {
 pub enum FreshnessPolicy {
     SameReport,
     LatestWithin { max_age_secs: u64 },
-    LookbackWindow {
-        lookback_secs: u64,
-        max_points: u32,
-    },
+    LookbackWindow { lookback_secs: u64, max_points: u32 },
     Any,
 }
 

@@ -68,10 +68,7 @@ async fn t12_four_steps_zero_device_daily_brief() {
     // --- Step 1: save+readback; static preview external reads = 0 ---
     let draft = daily_brief_draft("weather_cn", "tariff_tou", "test-channel");
     // Confirm fixture agrees with preset on critical fields
-    assert_eq!(
-        fixture["draft"]["trigger"]["timezone"],
-        "Asia/Shanghai"
-    );
+    assert_eq!(fixture["draft"]["trigger"]["timezone"], "Asia/Shanghai");
     assert_eq!(fixture["draft"]["tool_policy"], "disabled");
 
     h.sources.reset_counts();
@@ -89,8 +86,14 @@ async fn t12_four_steps_zero_device_daily_brief() {
     assert!(matches!(readback.tool_policy, ToolPolicy::Disabled));
     assert_eq!(readback.notify.channels, vec!["test-channel".to_string()]);
     assert_eq!(readback.input.requirements.len(), 2);
-    assert_eq!(plan.external_read_counts.weather, 0, "step1: weather reads must be 0");
-    assert_eq!(plan.external_read_counts.tariff, 0, "step1: tariff reads must be 0");
+    assert_eq!(
+        plan.external_read_counts.weather, 0,
+        "step1: weather reads must be 0"
+    );
+    assert_eq!(
+        plan.external_read_counts.tariff, 0,
+        "step1: tariff reads must be 0"
+    );
     assert_eq!(h.sources.weather_reads(), 0, "step1: source port weather=0");
     assert_eq!(h.sources.tariff_reads(), 0, "step1: source port tariff=0");
     assert_eq!(h.notify.count(), 0);
@@ -105,11 +108,20 @@ async fn t12_four_steps_zero_device_daily_brief() {
 
     let dry = h.service.dry_run(&spec.id).await.expect("dry-run");
     assert!(dry.dry_run, "step2: dry_run flag");
-    assert_eq!(dry.external_read_counts.weather, 1, "step2: weather read once");
-    assert_eq!(dry.external_read_counts.tariff, 1, "step2: tariff read once");
+    assert_eq!(
+        dry.external_read_counts.weather, 1,
+        "step2: weather read once"
+    );
+    assert_eq!(
+        dry.external_read_counts.tariff, 1,
+        "step2: tariff read once"
+    );
     assert_eq!(h.sources.weather_reads(), 1);
     assert_eq!(h.sources.tariff_reads(), 1);
-    assert_eq!(dry.receiver_counts.notify, 0, "step2: fake receiver must be 0");
+    assert_eq!(
+        dry.receiver_counts.notify, 0,
+        "step2: fake receiver must be 0"
+    );
     assert_eq!(h.notify.count(), 0, "step2: notify port count 0");
     assert_eq!(
         h.service.formal_history_len(&spec.id),

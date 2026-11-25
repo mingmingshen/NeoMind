@@ -1190,14 +1190,20 @@ impl ExtensionCapabilityProvider for StorageCapabilityProvider {
 use neomind_agent::ai_agent::AiAgentManager;
 use neomind_storage::AgentStore;
 
+use crate::server::state::CleanSlateHolder;
+
 /// Provider for agent-related capabilities
 pub struct AgentCapabilityProvider {
     services: CapabilityServices,
+    clean_slate: CleanSlateHolder,
 }
 
 impl AgentCapabilityProvider {
-    pub fn new(services: CapabilityServices) -> Self {
-        Self { services }
+    pub fn new(services: CapabilityServices, clean_slate: CleanSlateHolder) -> Self {
+        Self {
+            services,
+            clean_slate,
+        }
     }
 
     async fn handle_agent_trigger(&self, params: &Value) -> Result<Value, CapabilityError> {
@@ -1207,6 +1213,32 @@ impl AgentCapabilityProvider {
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing agent_id".to_string()))?;
 
         let _input = params.get("input").cloned().unwrap_or(json!({}));
+
+        // Prefer clean-slate coordinator when the agent lives there.
+        {
+            let guard = self.clean_slate.read().await;
+            if let Some(rt) = guard.as_ref() {
+                if rt.has_agent(agent_id) {
+                    return match rt
+                        .submit(agent_id, neomind_ai_agent::SubmitSource::Extension)
+                        .await
+                    {
+                        Ok(resp) => Ok(json!({
+                            "success": true,
+                            "agent_id": agent_id,
+                            "execution_id": resp.execution.as_ref().map(|e| e.id.clone()),
+                            "status": resp.execution.as_ref().map(|e| format!("{:?}", e.status)),
+                            "dry_run": resp.dry_run,
+                        })),
+                        Err(e) => Ok(json!({
+                            "success": false,
+                            "agent_id": agent_id,
+                            "error": e.to_string(),
+                        })),
+                    };
+                }
+            }
+        }
 
         // Try to get the agent manager
         let agent_manager: Option<std::sync::Arc<AiAgentManager>> =
@@ -2270,6 +2302,7 @@ pub async fn register_builtin_providers(
     services: CapabilityServices,
     event_bus: Arc<EventBus>,
     session_manager_holder: SessionManagerHolder,
+    clean_slate: CleanSlateHolder,
 ) {
     register_builtin_providers_with_dispatcher(
         context,
@@ -2277,6 +2310,7 @@ pub async fn register_builtin_providers(
         event_bus,
         None,
         session_manager_holder,
+        clean_slate,
     )
     .await;
 }
@@ -2288,6 +2322,7 @@ pub async fn register_builtin_providers_with_dispatcher(
     event_bus: Arc<EventBus>,
     event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
     session_manager_holder: SessionManagerHolder,
+    clean_slate: CleanSlateHolder,
 ) {
     // Clone event_bus for ChatStream provider before it's moved into EventCapabilityProvider.
     let event_bus_for_chat = event_bus.clone();
@@ -2329,7 +2364,7 @@ pub async fn register_builtin_providers_with_dispatcher(
         .register_provider("neomind-api::storage".to_string(), storage_provider)
         .await;
 
-    let agent_provider = Arc::new(AgentCapabilityProvider::new(services));
+    let agent_provider = Arc::new(AgentCapabilityProvider::new(services, clean_slate));
     context
         .register_provider("neomind-api::agent".to_string(), agent_provider)
         .await;
@@ -2405,6 +2440,7 @@ impl CompositeCapabilityProvider {
         event_bus: Arc<EventBus>,
         event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
         session_manager_holder: SessionManagerHolder,
+        clean_slate: CleanSlateHolder,
     ) -> Self {
         let mut composite = Self::new();
 
@@ -2447,7 +2483,7 @@ impl CompositeCapabilityProvider {
             .providers
             .insert("neomind-api::storage".to_string(), storage_provider);
 
-        let agent_provider = Arc::new(AgentCapabilityProvider::new(services));
+        let agent_provider = Arc::new(AgentCapabilityProvider::new(services, clean_slate));
         composite
             .providers
             .insert("neomind-api::agent".to_string(), agent_provider);

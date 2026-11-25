@@ -1,11 +1,11 @@
 //! T11 — dry-run write reject, daily-limit skip (no execution row), busy already covered.
 
 use neomind_ai_agent::harness::build_harness;
+use neomind_ai_agent::model::ToolPolicy;
 use neomind_ai_agent::model::{daily_brief_draft, PacingPolicy};
 use neomind_ai_agent::ports::SourceReadResult;
-use neomind_ai_agent::runner::hooks::{SafetyPolicyHook, ToolCallHook};
-use neomind_ai_agent::model::ToolPolicy;
 use neomind_ai_agent::ports::{CapabilityClass, OperationCapability, ToolInvocation};
+use neomind_ai_agent::runner::hooks::{SafetyPolicyHook, ToolCallHook};
 
 fn seed(h: &neomind_ai_agent::harness::TestHarness, now: i64) {
     h.sources.set_extension(
@@ -58,7 +58,11 @@ async fn t11_dry_run_does_not_increment_formal_stats() {
     let h = build_harness(now);
     let (spec, _) = h
         .service
-        .create(daily_brief_draft("weather_cn", "tariff_tou", "test-channel"))
+        .create(daily_brief_draft(
+            "weather_cn",
+            "tariff_tou",
+            "test-channel",
+        ))
         .unwrap();
     seed(&h, now);
     let before = h.service.runtime(&spec.id).unwrap().stats.total_runs;

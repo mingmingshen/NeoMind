@@ -7,9 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{build_evidence_prompt, AgentRunner, RunOutcome};
 use crate::error::Result;
-use crate::model::{
-    AgentSpec, EvidenceDetail, EvidenceQuality, EvidenceReport, ToolPolicy,
-};
+use crate::model::{AgentSpec, EvidenceDetail, EvidenceQuality, EvidenceReport, ToolPolicy};
 use crate::ports::{LlmPort, LlmRequest};
 
 pub struct SinglePassRunner {
@@ -64,7 +62,9 @@ impl AgentRunner for SinglePassRunner {
             .complete(
                 LlmRequest {
                     backend_id: spec.llm_backend_id.clone(),
-                    system: "You are a managed NeoMind agent. Cite evidence keys. Mark missing deps.".into(),
+                    system:
+                        "You are a managed NeoMind agent. Cite evidence keys. Mark missing deps."
+                            .into(),
                     user,
                     tools_enabled,
                 },
@@ -85,10 +85,7 @@ fn value_shows_overload(value: &serde_json::Value) -> bool {
         .get("overload")
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
-        || value
-            .to_string()
-            .to_ascii_uppercase()
-            .contains("OVERLOAD")
+        || value.to_string().to_ascii_uppercase().contains("OVERLOAD")
 }
 
 fn compose_local_brief(spec: &AgentSpec, evidence: &EvidenceReport) -> String {
@@ -105,14 +102,8 @@ fn compose_local_brief(spec: &AgentSpec, evidence: &EvidenceReport) -> String {
             (EvidenceQuality::Fresh, Some(EvidenceDetail::Text { text })) => {
                 lines.push(format!("{label}: {text} (source={})", item.source_id));
             }
-            (
-                EvidenceQuality::Fresh,
-                Some(EvidenceDetail::TimeSeries { points, value }),
-            ) => {
-                let extra = value
-                    .as_ref()
-                    .map(|v| format!(" {v}"))
-                    .unwrap_or_default();
+            (EvidenceQuality::Fresh, Some(EvidenceDetail::TimeSeries { points, value })) => {
+                let extra = value.as_ref().map(|v| format!(" {v}")).unwrap_or_default();
                 lines.push(format!(
                     "{label}: {points} samples{extra} (source={})",
                     item.source_id

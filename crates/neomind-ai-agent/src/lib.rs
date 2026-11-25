@@ -8,6 +8,7 @@ pub mod coordinator;
 pub mod error;
 pub mod input;
 pub mod model;
+pub mod persist;
 pub mod ports;
 pub mod post_run;
 pub mod preprocess;
@@ -17,8 +18,10 @@ pub mod side_effects;
 pub mod storage_bridge;
 pub mod store;
 
+pub use coordinator::{AgentScheduler, ExecutionCoordinator, SubmitSource};
 pub use error::{AgentError, Result};
 pub use model::*;
+pub use persist::DurableAgentStore;
 pub use ports::*;
 pub use service::AgentApplicationService;
 pub use store::InMemoryAgentStore;

@@ -20,9 +20,7 @@ pub enum ImageValue {
         mime: Option<String>,
     },
     /// Looks like an image but bytes/URL are unusable.
-    Unreadable {
-        reason: String,
-    },
+    Unreadable { reason: String },
 }
 
 impl ImageValue {
@@ -97,9 +95,10 @@ fn value_indicates_image(value: &Value) -> bool {
                 || obj.contains_key("image_data")
                 || obj.contains_key("image_base64")
                 || obj.contains_key("base64")
-                || obj.get("mime").and_then(|v| v.as_str()).is_some_and(|m| {
-                    m.starts_with("image/")
-                })
+                || obj
+                    .get("mime")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|m| m.starts_with("image/"))
         }
         _ => false,
     }

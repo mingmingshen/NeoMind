@@ -9,9 +9,7 @@ use super::hooks::{default_hooks, ToolCallHook};
 use super::{build_evidence_prompt, AgentRunner, RunOutcome};
 use crate::error::{AgentError, Result};
 use crate::model::{AgentSpec, EvidenceReport, ToolPolicy};
-use crate::ports::{
-    LlmPort, LlmRequest, ToolExecContext, ToolInvocation, ToolRegistryPort,
-};
+use crate::ports::{LlmPort, LlmRequest, ToolExecContext, ToolInvocation, ToolRegistryPort};
 
 const MAX_ROUNDS: usize = 8;
 
@@ -96,10 +94,7 @@ impl AgentRunner for ToolLoopRunner {
                         },
                     )
                     .await?;
-                transcript.push_str(&format!(
-                    "\n\n## Tool `{name}` result\n{}",
-                    out.value
-                ));
+                transcript.push_str(&format!("\n\n## Tool `{name}` result\n{}", out.value));
                 continue;
             }
             break;

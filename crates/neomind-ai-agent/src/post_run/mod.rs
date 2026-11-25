@@ -22,9 +22,7 @@ impl PostRunPipeline {
             return CasOutcome::Missing;
         };
         if rt.status != expected {
-            return CasOutcome::Conflict {
-                current: rt.status,
-            };
+            return CasOutcome::Conflict { current: rt.status };
         }
         rt.status = next;
         rt.updated_at = now_ms;

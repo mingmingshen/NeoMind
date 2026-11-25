@@ -175,14 +175,10 @@ fn same_report_image_item(
         );
     };
 
-    let image_meta = r
-        .value
-        .get("metadata")
-        .cloned()
-        .or_else(|| {
-            // Harness may stash metadata beside the value under `_metadata`.
-            r.value.get("_metadata").cloned()
-        });
+    let image_meta = r.value.get("metadata").cloned().or_else(|| {
+        // Harness may stash metadata beside the value under `_metadata`.
+        r.value.get("_metadata").cloned()
+    });
     // Use the image's own observed timestamp — never force it to the anchor
     // (SameReport requires exact second equality when anchor_ts is set).
     let image = ReportMetricPoint {
@@ -197,7 +193,12 @@ fn same_report_image_item(
 
     match classify_image_value(field, &r.value) {
         ImageValue::NotImage => (
-            unconfirmed_item(req, &r, now, format!("field {field} is not an image payload")),
+            unconfirmed_item(
+                req,
+                &r,
+                now,
+                format!("field {field} is not an image payload"),
+            ),
             true,
         ),
         ImageValue::Unreadable { reason } => (unconfirmed_item(req, &r, now, reason), true),
@@ -213,12 +214,7 @@ fn same_report_image_item(
             } => {
                 let vision_path = url
                     .clone()
-                    .unwrap_or_else(|| {
-                        format!(
-                            "inline_base64:len={}",
-                            base64_len.unwrap_or(0)
-                        )
-                    });
+                    .unwrap_or_else(|| format!("inline_base64:len={}", base64_len.unwrap_or(0)));
                 (
                     EvidenceItem {
                         key: req.key.clone(),
@@ -242,7 +238,10 @@ fn same_report_image_item(
     }
 }
 
-fn sibling_points_from_params(params: &serde_json::Value, default_ts: i64) -> Vec<ReportMetricPoint> {
+fn sibling_points_from_params(
+    params: &serde_json::Value,
+    default_ts: i64,
+) -> Vec<ReportMetricPoint> {
     let Some(arr) = params.get("report_siblings").and_then(|v| v.as_array()) else {
         return Vec::new();
     };
@@ -250,7 +249,10 @@ fn sibling_points_from_params(params: &serde_json::Value, default_ts: i64) -> Ve
         .filter_map(|v| {
             let name = v.get("name")?.as_str()?.to_string();
             let value = v.get("value")?.clone();
-            let timestamp = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(default_ts);
+            let timestamp = v
+                .get("timestamp")
+                .and_then(|t| t.as_i64())
+                .unwrap_or(default_ts);
             let metadata = v.get("metadata").cloned();
             Some(ReportMetricPoint {
                 name,
@@ -308,7 +310,10 @@ fn unconfirmed_item(
 fn bump_ext_count(counts: &mut ExternalReadCounts, id: &str, op: &str) {
     let id_l = id.to_ascii_lowercase();
     let op_l = op.to_ascii_lowercase();
-    if id_l.contains("weather") || op_l.contains("weather") || op_l == "current" && id_l.contains("weather") {
+    if id_l.contains("weather")
+        || op_l.contains("weather")
+        || op_l == "current" && id_l.contains("weather")
+    {
         counts.weather += 1;
     } else if id_l.contains("tariff")
         || id_l.contains("price")
@@ -341,7 +346,12 @@ fn detail_for(
             let points = value
                 .as_array()
                 .map(|a| a.len())
-                .or_else(|| value.get("points").and_then(|p| p.as_array()).map(|a| a.len()))
+                .or_else(|| {
+                    value
+                        .get("points")
+                        .and_then(|p| p.as_array())
+                        .map(|a| a.len())
+                })
                 .unwrap_or(0);
             EvidenceDetail::TimeSeries {
                 points,
@@ -365,7 +375,9 @@ fn missing_item(req: &InputRequirement, reason: String, now: i64) -> EvidenceIte
     let quality = match req.on_missing {
         MissingPolicy::ReportStale => EvidenceQuality::Stale,
         MissingPolicy::Ignore => EvidenceQuality::Missing,
-        _ => EvidenceQuality::Error { reason: reason.clone() },
+        _ => EvidenceQuality::Error {
+            reason: reason.clone(),
+        },
     };
     let source_id = match &req.source {
         InputSourceRef::ExtensionInstance { id } => format!("extension:{id}"),
