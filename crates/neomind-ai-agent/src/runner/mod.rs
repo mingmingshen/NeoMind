@@ -1,12 +1,14 @@
 //! Agent runners: single-pass and tool-loop skeleton.
 
+pub mod alert;
 pub mod hooks;
 mod prompt_builder;
-mod single_pass;
+pub mod single_pass;
 mod tool_loop;
 
+pub use alert::{alert_from_model_text, evidence_shows_overload, value_shows_overload};
 pub use prompt_builder::build_evidence_prompt;
-pub use single_pass::SinglePassRunner;
+pub use single_pass::{SinglePassRunner, LOCAL_BRIEF_BACKEND};
 pub use tool_loop::ToolLoopRunner;
 
 use async_trait::async_trait;

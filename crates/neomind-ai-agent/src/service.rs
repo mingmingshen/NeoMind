@@ -156,14 +156,15 @@ impl AgentApplicationService {
         let (evidence, read_counts) = self.input.collect(&spec.input.requirements).await?;
         let execution_id = format!("exec_{}", &Uuid::new_v4().to_string()[..8]);
         let started = self.clock.now_ms();
+        let plan = plan_from_spec(&spec);
 
-        let outcome = self
+        let run_result = self
             .runner
             .run(&spec, &evidence, &execution_id, CancellationToken::new())
-            .await?;
+            .await;
 
         let mut exec = crate::model::AgentExecutionRecord {
-            id: execution_id,
+            id: execution_id.clone(),
             agent_id: spec.id.clone(),
             config_version: spec.config_version,
             status: crate::model::ExecutionStatus::Completed,
@@ -179,7 +180,21 @@ impl AgentApplicationService {
             error: None,
             alert_verdict: None,
         };
-        exec = apply_outcome(exec, outcome);
+
+        match run_result {
+            Ok(outcome) => {
+                exec = apply_outcome(exec, outcome);
+            }
+            Err(e) => {
+                // Inference / runner failure settles as Failed — never invent a
+                // successful local brief when the configured backend failed.
+                exec.status = crate::model::ExecutionStatus::Failed;
+                exec.error = Some(e.to_string());
+                exec.conclusion = None;
+                exec.brief_text = None;
+                exec.alert_verdict = Some(crate::model::AlertVerdict::InsufficientEvidence);
+            }
+        }
         exec.finished_at = self.clock.now_ms();
 
         let exec = self.side_effects.settle(&spec, exec, dry_run).await?;
@@ -205,7 +220,13 @@ impl AgentApplicationService {
             }
             rt.stats.last_execution_at = Some(exec.finished_at);
             rt.stats.last_execution_id = Some(exec.id.clone());
-            if matches!(spec.trigger, TriggerSpec::Manual) {
+            if matches!(
+                exec.status,
+                crate::model::ExecutionStatus::Failed
+            ) {
+                rt.status = AgentStatus::Error;
+                rt.error_message = exec.error.clone();
+            } else if matches!(spec.trigger, TriggerSpec::Manual) {
                 rt.status = AgentStatus::Completed;
             } else {
                 rt.status = AgentStatus::Active;
@@ -217,7 +238,7 @@ impl AgentApplicationService {
         Ok(RunResponse {
             dry_run,
             execution: Some(exec),
-            effective_plan: Some(plan_from_spec(&spec)),
+            effective_plan: Some(plan),
             external_read_counts: read_counts,
             receiver_counts: ReceiverCounts {
                 notify: if dry_run {

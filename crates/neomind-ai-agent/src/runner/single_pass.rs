@@ -5,10 +5,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
+use super::alert::{alert_from_model_text, evidence_shows_overload};
 use super::{build_evidence_prompt, AgentRunner, RunOutcome};
-use crate::error::Result;
+use crate::error::{AgentError, Result};
 use crate::model::{AgentSpec, EvidenceDetail, EvidenceQuality, EvidenceReport, ToolPolicy};
 use crate::ports::{LlmPort, LlmRequest};
+
+/// Backend id that opts into the deterministic local template (no inference).
+pub const LOCAL_BRIEF_BACKEND: &str = "local-brief";
 
 pub struct SinglePassRunner {
     llm: Arc<dyn LlmPort>,
@@ -20,6 +24,13 @@ impl SinglePassRunner {
     }
 }
 
+fn uses_local_template(spec: &AgentSpec) -> bool {
+    matches!(
+        spec.llm_backend_id.as_deref(),
+        Some(LOCAL_BRIEF_BACKEND) | Some("local")
+    )
+}
+
 #[async_trait]
 impl AgentRunner for SinglePassRunner {
     async fn run(
@@ -29,25 +40,13 @@ impl AgentRunner for SinglePassRunner {
         _execution_id: &str,
         cancel: CancellationToken,
     ) -> Result<RunOutcome> {
-        // Tools must stay off for Disabled policy.
         let tools_enabled = !matches!(spec.tool_policy, ToolPolicy::Disabled);
 
-        // Deterministic brief when tools disabled: compose from fresh evidence.
-        if matches!(spec.tool_policy, ToolPolicy::Disabled) {
+        // Explicit local-template mode only — ToolPolicy::Disabled alone still
+        // needs a real model call for zero-tool briefs.
+        if uses_local_template(spec) {
             let brief = compose_local_brief(spec, evidence);
-            let alert = evidence.items.iter().any(|i| {
-                matches!(i.quality, EvidenceQuality::Fresh)
-                    && i.detail.as_ref().is_some_and(|d| match d {
-                        EvidenceDetail::Structured { value } => value_shows_overload(value),
-                        EvidenceDetail::TimeSeries { value, .. } => {
-                            value.as_ref().is_some_and(value_shows_overload)
-                        }
-                        EvidenceDetail::Text { text } => {
-                            text.to_ascii_uppercase().contains("OVERLOAD")
-                        }
-                        _ => false,
-                    })
-            });
+            let alert = evidence_shows_overload(evidence);
             return Ok(RunOutcome {
                 brief_text: Some(brief.clone()),
                 conclusion: Some(brief),
@@ -63,29 +62,32 @@ impl AgentRunner for SinglePassRunner {
                 LlmRequest {
                     backend_id: spec.llm_backend_id.clone(),
                     system:
-                        "You are a managed NeoMind agent. Cite evidence keys. Mark missing deps."
+                        "You are a managed NeoMind agent. Cite evidence keys. Mark missing deps. \
+                         End with exactly `Verdict: criteria met` only when alert criteria are met."
                             .into(),
                     user,
                     tools_enabled,
                 },
                 cancel,
             )
-            .await?;
+            .await
+            .map_err(|e| AgentError::Llm(e.to_string()))?;
+
+        // Tool-disabled diagnosis still trusts structured evidence for alert;
+        // tool-enabled / free agents use the model's structured verdict line.
+        let alert = if !tools_enabled {
+            evidence_shows_overload(evidence)
+        } else {
+            alert_from_model_text(&resp.text) || resp.alert_criteria_met
+        };
+
         Ok(RunOutcome {
             brief_text: Some(resp.text.clone()),
             conclusion: Some(resp.text),
-            alert_criteria_met: resp.alert_criteria_met,
+            alert_criteria_met: alert,
             status_hint: None,
         })
     }
-}
-
-fn value_shows_overload(value: &serde_json::Value) -> bool {
-    value
-        .get("overload")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-        || value.to_string().to_ascii_uppercase().contains("OVERLOAD")
 }
 
 fn compose_local_brief(spec: &AgentSpec, evidence: &EvidenceReport) -> String {

@@ -46,13 +46,19 @@ impl InputPipeline {
                 InputSourceRef::ExtensionInstance { id } => {
                     let op = req.operation.as_deref().unwrap_or("default");
                     bump_ext_count(&mut counts, id, op);
+                    let params = params_with_freshness(req);
                     match self
                         .sources
-                        .read_extension(id, op, &req.params, req.timeout_secs)
+                        .read_extension(id, op, &params, req.timeout_secs)
                         .await
                     {
                         Ok(r) => {
-                            items.push(fresh_item(req, r, self.clock.now_ms(), None));
+                            let (item, is_missing) =
+                                evidence_from_read(req, r, self.clock.now_ms(), None);
+                            if is_missing {
+                                missing.push(req.key.clone());
+                            }
+                            items.push(item);
                         }
                         Err(e) => {
                             missing.push(req.key.clone());
@@ -72,9 +78,10 @@ impl InputPipeline {
                 }
                 InputSourceRef::DeviceMetric { device_id, field } => {
                     counts.other += 1;
+                    let params = params_with_freshness(req);
                     match self
                         .sources
-                        .read_device_metric(device_id, field, &req.params, req.timeout_secs)
+                        .read_device_metric(device_id, field, &params, req.timeout_secs)
                         .await
                     {
                         Ok(r) => {
@@ -93,9 +100,10 @@ impl InputPipeline {
                 }
                 InputSourceRef::WholeDevice { device_id } => {
                     counts.other += 1;
+                    let params = params_with_freshness(req);
                     match self
                         .sources
-                        .read_device_metric(device_id, "*", &req.params, req.timeout_secs)
+                        .read_device_metric(device_id, "*", &params, req.timeout_secs)
                         .await
                     {
                         Ok(r) => {
@@ -142,6 +150,44 @@ impl InputPipeline {
     }
 }
 
+/// Embed freshness contract into params so host adapters can range-query.
+fn params_with_freshness(req: &InputRequirement) -> serde_json::Value {
+    let mut params = req.params.clone();
+    let obj = match params.as_object_mut() {
+        Some(o) => o,
+        None => {
+            params = serde_json::json!({});
+            params.as_object_mut().unwrap()
+        }
+    };
+    match &req.freshness {
+        FreshnessPolicy::LatestWithin { max_age_secs } => {
+            obj.insert(
+                "_freshness".into(),
+                serde_json::json!({ "kind": "latest_within", "max_age_secs": max_age_secs }),
+            );
+        }
+        FreshnessPolicy::LookbackWindow {
+            lookback_secs,
+            max_points,
+        } => {
+            obj.insert(
+                "_freshness".into(),
+                serde_json::json!({
+                    "kind": "lookback_window",
+                    "lookback_secs": lookback_secs,
+                    "max_points": max_points,
+                }),
+            );
+            if !obj.contains_key("lookback_secs") {
+                obj.insert("lookback_secs".into(), serde_json::json!(lookback_secs));
+            }
+        }
+        _ => {}
+    }
+    params
+}
+
 /// Build evidence for a device read, applying SameReport ownership when configured.
 fn evidence_from_device_read(
     req: &InputRequirement,
@@ -154,7 +200,125 @@ fn evidence_from_device_read(
     {
         return same_report_image_item(req, field, r, now);
     }
-    (fresh_item(req, r, now, Some(field)), false)
+    evidence_from_read(req, r, now, Some(field))
+}
+
+fn evidence_from_read(
+    req: &InputRequirement,
+    r: SourceReadResult,
+    now: i64,
+    image_field: Option<&str>,
+) -> (EvidenceItem, bool) {
+    let (quality, missing) = classify_freshness(req, &r, now);
+    (
+        EvidenceItem {
+            key: req.key.clone(),
+            source_id: r.source_id,
+            result_type: req.result_type.clone(),
+            observed_at: r.observed_at,
+            valid_window: r.valid_window.or_else(|| implied_window(req, now)),
+            fetched_at: now,
+            quality,
+            binding_proof: r.binding_proof,
+            detail: Some(detail_for(&req.result_type, r.value, image_field)),
+        },
+        missing,
+    )
+}
+
+fn implied_window(req: &InputRequirement, now: i64) -> Option<(i64, i64)> {
+    match &req.freshness {
+        FreshnessPolicy::LookbackWindow { lookback_secs, .. } => {
+            let ms = (*lookback_secs as i64).saturating_mul(1000);
+            Some((now.saturating_sub(ms), now))
+        }
+        FreshnessPolicy::LatestWithin { max_age_secs } => {
+            let ms = (*max_age_secs as i64).saturating_mul(1000);
+            Some((now.saturating_sub(ms), now))
+        }
+        _ => None,
+    }
+}
+
+/// Apply observation-time / window contract. Returns (quality, treat_as_missing).
+fn classify_freshness(
+    req: &InputRequirement,
+    r: &SourceReadResult,
+    now: i64,
+) -> (EvidenceQuality, bool) {
+    match &req.freshness {
+        FreshnessPolicy::Any | FreshnessPolicy::SameReport => (EvidenceQuality::Fresh, false),
+        FreshnessPolicy::LatestWithin { max_age_secs } => {
+            let Some(obs) = r.observed_at else {
+                return stale_or_missing(req, "missing observed_at");
+            };
+            // Timestamps may be secs or millis — normalize to ms heuristically.
+            let obs_ms = if obs < 1_000_000_000_000 { obs * 1000 } else { obs };
+            let max_age_ms = (*max_age_secs as i64).saturating_mul(1000);
+            if now.saturating_sub(obs_ms) > max_age_ms {
+                return stale_or_missing(
+                    req,
+                    &format!("observation age exceeds {max_age_secs}s"),
+                );
+            }
+            (EvidenceQuality::Fresh, false)
+        }
+        FreshnessPolicy::LookbackWindow {
+            lookback_secs,
+            max_points,
+        } => {
+            let points = count_series_points(&r.value);
+            let window = r
+                .valid_window
+                .or_else(|| implied_window(req, now))
+                .unwrap_or((now.saturating_sub((*lookback_secs as i64) * 1000), now));
+            // Host must supply a windowed series; a lone latest point cannot
+            // complete a full-window calculation when max_points > 1.
+            if points == 0 {
+                return stale_or_missing(req, "no points in lookback window");
+            }
+            if *max_points > 1 && points < 2 {
+                return stale_or_missing(
+                    req,
+                    "single point cannot complete full-window calc",
+                );
+            }
+            if let Some(obs) = r.observed_at {
+                let obs_ms = if obs < 1_000_000_000_000 { obs * 1000 } else { obs };
+                if obs_ms < window.0 || obs_ms > window.1 {
+                    return stale_or_missing(req, "observation outside lookback window");
+                }
+            }
+            let _ = window;
+            (EvidenceQuality::Fresh, false)
+        }
+    }
+}
+
+fn count_series_points(value: &serde_json::Value) -> usize {
+    if let Some(n) = value.get("points").and_then(|p| p.as_array()).map(|a| a.len()) {
+        return n;
+    }
+    if let Some(n) = value.as_array().map(|a| a.len()) {
+        return n;
+    }
+    if value.get("timestamp").is_some() || value.get("value").is_some() {
+        return 1;
+    }
+    0
+}
+
+fn stale_or_missing(req: &InputRequirement, reason: &str) -> (EvidenceQuality, bool) {
+    match req.on_missing {
+        MissingPolicy::ReportStale => (EvidenceQuality::Stale, true),
+        MissingPolicy::Ignore => (EvidenceQuality::Missing, true),
+        MissingPolicy::Skip | MissingPolicy::Undetermined => (
+            EvidenceQuality::Error {
+                reason: reason.into(),
+            },
+            true,
+        ),
+    }
 }
 
 fn same_report_image_item(
@@ -262,25 +426,6 @@ fn sibling_points_from_params(
             })
         })
         .collect()
-}
-
-fn fresh_item(
-    req: &InputRequirement,
-    r: SourceReadResult,
-    now: i64,
-    image_field: Option<&str>,
-) -> EvidenceItem {
-    EvidenceItem {
-        key: req.key.clone(),
-        source_id: r.source_id,
-        result_type: req.result_type.clone(),
-        observed_at: r.observed_at,
-        valid_window: r.valid_window,
-        fetched_at: now,
-        quality: EvidenceQuality::Fresh,
-        binding_proof: r.binding_proof,
-        detail: Some(detail_for(&req.result_type, r.value, image_field)),
-    }
 }
 
 fn unconfirmed_item(

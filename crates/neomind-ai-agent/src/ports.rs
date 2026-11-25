@@ -239,7 +239,8 @@ impl LlmPort for LocalBriefLlm {
         _cancel: CancellationToken,
     ) -> Result<LlmResponse> {
         // Deterministic single-pass: echo structured evidence into a brief.
-        let alert = request.user.contains("OVERLOAD");
+        // Never treat a bare "OVERLOAD" substring as positive (negations).
+        let alert = crate::runner::alert_from_model_text(&request.user);
         Ok(LlmResponse {
             text: request.user,
             alert_criteria_met: alert,

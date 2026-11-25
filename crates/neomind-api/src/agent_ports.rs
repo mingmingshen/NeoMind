@@ -5,18 +5,19 @@
 //! manager LLM, and delivers via MessageManager / DeviceService.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use neomind_ai_agent::error::{AgentError, Result as AgentResult};
 use neomind_ai_agent::ports::{
-    LlmBackendCapabilities, LlmPort, LlmRequest, LlmResponse, LocalBriefLlm, NotifyPort,
-    SideEffectPort, SourceReadPort, SourceReadResult,
+    LlmBackendCapabilities, LlmPort, LlmRequest, LlmResponse, NotifyPort, SideEffectPort,
+    SourceReadPort, SourceReadResult,
 };
+use neomind_ai_agent::runner::alert_from_model_text;
 use neomind_ai_agent::service::{NotifyCounter, WriteCounter};
-use neomind_core::extension::ExtensionRegistry;
+use neomind_core::extension::{CommandEffect, ExtensionRegistry};
 use neomind_core::llm::{GenerationParams, LlmInput};
 use neomind_core::Message;
 use neomind_devices::{DeviceService, TimeSeriesStorage};
@@ -57,12 +58,15 @@ impl HostAgentDeps {
 
 pub struct HostLlmPort {
     pub request_count: AtomicU64,
+    /// Test hook: next `complete` fails like a backend 5xx (no local-brief fake).
+    pub force_fail_next: AtomicBool,
 }
 
 impl HostLlmPort {
     pub fn new() -> Self {
         Self {
             request_count: AtomicU64::new(0),
+            force_fail_next: AtomicBool::new(false),
         }
     }
 
@@ -83,13 +87,7 @@ impl LlmPort for HostLlmPort {
         &self,
         backend_id: Option<&str>,
     ) -> AgentResult<LlmBackendCapabilities> {
-        match self.try_resolve(backend_id) {
-            Ok(caps) => Ok(caps),
-            Err(e) => {
-                tracing::debug!(error = %e, "host LLM resolve falling back to LocalBriefLlm");
-                LocalBriefLlm.resolve_backend(backend_id).await
-            }
-        }
+        self.try_resolve(backend_id)
     }
 
     async fn complete(
@@ -98,19 +96,11 @@ impl LlmPort for HostLlmPort {
         cancel: CancellationToken,
     ) -> AgentResult<LlmResponse> {
         self.request_count.fetch_add(1, Ordering::SeqCst);
-        match self.try_complete(&request, cancel.child_token()).await {
-            Ok(resp) => Ok(resp),
-            Err(e) => {
-                // Tests and edge hosts without an active backend still need
-                // scheduled/event agents to settle (stats + notify). Fall back
-                // to the deterministic local brief used by ToolPolicy::Disabled.
-                tracing::warn!(
-                    error = %e,
-                    "host LLM unavailable — falling back to LocalBriefLlm"
-                );
-                LocalBriefLlm.complete(request, cancel).await
-            }
+        if self.force_fail_next.swap(false, Ordering::SeqCst) {
+            return Err(AgentError::Llm("simulated backend 5xx".into()));
         }
+        // Never fall back to LocalBriefLlm — generate failure must settle as fail.
+        self.try_complete(&request, cancel).await
     }
 }
 
@@ -152,7 +142,6 @@ impl HostLlmPort {
         };
 
         let mut params = GenerationParams::default();
-        // Non-chat managed runs: disable thinking to avoid wasted tokens.
         params.thinking_enabled = Some(false);
         params.max_tokens = Some(2048);
         let input = LlmInput {
@@ -173,11 +162,9 @@ impl HostLlmPort {
             }
         };
 
-        let alert = output.text.contains("Verdict: criteria met")
-            || output.text.to_ascii_uppercase().contains("OVERLOAD");
         Ok(LlmResponse {
-            text: output.text,
-            alert_criteria_met: alert,
+            text: output.text.clone(),
+            alert_criteria_met: alert_from_model_text(&output.text),
         })
     }
 }
@@ -200,6 +187,45 @@ impl HostSourceReadPort {
     pub fn reads(&self) -> u64 {
         self.read_count.load(Ordering::SeqCst)
     }
+
+    /// Fail closed: only ReadOnly commands may run from the input pipeline.
+    async fn ensure_readonly_command(
+        &self,
+        extension_id: &str,
+        operation: &str,
+    ) -> AgentResult<()> {
+        let info = self
+            .deps
+            .extension_registry
+            .get_info(extension_id)
+            .await
+            .ok_or_else(|| AgentError::Source {
+                key: extension_id.into(),
+                reason: format!("extension '{extension_id}' not registered"),
+            })?;
+        let cmd = info.commands.iter().find(|c| c.name == operation);
+        let effect = match cmd {
+            Some(c) => c.effect.unwrap_or(CommandEffect::Mutating),
+            None => {
+                // Unknown command — not a declared metric either at this point.
+                return Err(AgentError::Source {
+                    key: extension_id.into(),
+                    reason: format!(
+                        "refusing unknown/write operation '{operation}' on extension '{extension_id}' (input path is read-only)"
+                    ),
+                });
+            }
+        };
+        if !matches!(effect, CommandEffect::ReadOnly) {
+            return Err(AgentError::Source {
+                key: extension_id.into(),
+                reason: format!(
+                    "refusing non-readonly operation '{operation}' (effect={effect:?}) on input path"
+                ),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -214,6 +240,8 @@ impl SourceReadPort for HostSourceReadPort {
         self.read_count.fetch_add(1, Ordering::SeqCst);
         let source_id = format!("extension:{extension_id}");
         let timeout = Duration::from_secs(timeout_secs.max(1) as u64);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let freshness = params.get("_freshness").cloned();
 
         // Prefer durable metric storage when the operation names a metric field.
         if let Ok(Some(point)) = self
@@ -222,20 +250,18 @@ impl SourceReadPort for HostSourceReadPort {
             .query_latest(&source_id, operation)
             .await
         {
+            let (window, value) =
+                apply_ext_freshness_to_point(&freshness, &point, now_ms, operation);
             return Ok(SourceReadResult {
                 source_id: source_id.clone(),
                 binding_proof: format!("{source_id}:{operation}"),
                 observed_at: Some(point.timestamp),
-                valid_window: None,
-                value: serde_json::to_value(&point).unwrap_or_else(|_| {
-                    serde_json::json!({
-                        "timestamp": point.timestamp,
-                    })
-                }),
+                valid_window: window,
+                value,
             });
         }
 
-        // Fall back to live registry metrics, then to execute_command.
+        // Live registry metrics (read-only by nature).
         let metrics = tokio::time::timeout(
             timeout,
             self.deps
@@ -252,10 +278,14 @@ impl SourceReadPort for HostSourceReadPort {
                 source_id: source_id.clone(),
                 binding_proof: format!("{source_id}:{operation}:live"),
                 observed_at: Some(m.timestamp),
-                valid_window: None,
+                valid_window: lookback_window_from_freshness(&freshness, now_ms),
                 value: serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
             });
         }
+
+        // Command path — must be declared ReadOnly (blocks dry_run writes).
+        self.ensure_readonly_command(extension_id, operation)
+            .await?;
 
         let result = tokio::time::timeout(
             timeout,
@@ -276,8 +306,8 @@ impl SourceReadPort for HostSourceReadPort {
         Ok(SourceReadResult {
             source_id,
             binding_proof: format!("extension:{extension_id}:{operation}:cmd"),
-            observed_at: Some(chrono::Utc::now().timestamp_millis()),
-            valid_window: None,
+            observed_at: Some(now_ms),
+            valid_window: lookback_window_from_freshness(&freshness, now_ms),
             value: result,
         })
     }
@@ -286,12 +316,14 @@ impl SourceReadPort for HostSourceReadPort {
         &self,
         device_id: &str,
         field: &str,
-        _params: &serde_json::Value,
+        params: &serde_json::Value,
         timeout_secs: u32,
     ) -> AgentResult<SourceReadResult> {
         self.read_count.fetch_add(1, Ordering::SeqCst);
         let source_key = format!("device:{device_id}");
         let timeout = Duration::from_secs(timeout_secs.max(1) as u64);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let freshness = params.get("_freshness").cloned();
 
         if field == "*" {
             let metrics =
@@ -324,8 +356,53 @@ impl SourceReadPort for HostSourceReadPort {
                 source_id: source_key.clone(),
                 binding_proof: format!("{source_key}:*"),
                 observed_at: observed,
-                valid_window: None,
+                valid_window: lookback_window_from_freshness(&freshness, now_ms),
                 value: serde_json::to_value(&batch).unwrap_or(serde_json::json!({})),
+            });
+        }
+
+        // Windowed tasks must range-query — never substitute a lone latest.
+        if let Some(lookback_secs) = freshness
+            .as_ref()
+            .and_then(|f| f.get("lookback_secs"))
+            .and_then(|v| v.as_u64())
+            .or_else(|| params.get("lookback_secs").and_then(|v| v.as_u64()))
+        {
+            let max_points = freshness
+                .as_ref()
+                .and_then(|f| f.get("max_points"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(60) as usize;
+            let start = now_ms.saturating_sub((lookback_secs as i64).saturating_mul(1000));
+            // Single-point writes sit in the write-behind buffer; range queries
+            // only see redb. Flush so lookback windows include recent points.
+            let _ = self.deps.telemetry.flush();
+            let points = tokio::time::timeout(
+                timeout,
+                self.deps
+                    .telemetry
+                    .query_limited(&source_key, field, start, now_ms, Some(max_points)),
+            )
+            .await
+            .map_err(|_| AgentError::Source {
+                key: device_id.into(),
+                reason: "query_limited timed out".into(),
+            })?
+            .map_err(|e| AgentError::Source {
+                key: device_id.into(),
+                reason: e.to_string(),
+            })?;
+            let observed = points.last().map(|p| p.timestamp);
+            let series: Vec<serde_json::Value> = points
+                .iter()
+                .filter_map(|p| serde_json::to_value(p).ok())
+                .collect();
+            return Ok(SourceReadResult {
+                source_id: source_key.clone(),
+                binding_proof: format!("{source_key}:{field}:lookback={lookback_secs}"),
+                observed_at: observed,
+                valid_window: Some((start, now_ms)),
+                value: serde_json::json!({ "points": series }),
             });
         }
 
@@ -348,10 +425,43 @@ impl SourceReadPort for HostSourceReadPort {
             source_id: source_key.clone(),
             binding_proof: format!("{source_key}:{field}"),
             observed_at: Some(point.timestamp),
-            valid_window: None,
+            valid_window: lookback_window_from_freshness(&freshness, now_ms),
             value: serde_json::to_value(&point).unwrap_or(serde_json::Value::Null),
         })
     }
+}
+
+fn lookback_window_from_freshness(
+    freshness: &Option<serde_json::Value>,
+    now_ms: i64,
+) -> Option<(i64, i64)> {
+    let f = freshness.as_ref()?;
+    let kind = f.get("kind").and_then(|v| v.as_str())?;
+    match kind {
+        "lookback_window" | "latest_within" => {
+            let secs = f
+                .get("lookback_secs")
+                .or_else(|| f.get("max_age_secs"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let ms = (secs as i64).saturating_mul(1000);
+            Some((now_ms.saturating_sub(ms), now_ms))
+        }
+        _ => None,
+    }
+}
+
+fn apply_ext_freshness_to_point(
+    freshness: &Option<serde_json::Value>,
+    point: &neomind_devices::telemetry::DataPoint,
+    now_ms: i64,
+    _operation: &str,
+) -> (Option<(i64, i64)>, serde_json::Value) {
+    let window = lookback_window_from_freshness(freshness, now_ms);
+    let value = serde_json::to_value(point).unwrap_or_else(|_| {
+        serde_json::json!({ "timestamp": point.timestamp })
+    });
+    (window, value)
 }
 
 // ── Notify ──────────────────────────────────────────────────────────────────
@@ -461,7 +571,6 @@ impl SideEffectPort for HostSideEffectPort {
         let device_id = destination.strip_prefix("device:").unwrap_or(destination);
         let map = json_to_string_map(params);
 
-        // Prefer device when the id is registered; otherwise try extension.
         if self.device_service.get_device(device_id).is_some() {
             self.device_service
                 .send_command_reported(device_id, action, map)
