@@ -45,6 +45,7 @@
 //! ```
 
 pub mod agents;
+pub mod agents_v2;
 pub mod atomic_write;
 pub mod backup;
 pub mod business;
