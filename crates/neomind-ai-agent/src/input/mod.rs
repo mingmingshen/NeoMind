@@ -217,8 +217,15 @@ fn evidence_from_read(
     let (quality, missing, filtered) = classify_freshness(req, &r, now);
     // LookbackWindow may replace the raw series with the in-window subset so
     // EvidenceDetail / model prompt share the same filtered point set.
-    let value = filtered.unwrap_or(r.value);
-    let observed_at = latest_point_timestamp(&value).or(r.observed_at);
+    // Only recompute observed_at from that filtered set — otherwise keep the
+    // source observation used for LatestWithin / other Fresh decisions.
+    let (value, observed_at) = match filtered {
+        Some(v) => {
+            let obs = latest_point_timestamp(&v).or(r.observed_at);
+            (v, obs)
+        }
+        None => (r.value, r.observed_at),
+    };
     (
         EvidenceItem {
             key: req.key.clone(),
@@ -355,9 +362,15 @@ fn point_timestamp(p: &serde_json::Value) -> Option<i64> {
         .map(normalize_ts_ms)
 }
 
-/// Keep only points whose timestamps fall in `[start, end]` (ms). Preserves
-/// `{ "points": [...] }` vs bare-array shape. Returns `None` when any point
-/// lacks a usable timestamp (caller falls through to trusted-coverage path).
+/// Keep only points whose timestamps fall in `[start, end]` (ms).
+///
+/// Rebuilds a fresh object from the filtered points — never clones the raw
+/// wrapper, so stale aggregates (`max_kw`, `avg`, …) computed over the full
+/// series cannot survive into EvidenceDetail / the model prompt. Only
+/// contract-clear scalar metadata (e.g. `unit`) is preserved.
+///
+/// Returns `None` when any point lacks a usable timestamp (caller falls
+/// through to trusted-coverage path).
 fn filter_series_to_window(
     value: &serde_json::Value,
     window: (i64, i64),
@@ -380,13 +393,23 @@ fn filter_series_to_window(
         }
     }
     if wrapped {
-        let mut obj = value.as_object().cloned().unwrap_or_default();
+        let mut obj = serde_json::Map::new();
         obj.insert("points".into(), serde_json::Value::Array(kept));
+        for key in LOOKBACK_SAFE_META_KEYS {
+            if let Some(v) = value.get(*key) {
+                if v.is_string() || v.is_number() || v.is_boolean() {
+                    obj.insert((*key).into(), v.clone());
+                }
+            }
+        }
         Some(serde_json::Value::Object(obj))
     } else {
         Some(serde_json::Value::Array(kept))
     }
 }
+
+/// Metadata keys safe to keep after a LookbackWindow point filter.
+const LOOKBACK_SAFE_META_KEYS: &[&str] = &["unit", "units", "field", "metric", "name"];
 
 fn latest_point_timestamp(value: &serde_json::Value) -> Option<i64> {
     series_point_timestamps(value)?.into_iter().max()
