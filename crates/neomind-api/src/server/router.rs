@@ -24,8 +24,8 @@ pub async fn create_router() -> Router {
 /// Create the application router with a specific state.
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
-        agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
-        dashboards, data, data_push, devices, events, extension_stream, extensions,
+        agents, agents_v2, auth as auth_handlers, auth_users, automations, basic, capabilities,
+        config, dashboards, data, data_push, devices, events, extension_stream, extensions,
         frontend_components, im_bridges, images, instances, llm_backends, logs, memory,
         message_channels, messages, mqtt, onboarding, operations, rules, sessions, settings, setup,
         skills, stats, suggestions, system, tools,
@@ -915,6 +915,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // id="tools". Read-only catalog of the server's ToolRegistry.
         .route("/api/agents/tools", get(agents::list_agent_tools))
         .route("/api/agents/test-preview", post(agents::test_agent_preview))
+        // Clean-slate v2 surface (schema runtime stays 1 until five-table cutover)
+        .route(
+            "/api/agents/v2/schema",
+            get(agents_v2::agent_v2_schema),
+        )
+        .route(
+            "/api/agents/v2/plan-preview",
+            post(agents_v2::plan_preview),
+        )
         .route("/api/agents/:id", get(agents::get_agent))
         .route("/api/agents/:id", put(agents::update_agent))
         .route("/api/agents/:id", delete(agents::delete_agent))

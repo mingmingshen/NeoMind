@@ -1,12 +1,17 @@
 //! M2 adapter surface for the clean-slate agent DTO.
 //!
-//! Wired behind feature/env later; M1 uses the isolated test service. This
-//! module provides serialization helpers and fixture round-trip tests so Web
-//! and CLI can share `tests/fixtures/agent-contract/v2/` before cutover.
+//! Routes under `/api/agents/v2/*` sit beside the legacy handlers so Web/CLI
+//! can adopt EffectivePlan preview before full schema-v2 cutover. Schema
+//! version stays 1 until AgentStore serves the five v2 tables.
 
-use neomind_ai_agent::model::{AgentSpec, AgentSpecDraft, EffectivePlan};
+use axum::Json;
+use neomind_ai_agent::model::{AgentSpec, AgentSpecDraft, EffectivePlan, RunResponse};
 use neomind_ai_agent::service::plan_from_spec;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use super::common::{ok, HandlerResult};
+use crate::models::ErrorResponse;
 
 /// Envelope returned by create/update/get once M2 cuts over.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +63,34 @@ pub fn preview_draft(draft: AgentSpecDraft) -> Result<AgentPlanPreviewResponse, 
     })
 }
 
+/// POST /api/agents/v2/plan-preview — static EffectivePlan, zero external reads.
+pub async fn plan_preview(
+    Json(req): Json<AgentPlanPreviewRequest>,
+) -> HandlerResult<AgentPlanPreviewResponse> {
+    match preview_draft(req.draft) {
+        Ok(resp) => ok(resp),
+        Err(e) => Err(ErrorResponse::bad_request(e)),
+    }
+}
+
+/// Schema descriptor for the clean-slate DTO (editor / CLI discovery).
+pub async fn agent_v2_schema() -> HandlerResult<Value> {
+    ok(serde_json::json!({
+        "schema": "agent-contract/v2",
+        "schema_version_runtime": 1,
+        "schema_version_target": 2,
+        "samples": ["daily-brief", "partial-meter", "unknown-delivery", "legacy-history"],
+        "operations": {
+            "plan_preview": "POST /api/agents/v2/plan-preview",
+            "note": "Formal create/dry-run/invoke cutover lands with schema v2 activation"
+        }
+    }))
+}
+
+/// Placeholder type export so OpenAPI / future handlers share RunResponse.
+#[allow(dead_code)]
+type _RunResponseExport = RunResponse;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,9 +116,12 @@ mod tests {
             preview.effective_plan.timezone.as_deref(),
             Some("Asia/Shanghai")
         );
-        // Serialize plan for Web consumers
         let enc = serde_json::to_value(&preview).unwrap();
         assert_eq!(enc["dry_run"], false);
-        assert!(enc["effective_plan"]["authorized_reads"].as_array().unwrap().len() >= 2);
+        assert!(enc["effective_plan"]["authorized_reads"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2);
     }
 }
