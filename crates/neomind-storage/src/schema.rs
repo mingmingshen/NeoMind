@@ -25,6 +25,9 @@ use redb::{Database, TableDefinition};
 /// Bump ONLY for changes older code cannot safely read — e.g. a field
 /// changing meaning where serde defaults would paper over real data loss.
 /// Additive fields with `#[serde(default)]` do not need a bump.
+/// Kept at 1 until M2 handler cutover can serve from the five v2 tables.
+/// `agents_v2::migrate_agents_v1_to_v2` is implemented and tested but must not
+/// run at startup yet — it deletes the legacy `agents` table.
 pub const CURRENT_SCHEMA_VERSION: u64 = 1;
 
 const SCHEMA_META_TABLE: TableDefinition<&str, u64> = TableDefinition::new("schema_meta");

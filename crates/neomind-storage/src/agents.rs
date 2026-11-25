@@ -1074,6 +1074,9 @@ impl AgentStore {
 
     fn from_db(db: Database) -> Result<Arc<Self>, Error> {
         // Rollback guard: refuse databases stamped by a newer build (see schema.rs).
+        // M2 will call `agents_v2::migrate_agents_v1_to_v2` HERE (before stamp)
+        // once handlers read the five v2 tables — not before, because migrate
+        // deletes the legacy `agents` table.
         crate::schema::check_or_stamp(&db)
             .map_err(|e| Error::Storage(format!("schema version: {e}")))?;
         let write_txn = db.begin_write()?;

@@ -7,6 +7,8 @@
 //! Storage must not depend on `neomind-ai-agent` — DTO shapes here mirror that
 //! crate's contracts so rows stay JSON-compatible across the boundary.
 
+use std::sync::Arc;
+
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +16,7 @@ use crate::agents::{
     AgentMemory, AgentNotify, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentToolConfig,
     AiAgent, ExecutionMode, NotifyOn, ResourceType, ScheduleType, UserMessage,
 };
+use crate::error::{Error, Result};
 
 // ── Table names (v2 layout) ─────────────────────────────────────────────────
 
@@ -162,6 +165,71 @@ pub struct AgentRuntimeRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_probe_at: Option<i64>,
     pub updated_at: i64,
+}
+
+/// V2 execution outcome (distinct from legacy [`crate::agents::ExecutionStatus`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionStatusV2 {
+    Completed,
+    Partial,
+    Skipped,
+    Failed,
+}
+
+/// Delivery intent / receipt state for a side-effect.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum DeliveryState {
+    IntentPending,
+    Rejected { reason: String },
+    Accepted,
+    Confirmed,
+    OutcomeUnknown { reason: String },
+}
+
+/// Unique send-intent + receipt keyed by `(execution_id, destination, fingerprint)`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionDeliveryRecord {
+    pub execution_id: String,
+    pub destination: String,
+    pub action_fingerprint: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    pub idempotent: bool,
+    pub state: DeliveryState,
+}
+
+/// Execution row written to `agent_executions` (v2 shape).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentExecutionRecordV2 {
+    pub id: String,
+    pub agent_id: String,
+    pub config_version: u64,
+    pub status: ExecutionStatusV2,
+    pub started_at: i64,
+    pub finished_at: i64,
+    pub is_probe: bool,
+    pub dry_run: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_config: Option<bool>,
+    #[serde(default)]
+    pub evidence: serde_json::Value,
+    /// Deliveries stored on the execution row (unique claim via transactional RMW).
+    #[serde(default)]
+    pub deliveries: Vec<ActionDeliveryRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conclusion: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert_verdict: Option<String>,
+}
+
+fn delivery_matches(rec: &ActionDeliveryRecord, destination: &str, fingerprint: &str) -> bool {
+    rec.destination == destination && rec.action_fingerprint == fingerprint
 }
 
 // ── Fidelity mapping (pure; unit-tested) ────────────────────────────────────
@@ -347,9 +415,280 @@ pub fn map_agent_v1_to_v2(
     )
 }
 
+// ── Store (v2 tables only; does not migrate or delete legacy `agents`) ──────
+
+/// Create the five v2 tables if missing.
+///
+/// Does **not** delete, rename, or touch a legacy `agents` table — even when
+/// that table is present and empty. Safe to call from [`AgentStoreV2::open`].
+pub fn ensure_v2_tables(db: &Database) -> Result<()> {
+    let write = db.begin_write()?;
+    write.open_table(AGENT_SPECS_TABLE)?;
+    write.open_table(AGENT_RUNTIME_TABLE)?;
+    write.open_table(AGENT_EXECUTIONS_TABLE)?;
+    write.open_table(AGENT_MEMORY_TABLE)?;
+    write.open_table(AGENT_USER_MESSAGES_TABLE)?;
+    write.commit()?;
+    Ok(())
+}
+
+/// Persistent agent store over the five v2 tables.
+///
+/// Opening ensures tables exist but never runs [`migrate_agents_v1_to_v2`] and
+/// never bumps [`crate::schema::CURRENT_SCHEMA_VERSION`].
+pub struct AgentStoreV2 {
+    db: Arc<Database>,
+}
+
+impl AgentStoreV2 {
+    /// Open or create a store at `path`, ensuring the five v2 tables exist.
+    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Arc<Self>> {
+        Self::from_db(Database::create(path)?)
+    }
+
+    /// In-memory store (tests).
+    pub fn memory() -> Result<Arc<Self>> {
+        Self::from_db(
+            Database::builder()
+                .create_with_backend(redb::backends::InMemoryBackend::new())
+                .map_err(|e| Error::Storage(e.to_string()))?,
+        )
+    }
+
+    /// Take ownership of a [`Database`] and ensure v2 tables.
+    pub fn from_db(db: Database) -> Result<Arc<Self>> {
+        Self::from_arc(Arc::new(db))
+    }
+
+    /// Share an existing [`Database`] (e.g. alongside legacy [`crate::agents::AgentStore`]).
+    pub fn from_arc(db: Arc<Database>) -> Result<Arc<Self>> {
+        ensure_v2_tables(&db)?;
+        Ok(Arc::new(Self { db }))
+    }
+
+    pub fn db(&self) -> &Arc<Database> {
+        &self.db
+    }
+
+    // ── Specs ───────────────────────────────────────────────────────────────
+
+    pub fn save_spec(&self, spec: &AgentSpecRecord) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_SPECS_TABLE)?;
+            let bytes =
+                serde_json::to_vec(spec).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(spec.id.as_str(), bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn get_spec(&self, id: &str) -> Result<Option<AgentSpecRecord>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_SPECS_TABLE)?;
+        match table.get(id)? {
+            Some(bytes) => {
+                let spec: AgentSpecRecord = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                Ok(Some(spec))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn list_specs(&self) -> Result<Vec<AgentSpecRecord>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_SPECS_TABLE)?;
+        let mut out = Vec::new();
+        for entry in table.iter()? {
+            let (_, bytes) = entry?;
+            match serde_json::from_slice::<AgentSpecRecord>(bytes.value()) {
+                Ok(spec) => out.push(spec),
+                Err(e) => {
+                    tracing::warn!("skip corrupt agent_specs row: {e}");
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn delete_spec(&self, id: &str) -> Result<bool> {
+        let write = self.db.begin_write()?;
+        let removed = {
+            let mut specs = write.open_table(AGENT_SPECS_TABLE)?;
+            let existed = specs.get(id)?.is_some();
+            if existed {
+                specs.remove(id)?;
+            }
+            existed
+        };
+        if removed {
+            let mut runtime = write.open_table(AGENT_RUNTIME_TABLE)?;
+            let _ = runtime.remove(id)?;
+        }
+        write.commit()?;
+        Ok(removed)
+    }
+
+    // ── Runtime ─────────────────────────────────────────────────────────────
+
+    pub fn get_runtime(&self, agent_id: &str) -> Result<Option<AgentRuntimeRecord>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_RUNTIME_TABLE)?;
+        match table.get(agent_id)? {
+            Some(bytes) => {
+                let rt: AgentRuntimeRecord = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                Ok(Some(rt))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn set_runtime(&self, runtime: &AgentRuntimeRecord) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_RUNTIME_TABLE)?;
+            let bytes =
+                serde_json::to_vec(runtime).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(runtime.agent_id.as_str(), bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    // ── Executions ──────────────────────────────────────────────────────────
+
+    pub fn save_execution(&self, execution: &AgentExecutionRecordV2) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_EXECUTIONS_TABLE)?;
+            let bytes =
+                serde_json::to_vec(execution).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(execution.id.as_str(), bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn get_execution(&self, id: &str) -> Result<Option<AgentExecutionRecordV2>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_EXECUTIONS_TABLE)?;
+        match table.get(id)? {
+            Some(bytes) => {
+                let exec: AgentExecutionRecordV2 = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                Ok(Some(exec))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Formal (non-`dry_run`) executions for `agent_id`, newest `finished_at` first.
+    pub fn list_formal_executions(&self, agent_id: &str) -> Result<Vec<AgentExecutionRecordV2>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_EXECUTIONS_TABLE)?;
+        let mut out = Vec::new();
+        for entry in table.iter()? {
+            let (_, bytes) = entry?;
+            let exec: AgentExecutionRecordV2 = match serde_json::from_slice(bytes.value()) {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!("skip corrupt agent_executions row: {e}");
+                    continue;
+                }
+            };
+            if exec.agent_id == agent_id && !exec.dry_run {
+                out.push(exec);
+            }
+        }
+        out.sort_by(|a, b| b.finished_at.cmp(&a.finished_at));
+        Ok(out)
+    }
+
+    /// Insert `IntentPending` uniquely on the execution row.
+    ///
+    /// Returns `Ok(true)` when this caller obtained send rights; `Ok(false)` if
+    /// a delivery for the same `(execution_id, destination, fingerprint)` already
+    /// exists (any state).
+    pub fn try_claim_delivery(&self, record: ActionDeliveryRecord) -> Result<bool> {
+        let write = self.db.begin_write()?;
+        let claimed = {
+            let mut table = write.open_table(AGENT_EXECUTIONS_TABLE)?;
+            let existing_bytes = match table.get(record.execution_id.as_str())? {
+                Some(guard) => guard.value().to_vec(),
+                None => {
+                    return Err(Error::NotFound(format!(
+                        "execution {}",
+                        record.execution_id
+                    )));
+                }
+            };
+            let mut exec: AgentExecutionRecordV2 = serde_json::from_slice(&existing_bytes)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            if exec
+                .deliveries
+                .iter()
+                .any(|d| delivery_matches(d, &record.destination, &record.action_fingerprint))
+            {
+                false
+            } else {
+                let exec_id = exec.id.clone();
+                exec.deliveries.push(record);
+                let bytes =
+                    serde_json::to_vec(&exec).map_err(|e| Error::Serialization(e.to_string()))?;
+                table.insert(exec_id.as_str(), bytes.as_slice())?;
+                true
+            }
+        };
+        write.commit()?;
+        Ok(claimed)
+    }
+
+    pub fn update_delivery_state(
+        &self,
+        execution_id: &str,
+        destination: &str,
+        fingerprint: &str,
+        state: DeliveryState,
+    ) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_EXECUTIONS_TABLE)?;
+            let existing_bytes = match table.get(execution_id)? {
+                Some(guard) => guard.value().to_vec(),
+                None => {
+                    return Err(Error::NotFound(format!("execution {execution_id}")));
+                }
+            };
+            let mut exec: AgentExecutionRecordV2 = serde_json::from_slice(&existing_bytes)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let rec = exec
+                .deliveries
+                .iter_mut()
+                .find(|d| delivery_matches(d, destination, fingerprint))
+                .ok_or_else(|| {
+                    Error::NotFound(format!(
+                        "delivery {execution_id}/{destination}/{fingerprint}"
+                    ))
+                })?;
+            rec.state = state;
+            let bytes =
+                serde_json::to_vec(&exec).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(execution_id, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+}
+
 // ── Migration ───────────────────────────────────────────────────────────────
 
-fn table_exists(db: &Database, name: TableDefinition<&str, &[u8]>) -> Result<bool, String> {
+fn table_exists(
+    db: &Database,
+    name: TableDefinition<&str, &[u8]>,
+) -> std::result::Result<bool, String> {
     let read = db.begin_read().map_err(|e| e.to_string())?;
     Ok(read.open_table(name).is_ok())
 }
@@ -358,27 +697,11 @@ fn table_exists(db: &Database, name: TableDefinition<&str, &[u8]>) -> Result<boo
 ///
 /// Idempotent: a second call when `agents` is already gone is a no-op beyond
 /// ensuring the five tables exist. Does **not** stamp schema version 2.
-pub fn migrate_agents_v1_to_v2(db: &Database) -> Result<(), String> {
-    // Always ensure the five tables exist (even on a fresh / already-migrated DB).
-    {
-        let write = db.begin_write().map_err(|e| e.to_string())?;
-        write
-            .open_table(AGENT_SPECS_TABLE)
-            .map_err(|e| e.to_string())?;
-        write
-            .open_table(AGENT_RUNTIME_TABLE)
-            .map_err(|e| e.to_string())?;
-        write
-            .open_table(AGENT_EXECUTIONS_TABLE)
-            .map_err(|e| e.to_string())?;
-        write
-            .open_table(AGENT_MEMORY_TABLE)
-            .map_err(|e| e.to_string())?;
-        write
-            .open_table(AGENT_USER_MESSAGES_TABLE)
-            .map_err(|e| e.to_string())?;
-        write.commit().map_err(|e| e.to_string())?;
-    }
+///
+/// **Do not call from [`crate::agents::AgentStore::from_db`] yet** — this deletes
+/// the legacy `agents` table that handlers still read.
+pub fn migrate_agents_v1_to_v2(db: &Database) -> std::result::Result<(), String> {
+    ensure_v2_tables(db).map_err(|e| e.to_string())?;
 
     if !table_exists(db, AGENTS_V1_TABLE)? {
         return Ok(());
@@ -724,5 +1047,141 @@ mod tests {
         let read = db.begin_read().unwrap();
         let specs = read.open_table(AGENT_SPECS_TABLE).unwrap();
         assert!(specs.get("a1").unwrap().is_some());
+    }
+
+    fn sample_spec(id: &str) -> AgentSpecRecord {
+        AgentSpecRecord {
+            id: id.into(),
+            name: "roundtrip".into(),
+            description: Some("spec round-trip".into()),
+            user_prompt: "do the thing".into(),
+            llm_backend_id: None,
+            trigger: TriggerSpec::Manual,
+            pacing: PacingPolicy::default(),
+            input: InputContract::default(),
+            tool_policy: ToolPolicy::Disabled,
+            output: OutputContract::default(),
+            notify: NotifyPolicy::default(),
+            controlled_actions: Vec::new(),
+            config_version: 1,
+            created_at: 100,
+            updated_at: 200,
+        }
+    }
+
+    #[test]
+    fn ensure_v2_tables_preserves_empty_legacy_agents() {
+        let db = Database::builder()
+            .create_with_backend(redb::backends::InMemoryBackend::new())
+            .unwrap();
+        {
+            let write = db.begin_write().unwrap();
+            {
+                let mut agents = write.open_table(AGENTS_V1_TABLE).unwrap();
+                // Empty legacy table — still must survive ensure_v2_tables.
+                let _ = &mut agents;
+            }
+            write.commit().unwrap();
+        }
+
+        ensure_v2_tables(&db).unwrap();
+
+        let read = db.begin_read().unwrap();
+        assert!(
+            read.open_table(AGENTS_V1_TABLE).is_ok(),
+            "ensure_v2_tables must not delete legacy agents"
+        );
+        assert!(read.open_table(AGENT_SPECS_TABLE).is_ok());
+        assert!(read.open_table(AGENT_RUNTIME_TABLE).is_ok());
+        assert!(read.open_table(AGENT_EXECUTIONS_TABLE).is_ok());
+        assert!(read.open_table(AGENT_MEMORY_TABLE).is_ok());
+        assert!(read.open_table(AGENT_USER_MESSAGES_TABLE).is_ok());
+        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 1);
+    }
+
+    #[test]
+    fn agent_store_v2_spec_roundtrip() {
+        let store = AgentStoreV2::memory().unwrap();
+        let spec = sample_spec("spec-1");
+        store.save_spec(&spec).unwrap();
+
+        let got = store.get_spec("spec-1").unwrap().expect("spec present");
+        assert_eq!(got, spec);
+        assert_eq!(store.list_specs().unwrap().len(), 1);
+
+        assert!(store.delete_spec("spec-1").unwrap());
+        assert!(store.get_spec("spec-1").unwrap().is_none());
+        assert!(store.list_specs().unwrap().is_empty());
+        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 1);
+    }
+
+    #[test]
+    fn agent_store_v2_runtime_and_execution_delivery() {
+        let store = AgentStoreV2::memory().unwrap();
+        store.save_spec(&sample_spec("a1")).unwrap();
+
+        let runtime = AgentRuntimeRecord {
+            agent_id: "a1".into(),
+            status: AgentStatus::Active,
+            stats: AgentStatsV2::default(),
+            error_message: None,
+            next_probe_at: None,
+            updated_at: 50,
+        };
+        store.set_runtime(&runtime).unwrap();
+        assert_eq!(store.get_runtime("a1").unwrap().unwrap(), runtime);
+
+        let formal = AgentExecutionRecordV2 {
+            id: "exec-formal".into(),
+            agent_id: "a1".into(),
+            config_version: 1,
+            status: ExecutionStatusV2::Completed,
+            started_at: 10,
+            finished_at: 20,
+            is_probe: false,
+            dry_run: false,
+            stale_config: None,
+            evidence: serde_json::json!({}),
+            deliveries: Vec::new(),
+            brief_text: Some("ok".into()),
+            conclusion: None,
+            error: None,
+            alert_verdict: None,
+        };
+        let dry = AgentExecutionRecordV2 {
+            id: "exec-dry".into(),
+            dry_run: true,
+            finished_at: 30,
+            ..formal.clone()
+        };
+        store.save_execution(&formal).unwrap();
+        store.save_execution(&dry).unwrap();
+
+        let formal_list = store.list_formal_executions("a1").unwrap();
+        assert_eq!(formal_list.len(), 1);
+        assert_eq!(formal_list[0].id, "exec-formal");
+
+        let claim = ActionDeliveryRecord {
+            execution_id: "exec-formal".into(),
+            destination: "dev-1".into(),
+            action_fingerprint: "fp".into(),
+            depends_on: vec!["src".into()],
+            idempotent: false,
+            state: DeliveryState::IntentPending,
+        };
+        assert!(store.try_claim_delivery(claim.clone()).unwrap());
+        assert!(!store.try_claim_delivery(claim).unwrap());
+
+        store
+            .update_delivery_state(
+                "exec-formal",
+                "dev-1",
+                "fp",
+                DeliveryState::Accepted,
+            )
+            .unwrap();
+        let exec = store.get_execution("exec-formal").unwrap().unwrap();
+        assert_eq!(exec.deliveries.len(), 1);
+        assert_eq!(exec.deliveries[0].state, DeliveryState::Accepted);
     }
 }
