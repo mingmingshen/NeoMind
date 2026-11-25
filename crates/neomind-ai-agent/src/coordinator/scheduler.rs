@@ -151,14 +151,14 @@ impl AgentScheduler {
         // Prefer the agent timezone when parseable; fall back to UTC.
         if let Ok(tz) = timezone.parse::<chrono_tz::Tz>() {
             let from_tz = from.with_timezone(&tz);
-            for next in schedule.after(&from_tz).take(1) {
+            if let Some(next) = schedule.after(&from_tz).take(1).next() {
                 let next_utc = next.with_timezone(&Utc);
                 return next_utc <= until;
             }
             return false;
         }
 
-        for next in schedule.after(&from).take(1) {
+        if let Some(next) = schedule.after(&from).take(1).next() {
             return next <= until;
         }
         false

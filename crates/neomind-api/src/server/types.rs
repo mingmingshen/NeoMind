@@ -92,8 +92,8 @@ use crate::auth_users::AuthUserState;
 use crate::config::LlmSettingsRequest;
 use crate::rate_limit::{RateLimitConfig, RateLimiter};
 use crate::server::state::{
-    AgentState, AuthState, AutomationState, CoreState, DeviceState,
-    ExtensionMetricsStorage, ExtensionRegistryAdapter, ExtensionState, ExtensionStore,
+    AgentState, AuthState, AutomationState, CoreState, DeviceState, ExtensionMetricsStorage,
+    ExtensionRegistryAdapter, ExtensionState, ExtensionStore,
 };
 
 #[cfg(feature = "embedded-broker")]
@@ -673,7 +673,6 @@ impl ServerState {
     pub fn agent_store(&self) -> Arc<neomind_storage::AgentStore> {
         self.agents.agent_store.clone()
     }
-
 }
 
 impl ServerState {
@@ -2659,7 +2658,9 @@ impl ServerState {
             let clean_slate = self.agents.clean_slate.clone();
             let rule_engine = self.automation.rule_engine.clone();
             let callback: neomind_rules::AgentTriggerCallback = Arc::new(
-                move |agent_id: String, _input: Option<String>, _data: Option<serde_json::Value>| {
+                move |agent_id: String,
+                      _input: Option<String>,
+                      _data: Option<serde_json::Value>| {
                     let clean_slate = clean_slate.clone();
                     Box::pin(async move {
                         let guard = clean_slate.read().await;
@@ -2667,7 +2668,9 @@ impl ServerState {
                             return Err("Clean-slate agent runtime not initialized".to_string());
                         };
                         if !rt.has_agent(&agent_id) {
-                            return Err(format!("Agent not found in clean-slate runtime: {agent_id}"));
+                            return Err(format!(
+                                "Agent not found in clean-slate runtime: {agent_id}"
+                            ));
                         }
                         match rt
                             .submit(&agent_id, neomind_ai_agent::SubmitSource::Rule)
@@ -3086,10 +3089,8 @@ impl ServerState {
     /// invoke / schedule / event paths after M3 deleted `AiAgentManager`).
     pub async fn require_clean_slate(
         &self,
-    ) -> Result<
-        Arc<crate::ai_agent_runtime::HostedAiAgentRuntime>,
-        crate::models::ErrorResponse,
-    > {
+    ) -> Result<Arc<crate::ai_agent_runtime::HostedAiAgentRuntime>, crate::models::ErrorResponse>
+    {
         self.agents
             .clean_slate
             .read()
@@ -3396,10 +3397,8 @@ impl ServerState {
                             Some("Server restarted - status reset".to_string()),
                         )
                         .await;
-                    let _ = rt_for_status.set_agent_status(
-                        &agent.id,
-                        neomind_ai_agent::AgentStatus::Active,
-                    );
+                    let _ = rt_for_status
+                        .set_agent_status(&agent.id, neomind_ai_agent::AgentStatus::Active);
                 }
             }
         });
@@ -3440,12 +3439,7 @@ impl ServerState {
                         ..
                     } => {
                         bridge
-                            .check_and_trigger(
-                                "extension",
-                                &extension_id,
-                                &output_name,
-                                timestamp,
-                            )
+                            .check_and_trigger("extension", &extension_id, &output_name, timestamp)
                             .await;
                     }
                     _ => {}

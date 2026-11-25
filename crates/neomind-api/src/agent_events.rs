@@ -120,12 +120,7 @@ impl AgentEventBridge {
             return false;
         }
 
-        let state = self
-            .windows
-            .lock()
-            .expect("windows")
-            .get(agent_id)
-            .cloned();
+        let state = self.windows.lock().expect("windows").get(agent_id).cloned();
         match filter.observe(state.as_ref(), source_type, source_id, field, now) {
             WindowOutcome::Fire => true,
             WindowOutcome::Pending(next) => {
