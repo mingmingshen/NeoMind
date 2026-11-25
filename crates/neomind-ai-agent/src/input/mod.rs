@@ -151,6 +151,9 @@ impl InputPipeline {
 }
 
 /// Embed freshness contract into params so host adapters can range-query.
+///
+/// Strips client-forgeable host trust flags (`_invoke_is_sample`) — those may
+/// only come from host registry / adapter metadata.
 fn params_with_freshness(req: &InputRequirement) -> serde_json::Value {
     let mut params = req.params.clone();
     let obj = match params.as_object_mut() {
@@ -160,6 +163,8 @@ fn params_with_freshness(req: &InputRequirement) -> serde_json::Value {
             params.as_object_mut().unwrap()
         }
     };
+    // Never forward forgeable sample-time claims from the task spec.
+    obj.remove("_invoke_is_sample");
     match &req.freshness {
         FreshnessPolicy::LatestWithin { max_age_secs } => {
             obj.insert(
@@ -253,13 +258,14 @@ fn classify_freshness(
                 return stale_or_missing(req, "missing observed_at");
             };
             // Timestamps may be secs or millis — normalize to ms heuristically.
-            let obs_ms = if obs < 1_000_000_000_000 { obs * 1000 } else { obs };
+            let obs_ms = normalize_ts_ms(obs);
+            // Future observations are not trusted (clock skew / forged sample).
+            if obs_ms > now {
+                return stale_or_missing(req, "observation in the future");
+            }
             let max_age_ms = (*max_age_secs as i64).saturating_mul(1000);
             if now.saturating_sub(obs_ms) > max_age_ms {
-                return stale_or_missing(
-                    req,
-                    &format!("observation age exceeds {max_age_secs}s"),
-                );
+                return stale_or_missing(req, &format!("observation age exceeds {max_age_secs}s"));
             }
             (EvidenceQuality::Fresh, false)
         }
@@ -268,35 +274,83 @@ fn classify_freshness(
             max_points,
         } => {
             let points = count_series_points(&r.value);
-            let window = r
-                .valid_window
-                .or_else(|| implied_window(req, now))
+            // Requested window is a contract, not proof of coverage.
+            let requested = implied_window(req, now)
                 .unwrap_or((now.saturating_sub((*lookback_secs as i64) * 1000), now));
-            // Host must supply a windowed series; a lone latest point cannot
-            // complete a full-window calculation when max_points > 1.
             if points == 0 {
                 return stale_or_missing(req, "no points in lookback window");
             }
             if *max_points > 1 && points < 2 {
-                return stale_or_missing(
-                    req,
-                    "single point cannot complete full-window calc",
-                );
+                return stale_or_missing(req, "single point cannot complete full-window calc");
             }
-            if let Some(obs) = r.observed_at {
-                let obs_ms = if obs < 1_000_000_000_000 { obs * 1000 } else { obs };
-                if obs_ms < window.0 || obs_ms > window.1 {
-                    return stale_or_missing(req, "observation outside lookback window");
+            // 1) Per-point timestamps → count how many fall in the requested window.
+            if let Some(times) = series_point_timestamps(&r.value) {
+                let in_window = times
+                    .iter()
+                    .filter(|t| **t >= requested.0 && **t <= requested.1)
+                    .count();
+                if in_window == 0 {
+                    return stale_or_missing(req, "all points outside lookback window");
                 }
+                if *max_points > 1 && in_window < 2 {
+                    return stale_or_missing(req, "fewer than 2 in-window timestamped points");
+                }
+                return (EvidenceQuality::Fresh, false);
             }
-            let _ = window;
-            (EvidenceQuality::Fresh, false)
+            // 2) Supplier-trusted actual coverage from the host (never the
+            // implied request window alone). Device lookback sets this after
+            // a real range query; extension commands leave it None.
+            if let Some((start, end)) = r.valid_window {
+                if let Some(obs) = r.observed_at {
+                    let obs_ms = normalize_ts_ms(obs);
+                    if obs_ms < start || obs_ms > end {
+                        return stale_or_missing(req, "observation outside lookback window");
+                    }
+                }
+                return (EvidenceQuality::Fresh, false);
+            }
+            // 3) Untimestamped points with no trusted coverage → not Fresh.
+            stale_or_missing(req, "lookback points lack timestamps")
         }
     }
 }
 
+fn normalize_ts_ms(ts: i64) -> i64 {
+    if ts < 1_000_000_000_000 {
+        ts.saturating_mul(1000)
+    } else {
+        ts
+    }
+}
+
+/// Extract per-point timestamps from a series payload. Returns `None` when
+/// any point lacks a usable time (strict LookbackWindow needs full coverage).
+fn series_point_timestamps(value: &serde_json::Value) -> Option<Vec<i64>> {
+    let arr = value
+        .get("points")
+        .and_then(|p| p.as_array())
+        .or_else(|| value.as_array())?;
+    if arr.is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(arr.len());
+    for p in arr {
+        let t = p
+            .get("timestamp")
+            .or_else(|| p.get("observed_at"))
+            .or_else(|| p.get("time"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))?;
+        out.push(normalize_ts_ms(t));
+    }
+    Some(out)
+}
+
 fn count_series_points(value: &serde_json::Value) -> usize {
-    if let Some(n) = value.get("points").and_then(|p| p.as_array()).map(|a| a.len()) {
+    if let Some(n) = value
+        .get("points")
+        .and_then(|p| p.as_array())
+        .map(|a| a.len())
+    {
         return n;
     }
     if let Some(n) = value.as_array().map(|a| a.len()) {

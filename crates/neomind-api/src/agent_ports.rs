@@ -141,9 +141,11 @@ impl HostLlmPort {
                 .map_err(|e| AgentError::Llm(e.to_string()))?,
         };
 
-        let mut params = GenerationParams::default();
-        params.thinking_enabled = Some(false);
-        params.max_tokens = Some(2048);
+        let params = GenerationParams {
+            thinking_enabled: Some(false),
+            max_tokens: Some(2048),
+            ..Default::default()
+        };
         let input = LlmInput {
             messages: vec![
                 Message::system(request.system.clone()),
@@ -250,13 +252,13 @@ impl SourceReadPort for HostSourceReadPort {
             .query_latest(&source_id, operation)
             .await
         {
-            let (window, value) =
-                apply_ext_freshness_to_point(&freshness, &point, now_ms, operation);
+            let value = apply_ext_freshness_to_point(&freshness, &point, now_ms, operation);
             return Ok(SourceReadResult {
                 source_id: source_id.clone(),
                 binding_proof: format!("{source_id}:{operation}"),
                 observed_at: Some(point.timestamp),
-                valid_window: window,
+                // Never echo the *requested* window as actual coverage.
+                valid_window: None,
                 value,
             });
         }
@@ -278,7 +280,7 @@ impl SourceReadPort for HostSourceReadPort {
                 source_id: source_id.clone(),
                 binding_proof: format!("{source_id}:{operation}:live"),
                 observed_at: Some(m.timestamp),
-                valid_window: lookback_window_from_freshness(&freshness, now_ms),
+                valid_window: None,
                 value: serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
             });
         }
@@ -303,23 +305,24 @@ impl SourceReadPort for HostSourceReadPort {
             reason: e.to_string(),
         })?;
 
-        // Call time is fetch time, not observation time. Only ops that declare
-        // `_invoke_is_sample` may treat the invoke as the sample instant.
-        let observed_at = if params
-            .get("_invoke_is_sample")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            Some(now_ms)
-        } else {
-            parse_observation_time(&result)
-        };
+        // Call time is fetch time, not observation time. Task params must never
+        // forge `_invoke_is_sample` — only payload obs time (or host-trusted
+        // registry metadata) may set observed_at.
+        let observed_at = parse_observation_time(&result).or_else(|| {
+            if host_trusted_invoke_is_sample(&self.deps, extension_id, operation) {
+                Some(now_ms)
+            } else {
+                None
+            }
+        });
 
+        // Do not echo the *requested* freshness window as actual coverage —
+        // LookbackWindow classification needs real point timestamps.
         Ok(SourceReadResult {
             source_id,
             binding_proof: format!("extension:{extension_id}:{operation}:cmd"),
             observed_at,
-            valid_window: lookback_window_from_freshness(&freshness, now_ms),
+            valid_window: None,
             value: result,
         })
     }
@@ -403,9 +406,13 @@ impl SourceReadPort for HostSourceReadPort {
             let (start_q, end_q) = storage_range_for_series(lookback_secs, now_ms, sample_ts);
             let points = tokio::time::timeout(
                 timeout,
-                self.deps
-                    .telemetry
-                    .query_limited(&source_key, field, start_q, end_q, Some(max_points)),
+                self.deps.telemetry.query_limited(
+                    &source_key,
+                    field,
+                    start_q,
+                    end_q,
+                    Some(max_points),
+                ),
             )
             .await
             .map_err(|_| AgentError::Source {
@@ -475,13 +482,19 @@ fn lookback_window_from_freshness(
     }
 }
 
+/// Host-trusted invoke-is-sample declaration. Task params are never consulted.
+/// Reserved for future registry metadata; currently always false (fail closed).
+fn host_trusted_invoke_is_sample(
+    _deps: &HostAgentDeps,
+    _extension_id: &str,
+    _operation: &str,
+) -> bool {
+    false
+}
+
 /// Device/MQTT/API telemetry uses Unix seconds; some tests/writers use ms.
 /// Pick storage query bounds from a sample timestamp when available.
-fn storage_range_for_series(
-    lookback_secs: u64,
-    now_ms: i64,
-    sample_ts: Option<i64>,
-) -> (i64, i64) {
+fn storage_range_for_series(lookback_secs: u64, now_ms: i64, sample_ts: Option<i64>) -> (i64, i64) {
     let start_ms = now_ms.saturating_sub((lookback_secs as i64).saturating_mul(1000));
     match sample_ts {
         Some(ts) if ts >= 1_000_000_000_000 => (start_ms, now_ms),
@@ -517,11 +530,7 @@ fn parse_observation_time(value: &serde_json::Value) -> Option<i64> {
         if let Some(n) = value.get(*key).and_then(|v| v.as_i64()) {
             return Some(n);
         }
-        if let Some(n) = value
-            .get(*key)
-            .and_then(|v| v.as_f64())
-            .map(|f| f as i64)
-        {
+        if let Some(n) = value.get(*key).and_then(|v| v.as_f64()).map(|f| f as i64) {
             return Some(n);
         }
     }
@@ -534,16 +543,13 @@ fn parse_observation_time(value: &serde_json::Value) -> Option<i64> {
 }
 
 fn apply_ext_freshness_to_point(
-    freshness: &Option<serde_json::Value>,
+    _freshness: &Option<serde_json::Value>,
     point: &neomind_devices::telemetry::DataPoint,
-    now_ms: i64,
+    _now_ms: i64,
     _operation: &str,
-) -> (Option<(i64, i64)>, serde_json::Value) {
-    let window = lookback_window_from_freshness(freshness, now_ms);
-    let value = serde_json::to_value(point).unwrap_or_else(|_| {
-        serde_json::json!({ "timestamp": point.timestamp })
-    });
-    (window, value)
+) -> serde_json::Value {
+    serde_json::to_value(point)
+        .unwrap_or_else(|_| serde_json::json!({ "timestamp": point.timestamp }))
 }
 
 // ── Notify ──────────────────────────────────────────────────────────────────

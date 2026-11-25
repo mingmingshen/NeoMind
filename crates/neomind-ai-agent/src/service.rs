@@ -220,10 +220,7 @@ impl AgentApplicationService {
             }
             rt.stats.last_execution_at = Some(exec.finished_at);
             rt.stats.last_execution_id = Some(exec.id.clone());
-            if matches!(
-                exec.status,
-                crate::model::ExecutionStatus::Failed
-            ) {
+            if matches!(exec.status, crate::model::ExecutionStatus::Failed) {
                 rt.status = AgentStatus::Error;
                 rt.error_message = exec.error.clone();
             } else if matches!(spec.trigger, TriggerSpec::Manual) {

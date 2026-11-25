@@ -42,11 +42,7 @@ pub fn evidence_shows_overload(evidence: &EvidenceReport) -> bool {
 /// Model-text verdict: require an explicit last-line verdict, never a bare
 /// "OVERLOAD" substring (which matches "No overload detected").
 pub fn alert_from_model_text(text: &str) -> bool {
-    let last = text
-        .lines()
-        .rev()
-        .map(str::trim)
-        .find(|l| !l.is_empty());
+    let last = text.lines().rev().map(str::trim).find(|l| !l.is_empty());
     matches!(last, Some("Verdict: criteria met"))
 }
 
@@ -77,7 +73,12 @@ fn text_asserts_overload(text: &str) -> bool {
     // Threshold-only discussion ("if power exceeds X there may be overload")
     // without an affirmative finding — treat as not met when hedging.
     let hedges = ["IF ", "MAY ", "MIGHT ", "COULD ", "THRESHOLD", "POSSIBLE"];
-    let affirmative = ["IS OVERLOAD", "OVERLOAD DETECTED", "OVERLOAD: TRUE", "OVERLOAD=TRUE"];
+    let affirmative = [
+        "IS OVERLOAD",
+        "OVERLOAD DETECTED",
+        "OVERLOAD: TRUE",
+        "OVERLOAD=TRUE",
+    ];
     if hedges.iter().any(|h| upper.contains(h)) && !affirmative.iter().any(|a| upper.contains(a)) {
         return false;
     }
@@ -90,7 +91,9 @@ mod tests {
 
     #[test]
     fn boolean_false_is_not_overload() {
-        assert!(!value_shows_overload(&serde_json::json!({"overload": false})));
+        assert!(!value_shows_overload(
+            &serde_json::json!({"overload": false})
+        ));
         assert!(!value_shows_overload(
             &serde_json::json!({"overload": false, "note": "checked"})
         ));
@@ -118,8 +121,6 @@ mod tests {
 
     #[test]
     fn verdict_line_is_alert() {
-        assert!(alert_from_model_text(
-            "Meter hot.\nVerdict: criteria met\n"
-        ));
+        assert!(alert_from_model_text("Meter hot.\nVerdict: criteria met\n"));
     }
 }

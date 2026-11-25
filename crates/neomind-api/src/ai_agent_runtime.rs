@@ -296,7 +296,9 @@ mod tests {
     use neomind_ai_agent::ports::FixedClock;
     use neomind_ai_agent::runner::single_pass::LOCAL_BRIEF_BACKEND;
     use neomind_core::extension::system::{ExtensionCommand, ExtensionMetadata, MetricDefinition};
-    use neomind_core::extension::{CommandEffect, CommandExecutionKind, CommandReplaySafety, Extension, ExtensionRegistry};
+    use neomind_core::extension::{
+        CommandEffect, CommandExecutionKind, CommandReplaySafety, Extension, ExtensionRegistry,
+    };
     use neomind_core::EventBus;
     use neomind_devices::telemetry::DataPoint;
     use neomind_devices::{DeviceRegistry, DeviceService, MetricValue, TimeSeriesStorage};
@@ -763,11 +765,13 @@ mod tests {
         );
         assert_eq!(runtime.side_effects.invokes(), 0);
         assert!(
-            exec.deliveries.iter().any(|d| d.destination == "ext-write-1"
-                && matches!(
-                    d.state,
-                    neomind_ai_agent::model::DeliveryState::Rejected { .. }
-                )),
+            exec.deliveries
+                .iter()
+                .any(|d| d.destination == "ext-write-1"
+                    && matches!(
+                        d.state,
+                        neomind_ai_agent::model::DeliveryState::Rejected { .. }
+                    )),
             "weather-dependent action must be blocked: {:?}",
             exec.deliveries
         );
@@ -932,7 +936,10 @@ mod tests {
             .and_then(|p| p.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
-        assert_eq!(points, 2, "15m window must return exactly two in-window points");
+        assert_eq!(
+            points, 2,
+            "15m window must return exactly two in-window points"
+        );
         let (start_ms, end_ms) = r.valid_window.expect("evidence ms window");
         let now_ms = chrono::Utc::now().timestamp_millis();
         assert!(
@@ -955,10 +962,7 @@ mod tests {
         let (mut deps, _, _) = test_deps().await;
         let ext_reg = Arc::new(ExtensionRegistry::new());
         ext_reg
-            .register(
-                "weather_cn".into(),
-                fake_weather_extension(payload.clone()),
-            )
+            .register("weather_cn".into(), fake_weather_extension(payload.clone()))
             .await
             .unwrap();
         deps.extension_registry = ext_reg;
@@ -986,10 +990,10 @@ mod tests {
             d
         };
 
-        // Fresh observation in payload.
+        // Fresh observation in payload (ms), well within 900s.
         *payload.lock().unwrap() = serde_json::json!({
             "temp": 22,
-            "timestamp": now_ms / 1000 - 30
+            "observed_at": now_ms - 30_000
         });
         let (spec, _) = runtime.create(draft_for("wx-fresh")).unwrap();
         let resp = runtime.invoke(&spec.id).await.unwrap();
@@ -1004,14 +1008,15 @@ mod tests {
             .unwrap();
         assert!(
             matches!(item.quality, EvidenceQuality::Fresh),
-            "fresh payload obs must pass LatestWithin: {:?}",
-            item.quality
+            "fresh payload obs must pass LatestWithin: {:?} observed_at={:?}",
+            item.quality,
+            item.observed_at
         );
 
         // Yesterday's cache in payload must be Stale (not call-time).
         *payload.lock().unwrap() = serde_json::json!({
             "temp": 22,
-            "timestamp": now_ms / 1000 - 86_400
+            "observed_at": now_ms - 86_400_000
         });
         let (spec, _) = runtime.create(draft_for("wx-stale")).unwrap();
         let resp = runtime.invoke(&spec.id).await.unwrap();
@@ -1047,6 +1052,78 @@ mod tests {
             !matches!(item.quality, EvidenceQuality::Fresh),
             "missing obs time must not be Fresh: {:?}",
             item.quality
+        );
+    }
+
+    #[tokio::test]
+    async fn task_invoke_is_sample_cannot_forge_fresh_observation() {
+        let payload = Arc::new(Mutex::new(serde_json::json!({})));
+        let (mut deps, _, _) = test_deps().await;
+        let ext_reg = Arc::new(ExtensionRegistry::new());
+        ext_reg
+            .register("weather_cn".into(), fake_weather_extension(payload.clone()))
+            .await
+            .unwrap();
+        deps.extension_registry = ext_reg;
+        let store = AgentStore::memory().unwrap();
+        let runtime = HostedAiAgentRuntime::build(store, deps).unwrap();
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        // Yesterday in payload — task tries to forge sample-at-invoke.
+        *payload.lock().unwrap() = serde_json::json!({
+            "temp": 30,
+            "observed_at": now_ms / 1000 - 86_400
+        });
+
+        let mut draft = local_brief_draft("forge-sample");
+        draft.input = InputContract {
+            requirements: vec![InputRequirement {
+                key: "weather".into(),
+                source: InputSourceRef::ExtensionInstance {
+                    id: "weather_cn".into(),
+                },
+                operation: Some("current".into()),
+                params: serde_json::json!({ "_invoke_is_sample": true }),
+                auth_scope: None,
+                timeout_secs: 5,
+                result_type: InputModality::StructuredJson,
+                freshness: FreshnessPolicy::LatestWithin { max_age_secs: 900 },
+                on_missing: MissingPolicy::ReportStale,
+            }],
+        };
+        draft.controlled_actions = vec![ControlledAction {
+            name: "adjust".into(),
+            destination: "ext-write-1".into(),
+            depends_on: vec!["weather".into()],
+            idempotent: false,
+            params: serde_json::json!({}),
+        }];
+
+        let (spec, _) = runtime.create(draft).unwrap();
+        let resp = runtime.invoke(&spec.id).await.unwrap();
+        let exec = resp.execution.as_ref().unwrap();
+        let weather = exec
+            .evidence
+            .items
+            .iter()
+            .find(|i| i.key == "weather")
+            .unwrap();
+        assert!(
+            matches!(weather.quality, EvidenceQuality::Stale),
+            "task _invoke_is_sample must not forge Fresh: {:?}",
+            weather.quality
+        );
+        assert_eq!(runtime.side_effects.invokes(), 0);
+        assert!(
+            exec.deliveries
+                .iter()
+                .any(|d| d.destination == "ext-write-1"
+                    && matches!(
+                        d.state,
+                        neomind_ai_agent::model::DeliveryState::Rejected { .. }
+                    )),
+            "stale weather must block action: {:?}",
+            exec.deliveries
         );
     }
 }

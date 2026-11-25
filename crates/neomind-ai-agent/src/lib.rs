@@ -19,11 +19,11 @@ pub mod storage_bridge;
 pub mod store;
 
 pub use coordinator::{AgentScheduler, AgentSubmitPort, ExecutionCoordinator, SubmitSource};
-pub use runner::LOCAL_BRIEF_BACKEND;
 pub use error::{AgentError, Result};
 pub use model::*;
 pub use persist::DurableAgentStore;
 pub use ports::*;
+pub use runner::LOCAL_BRIEF_BACKEND;
 pub use service::AgentApplicationService;
 pub use store::InMemoryAgentStore;
 

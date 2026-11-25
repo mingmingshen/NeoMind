@@ -457,7 +457,7 @@ pub fn map_agent_v1_to_v2(
             output_schema: agent.output_schema.clone(),
             system_prompt: agent.system_prompt.clone(),
             operator_config: agent.operator_config.clone(),
-            memory_mode: agent.memory_mode.clone(),
+            memory_mode: agent.memory_mode,
             max_tokens_per_run: agent.max_tokens_per_run,
             priority: agent.priority,
             context_window_size: agent.context_window_size,
@@ -626,7 +626,7 @@ pub fn map_agent_v2_to_v1(
         consecutive_failures,
         output_schema: compat.output_schema.clone(),
         operator_config: compat.operator_config.clone(),
-        memory_mode: compat.memory_mode.clone(),
+        memory_mode: compat.memory_mode,
         notify,
         max_tokens_per_run: compat.max_tokens_per_run,
     }

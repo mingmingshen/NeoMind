@@ -84,7 +84,9 @@ pub fn partial_meter_draft(
         description: Some("Multi-source: meter overload alert + weather-gated control".into()),
         user_prompt: "Diagnose meter overload; attribute heat only when weather is available."
             .into(),
-        llm_backend_id: None,
+        // Explicit overload template: structured evidence drives alert, not a
+        // model Verdict line (see SinglePassRunner local-brief path).
+        llm_backend_id: Some("local-brief".into()),
         preset: Some(PresetId::PartialMeter),
         trigger: TriggerSpec::Manual,
         pacing: PacingPolicy::default(),

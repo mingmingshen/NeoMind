@@ -5,9 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use neomind_ai_agent::harness::build_harness;
-use neomind_ai_agent::model::{
-    partial_meter_draft, AlertVerdict, ExecutionStatus, ToolPolicy,
-};
+use neomind_ai_agent::model::{partial_meter_draft, AlertVerdict, ExecutionStatus, ToolPolicy};
 use neomind_ai_agent::ports::{
     LlmBackendCapabilities, LlmPort, LlmRequest, LlmResponse, SourceReadResult,
 };
@@ -104,7 +102,10 @@ async fn zero_tool_model_task_makes_exactly_one_real_model_request() {
     );
 
     let resp = service.invoke(&spec.id).await.unwrap();
-    assert_eq!(resp.execution.as_ref().unwrap().status, ExecutionStatus::Completed);
+    assert_eq!(
+        resp.execution.as_ref().unwrap().status,
+        ExecutionStatus::Completed
+    );
     assert_eq!(llm.calls.load(Ordering::SeqCst), 1);
 
     llm.fail.store(1, Ordering::SeqCst);

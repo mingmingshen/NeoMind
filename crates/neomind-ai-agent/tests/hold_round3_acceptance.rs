@@ -6,8 +6,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use neomind_ai_agent::harness::build_harness;
 use neomind_ai_agent::model::{
-    ExecutionStatus, InputContract, InputModality, InputRequirement, InputSourceRef,
-    MissingPolicy, NotifyPolicy, FreshnessPolicy, ToolPolicy,
+    ExecutionStatus, FreshnessPolicy, InputContract, InputModality, InputRequirement,
+    InputSourceRef, MissingPolicy, NotifyPolicy, ToolPolicy,
 };
 use neomind_ai_agent::ports::{
     LlmBackendCapabilities, LlmPort, LlmRequest, LlmResponse, SourceReadResult,
@@ -132,7 +132,10 @@ async fn run_temp_threshold(prompt: &str) -> u64 {
 async fn zero_tool_model_verdict_temp_threshold_not_overload_only() {
     // Same temp=35 evidence: >30°C criteria met → notify 1; >40°C not met → 0.
     let n30 = run_temp_threshold("Alert when temperature >30°C. Cite temp_now.").await;
-    assert_eq!(n30, 1, ">30°C with temp=35 must notify once via model verdict");
+    assert_eq!(
+        n30, 1,
+        ">30°C with temp=35 must notify once via model verdict"
+    );
 
     let n40 = run_temp_threshold("Alert when temperature >40°C. Cite temp_now.").await;
     assert_eq!(n40, 0, ">40°C with temp=35 must not notify");
