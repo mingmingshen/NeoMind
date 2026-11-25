@@ -1,0 +1,46 @@
+[package]
+name = "neomind-ai-agent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Standalone managed AI agent runtime (clean-slate)"
+
+[features]
+default = []
+test-utils = []
+
+[dependencies]
+neomind-core = { path = "../neomind-core" }
+neomind-llm-loop = { path = "../neomind-llm-loop" }
+neomind-storage = { path = "../neomind-storage" }
+
+async-trait = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+tempfile = "3"
+
+[[test]]
+name = "t12_daily_brief"
+path = "tests/t12_daily_brief.rs"
+
+[[test]]
+name = "t13_partial_meter"
+path = "tests/t13_partial_meter.rs"
+
+[[test]]
+name = "behavior_matrix"
+path = "tests/behavior_matrix.rs"

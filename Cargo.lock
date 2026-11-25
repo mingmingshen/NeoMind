@@ -3003,6 +3003,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "neomind-ai-agent"
+version = "1.3.4"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures",
+ "hex",
+ "neomind-core",
+ "neomind-llm-loop",
+ "neomind-storage",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "neomind-api"
 version = "1.3.4"
 dependencies = [
@@ -3030,6 +3052,7 @@ dependencies = [
  "image",
  "mime_guess",
  "neomind-agent",
+ "neomind-ai-agent",
  "neomind-api",
  "neomind-cli-ops",
  "neomind-core",
