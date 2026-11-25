@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::{
     AgentMemory, AgentNotify, AgentResource, AgentSchedule, AgentStats, AgentStatus,
-    AgentToolConfig, AiAgent, ExecutionMode, NotifyOn, ResourceType, ScheduleType, UserMessage,
+    AgentToolConfig, AiAgent, ExecutionMode, MemoryMode, NotifyOn, OperatorConfig, OperatorField,
+    ParsedIntent, ResourceType, ScheduleType, UserMessage,
 };
 use crate::error::{Error, Result};
 
@@ -108,6 +109,51 @@ pub struct OutputContract {
     pub publish: bool,
 }
 
+/// V1 API fields that are not yet first-class on the v2 spec.
+///
+/// Schema v2 activated while the REST `/api/agents` surface still reads/writes
+/// an `AiAgent`. Without this bundle, `save_agent` → `get_agent` wiped
+/// resources, output contracts, the parsed-intent cache, and pacing knobs —
+/// breaking schedule-only updates, data-source listing, and prompt-edit
+/// mission sync (CI residual after M3 residual #2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct V1CompatBundle {
+    #[serde(default)]
+    pub resources: Vec<AgentResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parsed_intent: Option<ParsedIntent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Vec<OperatorField>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_config: Option<OperatorConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_mode: Option<MemoryMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens_per_run: Option<u64>,
+    #[serde(default = "v1_compat_default_priority")]
+    pub priority: u8,
+    #[serde(default = "v1_compat_default_context_window")]
+    pub context_window_size: usize,
+    #[serde(default = "v1_compat_default_max_chain_depth")]
+    pub max_chain_depth: usize,
+    #[serde(default)]
+    pub max_retries: u32,
+}
+
+fn v1_compat_default_priority() -> u8 {
+    100
+}
+
+fn v1_compat_default_context_window() -> usize {
+    10
+}
+
+fn v1_compat_default_max_chain_depth() -> usize {
+    crate::agents::DEFAULT_MAX_CHAIN_DEPTH
+}
+
 /// Frozen static configuration written to `agent_specs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentSpecRecord {
@@ -130,6 +176,10 @@ pub struct AgentSpecRecord {
     pub notify: NotifyPolicy,
     #[serde(default)]
     pub controlled_actions: Vec<serde_json::Value>,
+    /// See [`V1CompatBundle`]. `#[serde(default)]` so rows written before this
+    /// field still deserialize.
+    #[serde(default)]
+    pub v1_compat: V1CompatBundle,
     pub config_version: u64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -401,6 +451,19 @@ pub fn map_agent_v1_to_v2(
         output: map_output(agent),
         notify: map_notify_policy(&agent.notify),
         controlled_actions: Vec::new(),
+        v1_compat: V1CompatBundle {
+            resources: agent.resources.clone(),
+            parsed_intent: agent.parsed_intent.clone(),
+            output_schema: agent.output_schema.clone(),
+            system_prompt: agent.system_prompt.clone(),
+            operator_config: agent.operator_config.clone(),
+            memory_mode: agent.memory_mode.clone(),
+            max_tokens_per_run: agent.max_tokens_per_run,
+            priority: agent.priority,
+            context_window_size: agent.context_window_size,
+            max_chain_depth: agent.max_chain_depth,
+            max_retries: agent.max_retries,
+        },
         config_version: 1,
         created_at: agent.created_at,
         updated_at: agent.updated_at,
@@ -425,10 +488,12 @@ pub fn map_agent_v1_to_v2(
     )
 }
 
-/// Reconstruct a minimal legacy [`AiAgent`] from v2 rows (list/get after migrate).
+/// Reconstruct a legacy [`AiAgent`] from v2 rows (list/get after migrate).
 ///
-/// Lossy on purpose: execution_mode/resources/tool_config are derived from
-/// [`ToolPolicy`]; conversation history is not restored (lives outside specs).
+/// `execution_mode` / `tool_config` come from [`ToolPolicy`]. Resources,
+/// output schema, parsed intent, and the other v1-only knobs come from
+/// [`V1CompatBundle`] so the dual-read REST surface stays honest. Conversation
+/// history is not restored (lives outside specs).
 pub fn map_agent_v2_to_v1(
     spec: &AgentSpecRecord,
     runtime: Option<&AgentRuntimeRecord>,
@@ -481,7 +546,11 @@ pub fn map_agent_v2_to_v1(
             cron_expression: None,
             timezone: None,
             interval_seconds: None,
-            event_filter: Some(filter.to_string()),
+            event_filter: if filter.is_null() {
+                None
+            } else {
+                Some(filter.to_string())
+            },
         },
         TriggerSpec::Manual => AgentSchedule {
             schedule_type: ScheduleType::Manual,
@@ -526,17 +595,18 @@ pub fn map_agent_v2_to_v1(
         } else {
             (AgentStatus::Active, None, 0, None, AgentStats::default())
         };
+    let compat = &spec.v1_compat;
     AiAgent {
         id: spec.id.clone(),
         name: spec.name.clone(),
         description: spec.description.clone(),
         user_prompt: spec.user_prompt.clone(),
         llm_backend_id: spec.llm_backend_id.clone(),
-        parsed_intent: None,
-        resources: Vec::new(),
+        parsed_intent: compat.parsed_intent.clone(),
+        resources: compat.resources.clone(),
         schedule,
         status,
-        priority: 100,
+        priority: compat.priority,
         created_at: spec.created_at,
         updated_at: spec.updated_at,
         last_execution_at,
@@ -545,20 +615,20 @@ pub fn map_agent_v2_to_v1(
         conversation_history: vec![],
         user_messages,
         conversation_summary: None,
-        context_window_size: 10,
+        context_window_size: compat.context_window_size,
         enable_tool_chaining: false,
-        max_chain_depth: 10,
+        max_chain_depth: compat.max_chain_depth,
         tool_config,
         execution_mode,
         error_message,
-        system_prompt: None,
-        max_retries: 0,
+        system_prompt: compat.system_prompt.clone(),
+        max_retries: compat.max_retries,
         consecutive_failures,
-        output_schema: None,
-        operator_config: None,
-        memory_mode: None,
+        output_schema: compat.output_schema.clone(),
+        operator_config: compat.operator_config.clone(),
+        memory_mode: compat.memory_mode.clone(),
         notify,
-        max_tokens_per_run: None,
+        max_tokens_per_run: compat.max_tokens_per_run,
     }
 }
 
@@ -673,6 +743,33 @@ impl AgentStoreV2 {
         if removed {
             let mut runtime = write.open_table(AGENT_RUNTIME_TABLE)?;
             let _ = runtime.remove(id)?;
+        }
+        write.commit()?;
+        Ok(removed)
+    }
+
+    /// Drop every v2 row for `id` (spec, runtime, memory, user messages).
+    pub fn delete_agent_rows(&self, id: &str) -> Result<bool> {
+        let write = self.db.begin_write()?;
+        let removed = {
+            let mut specs = write.open_table(AGENT_SPECS_TABLE)?;
+            let existed = specs.get(id)?.is_some();
+            if existed {
+                specs.remove(id)?;
+            }
+            existed
+        };
+        {
+            let mut runtime = write.open_table(AGENT_RUNTIME_TABLE)?;
+            let _ = runtime.remove(id)?;
+        }
+        {
+            let mut memory = write.open_table(AGENT_MEMORY_TABLE)?;
+            let _ = memory.remove(id)?;
+        }
+        {
+            let mut messages = write.open_table(AGENT_USER_MESSAGES_TABLE)?;
+            let _ = messages.remove(id)?;
         }
         write.commit()?;
         Ok(removed)
@@ -1334,6 +1431,7 @@ mod tests {
             output: OutputContract::default(),
             notify: NotifyPolicy::default(),
             controlled_actions: Vec::new(),
+            v1_compat: V1CompatBundle::default(),
             config_version: 1,
             created_at: 100,
             updated_at: 200,

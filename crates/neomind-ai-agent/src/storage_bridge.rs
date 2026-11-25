@@ -7,6 +7,7 @@ use neomind_storage::agents_v2::{
     AgentRuntimeRecord as StorageRuntime, AgentSpecRecord, AgentStatsV2,
     InputContract as StorageInput, NotifyPolicy as StorageNotify, OutputContract as StorageOutput,
     PacingPolicy as StoragePacing, ToolPolicy as StorageToolPolicy, TriggerSpec as StorageTrigger,
+    V1CompatBundle,
 };
 
 use crate::model::{
@@ -46,6 +47,7 @@ pub fn spec_to_record(spec: &AgentSpec) -> AgentSpecRecord {
             .iter()
             .filter_map(|a| serde_json::to_value(a).ok())
             .collect(),
+        v1_compat: V1CompatBundle::default(),
         config_version: spec.config_version,
         created_at: spec.created_at,
         updated_at: spec.updated_at,

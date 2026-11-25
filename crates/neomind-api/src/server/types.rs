@@ -1515,11 +1515,27 @@ impl ServerState {
             neomind_storage::MemoryConfig::default(),
         ));
 
+        // Same clean-slate host as production: event/invoke/CRUD tests need
+        // `require_clean_slate()` after M3 deleted AiAgentManager.
+        let clean_slate_holder: crate::server::state::CleanSlateHolder =
+            Arc::new(tokio::sync::RwLock::new(None));
+        match crate::ai_agent_runtime::build_hosted_runtime(agent_store.clone()) {
+            Ok(runtime) => {
+                *clean_slate_holder.write().await = Some(runtime);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Clean-slate runtime unavailable in test state — event/invoke tests will fail"
+                );
+            }
+        }
+
         let agents = AgentState::new(
             Arc::new(session_manager),
             agent_store,
             system_memory_store,
-            Arc::new(tokio::sync::RwLock::new(None)),
+            clean_slate_holder,
         );
 
         // ========== Build AUTH STATE ==========

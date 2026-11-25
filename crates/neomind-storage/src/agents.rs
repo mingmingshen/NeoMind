@@ -204,7 +204,7 @@ fn default_priority() -> u8 {
 }
 
 /// Parsed intent from user's natural language description.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedIntent {
     /// Intent type
     pub intent_type: IntentType,
@@ -235,7 +235,7 @@ pub enum IntentType {
 }
 
 /// A resource selected by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentResource {
     /// Resource type
     pub resource_type: ResourceType,
@@ -1315,6 +1315,26 @@ impl AgentStore {
         status: AgentStatus,
         error_message: Option<String>,
     ) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            let now = chrono::Utc::now().timestamp();
+            if let Some(mut rt) = v2.get_runtime(id)? {
+                rt.status = status;
+                rt.error_message = error_message;
+                rt.updated_at = now;
+                v2.set_runtime(&rt)?;
+            } else if v2.get_spec(id)?.is_some() {
+                v2.set_runtime(&crate::agents_v2::AgentRuntimeRecord {
+                    agent_id: id.to_string(),
+                    status,
+                    stats: crate::agents_v2::AgentStatsV2::default(),
+                    error_message,
+                    next_probe_at: None,
+                    updated_at: now,
+                })?;
+            }
+            return Ok(());
+        }
         // Atomic read-modify-write in ONE write transaction: a concurrent
         // delete either commits first (row gone -> no re-create, same as the
         // old no-op) or afterwards (removes the updated row). The previous
@@ -1347,6 +1367,15 @@ impl AgentStore {
         id: &str,
         consecutive_failures: u32,
     ) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            if let Some(mut rt) = v2.get_runtime(id)? {
+                rt.stats.consecutive_failures = consecutive_failures;
+                rt.updated_at = chrono::Utc::now().timestamp();
+                v2.set_runtime(&rt)?;
+            }
+            return Ok(());
+        }
         // Atomic RMW, one write transaction (see update_agent_status).
         let write_txn = self.db.begin_write()?;
         #[cfg(test)]
@@ -1374,6 +1403,15 @@ impl AgentStore {
         id: &str,
         parsed_intent: Option<ParsedIntent>,
     ) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            if let Some(mut spec) = v2.get_spec(id)? {
+                spec.v1_compat.parsed_intent = parsed_intent;
+                spec.updated_at = chrono::Utc::now().timestamp();
+                v2.save_spec(&spec)?;
+            }
+            return Ok(());
+        }
         // Atomic RMW, one write transaction (see update_agent_status).
         let write_txn = self.db.begin_write()?;
         #[cfg(test)]
@@ -1398,6 +1436,15 @@ impl AgentStore {
     /// Update agent memory after execution.
     /// First reads the agent, then updates both tables in a single write transaction.
     pub async fn update_agent_memory(&self, id: &str, memory: AgentMemory) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            // Silent no-op when the agent is gone — same as the v1 RMW path.
+            if v2.get_spec(id)?.is_none() {
+                return Ok(());
+            }
+            v2.save_memory(id, &memory)?;
+            return Ok(());
+        }
         // Atomic RMW over BOTH tables in one write transaction. If the agent
         // row is gone (concurrent delete), neither the agent row nor an
         // orphan memory row may be written — the old shape wrote the memory
@@ -1435,6 +1482,34 @@ impl AgentStore {
         success: bool,
         duration_ms: u64,
     ) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            let now = chrono::Utc::now().timestamp();
+            let mut rt = match v2.get_runtime(id)? {
+                Some(rt) => rt,
+                None if v2.get_spec(id)?.is_some() => crate::agents_v2::AgentRuntimeRecord {
+                    agent_id: id.to_string(),
+                    status: AgentStatus::Active,
+                    stats: crate::agents_v2::AgentStatsV2::default(),
+                    error_message: None,
+                    next_probe_at: None,
+                    updated_at: now,
+                },
+                None => return Ok(()),
+            };
+            rt.stats.total_runs += 1;
+            if success {
+                rt.stats.successful_runs += 1;
+                rt.stats.consecutive_failures = 0;
+            } else {
+                rt.stats.failed_runs += 1;
+            }
+            let _ = duration_ms; // v2 runtime row has no avg_duration yet
+            rt.stats.last_execution_at = Some(now);
+            rt.updated_at = now;
+            v2.set_runtime(&rt)?;
+            return Ok(());
+        }
         // Atomic RMW, one write transaction (see update_agent_status): reads
         // the agent row AND the latest memory inside the same transaction, so
         // neither a concurrent delete can be overwritten nor updates lost.
@@ -1482,6 +1557,11 @@ impl AgentStore {
 
     /// Delete an agent by ID.
     pub async fn delete_agent(&self, id: &str) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            let _ = v2.delete_agent_rows(id)?;
+            return Ok(());
+        }
         let write_txn = self.db.begin_write()?;
         #[cfg(test)]
         self.test_hook_point();

@@ -25,7 +25,7 @@ use neomind_ai_agent::service::{AgentApplicationService, NotifyCounter, WriteCou
 use neomind_ai_agent::side_effects::{
     FakeNotifyPort, FakeSideEffectPort, Notifier, SideEffectBoundary,
 };
-use neomind_ai_agent::storage_bridge::{record_to_spec, status_from_storage};
+use neomind_ai_agent::storage_bridge::{record_to_spec, runtime_to_storage, status_from_storage};
 use neomind_storage::agents_v2::{map_agent_v1_to_v2, AgentStoreV2};
 use neomind_storage::{AgentStore, AiAgent};
 
@@ -242,7 +242,10 @@ impl HostedAiAgentRuntime {
         let (rec, rt_rec, _, _) = map_agent_v1_to_v2(agent);
         let spec = record_to_spec(&rec).map_err(AgentError::Other)?;
         let now = self.clock.now_ms();
-        self.durable.mem.save_spec(spec.clone(), now)?;
+        // Hot set only — do NOT go through DurableAgentStore::save_spec /
+        // mirror_spec: those re-encode via `spec_to_record` and wipe
+        // `v1_compat` (resources, output_schema, parsed_intent, …).
+        self.durable.mem.save_spec(spec, now)?;
         let runtime = AgentRuntimeRecord {
             agent_id: rt_rec.agent_id,
             status: status_from_storage(rt_rec.status),
@@ -261,8 +264,13 @@ impl HostedAiAgentRuntime {
             next_probe_at: rt_rec.next_probe_at,
             updated_at: rt_rec.updated_at,
         };
-        self.durable.mem.set_runtime(runtime)?;
-        self.mirror_spec(&spec)?;
+        self.durable.mem.set_runtime(runtime.clone())?;
+        if let Some(v2) = &self.durable.v2 {
+            v2.save_spec(&rec)
+                .map_err(|e| AgentError::Other(e.to_string()))?;
+            v2.set_runtime(&runtime_to_storage(&runtime))
+                .map_err(|e| AgentError::Other(e.to_string()))?;
+        }
         Ok(())
     }
 
