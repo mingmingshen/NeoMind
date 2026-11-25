@@ -93,6 +93,7 @@ rand = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 async-trait = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
 get_if_addrs = "0.5"
 base64 = { workspace = true }
 async-stream = { workspace = true }

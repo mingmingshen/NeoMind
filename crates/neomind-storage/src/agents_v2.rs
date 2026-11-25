@@ -802,6 +802,84 @@ impl AgentStoreV2 {
         Ok(())
     }
 
+    /// Single-write-txn stats tick: increments counters without rewriting status.
+    ///
+    /// Does not revive a paused/stopped agent — only mutates `stats` (+ `updated_at`).
+    /// Concurrent callers serialize on the redb write lock so both increments stick.
+    pub fn apply_runtime_stats_tick(&self, agent_id: &str, success: bool, now: i64) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_RUNTIME_TABLE)?;
+            let specs = write.open_table(AGENT_SPECS_TABLE)?;
+            let existing = table.get(agent_id)?.map(|g| g.value().to_vec());
+            let mut rt = match existing {
+                Some(bytes) => serde_json::from_slice::<AgentRuntimeRecord>(&bytes)
+                    .map_err(|e| Error::Serialization(e.to_string()))?,
+                None if specs.get(agent_id)?.is_some() => AgentRuntimeRecord {
+                    agent_id: agent_id.to_string(),
+                    status: AgentStatus::Active,
+                    stats: AgentStatsV2::default(),
+                    error_message: None,
+                    next_probe_at: None,
+                    updated_at: now,
+                },
+                None => {
+                    // Agent gone — same silent no-op as the legacy RMW path.
+                    return Ok(());
+                }
+            };
+            rt.stats.total_runs = rt.stats.total_runs.saturating_add(1);
+            if success {
+                rt.stats.successful_runs = rt.stats.successful_runs.saturating_add(1);
+                rt.stats.consecutive_failures = 0;
+            } else {
+                rt.stats.failed_runs = rt.stats.failed_runs.saturating_add(1);
+            }
+            rt.stats.last_execution_at = Some(now);
+            rt.updated_at = now;
+            let bytes = serde_json::to_vec(&rt).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(agent_id, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    /// Single-write-txn status update (does not invent a row after delete).
+    pub fn apply_runtime_status(
+        &self,
+        agent_id: &str,
+        status: AgentStatus,
+        error_message: Option<String>,
+        now: i64,
+    ) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_RUNTIME_TABLE)?;
+            let specs = write.open_table(AGENT_SPECS_TABLE)?;
+            let existing = table.get(agent_id)?.map(|g| g.value().to_vec());
+            let mut rt = match existing {
+                Some(bytes) => serde_json::from_slice::<AgentRuntimeRecord>(&bytes)
+                    .map_err(|e| Error::Serialization(e.to_string()))?,
+                None if specs.get(agent_id)?.is_some() => AgentRuntimeRecord {
+                    agent_id: agent_id.to_string(),
+                    status,
+                    stats: AgentStatsV2::default(),
+                    error_message: error_message.clone(),
+                    next_probe_at: None,
+                    updated_at: now,
+                },
+                None => return Ok(()),
+            };
+            rt.status = status;
+            rt.error_message = error_message;
+            rt.updated_at = now;
+            let bytes = serde_json::to_vec(&rt).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(agent_id, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
     // ── Executions ──────────────────────────────────────────────────────────
 
     pub fn save_execution(&self, execution: &AgentExecutionRecordV2) -> Result<()> {

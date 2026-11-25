@@ -2,122 +2,33 @@
 //!
 //! Opens the shared agents.redb via [`AgentStoreV2`], loads a
 //! [`DurableAgentStore`], and builds [`AgentApplicationService`] +
-//! [`ExecutionCoordinator`] with host-safe stub ports (LocalBriefLlm,
-//! CountingSourcePort / HostSourcePort, logging FakeNotifyPort).
+//! [`ExecutionCoordinator`] with production host ports (LLM / sources /
+//! notify / side-effects).
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use neomind_ai_agent::coordinator::{AgentScheduler, ExecutionCoordinator, SubmitSource};
+use neomind_ai_agent::coordinator::{
+    AgentScheduler, AgentSubmitPort, ExecutionCoordinator, SubmitSource,
+};
 use neomind_ai_agent::error::{AgentError, Result as AgentResult};
-use neomind_ai_agent::input::{CountingSourcePort, InputPipeline};
+use neomind_ai_agent::input::InputPipeline;
 use neomind_ai_agent::model::{
     AgentRuntimeRecord, AgentSpec, AgentSpecDraft, AgentSpecPatch, AgentStats, AgentStatus,
     EffectivePlan, RunResponse,
 };
 use neomind_ai_agent::persist::{persist_spec, DurableAgentStore};
-use neomind_ai_agent::ports::LocalBriefLlm;
-use neomind_ai_agent::ports::{
-    ClockPort, NotifyPort, SourceReadPort, SourceReadResult, SystemClock,
-};
+use neomind_ai_agent::ports::{ClockPort, NotifyPort, SourceReadPort, SystemClock};
 use neomind_ai_agent::runner::SinglePassRunner;
-use neomind_ai_agent::service::{AgentApplicationService, NotifyCounter, WriteCounter};
-use neomind_ai_agent::side_effects::{
-    FakeNotifyPort, FakeSideEffectPort, Notifier, SideEffectBoundary,
-};
+use neomind_ai_agent::service::AgentApplicationService;
+use neomind_ai_agent::side_effects::{Notifier, SideEffectBoundary};
 use neomind_ai_agent::storage_bridge::{record_to_spec, runtime_to_storage, status_from_storage};
 use neomind_storage::agents_v2::{map_agent_v1_to_v2, AgentStoreV2};
 use neomind_storage::{AgentStore, AiAgent};
 
-/// Source port that returns [`AgentError::Other`] when no fixture is registered.
-/// Used as a host placeholder until real extension/device reads are wired.
-pub struct HostSourcePort {
-    inner: CountingSourcePort,
-}
-
-impl HostSourcePort {
-    pub fn new() -> Self {
-        Self {
-            inner: CountingSourcePort::new(),
-        }
-    }
-}
-
-impl Default for HostSourcePort {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SourceReadPort for HostSourcePort {
-    async fn read_extension(
-        &self,
-        extension_id: &str,
-        operation: &str,
-        params: &serde_json::Value,
-        timeout_secs: u32,
-    ) -> AgentResult<SourceReadResult> {
-        match self
-            .inner
-            .read_extension(extension_id, operation, params, timeout_secs)
-            .await
-        {
-            Ok(v) => Ok(v),
-            Err(AgentError::Source { key, reason }) => Err(AgentError::Other(format!(
-                "host source missing fixture ({key}): {reason}"
-            ))),
-            Err(e) => Err(e),
-        }
-    }
-
-    async fn read_device_metric(
-        &self,
-        device_id: &str,
-        field: &str,
-        params: &serde_json::Value,
-        timeout_secs: u32,
-    ) -> AgentResult<SourceReadResult> {
-        match self
-            .inner
-            .read_device_metric(device_id, field, params, timeout_secs)
-            .await
-        {
-            Ok(v) => Ok(v),
-            Err(AgentError::Source { key, reason }) => Err(AgentError::Other(format!(
-                "host source missing fixture ({key}): {reason}"
-            ))),
-            Err(e) => Err(e),
-        }
-    }
-}
-
-/// Notify port that counts via FakeNotifyPort and logs each deliver.
-struct LoggingNotifyPort {
-    inner: Arc<FakeNotifyPort>,
-}
-
-#[async_trait]
-impl NotifyPort for LoggingNotifyPort {
-    async fn deliver(
-        &self,
-        channel: &str,
-        subject: &str,
-        body: &str,
-        execution_id: &str,
-    ) -> AgentResult<()> {
-        tracing::info!(
-            channel,
-            subject,
-            execution_id,
-            body_len = body.len(),
-            "clean-slate notify deliver"
-        );
-        self.inner
-            .deliver(channel, subject, body, execution_id)
-            .await
-    }
-}
+use crate::agent_ports::{
+    HostAgentDeps, HostLlmPort, HostNotifyPort, HostSideEffectPort, HostSourceReadPort,
+};
 
 /// Hosted clean-slate agent runtime (service + coordinator + durable store).
 pub struct HostedAiAgentRuntime {
@@ -125,17 +36,29 @@ pub struct HostedAiAgentRuntime {
     pub coordinator: Arc<ExecutionCoordinator>,
     pub durable: DurableAgentStore,
     pub clock: Arc<dyn ClockPort>,
+    /// Production ports retained for acceptance counters / diagnostics.
+    pub sources: Arc<HostSourceReadPort>,
+    pub notify: Arc<HostNotifyPort>,
+    pub side_effects: Arc<HostSideEffectPort>,
+    pub llm: Arc<HostLlmPort>,
     scheduler: Arc<std::sync::Mutex<Option<Arc<AgentScheduler>>>>,
     started: std::sync::atomic::AtomicBool,
 }
 
+/// Schedules ticks through [`HostedAiAgentRuntime::submit`] so Cron/Interval
+/// share `mirror_after_run` with manual/event/rule paths.
+struct HostedSubmit(Arc<HostedAiAgentRuntime>);
+
+#[async_trait]
+impl AgentSubmitPort for HostedSubmit {
+    async fn submit(&self, agent_id: &str, source: SubmitSource) -> AgentResult<RunResponse> {
+        self.0.submit(agent_id, source).await
+    }
+}
+
 impl HostedAiAgentRuntime {
-    /// Open AgentStoreV2 on the shared agents.redb and build service.
-    ///
-    /// Schema v2 open loads every v2 row into the hot set (sole scheduler).
-    /// Pre-v2 builds left the hot set empty so soft-copied shadows could not
-    /// double-fire beside a legacy manager; that manager is now deleted.
-    pub fn build(agent_store: Arc<AgentStore>) -> AgentResult<Self> {
+    /// Open AgentStoreV2 on the shared agents.redb and build service with real host ports.
+    pub fn build(agent_store: Arc<AgentStore>, deps: HostAgentDeps) -> AgentResult<Self> {
         let v2 = AgentStoreV2::from_arc(agent_store.db())
             .map_err(|e| AgentError::Storage(e.to_string()))?;
         let clock: Arc<dyn ClockPort> = Arc::new(SystemClock);
@@ -143,43 +66,29 @@ impl HostedAiAgentRuntime {
         let durable = if neomind_storage::schema::CURRENT_SCHEMA_VERSION >= 2 {
             DurableAgentStore::with_v2(v2, now)?
         } else {
-            // Soft-copy may have warmed v2 tables; keep them for migrate fidelity
-            // but start the hot path empty so only POST /api/agents/v2 creates
-            // enter the clean-slate kernel before schema cutover.
             DurableAgentStore {
                 mem: neomind_ai_agent::store::InMemoryAgentStore::new(),
                 v2: Some(v2),
+                fail_next_v2_delete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             }
         };
 
-        let sources: Arc<dyn SourceReadPort> = Arc::new(HostSourcePort::new());
-        let fake_notify = Arc::new(FakeNotifyPort::new());
-        let notify_port: Arc<dyn NotifyPort> = Arc::new(LoggingNotifyPort {
-            inner: fake_notify.clone(),
-        });
-        let writes = Arc::new(FakeSideEffectPort::new());
+        let sources = Arc::new(HostSourceReadPort::new(deps.clone()));
+        let notify = Arc::new(HostNotifyPort::new(deps.message_manager.clone()));
+        let writes = Arc::new(HostSideEffectPort::new(
+            deps.device_service.clone(),
+            deps.extension_registry.clone(),
+        ));
+        let llm = Arc::new(HostLlmPort::new());
 
-        let input = InputPipeline::new(sources, clock.clone());
-        let runner = Arc::new(SinglePassRunner::new(Arc::new(LocalBriefLlm)));
+        let input = InputPipeline::new(sources.clone() as Arc<dyn SourceReadPort>, clock.clone());
+        let runner = Arc::new(SinglePassRunner::new(llm.clone()));
         let side_effects = SideEffectBoundary {
             store: durable.mem.clone(),
-            notifier: Notifier::new(notify_port),
+            notifier: Notifier::new(notify.clone() as Arc<dyn NotifyPort>),
             side_effects: writes.clone(),
             clock: clock.clone(),
         };
-
-        struct NotifyAdapter(Arc<FakeNotifyPort>);
-        impl NotifyCounter for NotifyAdapter {
-            fn count(&self) -> u64 {
-                self.0.count()
-            }
-        }
-        struct WriteAdapter(Arc<FakeSideEffectPort>);
-        impl WriteCounter for WriteAdapter {
-            fn count(&self) -> u64 {
-                self.0.call_count()
-            }
-        }
 
         let service = Arc::new(AgentApplicationService {
             store: durable.mem.clone(),
@@ -187,8 +96,8 @@ impl HostedAiAgentRuntime {
             input,
             runner,
             side_effects,
-            notify_counter: Arc::new(NotifyAdapter(fake_notify)),
-            write_counter: Arc::new(WriteAdapter(writes)),
+            notify_counter: notify.clone() as Arc<dyn neomind_ai_agent::service::NotifyCounter>,
+            write_counter: writes.clone() as Arc<dyn neomind_ai_agent::service::WriteCounter>,
         });
 
         let coordinator = Arc::new(ExecutionCoordinator::new(
@@ -202,6 +111,10 @@ impl HostedAiAgentRuntime {
             coordinator,
             durable,
             clock,
+            sources,
+            notify,
+            side_effects: writes,
+            llm,
             scheduler: Arc::new(std::sync::Mutex::new(None)),
             started: std::sync::atomic::AtomicBool::new(false),
         })
@@ -221,8 +134,9 @@ impl HostedAiAgentRuntime {
         if self.started.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
+        let submit: Arc<dyn AgentSubmitPort> = Arc::new(HostedSubmit(self.clone()));
         let scheduler = Arc::new(AgentScheduler::new(
-            self.coordinator.clone(),
+            submit,
             self.durable.mem.clone(),
             self.clock.clone(),
         ));
@@ -317,7 +231,6 @@ impl HostedAiAgentRuntime {
     }
 
     pub fn delete(&self, id: &str) -> AgentResult<()> {
-        // DurableAgentStore deletes mem + optional v2 mirror.
         self.durable.delete_spec(id)
     }
 
@@ -329,7 +242,6 @@ impl HostedAiAgentRuntime {
 
     pub async fn dry_run(&self, id: &str) -> AgentResult<RunResponse> {
         let resp = self.service.dry_run(id).await?;
-        // Dry-run stays out of formal history; optional v2 mirror of dry_run row omitted.
         Ok(resp)
     }
 
@@ -367,7 +279,267 @@ impl HostedAiAgentRuntime {
 /// Convenience wrapper used by ServerState construction.
 pub fn build_hosted_runtime(
     agent_store: Arc<AgentStore>,
+    deps: HostAgentDeps,
 ) -> AgentResult<Arc<HostedAiAgentRuntime>> {
-    let runtime = Arc::new(HostedAiAgentRuntime::build(agent_store)?);
+    let runtime = Arc::new(HostedAiAgentRuntime::build(agent_store, deps)?);
     Ok(runtime)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neomind_ai_agent::model::{
+        FreshnessPolicy, InputContract, InputModality, InputRequirement, InputSourceRef,
+        MissingPolicy, NotifyPolicy, OutputContract, PacingPolicy, ToolPolicy, TriggerSpec,
+    };
+    use neomind_ai_agent::ports::FixedClock;
+    use neomind_core::extension::ExtensionRegistry;
+    use neomind_core::EventBus;
+    use neomind_devices::telemetry::DataPoint;
+    use neomind_devices::{DeviceRegistry, DeviceService, MetricValue, TimeSeriesStorage};
+    use neomind_messages::channels::MessageChannel;
+    use neomind_messages::{MessageManager, Result as MsgResult};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use crate::server::state::ExtensionMetricsStorage;
+
+    struct CountingChannel {
+        name: String,
+        sends: AtomicU64,
+    }
+
+    #[async_trait]
+    impl MessageChannel for CountingChannel {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn channel_type(&self) -> &str {
+            "test"
+        }
+        fn is_enabled(&self) -> bool {
+            true
+        }
+        async fn send(&self, _message: &neomind_messages::Message) -> MsgResult<()> {
+            self.sends.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    async fn test_deps() -> (HostAgentDeps, Arc<CountingChannel>, Arc<TimeSeriesStorage>) {
+        let mm = Arc::new(MessageManager::new());
+        let ch = Arc::new(CountingChannel {
+            name: "ops".into(),
+            sends: AtomicU64::new(0),
+        });
+        mm.channels().await.read().await.register(ch.clone()).await;
+
+        let telemetry = Arc::new(TimeSeriesStorage::memory().unwrap());
+        let now = chrono::Utc::now().timestamp_millis();
+        telemetry
+            .write(
+                "device:meter-1",
+                "kw",
+                DataPoint::new(now, MetricValue::Float(1.5)),
+            )
+            .await
+            .unwrap();
+
+        let bus = EventBus::new();
+        let registry = Arc::new(DeviceRegistry::new());
+        let device_service = Arc::new(DeviceService::new(registry, bus));
+        device_service
+            .set_telemetry_storage(telemetry.clone())
+            .await;
+
+        let ext_reg = Arc::new(ExtensionRegistry::new());
+        let ext_metrics = Arc::new(ExtensionMetricsStorage::with_shared_storage(
+            telemetry.clone(),
+        ));
+
+        (
+            HostAgentDeps::new(mm, telemetry.clone(), device_service, ext_reg, ext_metrics),
+            ch,
+            telemetry,
+        )
+    }
+
+    #[tokio::test]
+    async fn prod_builder_isolated_sinks_count_real_deliveries_and_reads() {
+        let (deps, channel, _telemetry) = test_deps().await;
+        let store = AgentStore::memory().unwrap();
+        let runtime = HostedAiAgentRuntime::build(store, deps).unwrap();
+
+        let draft = AgentSpecDraft {
+            name: "sink-check".into(),
+            description: None,
+            user_prompt: "report".into(),
+            llm_backend_id: None,
+            preset: None,
+            trigger: TriggerSpec::Manual,
+            pacing: PacingPolicy::default(),
+            input: InputContract {
+                requirements: vec![InputRequirement {
+                    key: "kw".into(),
+                    source: InputSourceRef::DeviceMetric {
+                        device_id: "meter-1".into(),
+                        field: "kw".into(),
+                    },
+                    operation: None,
+                    params: serde_json::json!({}),
+                    auth_scope: None,
+                    timeout_secs: 5,
+                    result_type: InputModality::Metric,
+                    freshness: FreshnessPolicy::Any,
+                    on_missing: MissingPolicy::ReportStale,
+                }],
+            },
+            tool_policy: ToolPolicy::Disabled,
+            output: OutputContract::default(),
+            notify: NotifyPolicy {
+                channels: vec!["ops".into()],
+                on_complete: true,
+                on_alert: false,
+                alert_depends_on: vec![],
+                on_failure: true,
+                pending_confirmation: false,
+            },
+            controlled_actions: vec![],
+        };
+
+        let (spec, _) = runtime.create(draft).unwrap();
+        let resp = runtime.invoke(&spec.id).await.unwrap();
+        assert!(resp.execution.is_some());
+        assert!(
+            runtime.sources.reads() >= 1,
+            "host source port must hit telemetry"
+        );
+        assert!(
+            runtime.notify.deliveries() >= 1,
+            "host notify port must deliver"
+        );
+        assert!(
+            channel.sends.load(Ordering::SeqCst) >= 1,
+            "MessageManager must fan out to the counting channel"
+        );
+        // ToolPolicy::Disabled uses local brief — LLM not required for this path.
+        assert_eq!(runtime.llm.requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn scheduler_tick_persists_execution_via_shared_submit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agents.redb");
+        let store = AgentStore::open(&path).unwrap();
+        let (deps, _ch, _) = test_deps().await;
+        let runtime = Arc::new(HostedAiAgentRuntime::build(store.clone(), deps).unwrap());
+
+        // Swap SystemClock for FixedClock so interval is immediately due.
+        // Rebuild a thin scheduler against HostedSubmit + fixed clock.
+        let clock = Arc::new(FixedClock::new(10_000));
+        let draft = AgentSpecDraft {
+            name: "sched-persist".into(),
+            description: None,
+            user_prompt: "tick".into(),
+            llm_backend_id: None,
+            preset: None,
+            trigger: TriggerSpec::Interval { every_secs: 1 },
+            pacing: PacingPolicy::default(),
+            input: InputContract::default(),
+            tool_policy: ToolPolicy::Disabled,
+            output: OutputContract::default(),
+            notify: NotifyPolicy::default(),
+            controlled_actions: vec![],
+        };
+        let (spec, _) = runtime.create(draft).unwrap();
+        // Force last_execution_at none and advance clock past period via FixedClock on scheduler.
+        let submit: Arc<dyn AgentSubmitPort> = Arc::new(HostedSubmit(runtime.clone()));
+        // Patch runtime mem clock is SystemClock; interval_due uses scheduler clock.
+        let scheduler = AgentScheduler::new(submit, runtime.durable.mem.clone(), clock.clone());
+        // last=0 → due immediately at 10_000 with every_secs=1
+        scheduler.tick_once().await;
+        // Wait for spawned submit to finish mirroring.
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            if runtime
+                .durable
+                .mem
+                .formal_history_len(&spec.id)
+                .saturating_mul(1)
+                >= 1
+            {
+                break;
+            }
+        }
+        assert!(
+            runtime.durable.mem.formal_history_len(&spec.id) >= 1,
+            "hot formal history must record the scheduled run"
+        );
+        let exec_id = runtime
+            .durable
+            .mem
+            .formal_history(&spec.id)
+            .last()
+            .map(|e| e.id.clone())
+            .expect("execution id");
+        let rt = runtime.durable.mem.get_runtime(&spec.id).unwrap();
+        assert!(rt.stats.total_runs >= 1);
+
+        drop(scheduler);
+        drop(runtime);
+        drop(store);
+
+        let reopened = AgentStore::open(&path).unwrap();
+        let v2 = AgentStoreV2::from_arc(reopened.db()).unwrap();
+        let formal = v2.list_formal_executions(&spec.id).unwrap();
+        assert!(
+            !formal.is_empty(),
+            "reopened redb must contain the scheduled formal run"
+        );
+        assert_eq!(formal.last().unwrap().id, exec_id);
+        let rt2 = v2.get_runtime(&spec.id).unwrap().expect("runtime row");
+        assert!(rt2.stats.total_runs >= 1);
+        assert!(rt2.stats.last_execution_id.is_some() || rt2.stats.last_execution_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn delete_surfaces_injected_fail_and_success_removes_on_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agents-del.redb");
+        let store = AgentStore::open(&path).unwrap();
+        let (deps, _, _) = test_deps().await;
+        let runtime = HostedAiAgentRuntime::build(store.clone(), deps).unwrap();
+        let (spec, _) = runtime
+            .create(AgentSpecDraft {
+                name: "to-delete".into(),
+                description: None,
+                user_prompt: "x".into(),
+                llm_backend_id: None,
+                preset: None,
+                trigger: TriggerSpec::Manual,
+                pacing: PacingPolicy::default(),
+                input: InputContract::default(),
+                tool_policy: ToolPolicy::Disabled,
+                output: OutputContract::default(),
+                notify: NotifyPolicy::default(),
+                controlled_actions: vec![],
+            })
+            .unwrap();
+
+        runtime
+            .durable
+            .fail_next_v2_delete
+            .store(true, Ordering::SeqCst);
+        let err = runtime.delete(&spec.id).unwrap_err();
+        assert!(matches!(err, AgentError::Storage(_)));
+        assert!(runtime.has_agent(&spec.id), "mem reconciled after fail");
+
+        runtime.delete(&spec.id).unwrap();
+        assert!(!runtime.has_agent(&spec.id));
+        drop(runtime);
+        drop(store);
+
+        let reopened = AgentStore::open(&path).unwrap();
+        let v2 = AgentStoreV2::from_arc(reopened.db()).unwrap();
+        assert!(v2.get_spec(&spec.id).unwrap().is_none());
+    }
 }

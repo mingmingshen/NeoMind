@@ -1318,21 +1318,9 @@ impl AgentStore {
         if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
             let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
             let now = chrono::Utc::now().timestamp();
-            if let Some(mut rt) = v2.get_runtime(id)? {
-                rt.status = status;
-                rt.error_message = error_message;
-                rt.updated_at = now;
-                v2.set_runtime(&rt)?;
-            } else if v2.get_spec(id)?.is_some() {
-                v2.set_runtime(&crate::agents_v2::AgentRuntimeRecord {
-                    agent_id: id.to_string(),
-                    status,
-                    stats: crate::agents_v2::AgentStatsV2::default(),
-                    error_message,
-                    next_probe_at: None,
-                    updated_at: now,
-                })?;
-            }
+            #[cfg(test)]
+            self.test_hook_point();
+            v2.apply_runtime_status(id, status, error_message, now)?;
             return Ok(());
         }
         // Atomic read-modify-write in ONE write transaction: a concurrent
@@ -1485,29 +1473,12 @@ impl AgentStore {
         if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
             let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
             let now = chrono::Utc::now().timestamp();
-            let mut rt = match v2.get_runtime(id)? {
-                Some(rt) => rt,
-                None if v2.get_spec(id)?.is_some() => crate::agents_v2::AgentRuntimeRecord {
-                    agent_id: id.to_string(),
-                    status: AgentStatus::Active,
-                    stats: crate::agents_v2::AgentStatsV2::default(),
-                    error_message: None,
-                    next_probe_at: None,
-                    updated_at: now,
-                },
-                None => return Ok(()),
-            };
-            rt.stats.total_runs += 1;
-            if success {
-                rt.stats.successful_runs += 1;
-                rt.stats.consecutive_failures = 0;
-            } else {
-                rt.stats.failed_runs += 1;
-            }
             let _ = duration_ms; // v2 runtime row has no avg_duration yet
-            rt.stats.last_execution_at = Some(now);
-            rt.updated_at = now;
-            v2.set_runtime(&rt)?;
+            #[cfg(test)]
+            self.test_hook_point();
+            // Single-write conditional field update — never rewrites status,
+            // so a concurrent pause cannot be revived by a stale stats settle.
+            v2.apply_runtime_stats_tick(id, success, now)?;
             return Ok(());
         }
         // Atomic RMW, one write transaction (see update_agent_status): reads
@@ -2453,6 +2424,61 @@ mod tests {
     /// Release the paused hook on this store.
     fn release_hook(store: &AgentStore) {
         *store.test_hook.lock().unwrap() = crate::agents::TestHookState::Disarmed;
+    }
+
+    /// Concurrent stats ticks must both land (single-write txn serializes).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn v2_stats_concurrent_counts_both_kept() {
+        let store = test_store();
+        let id = "stats-concurrent";
+        store.save_agent(&race_agent(id)).await.unwrap();
+        let (sa, sb) = (store.clone(), store.clone());
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let (b1, b2) = (barrier.clone(), barrier.clone());
+        let ta = tokio::spawn(async move {
+            b1.wait().await;
+            sa.update_agent_stats(id, true, 10).await.unwrap();
+        });
+        let tb = tokio::spawn(async move {
+            b2.wait().await;
+            sb.update_agent_stats(id, true, 20).await.unwrap();
+        });
+        let _ = tokio::join!(ta, tb);
+        let v2 = crate::agents_v2::AgentStoreV2::from_arc(store.db()).unwrap();
+        let rt = v2.get_runtime(id).unwrap().expect("runtime");
+        assert_eq!(rt.stats.total_runs, 2, "both stats ticks must apply");
+        assert_eq!(rt.stats.successful_runs, 2);
+    }
+
+    /// A stats settle must not revive a concurrent pause (field-conditional update).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn v2_stats_settle_does_not_revive_pause() {
+        let store = test_store();
+        let id = "stats-no-revive";
+        store.save_agent(&race_agent(id)).await.unwrap();
+
+        arm_hook(&store);
+        let s_stats = store.clone();
+        let stats_task = tokio::spawn(async move {
+            s_stats.update_agent_stats(id, true, 5).await.unwrap();
+        });
+        wait_hook_paused(&store);
+        store
+            .update_agent_status(id, AgentStatus::Paused, None)
+            .await
+            .unwrap();
+        release_hook(&store);
+        stats_task.await.unwrap();
+
+        let v2 = crate::agents_v2::AgentStoreV2::from_arc(store.db()).unwrap();
+        let rt = v2.get_runtime(id).unwrap().expect("runtime");
+        assert_eq!(
+            rt.status,
+            AgentStatus::Paused,
+            "stats settle must not rewrite status back to Active"
+        );
+        assert_eq!(rt.stats.total_runs, 1);
+        assert_eq!(rt.stats.successful_runs, 1);
     }
 
     /// Barrier-started delete-vs-update race on the SAME id, N iterations.

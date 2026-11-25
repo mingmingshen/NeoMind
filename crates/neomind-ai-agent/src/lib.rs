@@ -18,7 +18,7 @@ pub mod side_effects;
 pub mod storage_bridge;
 pub mod store;
 
-pub use coordinator::{AgentScheduler, ExecutionCoordinator, SubmitSource};
+pub use coordinator::{AgentScheduler, AgentSubmitPort, ExecutionCoordinator, SubmitSource};
 pub use error::{AgentError, Result};
 pub use model::*;
 pub use persist::DurableAgentStore;

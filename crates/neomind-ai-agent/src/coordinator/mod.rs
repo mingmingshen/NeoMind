@@ -8,8 +8,10 @@ pub use scheduler::AgentScheduler;
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use crate::error::{AgentError, Result};
-use crate::model::AgentStatus;
+use crate::model::{AgentStatus, RunResponse};
 use crate::ports::ClockPort;
 use crate::service::AgentApplicationService;
 use crate::store::InMemoryAgentStore;
@@ -30,6 +32,22 @@ pub enum SubmitSource {
     Extension,
 }
 
+/// Shared post-submit path used by the scheduler and host wrappers.
+///
+/// Host implements this so Cron/Interval ticks go through the same
+/// `mirror_after_run` persistence as manual/event/rule submits.
+#[async_trait]
+pub trait AgentSubmitPort: Send + Sync {
+    async fn submit(&self, agent_id: &str, source: SubmitSource) -> Result<RunResponse>;
+}
+
+#[async_trait]
+impl AgentSubmitPort for ExecutionCoordinator {
+    async fn submit(&self, agent_id: &str, source: SubmitSource) -> Result<RunResponse> {
+        ExecutionCoordinator::submit(self, agent_id, source).await
+    }
+}
+
 impl ExecutionCoordinator {
     pub fn new(
         service: Arc<AgentApplicationService>,
@@ -44,11 +62,7 @@ impl ExecutionCoordinator {
         }
     }
 
-    pub async fn submit(
-        &self,
-        agent_id: &str,
-        source: SubmitSource,
-    ) -> Result<crate::model::RunResponse> {
+    pub async fn submit(&self, agent_id: &str, source: SubmitSource) -> Result<RunResponse> {
         let runtime = self.store.get_runtime(agent_id)?;
         if matches!(runtime.status, AgentStatus::Paused | AgentStatus::Stopped) {
             return Err(AgentError::NotRunnable(format!("{:?}", runtime.status)));

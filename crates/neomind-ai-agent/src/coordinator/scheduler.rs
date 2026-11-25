@@ -9,14 +9,14 @@ use cron::Schedule;
 use tokio::time::{interval, Duration};
 use tokio_util::sync::CancellationToken;
 
-use super::{ExecutionCoordinator, SubmitSource};
+use super::{AgentSubmitPort, SubmitSource};
 use crate::model::{AgentStatus, TriggerSpec};
 use crate::ports::ClockPort;
 use crate::store::InMemoryAgentStore;
 
-/// 1s tick loop that submits Active Cron/Interval agents via the coordinator.
+/// 1s tick loop that submits Active Cron/Interval agents via the shared submit port.
 pub struct AgentScheduler {
-    coordinator: Arc<ExecutionCoordinator>,
+    submit: Arc<dyn AgentSubmitPort>,
     store: InMemoryAgentStore,
     clock: Arc<dyn ClockPort>,
     /// Last fire timestamp (ms) per agent — used for Interval spacing and Cron window.
@@ -26,12 +26,12 @@ pub struct AgentScheduler {
 
 impl AgentScheduler {
     pub fn new(
-        coordinator: Arc<ExecutionCoordinator>,
+        submit: Arc<dyn AgentSubmitPort>,
         store: InMemoryAgentStore,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
-            coordinator,
+            submit,
             store,
             clock,
             last_fired: Mutex::new(HashMap::new()),
@@ -65,7 +65,8 @@ impl AgentScheduler {
         self.cancel.cancel();
     }
 
-    async fn tick_once(&self) {
+    /// Run one due-check pass (also used by persistence regression tests).
+    pub async fn tick_once(&self) {
         let now = self.clock.now_ms();
         let specs = self.store.list_specs();
         for spec in specs {
@@ -92,9 +93,11 @@ impl AgentScheduler {
                 g.insert(spec.id.clone(), now);
             }
             let id = spec.id.clone();
-            let coordinator = self.coordinator.clone();
+            let submit = self.submit.clone();
+            // Await persistence on the shared submit path (host mirrors v2).
+            // Spawn so one slow run does not block the tick loop for others.
             tokio::spawn(async move {
-                if let Err(e) = coordinator.submit(&id, SubmitSource::Schedule).await {
+                if let Err(e) = submit.submit(&id, SubmitSource::Schedule).await {
                     tracing::debug!(
                         agent_id = %id,
                         error = %e,

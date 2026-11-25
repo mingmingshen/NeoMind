@@ -1194,8 +1194,16 @@ impl ServerState {
         // ChatStream invocations from isolated extensions can resolve it.
         *session_manager_holder.write().await = Some(agents.session_manager.clone());
 
-        // Build clean-slate HostedAiAgentRuntime on the shared agents.redb.
-        match crate::ai_agent_runtime::build_hosted_runtime(agents.agent_store.clone()) {
+        // Build clean-slate HostedAiAgentRuntime on the shared agents.redb
+        // with production host ports (LLM / telemetry / notify / side-effects).
+        let host_deps = crate::agent_ports::HostAgentDeps::new(
+            core.message_manager.clone(),
+            devices.telemetry.clone(),
+            devices.service.clone(),
+            extensions.registry.clone(),
+            extensions.metrics_storage.clone(),
+        );
+        match crate::ai_agent_runtime::build_hosted_runtime(agents.agent_store.clone(), host_deps) {
             Ok(runtime) => {
                 runtime.start();
                 *clean_slate_holder.write().await = Some(runtime);
@@ -1519,7 +1527,14 @@ impl ServerState {
         // `require_clean_slate()` after M3 deleted AiAgentManager.
         let clean_slate_holder: crate::server::state::CleanSlateHolder =
             Arc::new(tokio::sync::RwLock::new(None));
-        match crate::ai_agent_runtime::build_hosted_runtime(agent_store.clone()) {
+        let host_deps = crate::agent_ports::HostAgentDeps::new(
+            core.message_manager.clone(),
+            devices.telemetry.clone(),
+            devices.service.clone(),
+            extensions.registry.clone(),
+            extensions.metrics_storage.clone(),
+        );
+        match crate::ai_agent_runtime::build_hosted_runtime(agent_store.clone(), host_deps) {
             Ok(runtime) => {
                 *clean_slate_holder.write().await = Some(runtime);
             }

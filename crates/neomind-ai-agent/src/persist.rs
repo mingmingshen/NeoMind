@@ -4,6 +4,7 @@
 //! create/update/invoke survive process restarts while schema version is still 1
 //! (soft-copy) or 2 (migrated).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use neomind_storage::agents_v2::{AgentExecutionRecordV2, AgentStoreV2, ExecutionStatusV2};
@@ -109,6 +110,8 @@ pub fn persist_execution(v2: &AgentStoreV2, exec: &AgentExecutionRecord) -> Resu
 pub struct DurableAgentStore {
     pub mem: InMemoryAgentStore,
     pub v2: Option<Arc<AgentStoreV2>>,
+    /// When set, the next durable delete fails once (tests inject store failure).
+    pub fail_next_v2_delete: Arc<AtomicBool>,
 }
 
 impl DurableAgentStore {
@@ -116,13 +119,18 @@ impl DurableAgentStore {
         Self {
             mem: InMemoryAgentStore::new(),
             v2: None,
+            fail_next_v2_delete: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn with_v2(v2: Arc<AgentStoreV2>, now_ms: i64) -> Result<Self> {
         let mem = InMemoryAgentStore::new();
         load_from_v2(&v2, &mem, now_ms)?;
-        Ok(Self { mem, v2: Some(v2) })
+        Ok(Self {
+            mem,
+            v2: Some(v2),
+            fail_next_v2_delete: Arc::new(AtomicBool::new(false)),
+        })
     }
 
     pub fn save_spec(&self, spec: AgentSpec, now_ms: i64) -> Result<AgentSpec> {
@@ -134,10 +142,32 @@ impl DurableAgentStore {
         Ok(saved)
     }
 
+    /// Delete from mem + durable store. Disk errors surface and mem is restored.
     pub fn delete_spec(&self, id: &str) -> Result<()> {
+        let spec = self.mem.get_spec(id)?;
+        let runtime = self.mem.get_runtime(id).ok();
         self.mem.delete_spec(id)?;
+
         if let Some(v2) = &self.v2 {
-            let _ = v2.delete_spec(id);
+            if self.fail_next_v2_delete.swap(false, Ordering::SeqCst) {
+                self.restore_mem(&spec, runtime.as_ref())?;
+                return Err(AgentError::Storage(
+                    "injected durable delete failure".into(),
+                ));
+            }
+            if let Err(e) = v2.delete_agent_rows(id) {
+                self.restore_mem(&spec, runtime.as_ref())?;
+                return Err(AgentError::Storage(e.to_string()));
+            }
+        }
+        Ok(())
+    }
+
+    fn restore_mem(&self, spec: &AgentSpec, runtime: Option<&AgentRuntimeRecord>) -> Result<()> {
+        let now = runtime.map(|r| r.updated_at).unwrap_or(0);
+        self.mem.save_spec(spec.clone(), now)?;
+        if let Some(rt) = runtime {
+            self.mem.set_runtime(rt.clone())?;
         }
         Ok(())
     }
@@ -172,5 +202,75 @@ impl DurableAgentStore {
             })
             .map(|s| s.id)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{
+        InputContract, NotifyPolicy, OutputContract, PacingPolicy, ToolPolicy, TriggerSpec,
+    };
+    use neomind_storage::AgentStore;
+
+    fn sample_spec(id: &str) -> AgentSpec {
+        AgentSpec {
+            id: id.into(),
+            name: id.into(),
+            description: None,
+            user_prompt: "ping".into(),
+            llm_backend_id: None,
+            preset: None,
+            trigger: TriggerSpec::Manual,
+            pacing: PacingPolicy::default(),
+            input: InputContract::default(),
+            tool_policy: ToolPolicy::Disabled,
+            output: OutputContract::default(),
+            notify: NotifyPolicy::default(),
+            controlled_actions: vec![],
+            config_version: 1,
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    #[test]
+    fn delete_spec_surfaces_injected_disk_failure_and_reconciles_mem() {
+        let agent_store = AgentStore::memory().unwrap();
+        let v2 = AgentStoreV2::from_arc(agent_store.db()).unwrap();
+        let durable = DurableAgentStore::with_v2(v2, 1000).unwrap();
+        durable.save_spec(sample_spec("del-1"), 1000).unwrap();
+        assert!(durable.mem.get_spec("del-1").is_ok());
+
+        durable.fail_next_v2_delete.store(true, Ordering::SeqCst);
+        let err = durable.delete_spec("del-1").unwrap_err();
+        assert!(matches!(err, AgentError::Storage(_)));
+        // Mem reconciled — still present after failed durable delete.
+        assert!(durable.mem.get_spec("del-1").is_ok());
+        assert!(durable
+            .v2
+            .as_ref()
+            .unwrap()
+            .get_spec("del-1")
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn delete_spec_success_missing_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agents.redb");
+        let agent_store = AgentStore::open(&path).unwrap();
+        let v2 = AgentStoreV2::from_arc(agent_store.db()).unwrap();
+        let durable = DurableAgentStore::with_v2(v2, 2000).unwrap();
+        durable.save_spec(sample_spec("gone"), 2000).unwrap();
+        durable.delete_spec("gone").unwrap();
+        drop(durable);
+        drop(agent_store);
+
+        let reopened = AgentStore::open(&path).unwrap();
+        let v2b = AgentStoreV2::from_arc(reopened.db()).unwrap();
+        assert!(v2b.get_spec("gone").unwrap().is_none());
+        assert!(v2b.get_runtime("gone").unwrap().is_none());
     }
 }

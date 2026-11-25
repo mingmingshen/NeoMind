@@ -4,6 +4,7 @@
 
 pub mod agent_defaults;
 pub mod agent_events;
+pub mod agent_ports;
 pub mod ai_agent_runtime;
 pub mod auth;
 pub mod auth_users;
