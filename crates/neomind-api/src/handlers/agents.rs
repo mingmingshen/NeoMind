@@ -705,6 +705,14 @@ pub struct CreateAgentRequest {
     /// stops with reason `token-budget` and synthesizes a conclusion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens_per_run: Option<u64>,
+    /// Clean-slate ToolPolicy (additive; ignored by the v1 create path until
+    /// schema-v2 cutover). Accepted so CLI `--tool-policy` is not silently dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_policy: Option<serde_json::Value>,
+    /// Clean-slate InputContract (additive; ignored by the v1 create path until
+    /// schema-v2 cutover). Accepted so CLI `--input-requirements` is not silently dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
 }
 
 /// Resource request in the new unified format.
@@ -810,6 +818,12 @@ pub struct UpdateAgentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<AgentToolConfigMirror>)]
     pub tool_config: Option<neomind_storage::AgentToolConfig>,
+    /// Clean-slate ToolPolicy (additive; ignored by the v1 update path until cutover).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_policy: Option<serde_json::Value>,
+    /// Clean-slate InputContract (additive; ignored by the v1 update path until cutover).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
 }
 
 /// Resource in update request (new format).
@@ -835,6 +849,10 @@ pub struct ExecuteAgentRequest {
     /// Structured data from the caller (e.g., {"image_base64": "..."})
     #[serde(default)]
     pub data: Option<serde_json::Value>,
+    /// When true, run an authorized dry-run / structured test instead of a
+    /// formal invoke (no formal history / notify for the clean-slate path).
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 // ============================================================================
@@ -2545,6 +2563,32 @@ pub async fn invoke_agent(
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     let agent_name = agent.name.clone();
+
+    // Authorized dry-run: reuse the structured test path until clean-slate
+    // dry-run is cut over. Non-structured agents get a clear error rather than
+    // a formal invoke that would write history.
+    if request.dry_run {
+        if !matches!(
+            agent.execution_mode,
+            neomind_storage::agents::ExecutionMode::Structured
+        ) {
+            return Err(ErrorResponse::bad_request(
+                "dry_run is currently available for structured (L0) agents; \
+                 use POST /api/agents/{id}/test or wait for clean-slate dry-run cutover",
+            ));
+        }
+        let result = agent_manager
+            .executor()
+            .dry_run_structured(&agent)
+            .await
+            .map_err(|e| ErrorResponse::internal(format!("Dry-run failed: {}", e)))?;
+        return ok(json!({
+            "dry_run": true,
+            "agent_id": id,
+            "agent_name": agent_name,
+            "result": result,
+        }));
+    }
 
     // Validate input payload size to prevent resource exhaustion
     const MAX_INPUT_SIZE: usize = 100_000; // 100KB

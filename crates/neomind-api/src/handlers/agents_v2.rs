@@ -118,10 +118,12 @@ mod tests {
         );
         let enc = serde_json::to_value(&preview).unwrap();
         assert_eq!(enc["dry_run"], false);
-        assert!(enc["effective_plan"]["authorized_reads"]
-            .as_array()
-            .unwrap()
-            .len()
-            >= 2);
+        assert!(
+            enc["effective_plan"]["authorized_reads"]
+                .as_array()
+                .unwrap()
+                .len()
+                >= 2
+        );
     }
 }

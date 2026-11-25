@@ -1938,7 +1938,7 @@ pub enum AgentCommand {
     /// Dry-run / test a saved agent (authorized reads; no formal history for v2 dry-run).
     ///
     /// Structured (L0) agents use the existing `/agents/{id}/test` path.
-    /// Prefer `agent invoke --dry-run` for the clean-slate dry-run envelope.
+    /// Prefer `agent invoke` with the dry-run flag for the clean-slate envelope.
     ///
     /// Example: `neomind agent test agent-001`
     Test {

@@ -916,14 +916,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/tools", get(agents::list_agent_tools))
         .route("/api/agents/test-preview", post(agents::test_agent_preview))
         // Clean-slate v2 surface (schema runtime stays 1 until five-table cutover)
-        .route(
-            "/api/agents/v2/schema",
-            get(agents_v2::agent_v2_schema),
-        )
-        .route(
-            "/api/agents/v2/plan-preview",
-            post(agents_v2::plan_preview),
-        )
+        .route("/api/agents/v2/schema", get(agents_v2::agent_v2_schema))
+        .route("/api/agents/v2/plan-preview", post(agents_v2::plan_preview))
         .route("/api/agents/:id", get(agents::get_agent))
         .route("/api/agents/:id", put(agents::update_agent))
         .route("/api/agents/:id", delete(agents::delete_agent))
