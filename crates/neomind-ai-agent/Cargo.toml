@@ -34,6 +34,10 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"
 tempfile = "3"
 
 [[test]]
+name = "t1_event_vision"
+path = "tests/t1_event_vision.rs"
+
+[[test]]
 name = "t12_daily_brief"
 path = "tests/t12_daily_brief.rs"
 
