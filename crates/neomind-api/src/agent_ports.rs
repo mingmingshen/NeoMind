@@ -303,10 +303,22 @@ impl SourceReadPort for HostSourceReadPort {
             reason: e.to_string(),
         })?;
 
+        // Call time is fetch time, not observation time. Only ops that declare
+        // `_invoke_is_sample` may treat the invoke as the sample instant.
+        let observed_at = if params
+            .get("_invoke_is_sample")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            Some(now_ms)
+        } else {
+            parse_observation_time(&result)
+        };
+
         Ok(SourceReadResult {
             source_id,
             binding_proof: format!("extension:{extension_id}:{operation}:cmd"),
-            observed_at: Some(now_ms),
+            observed_at,
             valid_window: lookback_window_from_freshness(&freshness, now_ms),
             value: result,
         })
@@ -373,15 +385,27 @@ impl SourceReadPort for HostSourceReadPort {
                 .and_then(|f| f.get("max_points"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(60) as usize;
-            let start = now_ms.saturating_sub((lookback_secs as i64).saturating_mul(1000));
-            // Single-point writes sit in the write-behind buffer; range queries
-            // only see redb. Flush so lookback windows include recent points.
+            // Evidence contract is always ms; storage timestamps are usually
+            // Unix seconds (MQTT/webhook/API). Peek latest to pick query unit.
+            let window_ms = (
+                now_ms.saturating_sub((lookback_secs as i64).saturating_mul(1000)),
+                now_ms,
+            );
             let _ = self.deps.telemetry.flush();
+            let sample_ts = self
+                .deps
+                .telemetry
+                .latest(&source_key, field)
+                .await
+                .ok()
+                .flatten()
+                .map(|p| p.timestamp);
+            let (start_q, end_q) = storage_range_for_series(lookback_secs, now_ms, sample_ts);
             let points = tokio::time::timeout(
                 timeout,
                 self.deps
                     .telemetry
-                    .query_limited(&source_key, field, start, now_ms, Some(max_points)),
+                    .query_limited(&source_key, field, start_q, end_q, Some(max_points)),
             )
             .await
             .map_err(|_| AgentError::Source {
@@ -392,7 +416,7 @@ impl SourceReadPort for HostSourceReadPort {
                 key: device_id.into(),
                 reason: e.to_string(),
             })?;
-            let observed = points.last().map(|p| p.timestamp);
+            let observed = points.last().map(|p| normalize_ts_to_ms(p.timestamp));
             let series: Vec<serde_json::Value> = points
                 .iter()
                 .filter_map(|p| serde_json::to_value(p).ok())
@@ -401,7 +425,7 @@ impl SourceReadPort for HostSourceReadPort {
                 source_id: source_key.clone(),
                 binding_proof: format!("{source_key}:{field}:lookback={lookback_secs}"),
                 observed_at: observed,
-                valid_window: Some((start, now_ms)),
+                valid_window: Some(window_ms),
                 value: serde_json::json!({ "points": series }),
             });
         }
@@ -449,6 +473,64 @@ fn lookback_window_from_freshness(
         }
         _ => None,
     }
+}
+
+/// Device/MQTT/API telemetry uses Unix seconds; some tests/writers use ms.
+/// Pick storage query bounds from a sample timestamp when available.
+fn storage_range_for_series(
+    lookback_secs: u64,
+    now_ms: i64,
+    sample_ts: Option<i64>,
+) -> (i64, i64) {
+    let start_ms = now_ms.saturating_sub((lookback_secs as i64).saturating_mul(1000));
+    match sample_ts {
+        Some(ts) if ts >= 1_000_000_000_000 => (start_ms, now_ms),
+        _ => {
+            let end_s = now_ms / 1000;
+            let start_s = end_s.saturating_sub(lookback_secs as i64);
+            (start_s, end_s)
+        }
+    }
+}
+
+fn normalize_ts_to_ms(ts: i64) -> i64 {
+    if ts < 1_000_000_000_000 {
+        ts.saturating_mul(1000)
+    } else {
+        ts
+    }
+}
+
+/// Pull observation time from a command/metric payload. Call time is never
+/// implied — missing keys yield `None` (strict LatestWithin → stale/missing).
+fn parse_observation_time(value: &serde_json::Value) -> Option<i64> {
+    const KEYS: &[&str] = &[
+        "observed_at",
+        "observation_time",
+        "timestamp",
+        "time",
+        "as_of",
+        "updated_at",
+        "sampled_at",
+    ];
+    for key in KEYS {
+        if let Some(n) = value.get(*key).and_then(|v| v.as_i64()) {
+            return Some(n);
+        }
+        if let Some(n) = value
+            .get(*key)
+            .and_then(|v| v.as_f64())
+            .map(|f| f as i64)
+        {
+            return Some(n);
+        }
+    }
+    if let Some(inner) = value.get("value").or_else(|| value.get("data")) {
+        if let Some(n) = parse_observation_time(inner) {
+            return Some(n);
+        }
+    }
+    None
 }
 
 fn apply_ext_freshness_to_point(

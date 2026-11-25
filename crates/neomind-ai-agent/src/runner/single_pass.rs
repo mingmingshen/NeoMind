@@ -73,13 +73,9 @@ impl AgentRunner for SinglePassRunner {
             .await
             .map_err(|e| AgentError::Llm(e.to_string()))?;
 
-        // Tool-disabled diagnosis still trusts structured evidence for alert;
-        // tool-enabled / free agents use the model's structured verdict line.
-        let alert = if !tools_enabled {
-            evidence_shows_overload(evidence)
-        } else {
-            alert_from_model_text(&resp.text) || resp.alert_criteria_met
-        };
+        // Model path: business verdict drives alert (through frozen deps /
+        // evidence gates later). Overload heuristics are local-template only.
+        let alert = alert_from_model_text(&resp.text) || resp.alert_criteria_met;
 
         Ok(RunOutcome {
             brief_text: Some(resp.text.clone()),

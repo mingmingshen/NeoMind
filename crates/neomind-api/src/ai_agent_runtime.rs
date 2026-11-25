@@ -303,7 +303,7 @@ mod tests {
     use neomind_messages::channels::MessageChannel;
     use neomind_messages::{MessageManager, Result as MsgResult};
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::OnceLock;
+    use std::sync::{Arc, Mutex, OnceLock};
 
     use crate::server::state::ExtensionMetricsStorage;
 
@@ -390,6 +390,52 @@ mod tests {
             }
         }
         Arc::new(tokio::sync::RwLock::new(Box::new(FakeRw { set_calls })))
+    }
+
+    /// Readonly weather extension whose `current` payload is swapped per test.
+    fn fake_weather_extension(
+        payload: Arc<Mutex<serde_json::Value>>,
+    ) -> neomind_core::extension::DynExtension {
+        struct FakeWeather {
+            payload: Arc<Mutex<serde_json::Value>>,
+        }
+        #[async_trait]
+        impl Extension for FakeWeather {
+            fn metadata(&self) -> &ExtensionMetadata {
+                static M: OnceLock<ExtensionMetadata> = OnceLock::new();
+                M.get_or_init(|| ExtensionMetadata::new("weather_cn", "Weather", "1.0.0"))
+            }
+            fn metrics(&self) -> Vec<MetricDefinition> {
+                vec![]
+            }
+            fn commands(&self) -> Vec<ExtensionCommand> {
+                vec![ExtensionCommand {
+                    name: "current".into(),
+                    display_name: "current".into(),
+                    description: String::new(),
+                    payload_template: String::new(),
+                    parameters: vec![],
+                    fixed_values: Default::default(),
+                    samples: vec![],
+                    parameter_groups: vec![],
+                    ai_exposed: true,
+                    effect: Some(CommandEffect::ReadOnly),
+                    replay_safety: Some(CommandReplaySafety::Safe),
+                    execution: Some(CommandExecutionKind::Immediate),
+                }]
+            }
+            async fn execute_command(
+                &self,
+                _command: &str,
+                _args: &serde_json::Value,
+            ) -> neomind_core::extension::Result<serde_json::Value> {
+                Ok(self.payload.lock().unwrap().clone())
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+        }
+        Arc::new(tokio::sync::RwLock::new(Box::new(FakeWeather { payload })))
     }
 
     async fn test_deps() -> (HostAgentDeps, Arc<CountingChannel>, Arc<TimeSeriesStorage>) {
@@ -594,12 +640,13 @@ mod tests {
         let runtime = HostedAiAgentRuntime::build(store, deps).unwrap();
         let now = chrono::Utc::now().timestamp_millis();
 
-        // Current meter window: several points in last 15m (millis timestamps).
-        // write_batch lands in redb immediately (unlike buffered single writes).
+        // Current meter window: several points in last 15m (Unix seconds —
+        // matches MQTT/webhook/API telemetry writers).
+        let now_s = now / 1000;
         let meter_points: Vec<_> = (0..5u64)
             .map(|i| {
                 DataPoint::new(
-                    now.saturating_sub((i as i64) * 60_000),
+                    now_s.saturating_sub((i as i64) * 60),
                     MetricValue::Float(8.0 + i as f64),
                 )
             })
@@ -608,13 +655,13 @@ mod tests {
             .write_batch("device:meter-1", "power_kw", meter_points)
             .await
             .unwrap();
-        // Sanity: range query must see the window before the agent runs.
+        // Sanity: second-unit range query must see the window.
         let probe = telemetry
             .query_limited(
                 "device:meter-1",
                 "power_kw",
-                now - 900_000,
-                now + 1_000,
+                now_s - 900,
+                now_s + 1,
                 Some(60),
             )
             .await
@@ -629,7 +676,7 @@ mod tests {
             .write(
                 "extension:weather_cn",
                 "current",
-                DataPoint::new(now - 3 * 3_600_000, MetricValue::Float(30.0)),
+                DataPoint::new(now_s - 3 * 3_600, MetricValue::Float(30.0)),
             )
             .await
             .unwrap();
@@ -736,7 +783,7 @@ mod tests {
             .write(
                 "device:meter-1",
                 "power_kw",
-                DataPoint::new(now - 10_000, MetricValue::Float(9.0)),
+                DataPoint::new(now / 1000 - 10, MetricValue::Float(9.0)),
             )
             .await
             .unwrap();
@@ -846,5 +893,160 @@ mod tests {
         let reopened = AgentStore::open(&path).unwrap();
         let v2 = AgentStoreV2::from_arc(reopened.db()).unwrap();
         assert!(v2.get_spec(&spec.id).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn host_lookback_matches_second_telemetry_window() {
+        let (deps, _, telemetry) = test_deps().await;
+        let port = HostSourceReadPort::new(deps);
+        let now_s = chrono::Utc::now().timestamp();
+        // Two in last 15m, one older than 15m — Unix seconds like MQTT/API.
+        telemetry
+            .write_batch(
+                "device:meter-win",
+                "power_kw",
+                vec![
+                    DataPoint::new(now_s - 60, MetricValue::Float(1.0)),
+                    DataPoint::new(now_s - 120, MetricValue::Float(2.0)),
+                    DataPoint::new(now_s - 2_000, MetricValue::Float(9.0)),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let params = serde_json::json!({
+            "_freshness": {
+                "kind": "lookback_window",
+                "lookback_secs": 900,
+                "max_points": 60
+            },
+            "lookback_secs": 900
+        });
+        let r = port
+            .read_device_metric("meter-win", "power_kw", &params, 5)
+            .await
+            .unwrap();
+        let points = r
+            .value
+            .get("points")
+            .and_then(|p| p.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        assert_eq!(points, 2, "15m window must return exactly two in-window points");
+        let (start_ms, end_ms) = r.valid_window.expect("evidence ms window");
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        assert!(
+            end_ms >= now_ms - 5_000 && end_ms <= now_ms + 5_000,
+            "valid_window end must be near now_ms: {end_ms} vs {now_ms}"
+        );
+        assert!(
+            (end_ms - start_ms - 900_000).abs() < 5_000,
+            "valid_window must span ~900s in ms: {start_ms}..{end_ms}"
+        );
+        assert!(
+            r.observed_at.unwrap_or(0) >= 1_000_000_000_000,
+            "observed_at should be normalized to ms"
+        );
+    }
+
+    #[tokio::test]
+    async fn extension_command_observed_at_from_payload_not_call_time() {
+        let payload = Arc::new(Mutex::new(serde_json::json!({})));
+        let (mut deps, _, _) = test_deps().await;
+        let ext_reg = Arc::new(ExtensionRegistry::new());
+        ext_reg
+            .register(
+                "weather_cn".into(),
+                fake_weather_extension(payload.clone()),
+            )
+            .await
+            .unwrap();
+        deps.extension_registry = ext_reg;
+        let store = AgentStore::memory().unwrap();
+        let runtime = HostedAiAgentRuntime::build(store, deps).unwrap();
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let draft_for = |name: &str| {
+            let mut d = local_brief_draft(name);
+            d.input = InputContract {
+                requirements: vec![InputRequirement {
+                    key: "weather".into(),
+                    source: InputSourceRef::ExtensionInstance {
+                        id: "weather_cn".into(),
+                    },
+                    operation: Some("current".into()),
+                    params: serde_json::json!({}),
+                    auth_scope: None,
+                    timeout_secs: 5,
+                    result_type: InputModality::StructuredJson,
+                    freshness: FreshnessPolicy::LatestWithin { max_age_secs: 900 },
+                    on_missing: MissingPolicy::ReportStale,
+                }],
+            };
+            d
+        };
+
+        // Fresh observation in payload.
+        *payload.lock().unwrap() = serde_json::json!({
+            "temp": 22,
+            "timestamp": now_ms / 1000 - 30
+        });
+        let (spec, _) = runtime.create(draft_for("wx-fresh")).unwrap();
+        let resp = runtime.invoke(&spec.id).await.unwrap();
+        let item = resp
+            .execution
+            .as_ref()
+            .unwrap()
+            .evidence
+            .items
+            .iter()
+            .find(|i| i.key == "weather")
+            .unwrap();
+        assert!(
+            matches!(item.quality, EvidenceQuality::Fresh),
+            "fresh payload obs must pass LatestWithin: {:?}",
+            item.quality
+        );
+
+        // Yesterday's cache in payload must be Stale (not call-time).
+        *payload.lock().unwrap() = serde_json::json!({
+            "temp": 22,
+            "timestamp": now_ms / 1000 - 86_400
+        });
+        let (spec, _) = runtime.create(draft_for("wx-stale")).unwrap();
+        let resp = runtime.invoke(&spec.id).await.unwrap();
+        let item = resp
+            .execution
+            .as_ref()
+            .unwrap()
+            .evidence
+            .items
+            .iter()
+            .find(|i| i.key == "weather")
+            .unwrap();
+        assert!(
+            matches!(item.quality, EvidenceQuality::Stale),
+            "stale payload obs must not use call time: {:?}",
+            item.quality
+        );
+
+        // Missing observation time → Stale/missing under strict LatestWithin.
+        *payload.lock().unwrap() = serde_json::json!({ "temp": 22 });
+        let (spec, _) = runtime.create(draft_for("wx-missing")).unwrap();
+        let resp = runtime.invoke(&spec.id).await.unwrap();
+        let item = resp
+            .execution
+            .as_ref()
+            .unwrap()
+            .evidence
+            .items
+            .iter()
+            .find(|i| i.key == "weather")
+            .unwrap();
+        assert!(
+            !matches!(item.quality, EvidenceQuality::Fresh),
+            "missing obs time must not be Fresh: {:?}",
+            item.quality
+        );
     }
 }

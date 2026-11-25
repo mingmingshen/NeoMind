@@ -58,3 +58,7 @@ path = "tests/t11_throttle_dryrun.rs"
 [[test]]
 name = "hold_round2_acceptance"
 path = "tests/hold_round2_acceptance.rs"
+
+[[test]]
+name = "hold_round3_acceptance"
+path = "tests/hold_round3_acceptance.rs"
