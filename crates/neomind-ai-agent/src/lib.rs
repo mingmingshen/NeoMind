@@ -14,6 +14,7 @@ pub mod preprocess;
 pub mod runner;
 pub mod service;
 pub mod side_effects;
+pub mod storage_bridge;
 pub mod store;
 
 pub use error::{AgentError, Result};

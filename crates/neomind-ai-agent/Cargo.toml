@@ -48,3 +48,7 @@ path = "tests/t13_partial_meter.rs"
 [[test]]
 name = "behavior_matrix"
 path = "tests/behavior_matrix.rs"
+
+[[test]]
+name = "t11_throttle_dryrun"
+path = "tests/t11_throttle_dryrun.rs"
