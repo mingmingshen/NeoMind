@@ -802,5 +802,74 @@
     "saving": "Saving"
   },
   "executionNotFound": "Execution Not Found",
-  "noAgentsNoBackendDesc": "Agents need an AI model to run. Download the built-in model (offline, no API key) — or configure your own backend first."
+  "noAgentsNoBackendDesc": "Agents need an AI model to run. Download the built-in model (offline, no API key) — or configure your own backend first.",
+  "editorV2": {
+    "trigger": {
+      "title": "Trigger",
+      "kind": "Trigger type",
+      "cron": "Cron",
+      "interval": "Interval",
+      "event": "Event",
+      "manual": "Manual",
+      "expr": "Cron expression",
+      "exprHint": "Standard 5-field cron",
+      "timezone": "Timezone",
+      "timezoneHint": "IANA timezone, e.g. Asia/Shanghai",
+      "everySecs": "Every (seconds)",
+      "manualHint": "Runs only when invoked",
+      "eventHint": "Fires when the event filter matches"
+    },
+    "input": {
+      "title": "Authorized inputs",
+      "count": "{{count}} sources",
+      "empty": "No input requirements yet",
+      "key": "Key",
+      "auth": "Auth scope",
+      "add": "Add source",
+      "addSoon": "Full source picker lands with editor cutover"
+    },
+    "toolPolicy": {
+      "title": "Model tools",
+      "kind": "Policy",
+      "disabled": "Disabled",
+      "unrestricted": "Unrestricted",
+      "scoped": "Scoped allowlist",
+      "allowedTools": "Allowed tools",
+      "allowedToolsHint": "Comma-separated tool names",
+      "disabledHint": "Host InputPipeline still reads authorized sources"
+    },
+    "notify": {
+      "title": "Notifications",
+      "channels": "Channels",
+      "channelsHint": "Comma-separated; empty = silent",
+      "onComplete": "On complete (daily brief)",
+      "onAlert": "On alert (criteria met)",
+      "onFailure": "On failure"
+    },
+    "plan": {
+      "title": "Effective plan",
+      "run": "Preview",
+      "hint": "Static plan only — zero external reads, zero delivery",
+      "trigger": "Trigger",
+      "timezone": "Timezone",
+      "reads": "Authorized reads",
+      "externalReads": "External read counts"
+    },
+    "planPreview": {
+      "title": "Effective plan",
+      "refresh": "Refresh",
+      "hint": "Static plan only — zero external reads, zero delivery",
+      "empty": "Run preview to see the plan",
+      "error": "Preview failed",
+      "triggerSummary": "Trigger",
+      "timezone": "Timezone",
+      "authorizedReads": "Authorized reads",
+      "externalReads": "External read counts"
+    },
+    "tools": {
+      "disabled": "Disabled",
+      "unrestricted": "Unrestricted",
+      "scoped": "Scoped"
+    }
+  }
 }
