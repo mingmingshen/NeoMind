@@ -1,7 +1,7 @@
 /**
  * M3 orthogonal AgentSpec-v2 editor shell.
  * Composes Trigger / Input / Tool / Notify sections + EffectivePlanPreview.
- * Does not replace AgentEditorFullScreen yet — opened behind a feature flag.
+ * Sole create/edit surface on AgentsPage (legacy FullScreen removed).
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'

@@ -121,6 +121,7 @@
     "toolsFilterAllSources": "全部来源",
     "outputFields": "输出字段",
     "viewEvidence": "查看依据",
+    "evidenceBrowseHint": "打开某次执行可浏览它读了什么、写了什么，以及动作投递结果。",
     "outputFieldsHint": "每个字段都是平台数据源（ai:{agent}:{field}）——可在仪表盘、规则、数据推送中绑定使用。",
     "fieldType": {
       "number": "数值",

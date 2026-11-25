@@ -1,7 +1,7 @@
 /**
  * M2 temporary form ↔ AgentSpec v2 translation layer.
  *
- * Keeps the legacy AgentEditorFullScreen working against the clean-slate DTO
+ * Bridges form/editor state against the clean-slate DTO
  * until M3 rewrites the editor. Delete this module (and its re-exports from
  * agents.ts) when that lands.
  *

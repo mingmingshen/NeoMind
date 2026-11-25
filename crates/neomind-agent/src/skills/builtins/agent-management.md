@@ -66,11 +66,13 @@ All agent operations go through `shell`. Always RUN the command yourself and rep
 |---|---|
 | `neomind agent list` | List all agents |
 | `neomind agent get <id>` | Agent details |
+| `neomind agent plan-preview` | Static EffectivePlan from draft (no create) |
 | `neomind agent create` | Create a new agent |
 | `neomind agent update <id>` | Update an agent |
 | `neomind agent delete <id>` | Delete an agent |
 | `neomind agent control <id> <active|paused>` | Control agent status |
-| `neomind agent invoke <id> [input]` | Invoke / run an agent now with input |
+| `neomind agent test <id>` | Dry-run / test a saved agent |
+| `neomind agent invoke <id> [input]` | Invoke / run an agent now (`--dry-run` for trial) |
 | `neomind agent memory <id>` | Get agent memory |
 | `neomind agent clear-memory <id>` | Clear agent memory |
 | `neomind agent executions <id>` | Execution history |
