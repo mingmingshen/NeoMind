@@ -693,13 +693,80 @@ fn table_exists(
     Ok(read.open_table(name).is_ok())
 }
 
+/// Copy v1 `agents` rows into the five v2 tables WITHOUT deleting the legacy table.
+/// Safe while handlers still serve from `agents`. Idempotent upsert by id.
+pub fn copy_agents_v1_to_v2_keep_legacy(db: &Database) -> std::result::Result<(), String> {
+    ensure_v2_tables(db).map_err(|e| e.to_string())?;
+    if !table_exists(db, AGENTS_V1_TABLE)? {
+        return Ok(());
+    }
+    let v1_rows: Vec<(String, Vec<u8>)> = {
+        let read = db.begin_read().map_err(|e| e.to_string())?;
+        let table = read
+            .open_table(AGENTS_V1_TABLE)
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for entry in table.iter().map_err(|e| e.to_string())? {
+            let (k, v) = entry.map_err(|e| e.to_string())?;
+            out.push((k.value().to_string(), v.value().to_vec()));
+        }
+        out
+    };
+    let write = db.begin_write().map_err(|e| e.to_string())?;
+    {
+        let mut specs = write
+            .open_table(AGENT_SPECS_TABLE)
+            .map_err(|e| e.to_string())?;
+        let mut runtime = write
+            .open_table(AGENT_RUNTIME_TABLE)
+            .map_err(|e| e.to_string())?;
+        let mut memory = write
+            .open_table(AGENT_MEMORY_TABLE)
+            .map_err(|e| e.to_string())?;
+        let mut user_msgs = write
+            .open_table(AGENT_USER_MESSAGES_TABLE)
+            .map_err(|e| e.to_string())?;
+        let _executions = write
+            .open_table(AGENT_EXECUTIONS_TABLE)
+            .map_err(|e| e.to_string())?;
+        for (id, bytes) in &v1_rows {
+            let agent: AiAgent = serde_json::from_slice(bytes)
+                .map_err(|e| format!("deserialize agent {id}: {e}"))?;
+            let (spec, rt, messages, mem) = map_agent_v1_to_v2(&agent);
+            let spec_bytes =
+                serde_json::to_vec(&spec).map_err(|e| format!("serialize spec {id}: {e}"))?;
+            specs
+                .insert(id.as_str(), spec_bytes.as_slice())
+                .map_err(|e| e.to_string())?;
+            let rt_bytes =
+                serde_json::to_vec(&rt).map_err(|e| format!("serialize runtime {id}: {e}"))?;
+            runtime
+                .insert(id.as_str(), rt_bytes.as_slice())
+                .map_err(|e| e.to_string())?;
+            let mem_bytes =
+                serde_json::to_vec(&mem).map_err(|e| format!("serialize memory {id}: {e}"))?;
+            memory
+                .insert(id.as_str(), mem_bytes.as_slice())
+                .map_err(|e| e.to_string())?;
+            let msg_bytes = serde_json::to_vec(&messages)
+                .map_err(|e| format!("serialize user_messages {id}: {e}"))?;
+            user_msgs
+                .insert(id.as_str(), msg_bytes.as_slice())
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    write.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Create the five v2 tables and migrate rows out of the legacy `agents` table.
 ///
 /// Idempotent: a second call when `agents` is already gone is a no-op beyond
 /// ensuring the five tables exist. Does **not** stamp schema version 2.
 ///
 /// **Do not call from [`crate::agents::AgentStore::from_db`] yet** — this deletes
-/// the legacy `agents` table that handlers still read.
+/// the legacy `agents` table that handlers still read. Prefer
+/// [`copy_agents_v1_to_v2_keep_legacy`] until handlers cut over.
 pub fn migrate_agents_v1_to_v2(db: &Database) -> std::result::Result<(), String> {
     ensure_v2_tables(db).map_err(|e| e.to_string())?;
 
@@ -1097,6 +1164,27 @@ mod tests {
         assert!(read.open_table(AGENT_MEMORY_TABLE).is_ok());
         assert!(read.open_table(AGENT_USER_MESSAGES_TABLE).is_ok());
         assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 1);
+    }
+
+    #[test]
+    fn soft_copy_keeps_legacy_agents_table() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Database::create(tmp.path().join("soft.redb")).unwrap();
+        {
+            let write = db.begin_write().unwrap();
+            {
+                let mut t = write.open_table(AGENTS_V1_TABLE).unwrap();
+                let agent = fixture_agent();
+                let bytes = serde_json::to_vec(&agent).unwrap();
+                t.insert(agent.id.as_str(), bytes.as_slice()).unwrap();
+            }
+            write.commit().unwrap();
+        }
+        copy_agents_v1_to_v2_keep_legacy(&db).unwrap();
+        copy_agents_v1_to_v2_keep_legacy(&db).unwrap();
+        assert!(table_exists(&db, AGENTS_V1_TABLE).unwrap());
+        let store = AgentStoreV2::from_db(db).unwrap();
+        assert!(store.get_spec("a1").unwrap().is_some());
     }
 
     #[test]
