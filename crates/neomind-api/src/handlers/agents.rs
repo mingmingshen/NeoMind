@@ -3124,7 +3124,7 @@ pub async fn validate_cron_expression(
     State(_state): State<ServerState>,
     Json(request): Json<ValidateCronRequest>,
 ) -> HandlerResult<Value> {
-    use chrono::{TimeZone, Utc};
+    use chrono::Utc;
     use chrono_tz::Tz;
     use cron::Schedule;
     use std::str::FromStr;
