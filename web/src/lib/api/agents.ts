@@ -81,6 +81,19 @@ export const agentsApi = {
     }),
 
   /**
+   * Static EffectivePlan preview for AgentSpec v2 drafts (zero external reads).
+   * POST /api/agents/v2/plan-preview
+   */
+  planPreviewV2: (draft: import('@/types').AgentSpecDraft) =>
+    fetchAPI<{ effective_plan: import('@/types').EffectivePlan; dry_run: boolean }>(
+      '/agents/v2/plan-preview',
+      {
+        method: 'POST',
+        body: JSON.stringify({ draft }),
+      },
+    ),
+
+  /**
    * Delete an AI Agent
    * DELETE /api/agents/:id
    */

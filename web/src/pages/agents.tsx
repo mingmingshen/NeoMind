@@ -12,6 +12,7 @@ import { useStore } from "@/store"
 import { useDataVersion } from "@/hooks/useDataVersion"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
+import { AgentEditorV2, isAgentEditorV2Enabled } from "@/components/agents/editor-v2"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { BuiltinModelWizard } from "@/components/llm/BuiltinModelWizard"
 import { PageTabsBar, PageTabsContent, Pagination, SearchInput } from "@/components/shared"
@@ -60,6 +61,11 @@ export function AgentsPage() {
   const { handleError } = useErrorHandler()
   const location = useLocation()
   const navigate = useNavigate()
+  // M3 scaffold: ?editor=v2 | localStorage neomind.agentEditorV2=1 | VITE_AGENT_EDITOR_V2
+  const useEditorV2 = useMemo(
+    () => isAgentEditorV2Enabled(location.search),
+    [location.search],
+  )
 
   // LLM backend presence — drives the no-backend setup banner (agents are
   // inert without a model).
@@ -712,17 +718,26 @@ export function AgentsPage() {
         />
       </PageTabsContent>
 
-      {/* Agent Editor Full Screen */}
-      <AgentEditorFullScreen
-        open={showAgentDialog}
-        onOpenChange={setShowAgentDialog}
-        agent={editingAgent}
-        devices={devices}
-        deviceTypes={deviceTypes}
-        extensions={extensions}
-        unifiedDataSources={unifiedDataSources}
-        onSave={handleSave}
-      />
+      {/* Agent Editor — v2 modules behind feature flag; legacy monolith otherwise */}
+      {useEditorV2 ? (
+        <AgentEditorV2
+          open={showAgentDialog}
+          onOpenChange={setShowAgentDialog}
+          agent={editingAgent}
+          onSave={handleSave}
+        />
+      ) : (
+        <AgentEditorFullScreen
+          open={showAgentDialog}
+          onOpenChange={setShowAgentDialog}
+          agent={editingAgent}
+          devices={devices}
+          deviceTypes={deviceTypes}
+          extensions={extensions}
+          unifiedDataSources={unifiedDataSources}
+          onSave={handleSave}
+        />
+      )}
 
       {/* Agent Detail Dialog */}
       <FullScreenDialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
