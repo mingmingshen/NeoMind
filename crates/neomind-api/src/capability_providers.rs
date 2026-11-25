@@ -1187,7 +1187,6 @@ impl ExtensionCapabilityProvider for StorageCapabilityProvider {
 // Agent Capability Provider
 // ============================================================================
 
-use neomind_agent::ai_agent::AiAgentManager;
 use neomind_storage::AgentStore;
 
 use crate::server::state::CleanSlateHolder;
@@ -1214,60 +1213,37 @@ impl AgentCapabilityProvider {
 
         let _input = params.get("input").cloned().unwrap_or(json!({}));
 
-        // Prefer clean-slate coordinator when the agent lives there.
-        {
-            let guard = self.clean_slate.read().await;
-            if let Some(rt) = guard.as_ref() {
-                if rt.has_agent(agent_id) {
-                    return match rt
-                        .submit(agent_id, neomind_ai_agent::SubmitSource::Extension)
-                        .await
-                    {
-                        Ok(resp) => Ok(json!({
-                            "success": true,
-                            "agent_id": agent_id,
-                            "execution_id": resp.execution.as_ref().map(|e| e.id.clone()),
-                            "status": resp.execution.as_ref().map(|e| format!("{:?}", e.status)),
-                            "dry_run": resp.dry_run,
-                        })),
-                        Err(e) => Ok(json!({
-                            "success": false,
-                            "agent_id": agent_id,
-                            "error": e.to_string(),
-                        })),
-                    };
-                }
-            }
-        }
-
-        // Try to get the agent manager
-        let agent_manager: Option<std::sync::Arc<AiAgentManager>> =
-            self.services.get::<AiAgentManager>(keys::AGENT_MANAGER);
-
-        if let Some(manager) = agent_manager {
-            // Execute the agent using the real agent manager
-            match manager.execute_agent_now(agent_id, None).await {
-                Ok(summary) => Ok(json!({
-                    "success": true,
-                    "agent_id": agent_id,
-                    "execution_id": summary.execution_id,
-                    "status": format!("{:?}", summary.status),
-                    "duration_ms": summary.duration_ms,
-                    "summary": summary.summary,
-                })),
-                Err(e) => Ok(json!({
-                    "success": false,
-                    "agent_id": agent_id,
-                    "error": e.to_string(),
-                })),
-            }
-        } else {
-            // Fallback when agent manager is not available
-            Ok(json!({
+        let guard = self.clean_slate.read().await;
+        let Some(rt) = guard.as_ref() else {
+            return Ok(json!({
                 "success": false,
                 "agent_id": agent_id,
-                "error": "Agent manager not available",
-            }))
+                "error": "Clean-slate agent runtime not available",
+            }));
+        };
+        if !rt.has_agent(agent_id) {
+            return Ok(json!({
+                "success": false,
+                "agent_id": agent_id,
+                "error": "Agent not found in clean-slate runtime",
+            }));
+        }
+        match rt
+            .submit(agent_id, neomind_ai_agent::SubmitSource::Extension)
+            .await
+        {
+            Ok(resp) => Ok(json!({
+                "success": true,
+                "agent_id": agent_id,
+                "execution_id": resp.execution.as_ref().map(|e| e.id.clone()),
+                "status": resp.execution.as_ref().map(|e| format!("{:?}", e.status)),
+                "dry_run": resp.dry_run,
+            })),
+            Err(e) => Ok(json!({
+                "success": false,
+                "agent_id": agent_id,
+                "error": e.to_string(),
+            })),
         }
     }
 
@@ -1277,9 +1253,6 @@ impl AgentCapabilityProvider {
         // Try to get the agent store
         let agent_store: Option<std::sync::Arc<AgentStore>> =
             self.services.get::<AgentStore>(keys::AGENT_STORE);
-
-        let agent_manager: Option<std::sync::Arc<AiAgentManager>> =
-            self.services.get::<AiAgentManager>(keys::AGENT_MANAGER);
 
         if let Some(id) = agent_id {
             // Get specific agent status
@@ -1310,70 +1283,39 @@ impl AgentCapabilityProvider {
                     "error": "Agent store not available",
                 }))
             }
-        } else {
-            // List all agents
-            if let Some(manager) = &agent_manager {
-                match manager
-                    .list_agents(neomind_storage::AgentFilter::default())
-                    .await
-                {
-                    Ok(agents) => {
-                        let agent_list: Vec<Value> = agents
-                            .iter()
-                            .map(|a| {
-                                json!({
-                                    "id": a.id,
-                                    "name": a.name,
-                                    "status": format!("{:?}", a.status),
-                                })
+        } else if let Some(store) = &agent_store {
+            match store
+                .query_agents(neomind_storage::AgentFilter::default())
+                .await
+            {
+                Ok(agents) => {
+                    let agent_list: Vec<Value> = agents
+                        .iter()
+                        .map(|a| {
+                            json!({
+                                "id": a.id,
+                                "name": a.name,
+                                "status": format!("{:?}", a.status),
                             })
-                            .collect();
+                        })
+                        .collect();
 
-                        Ok(json!({
-                            "success": true,
-                            "agents": agent_list,
-                            "count": agent_list.len(),
-                        }))
-                    }
-                    Err(e) => Ok(json!({
-                        "success": false,
-                        "error": e.to_string(),
-                    })),
+                    Ok(json!({
+                        "success": true,
+                        "agents": agent_list,
+                        "count": agent_list.len(),
+                    }))
                 }
-            } else if let Some(store) = &agent_store {
-                match store
-                    .query_agents(neomind_storage::AgentFilter::default())
-                    .await
-                {
-                    Ok(agents) => {
-                        let agent_list: Vec<Value> = agents
-                            .iter()
-                            .map(|a| {
-                                json!({
-                                    "id": a.id,
-                                    "name": a.name,
-                                    "status": format!("{:?}", a.status),
-                                })
-                            })
-                            .collect();
-
-                        Ok(json!({
-                            "success": true,
-                            "agents": agent_list,
-                            "count": agent_list.len(),
-                        }))
-                    }
-                    Err(e) => Ok(json!({
-                        "success": false,
-                        "error": e.to_string(),
-                    })),
-                }
-            } else {
-                Ok(json!({
+                Err(e) => Ok(json!({
                     "success": false,
-                    "error": "Agent store not available",
-                }))
+                    "error": e.to_string(),
+                })),
             }
+        } else {
+            Ok(json!({
+                "success": false,
+                "error": "Agent store not available",
+            }))
         }
     }
 }

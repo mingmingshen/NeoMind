@@ -12,7 +12,8 @@ use neomind_ai_agent::coordinator::{AgentScheduler, ExecutionCoordinator, Submit
 use neomind_ai_agent::error::{AgentError, Result as AgentResult};
 use neomind_ai_agent::input::{CountingSourcePort, InputPipeline};
 use neomind_ai_agent::model::{
-    AgentSpec, AgentSpecDraft, AgentSpecPatch, EffectivePlan, RunResponse,
+    AgentRuntimeRecord, AgentSpec, AgentSpecDraft, AgentSpecPatch, AgentStats, AgentStatus,
+    EffectivePlan, RunResponse,
 };
 use neomind_ai_agent::persist::{persist_spec, DurableAgentStore};
 use neomind_ai_agent::ports::LocalBriefLlm;
@@ -24,8 +25,9 @@ use neomind_ai_agent::service::{AgentApplicationService, NotifyCounter, WriteCou
 use neomind_ai_agent::side_effects::{
     FakeNotifyPort, FakeSideEffectPort, Notifier, SideEffectBoundary,
 };
-use neomind_storage::agents_v2::AgentStoreV2;
-use neomind_storage::AgentStore;
+use neomind_ai_agent::storage_bridge::{record_to_spec, status_from_storage};
+use neomind_storage::agents_v2::{map_agent_v1_to_v2, AgentStoreV2};
+use neomind_storage::{AgentStore, AiAgent};
 
 /// Source port that returns [`AgentError::Other`] when no fixture is registered.
 /// Used as a host placeholder until real extension/device reads are wired.
@@ -130,10 +132,9 @@ pub struct HostedAiAgentRuntime {
 impl HostedAiAgentRuntime {
     /// Open AgentStoreV2 on the shared agents.redb and build service.
     ///
-    /// While `CURRENT_SCHEMA_VERSION < 2`, do **not** hydrate soft-copied v1
-    /// shadows into the hot set — legacy `AiAgentManager` still owns those IDs
-    /// and would double-fire. Schema v2 open loads every v2 row and becomes the
-    /// sole scheduler.
+    /// Schema v2 open loads every v2 row into the hot set (sole scheduler).
+    /// Pre-v2 builds left the hot set empty so soft-copied shadows could not
+    /// double-fire beside a legacy manager; that manager is now deleted.
     pub fn build(agent_store: Arc<AgentStore>) -> AgentResult<Self> {
         let v2 = AgentStoreV2::from_arc(agent_store.db())
             .map_err(|e| AgentError::Storage(e.to_string()))?;
@@ -208,8 +209,7 @@ impl HostedAiAgentRuntime {
 
     /// Start the Cron/Interval scheduler (1s tick). Idempotent.
     ///
-    /// No-op while schema version stays at 1 — legacy AiAgentManager owns
-    /// schedule/event ticks until M2 migrate activates.
+    /// No-op while schema version stays at 1 (migrate not yet activated).
     pub fn start(self: &Arc<Self>) {
         if neomind_storage::schema::CURRENT_SCHEMA_VERSION < 2 {
             tracing::info!(
@@ -233,6 +233,53 @@ impl HostedAiAgentRuntime {
 
     pub fn has_agent(&self, id: &str) -> bool {
         self.durable.mem.get_spec(id).is_ok()
+    }
+
+    /// Map a legacy v1 [`AiAgent`] into the clean-slate hot set (+ optional v2
+    /// mirror). Used by `/api/agents` create/update/status so Cron/Interval/
+    /// Event ticks and invoke share one runtime after schema v2.
+    pub fn ingest_v1_agent(&self, agent: &AiAgent) -> AgentResult<()> {
+        let (rec, rt_rec, _, _) = map_agent_v1_to_v2(agent);
+        let spec = record_to_spec(&rec).map_err(AgentError::Other)?;
+        let now = self.clock.now_ms();
+        self.durable.mem.save_spec(spec.clone(), now)?;
+        let runtime = AgentRuntimeRecord {
+            agent_id: rt_rec.agent_id,
+            status: status_from_storage(rt_rec.status),
+            stats: AgentStats {
+                total_runs: rt_rec.stats.total_runs,
+                successful_runs: rt_rec.stats.successful_runs,
+                failed_runs: rt_rec.stats.failed_runs,
+                partial_runs: rt_rec.stats.partial_runs,
+                skipped_daily_limit: rt_rec.stats.skipped_daily_limit,
+                skipped_permit_timeout: rt_rec.stats.skipped_permit_timeout,
+                consecutive_failures: rt_rec.stats.consecutive_failures,
+                last_execution_at: rt_rec.stats.last_execution_at,
+                last_execution_id: rt_rec.stats.last_execution_id,
+            },
+            error_message: rt_rec.error_message,
+            next_probe_at: rt_rec.next_probe_at,
+            updated_at: rt_rec.updated_at,
+        };
+        self.durable.mem.set_runtime(runtime)?;
+        self.mirror_spec(&spec)?;
+        Ok(())
+    }
+
+    /// Ensure a legacy agent id is present in the hot set (ingest if missing).
+    pub fn ensure_v1_agent(&self, agent: &AiAgent) -> AgentResult<()> {
+        if self.has_agent(&agent.id) {
+            return Ok(());
+        }
+        self.ingest_v1_agent(agent)
+    }
+
+    /// Update hot-set + durable runtime status (Active/Paused/…).
+    pub fn set_agent_status(&self, id: &str, status: AgentStatus) -> AgentResult<()> {
+        let mut rt = self.durable.mem.get_runtime(id)?;
+        rt.status = status;
+        rt.updated_at = self.clock.now_ms();
+        self.durable.mirror_runtime(&rt)
     }
 
     pub fn create(&self, draft: AgentSpecDraft) -> AgentResult<(AgentSpec, EffectivePlan)> {
