@@ -203,6 +203,10 @@ pub fn parse_notify_arg(raw: &str) -> Result<serde_json::Value, CliResponse> {
 }
 
 /// Parse `--tool-policy`: shorthand `disabled` / `unrestricted`, or Scoped JSON.
+///
+/// Wire shape matches `ToolPolicy`'s default externally-tagged serde:
+/// `"disabled"` | `"unrestricted"` | `{"scoped":{"allowed_tools":[...],"allowed_commands":[...]}}`.
+/// Also accepts a friendly `{"kind":"scoped",...}` object and normalizes it.
 #[allow(clippy::result_large_err)]
 pub fn parse_tool_policy_arg(raw: &str) -> Result<serde_json::Value, CliResponse> {
     let trimmed = raw.trim();
@@ -216,12 +220,11 @@ pub fn parse_tool_policy_arg(raw: &str) -> Result<serde_json::Value, CliResponse
         CliResponse::error(
             format!(
                 "--tool-policy is not valid: {e} — use `disabled`, `unrestricted`, or \
-                 {{\"kind\":\"scoped\",\"allowed_tools\":[\"shell\"],\"allowed_commands\":[]}}."
+                 {{\"scoped\":{{\"allowed_tools\":[\"shell\"],\"allowed_commands\":[]}}}}."
             ),
             "INVALID_TOOL_POLICY",
         )
     })?;
-    // Accept tagged object or the string enum forms already encoded as JSON.
     if parsed.is_string() {
         let s = parsed.as_str().unwrap_or("");
         if matches!(s, "disabled" | "unrestricted") {
@@ -233,26 +236,35 @@ pub fn parse_tool_policy_arg(raw: &str) -> Result<serde_json::Value, CliResponse
         ));
     }
     if let Some(obj) = parsed.as_object() {
-        let kind = obj
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .unwrap_or("scoped");
-        if kind != "scoped" {
-            return Err(CliResponse::error(
-                format!("--tool-policy object kind must be `scoped` (got '{kind}')."),
-                "INVALID_TOOL_POLICY",
-            ));
+        // Already externally tagged: {"scoped": {...}}
+        if let Some(scoped) = obj.get("scoped") {
+            let mut inner = scoped.as_object().cloned().unwrap_or_default();
+            inner.entry("allowed_tools".to_string()).or_insert(json!([]));
+            inner
+                .entry("allowed_commands".to_string())
+                .or_insert(json!([]));
+            return Ok(json!({ "scoped": inner }));
         }
-        // Normalize to the tagged serde shape used by AgentSpec.
-        let mut out = obj.clone();
-        out.insert("kind".into(), json!("scoped"));
-        if !out.contains_key("allowed_tools") {
-            out.insert("allowed_tools".into(), json!([]));
+        // Friendly {"kind":"scoped", ...} → normalize
+        if obj.get("kind").and_then(|v| v.as_str()) == Some("scoped")
+            || obj.contains_key("allowed_tools")
+        {
+            let allowed_tools = obj.get("allowed_tools").cloned().unwrap_or_else(|| json!([]));
+            let allowed_commands = obj
+                .get("allowed_commands")
+                .cloned()
+                .unwrap_or_else(|| json!([]));
+            return Ok(json!({
+                "scoped": {
+                    "allowed_tools": allowed_tools,
+                    "allowed_commands": allowed_commands,
+                }
+            }));
         }
-        if !out.contains_key("allowed_commands") {
-            out.insert("allowed_commands".into(), json!([]));
-        }
-        return Ok(serde_json::Value::Object(out));
+        return Err(CliResponse::error(
+            "--tool-policy object must be {\"scoped\":{...}} or {\"kind\":\"scoped\",...}.",
+            "INVALID_TOOL_POLICY",
+        ));
     }
     Err(CliResponse::error(
         "--tool-policy must be `disabled`, `unrestricted`, or a scoped JSON object.",
@@ -260,13 +272,14 @@ pub fn parse_tool_policy_arg(raw: &str) -> Result<serde_json::Value, CliResponse
     ))
 }
 
-/// Parse `--input` as an InputContract (`{"requirements":[...]}`) or a bare requirements array.
+/// Parse `--input-requirements` as an InputContract (`{"requirements":[...]}`)
+/// or a bare requirements array.
 #[allow(clippy::result_large_err)]
 pub fn parse_input_arg(raw: &str) -> Result<serde_json::Value, CliResponse> {
     let parsed = crate::json_arg::parse_json_arg(raw).map_err(|e| {
         CliResponse::error(
             format!(
-                "--input is not valid JSON: {e} — expected \
+                "--input-requirements is not valid JSON: {e} — expected \
                  {{\"requirements\":[{{\"key\":\"...\",\"source\":{{...}},...}}]}}."
             ),
             "INVALID_INPUT_JSON",
@@ -278,20 +291,20 @@ pub fn parse_input_arg(raw: &str) -> Result<serde_json::Value, CliResponse> {
     if let Some(obj) = parsed.as_object() {
         if !obj.contains_key("requirements") {
             return Err(CliResponse::error(
-                "--input object must include a `requirements` array.",
+                "--input-requirements object must include a `requirements` array.",
                 "INVALID_INPUT_JSON",
             ));
         }
         if !obj.get("requirements").map(|v| v.is_array()).unwrap_or(false) {
             return Err(CliResponse::error(
-                "--input.requirements must be a JSON array.",
+                "--input-requirements.requirements must be a JSON array.",
                 "INVALID_INPUT_JSON",
             ));
         }
         return Ok(parsed);
     }
     Err(CliResponse::error(
-        "--input must be an object with `requirements` or a bare requirements array.",
+        "--input-requirements must be an object with `requirements` or a bare requirements array.",
         "INVALID_INPUT_JSON",
     ))
 }

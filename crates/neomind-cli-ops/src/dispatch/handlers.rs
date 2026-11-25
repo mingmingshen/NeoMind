@@ -788,7 +788,7 @@ pub async fn run_agent_cmd_with_context(
             no_tools,
             allowed_tools,
             tool_policy,
-            input,
+            input_requirements,
             device_ids,
             resources,
             metrics,
@@ -829,7 +829,7 @@ pub async fn run_agent_cmd_with_context(
                 priority,
                 context_window_size,
                 tool_policy.as_deref(),
-                input.as_deref(),
+                input_requirements.as_deref(),
             )
             .await?
         }
@@ -845,7 +845,7 @@ pub async fn run_agent_cmd_with_context(
             no_tools,
             allowed_tools,
             tool_policy,
-            input,
+            input_requirements,
             event_filter,
             timezone,
             execution_mode,
@@ -886,7 +886,7 @@ pub async fn run_agent_cmd_with_context(
                 priority,
                 context_window_size,
                 tool_policy.as_deref(),
-                input.as_deref(),
+                input_requirements.as_deref(),
             )
             .await?
         }

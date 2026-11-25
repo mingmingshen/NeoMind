@@ -1742,7 +1742,7 @@ pub enum AgentCommand {
         allowed_tools: Option<String>,
         /// Clean-slate tool policy (additive; v1 still uses --no-tools/--allowed-tools).
         /// Shorthand: `disabled` | `unrestricted`, or scoped JSON
-        /// `{"kind":"scoped","allowed_tools":["shell"],"allowed_commands":[]}`.
+        /// `{"scoped":{"allowed_tools":["shell"],"allowed_commands":[]}}`.
         #[arg(long)]
         tool_policy: Option<String>,
         /// Clean-slate input contract JSON: `{"requirements":[...]}` (or a bare
@@ -3463,5 +3463,55 @@ mod agent_invoke_input_tests {
     #[test]
     fn invoke_requires_id() {
         assert!(parse(&["agent", "invoke"]).is_err());
+    }
+
+    #[test]
+    fn invoke_dry_run_flag_parses() {
+        let args =
+            Args::try_parse_from(["neomind", "agent", "invoke", "agent-001", "--dry-run"]).unwrap();
+        match args.command {
+            Command::Agent {
+                agent_cmd: AgentCommand::Invoke { dry_run, input, .. },
+            } => {
+                assert!(dry_run);
+                assert!(input.is_none());
+            }
+            other => panic!("expected Invoke, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod agent_plan_preview_tests {
+    use super::{AgentCommand, Args, Command};
+    use clap::Parser;
+
+    #[test]
+    fn plan_preview_requires_draft() {
+        assert!(Args::try_parse_from(["neomind", "agent", "plan-preview"]).is_err());
+    }
+
+    #[test]
+    fn plan_preview_parses_draft_json() {
+        let draft = r#"{"name":"daily-brief","user_prompt":"x","trigger":{"kind":"manual"},"input":{"requirements":[]},"tool_policy":"disabled"}"#;
+        let args =
+            Args::try_parse_from(["neomind", "agent", "plan-preview", "--draft", draft]).unwrap();
+        match args.command {
+            Command::Agent {
+                agent_cmd: AgentCommand::PlanPreview { draft: d },
+            } => assert!(d.contains("daily-brief")),
+            other => panic!("expected PlanPreview, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn agent_test_parses_id() {
+        let args = Args::try_parse_from(["neomind", "agent", "test", "agent-001"]).unwrap();
+        match args.command {
+            Command::Agent {
+                agent_cmd: AgentCommand::Test { id },
+            } => assert_eq!(id, "agent-001"),
+            other => panic!("expected Test, got {other:?}"),
+        }
     }
 }
