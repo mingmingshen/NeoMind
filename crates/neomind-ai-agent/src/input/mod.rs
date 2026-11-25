@@ -214,18 +214,22 @@ fn evidence_from_read(
     now: i64,
     image_field: Option<&str>,
 ) -> (EvidenceItem, bool) {
-    let (quality, missing) = classify_freshness(req, &r, now);
+    let (quality, missing, filtered) = classify_freshness(req, &r, now);
+    // LookbackWindow may replace the raw series with the in-window subset so
+    // EvidenceDetail / model prompt share the same filtered point set.
+    let value = filtered.unwrap_or(r.value);
+    let observed_at = latest_point_timestamp(&value).or(r.observed_at);
     (
         EvidenceItem {
             key: req.key.clone(),
             source_id: r.source_id,
             result_type: req.result_type.clone(),
-            observed_at: r.observed_at,
+            observed_at,
             valid_window: r.valid_window.or_else(|| implied_window(req, now)),
             fetched_at: now,
             quality,
             binding_proof: r.binding_proof,
-            detail: Some(detail_for(&req.result_type, r.value, image_field)),
+            detail: Some(detail_for(&req.result_type, value, image_field)),
         },
         missing,
     )
@@ -245,14 +249,18 @@ fn implied_window(req: &InputRequirement, now: i64) -> Option<(i64, i64)> {
     }
 }
 
-/// Apply observation-time / window contract. Returns (quality, treat_as_missing).
+/// Apply observation-time / window contract.
+///
+/// Returns `(quality, treat_as_missing, filtered_value)`. When `filtered_value`
+/// is `Some`, callers must use it for EvidenceDetail / model input so the
+/// prompt only sees the same in-window set that passed classification.
 fn classify_freshness(
     req: &InputRequirement,
     r: &SourceReadResult,
     now: i64,
-) -> (EvidenceQuality, bool) {
+) -> (EvidenceQuality, bool, Option<serde_json::Value>) {
     match &req.freshness {
-        FreshnessPolicy::Any | FreshnessPolicy::SameReport => (EvidenceQuality::Fresh, false),
+        FreshnessPolicy::Any | FreshnessPolicy::SameReport => (EvidenceQuality::Fresh, false, None),
         FreshnessPolicy::LatestWithin { max_age_secs } => {
             let Some(obs) = r.observed_at else {
                 return stale_or_missing(req, "missing observed_at");
@@ -267,7 +275,7 @@ fn classify_freshness(
             if now.saturating_sub(obs_ms) > max_age_ms {
                 return stale_or_missing(req, &format!("observation age exceeds {max_age_secs}s"));
             }
-            (EvidenceQuality::Fresh, false)
+            (EvidenceQuality::Fresh, false, None)
         }
         FreshnessPolicy::LookbackWindow {
             lookback_secs,
@@ -283,19 +291,17 @@ fn classify_freshness(
             if *max_points > 1 && points < 2 {
                 return stale_or_missing(req, "single point cannot complete full-window calc");
             }
-            // 1) Per-point timestamps → count how many fall in the requested window.
-            if let Some(times) = series_point_timestamps(&r.value) {
-                let in_window = times
-                    .iter()
-                    .filter(|t| **t >= requested.0 && **t <= requested.1)
-                    .count();
+            // 1) Per-point timestamps → keep only the in-window subset for
+            // both Fresh decision and downstream EvidenceDetail / prompt.
+            if let Some(filtered) = filter_series_to_window(&r.value, requested) {
+                let in_window = count_series_points(&filtered);
                 if in_window == 0 {
                     return stale_or_missing(req, "all points outside lookback window");
                 }
                 if *max_points > 1 && in_window < 2 {
                     return stale_or_missing(req, "fewer than 2 in-window timestamped points");
                 }
-                return (EvidenceQuality::Fresh, false);
+                return (EvidenceQuality::Fresh, false, Some(filtered));
             }
             // 2) Supplier-trusted actual coverage from the host (never the
             // implied request window alone). Device lookback sets this after
@@ -307,7 +313,7 @@ fn classify_freshness(
                         return stale_or_missing(req, "observation outside lookback window");
                     }
                 }
-                return (EvidenceQuality::Fresh, false);
+                return (EvidenceQuality::Fresh, false, None);
             }
             // 3) Untimestamped points with no trusted coverage → not Fresh.
             stale_or_missing(req, "lookback points lack timestamps")
@@ -335,14 +341,55 @@ fn series_point_timestamps(value: &serde_json::Value) -> Option<Vec<i64>> {
     }
     let mut out = Vec::with_capacity(arr.len());
     for p in arr {
-        let t = p
-            .get("timestamp")
-            .or_else(|| p.get("observed_at"))
-            .or_else(|| p.get("time"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))?;
-        out.push(normalize_ts_ms(t));
+        let t = point_timestamp(p)?;
+        out.push(t);
     }
     Some(out)
+}
+
+fn point_timestamp(p: &serde_json::Value) -> Option<i64> {
+    p.get("timestamp")
+        .or_else(|| p.get("observed_at"))
+        .or_else(|| p.get("time"))
+        .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+        .map(normalize_ts_ms)
+}
+
+/// Keep only points whose timestamps fall in `[start, end]` (ms). Preserves
+/// `{ "points": [...] }` vs bare-array shape. Returns `None` when any point
+/// lacks a usable timestamp (caller falls through to trusted-coverage path).
+fn filter_series_to_window(
+    value: &serde_json::Value,
+    window: (i64, i64),
+) -> Option<serde_json::Value> {
+    let (wrapped, arr) = if let Some(a) = value.get("points").and_then(|p| p.as_array()) {
+        (true, a)
+    } else if let Some(a) = value.as_array() {
+        (false, a)
+    } else {
+        return None;
+    };
+    if arr.is_empty() {
+        return None;
+    }
+    let mut kept = Vec::new();
+    for p in arr {
+        let t = point_timestamp(p)?;
+        if t >= window.0 && t <= window.1 {
+            kept.push(p.clone());
+        }
+    }
+    if wrapped {
+        let mut obj = value.as_object().cloned().unwrap_or_default();
+        obj.insert("points".into(), serde_json::Value::Array(kept));
+        Some(serde_json::Value::Object(obj))
+    } else {
+        Some(serde_json::Value::Array(kept))
+    }
+}
+
+fn latest_point_timestamp(value: &serde_json::Value) -> Option<i64> {
+    series_point_timestamps(value)?.into_iter().max()
 }
 
 fn count_series_points(value: &serde_json::Value) -> usize {
@@ -362,8 +409,11 @@ fn count_series_points(value: &serde_json::Value) -> usize {
     0
 }
 
-fn stale_or_missing(req: &InputRequirement, reason: &str) -> (EvidenceQuality, bool) {
-    match req.on_missing {
+fn stale_or_missing(
+    req: &InputRequirement,
+    reason: &str,
+) -> (EvidenceQuality, bool, Option<serde_json::Value>) {
+    let (q, missing) = match req.on_missing {
         MissingPolicy::ReportStale => (EvidenceQuality::Stale, true),
         MissingPolicy::Ignore => (EvidenceQuality::Missing, true),
         MissingPolicy::Skip | MissingPolicy::Undetermined => (
@@ -372,7 +422,8 @@ fn stale_or_missing(req: &InputRequirement, reason: &str) -> (EvidenceQuality, b
             },
             true,
         ),
-    }
+    };
+    (q, missing, None)
 }
 
 fn same_report_image_item(

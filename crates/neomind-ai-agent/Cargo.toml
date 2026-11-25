@@ -66,3 +66,7 @@ path = "tests/hold_round3_acceptance.rs"
 [[test]]
 name = "hold_round4_acceptance"
 path = "tests/hold_round4_acceptance.rs"
+
+[[test]]
+name = "hold_round5_acceptance"
+path = "tests/hold_round5_acceptance.rs"
