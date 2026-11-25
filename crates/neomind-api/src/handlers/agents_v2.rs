@@ -120,7 +120,7 @@ pub async fn plan_preview(
 pub async fn agent_v2_schema() -> HandlerResult<Value> {
     ok(serde_json::json!({
         "schema": "agent-contract/v2",
-        "schema_version_runtime": 1,
+        "schema_version_runtime": 2,
         "schema_version_target": 2,
         "samples": ["daily-brief", "partial-meter", "unknown-delivery", "legacy-history"],
         "operations": {

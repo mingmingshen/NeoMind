@@ -1148,6 +1148,15 @@ impl AgentStore {
 
     /// Save an agent to the store.
     pub async fn save_agent(&self, agent: &AiAgent) -> Result<(), Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+            let (spec, runtime, messages, memory) = crate::agents_v2::map_agent_v1_to_v2(agent);
+            v2.save_spec(&spec)?;
+            v2.set_runtime(&runtime)?;
+            v2.save_user_messages(&agent.id, &messages)?;
+            v2.save_memory(&agent.id, &memory)?;
+            return Ok(());
+        }
         let write_txn = self.db.begin_write()?;
         #[cfg(test)]
         self.test_hook_point();
@@ -1171,8 +1180,14 @@ impl AgentStore {
 
     /// Get an agent by ID.
     pub async fn get_agent(&self, id: &str) -> Result<Option<AiAgent>, Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            return self.get_agent_from_v2(id);
+        }
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(AGENTS_TABLE)?;
+        let table = match read_txn.open_table(AGENTS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return self.get_agent_from_v2(id),
+        };
 
         match table.get(id)? {
             Some(bytes) => {
@@ -1181,8 +1196,24 @@ impl AgentStore {
 
                 Ok(Some(agent))
             }
-            None => Ok(None),
+            None => self.get_agent_from_v2(id),
         }
+    }
+
+    fn get_agent_from_v2(&self, id: &str) -> Result<Option<AiAgent>, Error> {
+        let v2 = crate::agents_v2::AgentStoreV2::from_arc(self.db.clone())?;
+        let Some(spec) = v2.get_spec(id)? else {
+            return Ok(None);
+        };
+        let runtime = v2.get_runtime(id)?;
+        let memory = v2.get_memory(id)?.unwrap_or_default();
+        let messages = v2.get_user_messages(id)?.unwrap_or_default();
+        Ok(Some(crate::agents_v2::map_agent_v2_to_v1(
+            &spec,
+            runtime.as_ref(),
+            Some(memory),
+            messages,
+        )))
     }
 
     /// Query agents with filters.
@@ -1191,14 +1222,20 @@ impl AgentStore {
         // blocks the executor thread; push it onto the blocking pool. Only
         // the database handle is needed.
         let db = self.db.clone();
-        tokio::task::spawn_blocking(move || Self::query_agents_impl(&db, filter))
+        tokio::task::spawn_blocking(move || Self::query_agents_impl(db, filter))
             .await
             .map_err(|e| Error::Storage(format!("query_agents join error: {}", e)))?
     }
 
-    fn query_agents_impl(db: &Database, filter: AgentFilter) -> Result<Vec<AiAgent>, Error> {
+    fn query_agents_impl(db: Arc<Database>, filter: AgentFilter) -> Result<Vec<AiAgent>, Error> {
+        if crate::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            return Self::query_agents_v2_impl(&db, filter);
+        }
         let read_txn = db.begin_read()?;
-        let table = read_txn.open_table(AGENTS_TABLE)?;
+        let table = match read_txn.open_table(AGENTS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Self::query_agents_v2_impl(&db, filter),
+        };
 
         let mut agents = Vec::new();
 
@@ -1233,6 +1270,41 @@ impl AgentStore {
             agents.truncate(limit);
         }
 
+        Ok(agents)
+    }
+
+    fn query_agents_v2_impl(
+        db: &Arc<Database>,
+        filter: AgentFilter,
+    ) -> Result<Vec<AiAgent>, Error> {
+        let v2 = crate::agents_v2::AgentStoreV2::from_arc(db.clone())?;
+        let specs = v2.list_specs()?;
+        let mut agents = Vec::new();
+        for spec in specs {
+            let runtime = v2.get_runtime(&spec.id)?;
+            let memory = v2.get_memory(&spec.id)?.unwrap_or_default();
+            let messages = v2.get_user_messages(&spec.id)?.unwrap_or_default();
+            let agent = crate::agents_v2::map_agent_v2_to_v1(
+                &spec,
+                runtime.as_ref(),
+                Some(memory),
+                messages,
+            );
+            if Self::matches_agent_filter(&agent, &filter) {
+                agents.push(agent);
+            }
+        }
+        agents.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
+        if let Some(offset) = filter.offset {
+            if offset < agents.len() {
+                agents = agents.into_iter().skip(offset).collect();
+            } else {
+                agents.clear();
+            }
+        }
+        if let Some(limit) = filter.limit {
+            agents.truncate(limit);
+        }
         Ok(agents)
     }
 

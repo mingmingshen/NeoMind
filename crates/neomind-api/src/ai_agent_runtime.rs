@@ -128,13 +128,28 @@ pub struct HostedAiAgentRuntime {
 }
 
 impl HostedAiAgentRuntime {
-    /// Open AgentStoreV2 on the shared agents.redb, load durable store, build service.
+    /// Open AgentStoreV2 on the shared agents.redb and build service.
+    ///
+    /// While `CURRENT_SCHEMA_VERSION < 2`, do **not** hydrate soft-copied v1
+    /// shadows into the hot set — legacy `AiAgentManager` still owns those IDs
+    /// and would double-fire. Schema v2 open loads every v2 row and becomes the
+    /// sole scheduler.
     pub fn build(agent_store: Arc<AgentStore>) -> AgentResult<Self> {
         let v2 = AgentStoreV2::from_arc(agent_store.db())
             .map_err(|e| AgentError::Storage(e.to_string()))?;
         let clock: Arc<dyn ClockPort> = Arc::new(SystemClock);
         let now = clock.now_ms();
-        let durable = DurableAgentStore::with_v2(v2, now)?;
+        let durable = if neomind_storage::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            DurableAgentStore::with_v2(v2, now)?
+        } else {
+            // Soft-copy may have warmed v2 tables; keep them for migrate fidelity
+            // but start the hot path empty so only POST /api/agents/v2 creates
+            // enter the clean-slate kernel before schema cutover.
+            DurableAgentStore {
+                mem: neomind_ai_agent::store::InMemoryAgentStore::new(),
+                v2: Some(v2),
+            }
+        };
 
         let sources: Arc<dyn SourceReadPort> = Arc::new(HostSourcePort::new());
         let fake_notify = Arc::new(FakeNotifyPort::new());
@@ -192,7 +207,17 @@ impl HostedAiAgentRuntime {
     }
 
     /// Start the Cron/Interval scheduler (1s tick). Idempotent.
+    ///
+    /// No-op while schema version stays at 1 — legacy AiAgentManager owns
+    /// schedule/event ticks until M2 migrate activates.
     pub fn start(self: &Arc<Self>) {
+        if neomind_storage::schema::CURRENT_SCHEMA_VERSION < 2 {
+            tracing::info!(
+                "Clean-slate scheduler deferred until schema v2 (CURRENT_SCHEMA_VERSION={})",
+                neomind_storage::schema::CURRENT_SCHEMA_VERSION
+            );
+            return;
+        }
         if self.started.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
@@ -203,6 +228,7 @@ impl HostedAiAgentRuntime {
         ));
         *self.scheduler.lock().expect("scheduler") = Some(scheduler.clone());
         scheduler.start();
+        tracing::info!("Clean-slate AgentScheduler started (schema v2)");
     }
 
     pub fn has_agent(&self, id: &str) -> bool {

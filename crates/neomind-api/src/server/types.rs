@@ -3206,7 +3206,21 @@ impl ServerState {
     }
 
     /// Start the AI Agent manager scheduler.
+    ///
+    /// Schema v2+: clean-slate `HostedAiAgentRuntime` owns Cron/Interval ticks;
+    /// the legacy `AiAgentManager` scheduler is not started (invoke/rules/SDK
+    /// already prefer clean-slate when the agent id is present there).
     pub async fn start_agent_manager(&self) -> Result<(), crate::models::ErrorResponse> {
+        if neomind_storage::schema::CURRENT_SCHEMA_VERSION >= 2 {
+            if let Some(rt) = self.agents.clean_slate.read().await.as_ref() {
+                rt.start();
+            }
+            tracing::info!(
+                "Schema v2: clean-slate scheduler owns agent ticks (legacy AiAgentManager not started)"
+            );
+            return Ok(());
+        }
+
         let manager = self.get_or_init_agent_manager().await?;
 
         // Inject the latest tool registry into the executor.

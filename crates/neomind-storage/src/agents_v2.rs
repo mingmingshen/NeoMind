@@ -425,6 +425,143 @@ pub fn map_agent_v1_to_v2(
     )
 }
 
+/// Reconstruct a minimal legacy [`AiAgent`] from v2 rows (list/get after migrate).
+///
+/// Lossy on purpose: execution_mode/resources/tool_config are derived from
+/// [`ToolPolicy`]; conversation history is not restored (lives outside specs).
+pub fn map_agent_v2_to_v1(
+    spec: &AgentSpecRecord,
+    runtime: Option<&AgentRuntimeRecord>,
+    memory: Option<AgentMemory>,
+    user_messages: Vec<UserMessage>,
+) -> AiAgent {
+    let (execution_mode, tool_config) = match &spec.tool_policy {
+        ToolPolicy::Disabled => (
+            ExecutionMode::Structured,
+            Some(AgentToolConfig {
+                enabled: false,
+                allowed_tools: vec![],
+            }),
+        ),
+        ToolPolicy::Scoped {
+            allowed_tools,
+            allowed_commands: _,
+        } => (
+            ExecutionMode::Focused,
+            Some(AgentToolConfig {
+                enabled: true,
+                allowed_tools: allowed_tools.clone(),
+            }),
+        ),
+        ToolPolicy::Unrestricted => (
+            ExecutionMode::Free,
+            Some(AgentToolConfig {
+                enabled: true,
+                allowed_tools: vec![],
+            }),
+        ),
+    };
+    let schedule = match &spec.trigger {
+        TriggerSpec::Cron { expr, timezone } => AgentSchedule {
+            schedule_type: ScheduleType::Cron,
+            cron_expression: Some(expr.clone()),
+            timezone: Some(timezone.clone()),
+            interval_seconds: None,
+            event_filter: None,
+        },
+        TriggerSpec::Interval { every_secs } => AgentSchedule {
+            schedule_type: ScheduleType::Interval,
+            cron_expression: None,
+            timezone: None,
+            interval_seconds: Some(*every_secs),
+            event_filter: None,
+        },
+        TriggerSpec::Event { filter } => AgentSchedule {
+            schedule_type: ScheduleType::Event,
+            cron_expression: None,
+            timezone: None,
+            interval_seconds: None,
+            event_filter: Some(filter.to_string()),
+        },
+        TriggerSpec::Manual => AgentSchedule {
+            schedule_type: ScheduleType::Manual,
+            cron_expression: None,
+            timezone: None,
+            interval_seconds: None,
+            event_filter: None,
+        },
+    };
+    let notify = {
+        let on = if spec.notify.on_alert {
+            NotifyOn::Judgment
+        } else if spec.notify.on_complete {
+            NotifyOn::Always
+        } else {
+            NotifyOn::Failure
+        };
+        if spec.notify.channels.is_empty() && !spec.notify.on_complete && !spec.notify.on_alert {
+            None
+        } else {
+            Some(AgentNotify {
+                channels: spec.notify.channels.clone(),
+                on,
+            })
+        }
+    };
+    let (status, error_message, consecutive_failures, last_execution_at, stats) =
+        if let Some(rt) = runtime {
+            (
+                rt.status,
+                rt.error_message.clone(),
+                rt.stats.consecutive_failures,
+                rt.stats.last_execution_at,
+                AgentStats {
+                    total_executions: rt.stats.total_runs,
+                    successful_executions: rt.stats.successful_runs,
+                    failed_executions: rt.stats.failed_runs,
+                    avg_duration_ms: 0,
+                    last_duration_ms: None,
+                },
+            )
+        } else {
+            (AgentStatus::Active, None, 0, None, AgentStats::default())
+        };
+    AiAgent {
+        id: spec.id.clone(),
+        name: spec.name.clone(),
+        description: spec.description.clone(),
+        user_prompt: spec.user_prompt.clone(),
+        llm_backend_id: spec.llm_backend_id.clone(),
+        parsed_intent: None,
+        resources: Vec::new(),
+        schedule,
+        status,
+        priority: 100,
+        created_at: spec.created_at,
+        updated_at: spec.updated_at,
+        last_execution_at,
+        stats,
+        memory: memory.unwrap_or_default(),
+        conversation_history: vec![],
+        user_messages,
+        conversation_summary: None,
+        context_window_size: 10,
+        enable_tool_chaining: false,
+        max_chain_depth: 10,
+        tool_config,
+        execution_mode,
+        error_message,
+        system_prompt: None,
+        max_retries: 0,
+        consecutive_failures,
+        output_schema: None,
+        operator_config: None,
+        memory_mode: None,
+        notify,
+        max_tokens_per_run: None,
+    }
+}
+
 // ── Store (v2 tables only; does not migrate or delete legacy `agents`) ──────
 
 /// Create the five v2 tables if missing.
@@ -690,6 +827,58 @@ impl AgentStoreV2 {
         }
         write.commit()?;
         Ok(())
+    }
+
+    // ── Memory / user messages ──────────────────────────────────────────────
+
+    pub fn save_memory(&self, agent_id: &str, memory: &AgentMemory) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_MEMORY_TABLE)?;
+            let bytes =
+                serde_json::to_vec(memory).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(agent_id, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn get_memory(&self, agent_id: &str) -> Result<Option<AgentMemory>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_MEMORY_TABLE)?;
+        match table.get(agent_id)? {
+            Some(bytes) => {
+                let mem: AgentMemory = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                Ok(Some(mem))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_user_messages(&self, agent_id: &str, messages: &[UserMessage]) -> Result<()> {
+        let write = self.db.begin_write()?;
+        {
+            let mut table = write.open_table(AGENT_USER_MESSAGES_TABLE)?;
+            let bytes =
+                serde_json::to_vec(messages).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(agent_id, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn get_user_messages(&self, agent_id: &str) -> Result<Option<Vec<UserMessage>>> {
+        let read = self.db.begin_read()?;
+        let table = read.open_table(AGENT_USER_MESSAGES_TABLE)?;
+        match table.get(agent_id)? {
+            Some(bytes) => {
+                let msgs: Vec<UserMessage> = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                Ok(Some(msgs))
+            }
+            None => Ok(None),
+        }
     }
 }
 
@@ -1121,8 +1310,8 @@ mod tests {
             assert_eq!(messages[0].content, "hi");
         }
 
-        // Schema stamp must remain untouched by this helper (M1 keeps version 1).
-        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 1);
+        // Schema stamp is owned by schema.rs; migrate helper itself does not stamp.
+        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 2);
 
         // Idempotent second pass.
         migrate_agents_v1_to_v2(&db).unwrap();
@@ -1178,7 +1367,7 @@ mod tests {
         assert!(read.open_table(AGENT_EXECUTIONS_TABLE).is_ok());
         assert!(read.open_table(AGENT_MEMORY_TABLE).is_ok());
         assert!(read.open_table(AGENT_USER_MESSAGES_TABLE).is_ok());
-        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 1);
+        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 2);
     }
 
     #[test]
@@ -1215,7 +1404,7 @@ mod tests {
         assert!(store.delete_spec("spec-1").unwrap());
         assert!(store.get_spec("spec-1").unwrap().is_none());
         assert!(store.list_specs().unwrap().is_empty());
-        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 1);
+        assert_eq!(crate::schema::CURRENT_SCHEMA_VERSION, 2);
     }
 
     #[test]
