@@ -398,7 +398,9 @@ fn v2_trigger_type(
 }
 
 /// Project V2 evidence JSON into the list/card `input_summary` chip fields.
-fn v2_input_summary_from_evidence(evidence: &serde_json::Value) -> Option<ExecutionInputSummaryDto> {
+fn v2_input_summary_from_evidence(
+    evidence: &serde_json::Value,
+) -> Option<ExecutionInputSummaryDto> {
     let items = evidence.get("items").and_then(|v| v.as_array());
     let skip_reason = evidence
         .get("skip_reason")
@@ -1384,11 +1386,7 @@ pub async fn get_agent_executions(
     let dtos: Vec<AgentExecutionDto> =
         match neomind_storage::AgentStoreV2::from_arc(state.agents.agent_store.db()) {
             Ok(v2) => {
-                let agent_trigger = v2
-                    .get_spec(&id)
-                    .ok()
-                    .flatten()
-                    .map(|s| s.trigger);
+                let agent_trigger = v2.get_spec(&id).ok().flatten().map(|s| s.trigger);
                 match v2.list_formal_executions(&id) {
                     Ok(rows) => rows
                         .into_iter()
@@ -1435,11 +1433,7 @@ pub async fn get_execution(
     // Prefer V2 execution row (structured_result + evidence); fall back to legacy table.
     if let Ok(v2) = neomind_storage::AgentStoreV2::from_arc(state.agents.agent_store.db()) {
         if let Ok(Some(row)) = v2.get_execution(&execution_id) {
-            let agent_trigger = v2
-                .get_spec(&row.agent_id)
-                .ok()
-                .flatten()
-                .map(|s| s.trigger);
+            let agent_trigger = v2.get_spec(&row.agent_id).ok().flatten().map(|s| s.trigger);
             let structured = row.structured_result.clone();
             let list = dto_from_v2_execution(row.clone(), agent_trigger.as_ref());
             let detail = detail_dto_from_v2_execution(row, agent_trigger.as_ref());
@@ -1520,13 +1514,9 @@ pub async fn batch_get_executions(
     }
 
     let v2 = neomind_storage::AgentStoreV2::from_arc(state.agents.agent_store.db()).ok();
-    let agent_trigger = v2.as_ref().and_then(|store| {
-        store
-            .get_spec(&id)
-            .ok()
-            .flatten()
-            .map(|s| s.trigger)
-    });
+    let agent_trigger = v2
+        .as_ref()
+        .and_then(|store| store.get_spec(&id).ok().flatten().map(|s| s.trigger));
 
     let mut details = serde_json::Map::new();
     let mut missing: Vec<String> = Vec::new();
@@ -1542,7 +1532,11 @@ pub async fn batch_get_executions(
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    tracing::warn!("batch_get_executions: V2 lookup failed for {}: {}", exec_id, e);
+                    tracing::warn!(
+                        "batch_get_executions: V2 lookup failed for {}: {}",
+                        exec_id,
+                        e
+                    );
                 }
             }
         }
