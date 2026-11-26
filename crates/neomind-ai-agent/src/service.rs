@@ -188,7 +188,12 @@ impl AgentApplicationService {
 
         let run_result = self
             .runner
-            .run(&run_spec, &evidence, &execution_id, CancellationToken::new())
+            .run(
+                &run_spec,
+                &evidence,
+                &execution_id,
+                CancellationToken::new(),
+            )
             .await;
 
         let mut exec = crate::model::AgentExecutionRecord {
